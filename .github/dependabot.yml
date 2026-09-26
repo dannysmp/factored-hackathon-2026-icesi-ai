@@ -2,9 +2,7 @@
 # Dependency update automation
 # =============================================================================
 # Dependabot checks the Python dependencies (pinned by uv.lock) and the GitHub Actions used
-# by the workflows once a month and opens pull requests for available updates. Security
-# updates are raised by GitHub as soon as an advisory is published, independently of this
-# schedule.
+# by the workflows once a month and opens pull requests for available updates.
 # =============================================================================
 
 version: 2
