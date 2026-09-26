@@ -1,7 +1,6 @@
 # policy/
 
-The versioned dispute policy and, in a later change, the multilingual policy corpus generated
-from it.
+The versioned dispute policy and the multilingual policy corpus generated from it.
 
 ## `dispute_policy_v1.yaml`
 
@@ -18,6 +17,20 @@ the rules never hides in a parameter. A parameter change is a new policy version
 
 The values are synthetic planning values written for this project, inspired by common chargeback
 and complaint-handling practice. They are not those of any bank or regulator, and the file says so.
+
+## `corpus/`
+
+The policy explained to customers in Spanish, Portuguese and English (`es/`, `pt/`, `en/`, one
+`dispute-policy.md` each). The documents are **generated** from the YAML by
+`app/domain/policy/corpus.py`; every number in them (windows, amount, confidence floor, risk
+threshold) is read from the policy, never typed. The sections carry the same stable identifiers
+in every language (`overview`, `who-can-dispute`, `filing-windows`, `confirmation`,
+`human-review`, `fraud-claims`, `decision-codes`) so that an answer can cite one whichever
+language the customer used, and rules a policy version switches off are left out of the text.
+
+- `make corpus` regenerates the files; do not edit them by hand.
+- `make corpus-check` and the test suite fail when the files differ from what the policy
+  generates, so a parameter change that forgets to regenerate the corpus cannot be merged.
 
 ## How a decision is made
 
