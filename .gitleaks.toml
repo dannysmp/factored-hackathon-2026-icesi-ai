@@ -1,0 +1,10 @@
+# =============================================================================
+# .gitleaks.toml — secret-scanning configuration
+# =============================================================================
+# Purpose:  Extend gitleaks' default ruleset; used by `make secrets`, the
+#           self-test (scripts/verify_secret_scan.sh) and CI.
+# Design:   No allowlists. A finding is fixed (rotate + remove), never silenced.
+# =============================================================================
+
+[extend]
+useDefault = true
