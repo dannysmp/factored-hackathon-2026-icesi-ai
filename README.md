@@ -37,8 +37,8 @@ Design rules that follow from this:
 | Path | Purpose |
 |---|---|
 | `app/` | FastAPI backend: validated configuration, composition root, health endpoints; home of the policy engine, tool layer and dialogue controller |
-| `pipelines/` | Raw-data inventory and profiling; bronze → silver → gold jobs |
-| `contracts/` | Versioned schemas for each source table |
+| `pipelines/` | Raw-data inventory and profiling; the cleaning stage that produces typed, de-duplicated Parquet tables, quarantine and manifests |
+| `contracts/` | Versioned data contract: allowed values, ranges, canonical spellings and reference handling for each source table |
 | `policy/` | Dispute-policy rules (YAML) and the multilingual policy corpus generated from them |
 | `models/` | Risk-model training code, experiment log and model cards |
 | `evals/` | Golden set, adversarial cases, evaluation harness and judge rubric |
@@ -76,6 +76,7 @@ make run        # serve http://localhost:8000  (GET /health/live, GET /health/re
 | `make secrets` | Scan committed history and staged changes for secrets, then run the scanner self-test |
 | `make audit` | Dependency vulnerability scan |
 | `make profile` | Profile the raw data and write `reports/data-profile.md` |
+| `make pipeline` | Clean the raw data into typed Parquet and write `reports/data-quality.md` |
 | `make help` | List every target |
 
 `make secrets` does not scan unstaged or untracked files: `git add` them first.
@@ -99,6 +100,20 @@ facts (fraud prevalence, USD amount consistency, transcript availability, compla
 with a verdict on each assumption made about the data. The profile is deterministic, so a change
 in the report reflects a change in the data.
 
+`make pipeline` turns the raw files into the cleaned layer under `data/silver` (or `SILVER_DIR`):
+
+| Folder | Content |
+|---|---|
+| `silver/` | One typed Parquet file per table, de-duplicated (the latest version of each key wins) and satisfying the contract |
+| `quarantine/` | The rows that did not, with the reason code (`required`, `type`, `value`, `range`, `reference`) |
+| `extras/` | Values of columns the contract does not declare, kept beside the cleaned table |
+| `manifests/` | One JSON file per table: input digest, contract and code version, row counts, reasons and output digests |
+
+The stage is deterministic and idempotent: the same raw files, contract version and code version
+give byte-identical outputs, and a table whose inputs and outputs are unchanged is not rebuilt.
+Every raw row is either kept, superseded by a newer version of its key, or quarantined with a
+reason; `reports/data-quality.md` summarises the counts.
+
 ### Configuration
 
 Configuration is a single validated object (`app/config.py`) loaded from the environment and an
@@ -121,4 +136,5 @@ requirements, and which controls exist today, are in [SECURITY.md](SECURITY.md).
 | `ConfigError: Invalid configuration — LOG_LEVEL: …` | The message names the bad key; fix it in `.env` (see `.env.example` for accepted values) |
 | `make setup` fails with a stale lockfile | Run `uv lock` and commit the updated `uv.lock` |
 | `make profile` fails with `cannot load table …` or `lacks key column` | The message names the table; check that the raw files match the layout described under *Data* |
-| `make pipeline`, `analyze`, `train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |
+| `make pipeline` exits with code 1 | A table could not be cleaned; `reports/data-quality.md` names it and the reason (for example a file without a header row) |
+| `make analyze`, `train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |
