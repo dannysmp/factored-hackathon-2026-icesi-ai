@@ -25,6 +25,7 @@ dependencies = [
     "uvicorn[standard]>=0.30,<1",  # ASGI server that runs the FastAPI app
     "pydantic>=2.8,<3",  # Validated contracts at every boundary
     "pydantic-settings>=2.4,<3",  # Typed, fail-fast configuration from the environment
+    "pyyaml>=6,<7",  # Loads the versioned dispute-policy files
 ]
 
 [dependency-groups]
@@ -36,6 +37,7 @@ dev = [
     "ruff>=0.6,<1",  # Formatter and linter
     "mypy>=1.11,<2",  # Strict static typing
     "pip-audit>=2.7,<3",  # Dependency vulnerability scan
+    "types-pyyaml>=6,<7",  # Type stubs for the YAML loader under strict mypy
 ]
 data = [
     "duckdb>=1.1,<2",  # Columnar SQL engine for profiling and pipelines over CSV/Parquet
