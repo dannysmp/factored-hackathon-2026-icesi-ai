@@ -2,6 +2,11 @@
   "_comment": "Maintainer identity for every agent commit, push, PR and comment in this repository. Overrides the thot-core plugin configuration. Edited by the maintainer only.",
   "github_login": "dannysmp",
   "git_name": "Danny Martinez",
-  "git_emails": ["2389452+dannysmp@users.noreply.github.com"],
-  "protected_branches": []
+  "git_emails": [
+    "2389452+dannysmp@users.noreply.github.com"
+  ],
+  "protected_branches": [],
+  "external_accounts": {
+    "atlassian": "712020:1e86ea68-0996-41b6-81ba-5c52f00df0c3"
+  }
 }

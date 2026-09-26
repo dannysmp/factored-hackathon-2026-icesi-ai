@@ -1,0 +1,49 @@
+{
+  "plan": {
+    "source": "plan/PROJECT_PLAN.md",
+    "epic_heading": "^### (E\\d+) — (.+)$"
+  },
+  "tracker": {
+    "provider": "jira",
+    "site": "https://dannysmp.atlassian.net",
+    "project": "FH26",
+    "status": {
+      "todo": "To Do",
+      "in_progress": "In Progress",
+      "approved": "In Review",
+      "done": "Done"
+    }
+  },
+  "docs": {
+    "provider": "confluence",
+    "site": "https://dannysmp.atlassian.net",
+    "space": "FH26",
+    "root_title": "Transaction Disputes — Project documentation",
+    "pages": [
+      {
+        "title": "Project plan",
+        "source": "plan/PROJECT_PLAN.md"
+      },
+      {
+        "title": "Architecture",
+        "source": "plan/docs/architecture.md"
+      },
+      {
+        "title": "Data plan",
+        "source": "plan/docs/data-plan.md"
+      },
+      {
+        "title": "Evaluation plan",
+        "source": "plan/docs/evaluation-plan.md"
+      },
+      {
+        "title": "Operations runbook",
+        "source": "plan/OPERATIONS.md"
+      },
+      {
+        "title": "README",
+        "source": "README.md"
+      }
+    ]
+  }
+}
