@@ -10,14 +10,22 @@ says so; no network and no ``.env``.
 from __future__ import annotations
 
 # Standard libraries
+import asyncio  # Drive the app with a raw ASGI call
 import logging  # Capture what the service logs
 import re  # Shape of generated request identifiers
+from collections.abc import MutableMapping  # ASGI message types
 from datetime import UTC, datetime, timedelta  # Controlled time
 from typing import Any  # JSON bodies
 
 # Third-party libraries
 import pytest  # Test runner and fixtures
-from fastapi import FastAPI, Request  # Extra routes to prove default deny
+from fastapi import (  # Extra routes and clients to prove default deny
+    FastAPI,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.testclient import TestClient  # In-process client
 from pydantic import SecretStr  # Secrets in injected settings
 
@@ -121,15 +129,15 @@ def test_a_trusted_test_client_receives_a_short_lived_session(client: TestClient
     assert response.headers["x-content-type-options"] == "nosniff"
 
 
-def test_the_sandbox_login_is_not_available_unless_it_is_enabled(clock: Clock) -> None:
-    """Disabled (the default), the route does not exist: 404, not a hint that it is off."""
+def test_the_sandbox_login_reveals_nothing_when_it_is_disabled(clock: Clock) -> None:
+    """Disabled (the default), its path answers exactly like any other protected path."""
     plain = TestClient(create_app(_settings(test_identity_enabled=False), clock=clock))
 
-    response = plain.post(
-        LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": LOGIN_KEY}
-    )
+    login = plain.post(LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": LOGIN_KEY})
+    other = plain.post("/v1/other", json={"customer_id": "C1"})
 
-    _assert_problem(response, 404, "not_found", reauth=False)
+    body = _assert_problem(login, 401, "session_missing", reauth=True)
+    assert body["code"] == _assert_problem(other, 401, "session_missing", reauth=True)["code"]
 
 
 @pytest.mark.parametrize(
@@ -183,10 +191,25 @@ def test_a_malformed_customer_identifier_is_rejected(client: TestClient, custome
     assert body["fields"] == ["body.customer_id"]
 
 
-def test_the_login_secret_is_compared_after_the_body_is_validated(client: TestClient) -> None:
-    """A bad body with a good secret and a good body with a bad secret both fail, differently."""
+def test_the_login_secret_is_checked_before_the_body_is_looked_at(client: TestClient) -> None:
+    """Without the secret a caller learns nothing about the body, whatever it sent."""
+    for payload in ({}, {"document_number": "1"}, {"customer_id": "bad id"}):
+        response = client.post(LOGIN, json=payload, headers={"X-Test-Login-Key": "wrong"})
+        _assert_problem(response, 401, "test_login_rejected", reauth=True)
+        assert "fields" not in response.json()
     assert client.post(LOGIN, json={}, headers={"X-Test-Login-Key": LOGIN_KEY}).status_code == 422
-    assert client.post(LOGIN, json={"customer_id": "C1"}).status_code == 401
+
+
+def test_failed_logins_with_bad_bodies_count_toward_the_limit(client: TestClient) -> None:
+    """The limit applies to the secret check, not to well-formed requests only."""
+    for _ in range(5):
+        client.post(LOGIN, json={}, headers={"X-Test-Login-Key": "wrong"})
+
+    blocked = client.post(
+        LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": LOGIN_KEY}
+    )
+
+    _assert_problem(blocked, 429, "too_many_attempts", reauth=False)
 
 
 def test_repeated_failures_are_limited_and_the_limit_lifts_with_time(
@@ -498,3 +521,141 @@ def test_the_production_clock_is_timezone_aware_utc() -> None:
 
     assert moment.tzinfo is UTC
     assert abs((datetime.now(UTC) - moment).total_seconds()) < 5
+
+
+# -----------------------------------------------------------------------------
+# Default deny, whatever the spelling of the path
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", ["/v1", "/v1/", "/v1/x", "//v1/x", "/V1/x", "/v1//x", "///v1"])
+def test_every_spelling_of_a_protected_path_needs_a_session(client: TestClient, path: str) -> None:
+    """The bare prefix, doubled slashes and upper case are all refused without a session."""
+    # A leading double slash would be read as a host by the client, so it gets a full URL
+    response = client.get(f"http://testserver{path}")
+
+    _assert_problem(response, 401, "session_missing", reauth=True)
+
+
+def test_a_route_mounted_at_the_bare_prefix_is_protected(app: FastAPI) -> None:
+    """``GET /v1`` itself is part of the API, not only paths below it."""
+
+    @app.get("/v1")
+    def root() -> dict[str, str]:
+        return {"open": "yes"}
+
+    anonymous = TestClient(app, raise_server_exceptions=False)
+
+    _assert_problem(anonymous.get("/v1"), 401, "session_missing", reauth=True)
+
+
+def test_a_proxy_prefix_does_not_hide_a_protected_path(app: FastAPI) -> None:
+    """Behind a proxy that sets root_path, the router's path is judged, not the raw one."""
+
+    async def call(path: str, root_path: str, token: str | None) -> int:
+        sent: list[MutableMapping[str, Any]] = []
+        headers = [(b"authorization", f"Bearer {token}".encode())] if token else []
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "headers": headers,
+            "path": path,
+            "raw_path": path.encode(),
+            "root_path": root_path,
+            "scheme": "http",
+            "query_string": b"",
+            "server": ("test", 80),
+            "client": ("127.0.0.1", 1),
+        }
+
+        async def receive() -> MutableMapping[str, Any]:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: MutableMapping[str, Any]) -> None:
+            sent.append(message)
+
+        await app(scope, receive, send)
+        return int(sent[0]["status"])
+
+    token = _login(TestClient(app))["access_token"]
+
+    assert asyncio.run(call("/api/v1/probe", "/api", None)) == 401
+    assert asyncio.run(call("/api/v1/probe", "/api", token)) == 200
+
+
+def test_websocket_connections_need_a_session_too(app: FastAPI) -> None:
+    """An unauthenticated WebSocket is refused before it is accepted; a signed-in one is served."""
+
+    @app.websocket("/v1/ws")
+    async def socket(websocket: WebSocket) -> None:
+        await websocket.accept()
+        await websocket.send_text(principal_of(websocket).customer_id)  # type: ignore[arg-type]
+        await websocket.close()
+
+    client = TestClient(app)
+    token = _login(client, "CUST-WS")["access_token"]
+
+    with pytest.raises(WebSocketDisconnect) as refused, client.websocket_connect("/v1/ws"):
+        pass
+    assert refused.value.code == 1008
+    with client.websocket_connect("/v1/ws", headers=_bearer(token)) as socket_:
+        assert socket_.receive_text() == "CUST-WS"
+
+
+# -----------------------------------------------------------------------------
+# Failure paths keep the protective headers; error details
+# -----------------------------------------------------------------------------
+
+
+def test_an_unexpected_failure_still_carries_the_protective_headers(client: TestClient) -> None:
+    """The 500 path is outside the request-context layer and adds the headers itself."""
+    token = _login(client)["access_token"]
+
+    response = client.get("/v1/boom", headers=_bearer(token))
+
+    assert response.status_code == 500
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-request-id"] == response.json()["request_id"]
+
+
+def test_protective_headers_are_not_duplicated_on_problem_responses(client: TestClient) -> None:
+    """A problem document that passes through the request-context layer has each header once."""
+    response = client.get("/v1/session")
+
+    for name in ("x-content-type-options", "cache-control", "x-request-id"):
+        assert len(response.headers.get_list(name)) == 1
+
+
+def test_a_full_revocation_store_makes_logout_a_distinct_retryable_failure(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Not a generic 500: the client is told to retry, and the session is left as it was."""
+    token = _login(client)["access_token"]
+
+    def full(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("revocation store is full")
+
+    monkeypatch.setattr("app.security.sessions.InMemoryRevocationStore.revoke", full)
+    response = client.post("/v1/auth/logout", headers=_bearer(token))
+
+    _assert_problem(response, 503, "service_unavailable", reauth=False)
+    assert response.headers["retry-after"] == "60"
+    assert client.get("/v1/session", headers=_bearer(token)).status_code == 200
+
+
+def test_http_errors_other_than_404_and_405_are_not_called_validation_errors(app: FastAPI) -> None:
+    """Other statuses keep their number and get a neutral code."""
+
+    @app.get("/v1/teapot")
+    def teapot() -> None:
+        raise HTTPException(status_code=418)
+
+    client = TestClient(app, raise_server_exceptions=False)
+    token = _login(client)["access_token"]
+
+    response = client.get("/v1/teapot", headers=_bearer(token))
+
+    _assert_problem(response, 418, "request_refused", reauth=False)

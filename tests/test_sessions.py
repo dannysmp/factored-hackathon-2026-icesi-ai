@@ -9,6 +9,8 @@ and moved by hand, and tokens are forged with the same library to prove what is 
 from __future__ import annotations
 
 # Standard libraries
+import threading  # Concurrent attempts against the limiter
+import time  # Widen the race window
 from datetime import UTC, datetime, timedelta  # Controlled time
 
 # Third-party libraries
@@ -282,41 +284,81 @@ def test_the_revocation_store_forgets_expired_entries_and_never_forgets_live_one
 # -----------------------------------------------------------------------------
 
 
-def test_failures_beyond_the_limit_are_refused_until_the_window_passes() -> None:
-    """Five failures in a minute block the client; a minute later it may try again."""
+def test_attempts_beyond_the_limit_are_refused_until_the_window_passes() -> None:
+    """Five attempts in a minute are allowed; the sixth waits until the first leaves the window."""
     clock = Clock()
     limiter = AttemptLimiter(max_failures=5, window_seconds=60, clock=clock)
 
-    for _ in range(4):
-        limiter.record_failure("client")
-        assert limiter.retry_after("client") == 0
-    limiter.record_failure("client")
-    assert limiter.retry_after("client") == 60
+    assert [limiter.begin_attempt("client") for _ in range(5)] == [0, 0, 0, 0, 0]
+    assert limiter.begin_attempt("client") == 60
 
     clock.now = START + timedelta(seconds=59)
-    assert limiter.retry_after("client") == 1
+    assert limiter.begin_attempt("client") == 1
     clock.now = START + timedelta(seconds=60)
-    assert limiter.retry_after("client") == 0
+    assert limiter.begin_attempt("client") == 0
+
+
+def test_a_refused_attempt_is_not_counted_again() -> None:
+    """Waiting does not extend the wait: the count stops at the limit."""
+    clock = Clock()
+    limiter = AttemptLimiter(max_failures=2, window_seconds=60, clock=clock)
+    limiter.begin_attempt("a")
+    limiter.begin_attempt("a")
+
+    for _ in range(10):
+        assert limiter.begin_attempt("a") == 60
+
+    clock.now = START + timedelta(seconds=60)
+    assert limiter.begin_attempt("a") == 0
 
 
 def test_clients_are_counted_separately_and_success_resets() -> None:
-    """One client's failures never block another; a reset clears the count."""
+    """One client's attempts never block another; a reset clears the count."""
     limiter = AttemptLimiter(max_failures=2, window_seconds=60, clock=Clock())
-    limiter.record_failure("a")
-    limiter.record_failure("a")
+    limiter.begin_attempt("a")
+    limiter.begin_attempt("a")
 
-    assert limiter.retry_after("a") > 0
-    assert limiter.retry_after("b") == 0
+    assert limiter.begin_attempt("a") > 0
+    assert limiter.begin_attempt("b") == 0
     limiter.reset("a")
-    assert limiter.retry_after("a") == 0
+    assert limiter.begin_attempt("a") == 0
 
 
 def test_the_limiter_table_is_bounded() -> None:
-    """A flood of distinct clients cannot grow memory without limit."""
+    """A flood of distinct clients cannot grow memory without limit; the oldest is dropped."""
     limiter = AttemptLimiter(max_failures=1, window_seconds=60, clock=Clock(), capacity=3)
 
     for name in ("a", "b", "c", "d"):
-        limiter.record_failure(name)
+        limiter.begin_attempt(name)
 
-    assert limiter.retry_after("a") == 0  # the oldest entry was dropped
-    assert limiter.retry_after("d") > 0
+    assert limiter.begin_attempt("a") == 0  # the oldest entry was dropped
+    assert limiter.begin_attempt("d") > 0
+
+
+def test_concurrent_attempts_cannot_all_pass_the_check() -> None:
+    """Forty simultaneous attempts from one client: at most the limit get through."""
+    limiter = AttemptLimiter(max_failures=5, window_seconds=60, clock=Clock())
+    original = limiter._recent
+
+    def slow_recent(key: str, now: datetime) -> list[datetime]:
+        """Widen the window between checking and counting so an unlocked check would race."""
+        found = original(key, now)
+        time.sleep(0.002)
+        return found
+
+    limiter._recent = slow_recent  # type: ignore[method-assign]
+    barrier = threading.Barrier(40)
+    results: list[int] = []
+
+    def attempt() -> None:
+        barrier.wait()
+        results.append(limiter.begin_attempt("client"))
+
+    threads = [threading.Thread(target=attempt) for _ in range(40)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert results.count(0) == 5
+    assert len(results) == 40

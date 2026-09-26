@@ -18,9 +18,10 @@ There is no customer-facing login here. A real deployment receives sessions from
 identity provider; this service only verifies them. For sandbox use, ``POST /v1/auth/test-sessions``
 stands in for that provider:
 
-- it exists only when ``TEST_IDENTITY_ENABLED`` is true (never in production) and answers 404
-  otherwise;
-- the caller proves it is a trusted test client with the shared secret in ``X-Test-Login-Key``;
+- it exists only when ``TEST_IDENTITY_ENABLED`` is true (never in production); when it is off the
+  path is protected like every other ``/v1`` path, so it reveals nothing;
+- the caller proves it is a trusted test client with the shared secret in ``X-Test-Login-Key``,
+  checked (and the attempt counted) before the body is looked at;
 - the body carries only ``customer_id``. A document number, a name or any other field is
   rejected: **an identifier the customer types is never proof of identity**;
 - failed attempts are limited per client address.
@@ -46,7 +47,7 @@ from datetime import datetime  # Expiry in responses
 from typing import Annotated  # Header parameter declaration
 
 # Third-party libraries
-from fastapi import APIRouter, Header, Request, Response  # Routing and request access
+from fastapi import APIRouter, Depends, Header, Request, Response  # Routing and request access
 from pydantic import BaseModel, ConfigDict, Field, SecretStr  # Validated models
 
 # Local modules
@@ -132,15 +133,18 @@ def build_auth_router(
     if test_login_key is not None:
         expected = test_login_key.get_secret_value().encode("utf-8")
 
-        @router.post(TEST_SESSIONS_PATH, status_code=201)
-        def create_test_session(
-            body: TestLoginRequest,
+        def authorize_test_client(
             request: Request,
             x_test_login_key: Annotated[str | None, Header()] = None,
-        ) -> SessionResponse:
-            """Issue a session for a trusted test client (sandbox only)."""
+        ) -> None:
+            """Refuse the sandbox login unless the caller is limited-in and holds the secret.
+
+            Runs before the body is validated, so an unauthenticated caller learns nothing about
+            the body's shape. The attempt is counted first and cleared on success, which makes
+            the limit hold under concurrent attempts.
+            """
             client = request.client.host if request.client else "unknown"
-            wait = limiter.retry_after(client)
+            wait = limiter.begin_attempt(client)
             if wait:
                 logger.warning("test_login_limited request_id=%s", current_request_id())
                 raise ProblemError(
@@ -152,7 +156,6 @@ def build_auth_router(
                 )
             supplied = (x_test_login_key or "").encode("utf-8")
             if not hmac.compare_digest(supplied, expected):
-                limiter.record_failure(client)
                 logger.warning("test_login_rejected request_id=%s", current_request_id())
                 raise ProblemError(
                     ErrorCode.TEST_LOGIN_REJECTED,
@@ -161,6 +164,12 @@ def build_auth_router(
                     reauth_required=True,
                 )
             limiter.reset(client)
+
+        @router.post(
+            TEST_SESSIONS_PATH, status_code=201, dependencies=[Depends(authorize_test_client)]
+        )
+        def create_test_session(body: TestLoginRequest) -> SessionResponse:
+            """Issue a session for a trusted test client (sandbox only)."""
             issued = sessions.issue(body.customer_id)
             logger.info(
                 "session_issued session_id=%s request_id=%s",
@@ -186,7 +195,17 @@ def build_auth_router(
     def logout(request: Request) -> Response:
         """End the current session: its token stops working immediately."""
         principal = principal_of(request)
-        sessions.revoke(principal)
+        try:
+            sessions.revoke(principal)
+        except RuntimeError:
+            # The revocation store is full: say so, and leave the session as it was
+            raise ProblemError(
+                ErrorCode.SERVICE_UNAVAILABLE,
+                503,
+                "The session could not be ended",
+                "Try again shortly.",
+                headers={"Retry-After": "60"},
+            ) from None
         logger.info(
             "session_revoked session_id=%s request_id=%s",
             principal.session_id,

@@ -20,13 +20,19 @@ Design Principles
 
 Runtime Contract
 ----------------
-``AttemptLimiter.retry_after(key) -> int`` is 0 when an attempt is allowed, otherwise the
-seconds to wait. ``record_failure(key)`` and ``reset(key)`` update the count.
+``AttemptLimiter.begin_attempt(key) -> int`` is 0 when an attempt may proceed (and counts it as a
+failure right away), otherwise the seconds to wait. ``reset(key)`` clears the count after a
+success. Counting first makes the check and the count one step, so concurrent attempts cannot
+all pass the check before any is counted.
 
 Limitations
 -----------
 In memory and per process: with several processes the effective limit is multiplied, and a
-restart clears it. A shared store replaces it when the service runs as more than one process.
+restart clears it. The key is what the caller passes (the route uses the connection's client
+address, which behind a proxy is the proxy's address unless the server trusts forwarded
+headers). When the table is full the oldest key is dropped first, so a flood of distinct
+clients can evict a blocked one. A shared store replaces it when the service runs as more than
+one process.
 """
 
 from __future__ import annotations
@@ -69,24 +75,21 @@ class AttemptLimiter:
             self._failures.pop(key, None)
         return recent
 
-    def retry_after(self, key: str) -> int:
-        """Seconds until an attempt is allowed again; 0 when it is allowed now."""
-        now = self._clock()
-        with self._lock:
-            recent = self._recent(key, now)
-            if len(recent) < self._max:
-                return 0
-            release = recent[0] + self._window
-        return max(1, math.ceil((release - now).total_seconds()))
+    def begin_attempt(self, key: str) -> int:
+        """Count an attempt by ``key`` and say how long to wait; 0 means it may proceed.
 
-    def record_failure(self, key: str) -> None:
-        """Count one failed attempt by ``key``."""
+        The attempt is counted as a failure immediately; a success calls :meth:`reset`.
+        """
         now = self._clock()
         with self._lock:
             recent = self._recent(key, now)
+            if len(recent) >= self._max:
+                release = recent[0] + self._window
+                return max(1, math.ceil((release - now).total_seconds()))
             if key not in self._failures and len(self._failures) >= self._capacity:
                 self._failures.pop(next(iter(self._failures)))
             self._failures[key] = [*recent, now]
+            return 0
 
     def reset(self, key: str) -> None:
         """Forget the failures of ``key`` after a success."""

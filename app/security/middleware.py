@@ -16,8 +16,10 @@ Out: issuing tokens (``sessions``), the routes, and what a customer may do once 
 
 Design Principles
 -----------------
-- Default deny. Every path under ``/v1/`` requires a session unless it is listed as public, so a
-  route added later is protected without anyone remembering to protect it.
+- Default deny. ``/v1`` and every path under it (HTTP and WebSocket) require a session unless
+  listed as public, so a route added later is protected without anyone remembering to. The
+  decision uses one normalisation of the path (without ``root_path``, slashes collapsed, lower
+  case) so no spelling of a protected path escapes it.
 - The failure says what the client can do: ``reauth_required`` is true for a missing, invalid,
   expired or revoked session.
 - A supplied request identifier is used only if it has a safe shape; otherwise a new one is
@@ -56,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "x-request-id"
 REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9._-]{8,64}")
-API_PREFIX = "/v1/"
+API_PREFIX = "/v1"
 MAX_TOKEN_LENGTH = 2048
 
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
@@ -67,6 +69,24 @@ _REJECTION_TITLES: dict[ErrorCode, str] = {
     ErrorCode.SESSION_EXPIRED: "The session has expired",
     ErrorCode.SESSION_REVOKED: "The session was ended",
 }
+
+
+def route_path(scope: Scope) -> str:
+    """The path the router will match: without ``root_path``, slashes collapsed, lower case.
+
+    The protected-path decision uses this one normalisation, so a request cannot reach a route
+    under a spelling the check did not recognise.
+    """
+    path: str = scope.get("path", "")
+    root: str = scope.get("root_path", "")
+    if root and path.startswith(root):
+        path = path[len(root) :]
+    return re.sub(r"/+", "/", path).lower()
+
+
+def is_protected(path: str) -> bool:
+    """Whether ``path`` (already normalised by ``route_path``) is part of the versioned API."""
+    return path == API_PREFIX or path.startswith(API_PREFIX + "/")
 
 
 def current_request_id() -> str:
@@ -109,17 +129,19 @@ class RequestContextMiddleware:
         )
         _state(scope)["request_id"] = request_id
         token = _request_id.set(request_id)
-        api_call = scope["path"].startswith(API_PREFIX)
+        api_call = is_protected(route_path(scope))
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
                 present = {key.lower() for key, _ in headers}
-                extra = [(b"x-content-type-options", b"nosniff")]
-                if b"x-request-id" not in present:
-                    extra.append((b"x-request-id", request_id.encode("latin-1")))
+                wanted = [
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"x-request-id", request_id.encode("latin-1")),
+                ]
                 if api_call:
-                    extra.append((b"cache-control", b"no-store"))
+                    wanted.append((b"cache-control", b"no-store"))
+                extra = [(key, value) for key, value in wanted if key not in present]
                 message = {**message, "headers": [*headers, *extra]}
             await send(message)
 
@@ -159,7 +181,7 @@ def _rejection(code: ErrorCode) -> ProblemError:
 
 
 class SessionAuthMiddleware:
-    """Requires a valid session for every path under ``/v1/`` that is not public."""
+    """Requires a valid session for ``/v1`` and everything under it that is not public."""
 
     def __init__(
         self, app: ASGIApp, sessions: SessionService, public_paths: Iterable[str] = ()
@@ -169,13 +191,14 @@ class SessionAuthMiddleware:
         self._public = frozenset(public_paths)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Handle one request."""
-        path = scope["path"] if scope["type"] == "http" else ""
-        if not path.startswith(API_PREFIX) or path in self._public:
+        """Handle one HTTP request or WebSocket connection; other scopes (lifespan) pass through."""
+        kind = scope["type"]
+        path = route_path(scope)
+        if kind not in ("http", "websocket") or not is_protected(path) or path in self._public:
             await self._app(scope, receive, send)
             return
 
-        # Resolve the session or answer with the standard problem document
+        # Resolve the session or refuse with the standard problem document
         try:
             principal = self._sessions.verify(_bearer_token(scope))
         except SessionRejected as rejected:
@@ -190,5 +213,9 @@ class SessionAuthMiddleware:
         logger.warning(
             "auth_rejected code=%s request_id=%s", problem.code.value, current_request_id()
         )
+        if kind == "websocket":
+            # Policy violation: refuse before the connection is accepted
+            await send({"type": "websocket.close", "code": 1008})
+            return
         response = problem_response(problem, str(_state(scope).get("request_id", "-")))
         await response(scope, receive, send)

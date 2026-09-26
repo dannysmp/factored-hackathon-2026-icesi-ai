@@ -54,6 +54,8 @@ class ErrorCode(StrEnum):
     VALIDATION_ERROR = "validation_error"
     NOT_FOUND = "not_found"
     METHOD_NOT_ALLOWED = "method_not_allowed"
+    REQUEST_REFUSED = "request_refused"
+    SERVICE_UNAVAILABLE = "service_unavailable"
     INTERNAL_ERROR = "internal_error"
 
 
@@ -121,7 +123,13 @@ def problem_response(problem: ProblemError, request_id: str) -> JSONResponse:
         body["detail"] = problem.detail
     if problem.fields:
         body["fields"] = list(problem.fields)
-    headers = {"X-Request-ID": request_id, **problem.headers}
+    # Every problem document carries the same protective headers, whichever layer produced it
+    headers = {
+        "X-Request-ID": request_id,
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+        **problem.headers,
+    }
     return JSONResponse(
         body, status_code=problem.status, headers=headers, media_type=PROBLEM_CONTENT_TYPE
     )

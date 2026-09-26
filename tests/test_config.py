@@ -198,7 +198,7 @@ def test_short_secrets_are_rejected_without_echoing_them(
 
 def test_the_shortest_accepted_secrets_are_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
     """The bounds are inclusive: 32 and 16 characters."""
-    monkeypatch.setenv("SESSION_SIGNING_KEY", "k" * 32)
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "abcdefgh" * 4)
     monkeypatch.setenv("TEST_IDENTITY_KEY", "t" * 16)
 
     settings = load_settings(env_file=None)
@@ -254,3 +254,14 @@ def test_the_sandbox_login_can_be_enabled_outside_production(
     monkeypatch.setenv("TEST_IDENTITY_KEY", "t" * 16)
 
     assert load_settings(env_file=None).test_identity_enabled is True
+
+
+@pytest.mark.parametrize("key", ["k" * 40, "ab" * 20, "abcdefg" * 6])
+def test_a_signing_key_with_few_different_characters_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, key: str
+) -> None:
+    """Forty repeated characters are long but guessable."""
+    monkeypatch.setenv("SESSION_SIGNING_KEY", key)
+
+    with pytest.raises(ConfigError, match="different characters"):
+        load_settings(env_file=None)

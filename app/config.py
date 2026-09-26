@@ -69,6 +69,7 @@ ALLOWED_MODELS: frozenset[str] = frozenset(
 # Shortest accepted secrets, in characters.
 MIN_SIGNING_KEY_LENGTH = 32
 MIN_TEST_KEY_LENGTH = 16
+MIN_DISTINCT_CHARACTERS = 8
 
 
 class AppEnvironment(StrEnum):
@@ -177,6 +178,10 @@ class Settings(BaseSettings):
         """A short signing key can be guessed; require at least 32 characters."""
         if value is not None and len(value.get_secret_value()) < MIN_SIGNING_KEY_LENGTH:
             raise ValueError(f"must be at least {MIN_SIGNING_KEY_LENGTH} characters")
+        if value is not None and len(set(value.get_secret_value())) < MIN_DISTINCT_CHARACTERS:
+            raise ValueError(
+                f"must contain at least {MIN_DISTINCT_CHARACTERS} different characters"
+            )
         return value
 
     @field_validator("test_identity_key")

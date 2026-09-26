@@ -147,6 +147,8 @@ customer types (a document number, a name) is never accepted as proof of identit
 rejects any field but `customer_id`, and real deployments receive sessions from the bank's
 identity provider.
 
+Failed sandbox logins are counted per connection address; behind a reverse proxy that address is the proxy's unless the server is configured to trust forwarded headers, and the limiter is per process.
+
 Every failure has the same shape (an RFC 9457 problem document) with a stable `code`, a safe message
 and a `request_id`; the same identifier is in the `X-Request-ID` response header, which a client may
 also supply. Set `SESSION_SIGNING_KEY` (at least 32 characters, for example `openssl rand -hex 32`);

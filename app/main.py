@@ -126,7 +126,7 @@ def _register_error_handlers(app: FastAPI) -> None:
             404: (ErrorCode.NOT_FOUND, "Not found"),
             405: (ErrorCode.METHOD_NOT_ALLOWED, "Method not allowed"),
         }
-        code, title = known.get(error.status_code, (ErrorCode.VALIDATION_ERROR, "Request refused"))
+        code, title = known.get(error.status_code, (ErrorCode.REQUEST_REFUSED, "Request refused"))
         problem = ProblemError(code, error.status_code, title, headers=dict(error.headers or {}))
         return problem_response(problem, _request_id(request))
 
@@ -177,8 +177,12 @@ def create_app(settings: Settings | None = None, *, clock: Clock = utc_now) -> F
     limiter = AttemptLimiter(clock=clock)
     app = FastAPI(title="Dispute Intake API", version=resolved.service_version)
 
+    # The sandbox login is public only while it exists; otherwise its path is protected too
+    test_key = resolved.test_identity_key if resolved.test_identity_enabled else None
+    public_paths = (TEST_SESSIONS_PATH,) if test_key is not None else ()
+
     # Middleware: the last one added is the outermost, so the request context wraps the rest
-    app.add_middleware(SessionAuthMiddleware, sessions=sessions, public_paths=(TEST_SESSIONS_PATH,))
+    app.add_middleware(SessionAuthMiddleware, sessions=sessions, public_paths=public_paths)
     app.add_middleware(RequestContextMiddleware)
     _register_error_handlers(app)
 
@@ -197,7 +201,6 @@ def create_app(settings: Settings | None = None, *, clock: Clock = utc_now) -> F
         }
 
     # The sandbox login is registered only when it is enabled (never in production)
-    test_key = resolved.test_identity_key if resolved.test_identity_enabled else None
     app.include_router(
         build_auth_router(sessions=sessions, test_login_key=test_key, limiter=limiter)
     )
