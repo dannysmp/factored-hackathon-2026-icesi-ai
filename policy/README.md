@@ -28,6 +28,21 @@ in every language (`overview`, `who-can-dispute`, `filing-windows`, `confirmatio
 `human-review`, `fraud-claims`, `decision-codes`) so that an answer can cite one whichever
 language the customer used, and rules a policy version switches off are left out of the text.
 
+The wording is fixed per language, not per country:
+
+- Products are shown by a display name in each language ("Conta poupança", "Cuenta de ahorros",
+  "Savings account"); the dataset codes ("Cuenta Ahorro") stay the engine's identifiers and never
+  appear in the text.
+- Alternatives use "or" (a charge is a payment or a purchase) and exclusions use "nor"; a fraud
+  report is a "reporte de fraude" / "contestação por fraude", while "reclamo" / "reclamação" means
+  a complaint only.
+- Deadlines are in calendar days, with a worked example taken from the policy's shortest window.
+- Spanish writes thousands with a space and decimals with a comma (the neutral form for Mexico,
+  Colombia and Argentina), Portuguese uses Brazilian conventions. A chat reply that quotes a number
+  should format it for the customer's country when it is rendered.
+- The generation details are in the front matter of each file, outside the sections that retrieval
+  searches. A native-speaker read of the final wording is recommended before customer use.
+
 - `make corpus` regenerates the files; do not edit them by hand.
 - `make corpus-check` and the test suite fail when the files differ from what the policy
   generates, so a parameter change that forgets to regenerate the corpus cannot be merged.
