@@ -48,8 +48,9 @@ expect_rc() {
   if [ "$want" = "clean" ] && [ "$got" != "0" ]; then
     echo "FAIL: $label — clean control was flagged (rc=$got)" >&2; exit 1
   fi
-  if [ "$want" = "leak" ] && [ "$got" = "0" ]; then
-    echo "FAIL: $label — planted AWS key was not flagged" >&2; exit 1
+  # gitleaks exits 1 when it finds a leak; any other non-zero code is a crash, not a detection.
+  if [ "$want" = "leak" ] && [ "$got" != "1" ]; then
+    echo "FAIL: $label — planted AWS key was not flagged (rc=$got, expected 1)" >&2; exit 1
   fi
 }
 

@@ -44,7 +44,20 @@ _PROBE = textwrap.dedent(
     import importlib, json, os, sys
 
     keys = set(json.loads(sys.argv[2]))
+    owned_roots = tuple(json.loads(sys.argv[3]))
     env_reads, env_files = [], []
+
+    def called_from_owned_code():
+        # Bulk reads by third-party libraries are legitimate; only the project's own code counts.
+        frame = sys._getframe(2)
+        return frame.f_code.co_filename.startswith(owned_roots)
+
+    def bulk(name):
+        def method(self, *args, **kwargs):
+            if called_from_owned_code():
+                env_reads.append("*" + name)
+            return getattr(super(Probe, self), name)(*args, **kwargs)
+        return method
 
     class Probe(dict):
         def __getitem__(self, key):
@@ -62,11 +75,19 @@ _PROBE = textwrap.dedent(
                 env_reads.append(key)
             return super().__contains__(key)
 
+        __iter__ = bulk("__iter__")
+        keys = bulk("keys")
+        values = bulk("values")
+        items = bulk("items")
+        copy = bulk("copy")
+
     os.environ = Probe(os.environ)
 
     def hook(event, args):
-        if event == "open" and str(args[0]).endswith(".env"):
-            env_files.append(str(args[0]))
+        if event == "open":
+            name = os.path.basename(str(args[0]))
+            if name == ".env" or name.startswith(".env."):
+                env_files.append(str(args[0]))
 
     sys.addaudithook(hook)
     importlib.import_module(sys.argv[1])
@@ -85,7 +106,15 @@ def _import_in_fresh_interpreter(
         **extra_env,
     }
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell, trusted interpreter path
-        [sys.executable, "-c", _PROBE, module, json.dumps(_SERVICE_KEYS)],
+        [
+            sys.executable,
+            "-c",
+            _PROBE,
+            module,
+            json.dumps(_SERVICE_KEYS),
+            # Code under these roots is "ours": the project package and the scratch working dir.
+            json.dumps([str(_REPO_ROOT / "app"), str(workdir)]),
+        ],
         cwd=workdir,
         env=env,
         capture_output=True,
@@ -145,3 +174,42 @@ def test_probe_detects_a_dotenv_file_read(tmp_path: Path) -> None:
     )
 
     assert observed["env_files"] == [".env"]
+
+
+@pytest.mark.parametrize(
+    ("statement", "expected"),
+    [
+        ("SNAPSHOT = dict(os.environ)", "*keys"),
+        ("NAMES = list(os.environ)", "*__iter__"),
+        ("PAIRS = list(os.environ.items())", "*items"),
+        ("COPY = os.environ.copy()", "*copy"),
+    ],
+    ids=["dict-copy", "iteration", "items", "copy"],
+)
+def test_probe_detects_bulk_environment_reads(
+    tmp_path: Path, statement: str, expected: str
+) -> None:
+    """Revert check: reading the whole environment at import is caught, whatever the spelling."""
+    package = tmp_path / "impure_bulk"
+    package.mkdir()
+    (package / "__init__.py").write_text(f"import os\n{statement}\n")
+
+    observed = _import_in_fresh_interpreter(
+        "impure_bulk", tmp_path, {"PYTHONPATH": f"{tmp_path}:{_REPO_ROOT}"}
+    )
+
+    assert expected in observed["env_reads"]
+
+
+def test_probe_detects_dotenv_variants(tmp_path: Path) -> None:
+    """Revert check: environment-specific dotenv files such as .env.local are covered too."""
+    (tmp_path / ".env.local").write_text("SERVICE_VERSION=x\n")
+    package = tmp_path / "impure_variant"
+    package.mkdir()
+    (package / "__init__.py").write_text("DATA = open('.env.local').read()  # noqa: SIM115\n")
+
+    observed = _import_in_fresh_interpreter(
+        "impure_variant", tmp_path, {"PYTHONPATH": f"{tmp_path}:{_REPO_ROOT}"}
+    )
+
+    assert observed["env_files"] == [".env.local"]
