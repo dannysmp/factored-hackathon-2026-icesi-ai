@@ -703,7 +703,7 @@ def _git(*arguments: str) -> str | None:
     return result.stdout.strip()
 
 
-def _git_version() -> str:
+def git_version() -> str:
     """Short commit id of the working tree, suffixed ``-dirty`` when tracked files have changes.
 
     ``unknown`` outside a repository. Uncommitted changes are marked so outputs built from
@@ -736,7 +736,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr
     )
     outcomes = run_silver(
-        args.raw, args.out, code_version=args.code_version or _git_version(), force=args.force
+        args.raw, args.out, code_version=args.code_version or git_version(), force=args.force
     )
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(render_quality_report(outcomes), encoding="utf-8")

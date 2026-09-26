@@ -370,3 +370,264 @@ def build_clean_dataset(data_dir: Path) -> None:
             )
         ],
     )
+
+
+def build_service_dataset(data_dir: Path) -> None:
+    """Build the clean dataset plus service contacts, complaints and surveys of known values.
+
+    Five contacts (transactional of 300 and 600 seconds and one without duration, wait or score;
+    a complaint of 120 seconds; one without a reason category), eleven complaints of which six are
+    disputes (resolved in 10 and 20 days, one of them with the SLA
+    breached and a repeat complainer; closed in 30 days; open; rejected; escalated with days
+    recorded that the overall figure must ignore), one complaint that only looks like a dispute
+    (another subcategory), one of the neighbouring undue-charge subcategory, one of the Transactions
+    category without a subcategory, one of another category without a subcategory, one in another
+    category, and a survey per contact plus one with no contact and one with a dangling reference.
+    """
+    build_clean_dataset(data_dir)
+    write_dimension(data_dir, "service_agents", [valid_row("service_agents", agent_id="A1")])
+    january, february = date(2025, 1, 10), date(2025, 2, 10)
+
+    def contact(name: str, when: date, **values: str) -> dict[str, str]:
+        return valid_row(
+            "call_center_interactions",
+            interaction_id=name,
+            interaction_date=f"{when:%Y-%m-%d} 09:00:00",
+            process_date=f"{when:%Y-%m-%d}",
+            customer_id="C1",
+            agent_id="A1",
+            **values,
+        )
+
+    write_partition(
+        data_dir,
+        "call_center_interactions",
+        january,
+        [
+            contact(
+                "I1",
+                january,
+                reason_category="Transaccional",
+                duration_seconds="300",
+                wait_time_seconds="60",
+                was_resolved="True",
+                was_escalated="False",
+                requires_followup="False",
+                detected_sentiment="Neutral",
+                sentiment_score="0.00",
+            ),
+            contact(
+                "I4",
+                january,
+                reason_category="Transaccional",
+                duration_seconds="",
+                wait_time_seconds="",
+                detected_sentiment="Positivo",
+                sentiment_score="",
+            ),
+            contact(
+                "I5",
+                january,
+                reason_category="",
+                duration_seconds="60",
+                wait_time_seconds="10",
+                detected_sentiment="Neutral",
+                sentiment_score="0.00",
+            ),
+            contact(
+                "I3",
+                january,
+                reason_category="Queja",
+                duration_seconds="120",
+                wait_time_seconds="30",
+                was_resolved="False",
+                was_escalated="True",
+                requires_followup="True",
+                detected_sentiment="Muy Negativo",
+                sentiment_score="-0.85",
+            ),
+        ],
+    )
+    write_partition(
+        data_dir,
+        "call_center_interactions",
+        february,
+        [
+            contact(
+                "I2",
+                february,
+                reason_category="Transaccional",
+                duration_seconds="600",
+                wait_time_seconds="120",
+                was_resolved="False",
+                was_escalated="False",
+                requires_followup="True",
+                detected_sentiment="Negativo",
+                sentiment_score="-0.50",
+            )
+        ],
+    )
+
+    def complaint(name: str, when: date, **values: str) -> dict[str, str]:
+        return valid_row(
+            "complaints",
+            complaint_id=name,
+            creation_date=f"{when:%Y-%m-%d} 09:00:00",
+            process_date=f"{when:%Y-%m-%d}",
+            customer_id="C1",
+            assigned_agent_id="A1",
+            affected_product_id="P1",
+            related_branch_id="B1",
+            origin_interaction_id="",
+            **values,
+        )
+
+    dispute = {"category": "Transactions", "subcategory": "Cargo no reconocido"}
+    write_partition(
+        data_dir,
+        "complaints",
+        january,
+        [
+            complaint(
+                "K1",
+                january,
+                **dispute,
+                status="Resolved",
+                resolution_days="10",
+                sla_breached="False",
+                is_repeat_complainer="False",
+                currency="USD",
+                claimed_amount="100.00",
+            ),
+            complaint(
+                "K2",
+                january,
+                **dispute,
+                status="Resolved",
+                resolution_days="20",
+                sla_breached="True",
+                is_repeat_complainer="True",
+                currency="MXN",
+                claimed_amount="200.00",
+            ),
+            complaint(
+                "K7",
+                january,
+                **dispute,
+                status="Rejected",
+                resolution_days="",
+                sla_breached="False",
+                is_repeat_complainer="False",
+                currency="",
+                claimed_amount="",
+            ),
+        ],
+    )
+    write_partition(
+        data_dir,
+        "complaints",
+        february,
+        [
+            complaint(
+                "K3",
+                february,
+                **dispute,
+                status="In Process",
+                resolution_days="",
+                sla_breached="False",
+                is_repeat_complainer="False",
+                currency="",
+                claimed_amount="",
+                first_response_date="",
+            ),
+            complaint(
+                "K6",
+                february,
+                **dispute,
+                status="Closed",
+                resolution_days="30",
+                sla_breached="False",
+                is_repeat_complainer="False",
+                currency="ARS",
+                claimed_amount="300.00",
+            ),
+            complaint(
+                "K8",
+                february,
+                **dispute,
+                status="Escalated",
+                resolution_days="40",
+                sla_breached="False",
+                is_repeat_complainer="False",
+                currency="",
+                claimed_amount="",
+            ),
+            complaint(
+                "K4",
+                february,
+                category="Transactions",
+                subcategory="Otro",
+                status="Open",
+                resolution_days="",
+            ),
+            complaint(
+                "K9",
+                february,
+                category="Fees",
+                subcategory="Cobro indebido",
+                status="Open",
+                resolution_days="",
+            ),
+            complaint(
+                "K11",
+                february,
+                category="Fees",
+                subcategory="",
+                status="Open",
+                resolution_days="",
+            ),
+            complaint(
+                "K10",
+                february,
+                category="Transactions",
+                subcategory="",
+                status="Open",
+                resolution_days="",
+            ),
+            complaint(
+                "K5",
+                february,
+                category="Fees",
+                subcategory="Cargo no reconocido",
+                status="Open",
+                resolution_days="",
+            ),
+        ],
+    )
+
+    def survey(name: str, contact_id: str, score: str, when: date) -> dict[str, str]:
+        return valid_row(
+            "satisfaction_surveys",
+            survey_id=name,
+            survey_date=f"{when:%Y-%m-%d} 10:00:00",
+            process_date=f"{when:%Y-%m-%d}",
+            interaction_id=contact_id,
+            customer_id="C1",
+            agent_id="A1",
+            main_score=score,
+        )
+
+    write_partition(
+        data_dir,
+        "satisfaction_surveys",
+        january,
+        [
+            survey("S1", "I1", "5", january),
+            survey("S3", "I3", "1", january),
+            survey("S4", "I4", "4", january),
+            survey("S5", "", "2", january),
+            survey("S6", "I99", "3", january),
+            survey("S7", "I5", "5", january),
+        ],
+    )
+    write_partition(data_dir, "satisfaction_surveys", february, [survey("S2", "I2", "3", february)])

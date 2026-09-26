@@ -37,7 +37,7 @@ Design rules that follow from this:
 | Path | Purpose |
 |---|---|
 | `app/` | FastAPI backend: validated configuration, composition root, health endpoints; home of the policy engine, tool layer and dialogue controller |
-| `pipelines/` | Raw-data inventory and profiling; the cleaning stage that produces typed, de-duplicated Parquet tables, quarantine and manifests |
+| `pipelines/` | Raw-data inventory and profiling; the cleaning stage that produces typed, de-duplicated Parquet tables, quarantine and manifests; the dispute marts and the workflow analysis |
 | `contracts/` | Versioned data contract: allowed values, ranges, canonical spellings and reference handling for each source table |
 | `policy/` | Dispute-policy rules (YAML) and the multilingual policy corpus generated from them |
 | `models/` | Risk-model training code, experiment log and model cards |
@@ -77,6 +77,7 @@ make run        # serve http://localhost:8000  (GET /health/live, GET /health/re
 | `make audit` | Dependency vulnerability scan |
 | `make profile` | Profile the raw data and write `reports/data-profile.md` |
 | `make pipeline` | Clean the raw data into typed Parquet and write `reports/data-quality.md` |
+| `make analyze` | Build the dispute marts from the cleaned layer and write `reports/workflow-analysis.md` |
 | `make help` | List every target |
 
 `make secrets` does not scan unstaged or untracked files: `git add` them first.
@@ -114,6 +115,12 @@ give byte-identical outputs, and a table whose inputs and outputs are unchanged 
 Every raw row is either kept, superseded by a newer version of its key, or quarantined with a
 reason; `reports/data-quality.md` summarises the counts.
 
+`make analyze` reads the cleaned layer and writes [`reports/workflow-analysis.md`](reports/workflow-analysis.md):
+how much of the service demand is about disputed transactions, how those cases are resolved today,
+how customers feel about the contacts, what handling a dispute costs under stated assumptions
+(`pipelines/analysis_assumptions.toml`) and which outcomes an automated workflow should reach. It
+builds the aggregate marts under `data/gold/dispute_demand`; the report holds counts and rates only.
+
 ### Configuration
 
 Configuration is a single validated object (`app/config.py`) loaded from the environment and an
@@ -137,4 +144,5 @@ requirements, and which controls exist today, are in [SECURITY.md](SECURITY.md).
 | `make setup` fails with a stale lockfile | Run `uv lock` and commit the updated `uv.lock` |
 | `make profile` fails with `cannot load table …` or `lacks key column` | The message names the table; check that the raw files match the layout described under *Data* |
 | `make pipeline` exits with code 1 | A table could not be cleaned; `reports/data-quality.md` names it and the reason (for example a file without a header row) |
-| `make analyze`, `train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |
+| `make analyze` exits with code 1 and `cleaned table … not found` | Run `make pipeline` first: the analysis reads the cleaned layer |
+| `make train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |

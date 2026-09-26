@@ -594,7 +594,7 @@ def test_the_code_version_defaults_to_the_current_commit(clean: tuple[Path, Path
     main(["--raw", str(raw), "--out", str(out), "--report", str(out.parent / "q.md")])
 
     manifest = json.loads(SilverPaths(out).manifest("branches").read_text(encoding="utf-8"))
-    assert manifest["code_version"] == silver_module._git_version()
+    assert manifest["code_version"] == silver_module.git_version()
     assert manifest["code_version"] != ""
 
 
@@ -606,7 +606,7 @@ def test_code_version_is_unknown_when_git_is_unavailable(monkeypatch: pytest.Mon
 
     monkeypatch.setattr("pipelines.silver.subprocess.run", missing)
 
-    assert silver_module._git_version() == "unknown"
+    assert silver_module.git_version() == "unknown"
 
 
 def test_an_empty_run_renders_an_empty_report_and_exits_zero(tmp_path: Path) -> None:
@@ -1014,10 +1014,10 @@ def test_the_code_version_is_marked_when_the_working_tree_has_uncommitted_change
     answers = {"rev-parse": "abc1234", "status": " M pipelines/silver.py"}
     monkeypatch.setattr(silver_module, "_git", lambda *args: answers[args[0]])
 
-    assert silver_module._git_version() == "abc1234-dirty"
+    assert silver_module.git_version() == "abc1234-dirty"
 
     answers["status"] = ""
-    assert silver_module._git_version() == "abc1234"
+    assert silver_module.git_version() == "abc1234"
 
 
 def test_a_build_that_fails_midway_leaves_no_manifest_of_the_earlier_build(

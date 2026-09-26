@@ -61,6 +61,7 @@ ignore = ["PLR0913"]
 # string-built-query rule does not apply to them.
 "pipelines/profile.py" = ["S608"]
 "pipelines/raw.py" = ["S608"]
+"pipelines/gold.py" = ["S608"]
 "pipelines/silver.py" = ["S608"]
 
 [tool.mypy]

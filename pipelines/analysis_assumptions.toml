@@ -1,0 +1,34 @@
+# =============================================================================
+# Assumptions of the workflow analysis
+# =============================================================================
+# Purpose:  Every number in reports/workflow-analysis.md that is not measured in the
+#           data is set here, with the reason for it.
+# Usage:    Read by pipelines/analysis.py; change a value here and run `make analyze`.
+# Notes:    The values are team-defined planning assumptions for a Latin American retail
+#           bank, not measurements. The report shows results for the low, base and high
+#           value of each cost assumption so that no conclusion rests on one guess.
+# =============================================================================
+
+[cost]
+# Fully loaded cost of one hour of agent time in US dollars (salary, benefits, seat,
+# supervision). The range is a planning assumption for a Latin American contact centre with
+# no source in the data; replace it with the bank's own figure when known.
+agent_hour_usd = { low = 6.0, base = 9.0, high = 14.0 }
+
+# Contacts a dispute needs before it is settled: one when the report settles it, more when a
+# follow-up is needed (1, 1.5 and 2.5 on average). The source cannot tie contacts to the cases
+# they produced, so this is assumed.
+contacts_per_dispute = { low = 1.0, base = 1.5, high = 2.5 }
+
+# Reason category whose contacts are taken as the model of a dispute contact, because the
+# source has no dispute reason: an unrecognised charge is a transactional matter.
+handling_reason_category = "Transaccional"
+
+[targets]
+# Proposed outcomes for the automated workflow, against which the evaluation later
+# measures the system. They are goals to be tested, not forecasts.
+safe_automated_resolution_rate = 0.40
+sla_breach_rate_max = 0.05
+median_days_to_resolution_max = 3
+repeat_complainer_rate_max = 0.10
+unsafe_action_rate_max = 0.0
