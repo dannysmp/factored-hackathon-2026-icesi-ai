@@ -1,0 +1,30 @@
+{
+  "_comment": "Artifact ownership: each document is written only by its owner agent, after the maintainer ratifies the change. Files not listed belong to the programmer (through PRs). required_reviews.architect lists the paths whose changes also need the architect's CONFORMS note for the PR's head commit (enforced by review-gate). Patterns: * within a segment, ** across segments. Governance file: changed only by the maintainer.",
+  "owners": {
+    "project-manager": [
+      "plan/PROJECT_PLAN.md",
+      "plan/OPERATIONS.md",
+      "plan/delivery/**"
+    ],
+    "architect": [
+      "plan/docs/architecture.md",
+      "plan/docs/data-plan.md",
+      "plan/docs/adr/**"
+    ],
+    "product-manager": [
+      "plan/docs/evaluation-plan.md",
+      "plan/product/**"
+    ]
+  },
+  "required_reviews": {
+    "architect": [
+      "contracts/**",
+      "infra/**",
+      "policy/*.yaml",
+      "pyproject.toml",
+      "uv.lock",
+      "docker-compose*.yml",
+      "Dockerfile*"
+    ]
+  }
+}
