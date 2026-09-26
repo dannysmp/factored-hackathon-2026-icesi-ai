@@ -1007,31 +1007,6 @@ def test_only_capitalised_booleans_are_accepted(clean: tuple[Path, Path]) -> Non
     assert manifest["quarantine_reasons"] == {"type:accepts_marketing": 1}
 
 
-def test_a_value_with_more_decimals_than_the_column_allows_is_rejected_not_rounded(
-    clean: tuple[Path, Path],
-) -> None:
-    """``estimated_monthly_income`` has two decimals; a third is a type violation."""
-    raw, out = clean
-    write_dimension(
-        raw,
-        "customers",
-        [
-            valid_row(
-                "customers",
-                customer_id="C1",
-                document_number="D1",
-                estimated_monthly_income="1000.005",
-                registration_branch_id="B1",
-            )
-        ],
-    )
-
-    manifest = _outcomes(raw, out)["customers"].manifest
-
-    assert manifest is not None
-    assert manifest["quarantine_reasons"] == {"type:estimated_monthly_income": 1}
-
-
 def test_the_code_version_is_marked_when_the_working_tree_has_uncommitted_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1132,10 +1107,39 @@ def test_integer_text_is_matched_exactly(clean: tuple[Path, Path], text: str) ->
     assert manifest["quarantine_reasons"] == {"type:credit_score": 1}
 
 
-def test_a_value_beyond_the_declared_scale_is_rejected_at_any_length(
-    clean: tuple[Path, Path],
+@pytest.mark.parametrize(
+    "text",
+    [
+        "1000.005",
+        "1000.00000000004",
+        "1000.000000000000004",
+        "1000.000000000000000000004",
+        "1e-25",
+        "1.5e-5",
+        "1.2E-3",
+        "1.23e-1",
+        " 10.5 ",
+        "10.",
+        ".5",
+    ],
+    ids=[
+        "three-decimals",
+        "eleven-decimals",
+        "fifteen-decimals",
+        "twenty-one-decimals",
+        "exponent-below-precision",
+        "exponent-small",
+        "exponent-upper-case",
+        "exponent-fractional",
+        "padded",
+        "trailing-point",
+        "leading-point",
+    ],
+)
+def test_a_decimal_is_accepted_only_as_plain_text_within_its_scale(
+    clean: tuple[Path, Path], text: str
 ) -> None:
-    """Eleven decimals are as invalid as three; nothing is rounded silently."""
+    """Excess digits at any length, exponents, padding and bare points are never rounded in."""
     raw, out = clean
     write_dimension(
         raw,
@@ -1145,7 +1149,7 @@ def test_a_value_beyond_the_declared_scale_is_rejected_at_any_length(
                 "customers",
                 customer_id="C1",
                 document_number="D1",
-                estimated_monthly_income="1000.00000000004",
+                estimated_monthly_income=text,
                 registration_branch_id="B1",
             )
         ],
@@ -1155,6 +1159,36 @@ def test_a_value_beyond_the_declared_scale_is_rejected_at_any_length(
 
     assert manifest is not None
     assert manifest["quarantine_reasons"] == {"type:estimated_monthly_income": 1}
+
+
+@pytest.mark.parametrize(
+    "text", ["1000", "1000.5", "1000.50", "-1000.05", "+7.1", "1.5e2", "1.25e1", "-3.5E-1"]
+)
+def test_plain_decimal_text_within_its_scale_is_kept_exactly(
+    clean: tuple[Path, Path], text: str
+) -> None:
+    """Integers and decimals with at most two digits after the point are stored exactly."""
+    raw, out = clean
+    write_dimension(
+        raw,
+        "customers",
+        [
+            valid_row(
+                "customers",
+                customer_id="C1",
+                document_number="D1",
+                estimated_monthly_income=text,
+                registration_branch_id="B1",
+            )
+        ],
+    )
+
+    _outcomes(raw, out)
+
+    assert _rows(
+        SilverPaths(out).silver("customers"),
+        "SELECT estimated_monthly_income::VARCHAR FROM '{path}'",
+    ) == [(f"{float(text):.2f}",)]
 
 
 def test_rows_quarantined_for_an_orphan_reference_hold_their_typed_values_as_text(
@@ -1184,3 +1218,28 @@ def test_rows_quarantined_for_an_orphan_reference_hold_their_typed_values_as_tex
         SilverPaths(out).quarantine("products"),
         "SELECT customer_id, credit_limit, has_linked_app FROM '{path}'",
     ) == [("ORPHAN", "10.50", "false")]
+
+
+def test_an_exponent_that_is_exact_at_the_column_scale_is_kept(clean: tuple[Path, Path]) -> None:
+    """Coordinates near zero arrive as ``-1.19e-05``; that is exactly -0.0000119, not a rounding."""
+    raw, out = clean
+    write_dimension(raw, "branches", [valid_row("branches", branch_id="B1", latitude="-1.19e-05")])
+
+    _outcomes(raw, out)
+
+    assert _rows(SilverPaths(out).silver("branches"), "SELECT latitude::VARCHAR FROM '{path}'") == [
+        ("-0.0000119",)
+    ]
+
+
+def test_an_exponent_that_needs_more_places_than_the_column_has_is_rejected(
+    clean: tuple[Path, Path],
+) -> None:
+    """``-1.19e-06`` is -0.00000119, which a seven-decimal column cannot hold exactly."""
+    raw, out = clean
+    write_dimension(raw, "branches", [valid_row("branches", branch_id="B1", longitude="-1.19e-06")])
+
+    manifest = _outcomes(raw, out)["branches"].manifest
+
+    assert manifest is not None
+    assert manifest["quarantine_reasons"] == {"type:longitude": 1}

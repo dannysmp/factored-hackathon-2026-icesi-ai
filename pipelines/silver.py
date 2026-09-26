@@ -149,11 +149,20 @@ def _typed_expression(column: Column) -> str:
         plain = f"regexp_full_match({raw}, '[+-]?[0-9]+')"
         return f"CASE WHEN {plain} THEN try_cast({raw} AS BIGINT) ELSE {via_double} END"
     if dtype.startswith("DECIMAL"):
-        # A value with more decimals than the declared scale would be rounded silently; it is
-        # rejected instead (NULL), by looking at the digits after the point.
+        # A value is kept only when it is stored exactly. The text must be a number without
+        # padding or a bare point, with at most the declared digits after the point; an exponent
+        # ("-1.19e-05") is allowed when the stored value equals the wider, exact reading of the
+        # text, so "1.5e-5" in a two-decimal column is rejected instead of rounded to zero.
         scale = int(dtype.rstrip(")").split(",")[1])
+        shape = f"regexp_full_match({raw}, '[+-]?[0-9]+([.][0-9]+)?([eE][+-]?[0-9]+)?')"
+        excess = f"regexp_matches({raw}, '[.][0-9]{{{scale + 1},}}')"
+        wide = f"try_cast({raw} AS DECIMAL(38, 18))"
         narrow = f"try_cast({raw} AS {dtype})"
-        return f"CASE WHEN NOT regexp_matches({raw}, '[.][0-9]{{{scale + 1},}}') THEN {narrow} END"
+        not_zeroed = f"({wide} <> 0 OR try_cast({raw} AS DOUBLE) = 0)"
+        return (
+            f"CASE WHEN {shape} AND NOT {excess} AND {wide} = {narrow} AND {not_zeroed} "
+            f"THEN {narrow} END"
+        )
     if dtype == "BOOLEAN":
         return f"CASE {raw} WHEN 'True' THEN true WHEN 'False' THEN false END"
     return raw
