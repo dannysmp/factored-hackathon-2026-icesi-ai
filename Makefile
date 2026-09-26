@@ -13,6 +13,7 @@
 SHELL := /bin/bash
 RUN := uv run
 DATA_DIR ?= data/raw
+SILVER_DIR ?= data/silver
 
 .PHONY: help setup lint format test test-all secrets audit run clean \
         profile pipeline analyze train evaluate up
@@ -57,10 +58,10 @@ clean: ## Remove caches and build artifacts
 profile: ## Profile the raw data (DATA_DIR, default data/raw) and write reports/data-profile.md
 	$(RUN) python -m pipelines.profile --data-dir $(DATA_DIR)
 
-# ---- Not yet implemented (fail loudly until they are) --------------------------
+pipeline: ## Clean the raw data into typed Parquet (SILVER_DIR, default data/silver) and write reports/data-quality.md
+	$(RUN) python -m pipelines.silver --raw $(DATA_DIR) --out $(SILVER_DIR)
 
-pipeline: ## Run the bronze -> silver -> gold pipeline
-	@echo "make pipeline is not implemented yet" >&2; exit 2
+# ---- Not yet implemented (fail loudly until they are) --------------------------
 
 analyze: ## Regenerate reports/workflow-analysis.md
 	@echo "make analyze is not implemented yet" >&2; exit 2

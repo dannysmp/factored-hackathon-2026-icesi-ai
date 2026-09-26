@@ -161,7 +161,9 @@ def _verdict(condition: bool, *, assessed: bool) -> Verdict:
     return Verdict.HOLDS if condition else Verdict.DIFFERS
 
 
-def _layout_assumptions(tables: tuple[TableProfile, ...]) -> list[Assumption]:
+def _layout_assumptions(
+    tables: tuple[TableProfile, ...], unparsed_tables: int = 0
+) -> list[Assumption]:
     """Assumptions about paths, encoding, headers and row counts."""
     nonconforming = sum(t.inventory.nonconforming_paths for t in tables)
     without_file = sum(t.inventory.missing_partition_days for t in tables)
@@ -188,8 +190,12 @@ def _layout_assumptions(tables: tuple[TableProfile, ...]) -> list[Assumption]:
             "Every file decodes and matches",
             f"{_count(matching)} of {_count(files)} headers match; "
             f"{_count(undecodable)} undecodable; {_count(invalid)} without a header row; "
-            f"{_count(with_bom)} files start with a byte-order mark",
-            _verdict(matching == files and undecodable == 0 and invalid == 0, assessed=files > 0),
+            f"{_count(with_bom)} files start with a byte-order mark; "
+            f"{_count(unparsed_tables)} tables could not be parsed",
+            _verdict(
+                matching == files and undecodable == 0 and invalid == 0 and unparsed_tables == 0,
+                assessed=files > 0 or unparsed_tables > 0,
+            ),
         ),
         Assumption(
             "Row counts match the dictionary",
@@ -352,7 +358,9 @@ def assess_assumptions(profile: DataProfile) -> tuple[Assumption, ...]:
     tuple[Assumption, ...]
         One entry per assumption, in a fixed order.
     """
-    results = _layout_assumptions(profile.tables) + _quality_assumptions(profile.tables)
+    results = _layout_assumptions(
+        profile.tables, len(profile.unloadable_tables)
+    ) + _quality_assumptions(profile.tables)
     if profile.facts is not None:
         results += _workload_assumptions(profile.facts)
     return tuple(results)

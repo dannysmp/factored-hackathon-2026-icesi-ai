@@ -255,3 +255,118 @@ def build_dispute_dataset(data_dir: Path) -> None:
             }
         ],
     )
+
+
+# -----------------------------------------------------------------------------
+# Contract-satisfying rows
+# -----------------------------------------------------------------------------
+
+
+_DEFAULTS = {
+    "DATE": "2025-01-10",
+    "TIMESTAMP": "2025-01-10 08:00:00",
+    "TIME": "09:00:00",
+    "INTEGER": "500",
+    "BOOLEAN": "False",
+}
+
+
+def _default_value(name: str, dtype: str, allowed: frozenset[str] | None) -> str:
+    """A value of ``dtype`` that satisfies the contract (first allowed value when coded)."""
+    if allowed:
+        return sorted(allowed)[0]
+    kind = dtype.upper()
+    if kind.startswith("DECIMAL"):
+        return "10.00"
+    return _DEFAULTS.get(kind, f"{name}-value")
+
+
+def valid_row(table_name: str, **overrides: str) -> dict[str, str]:
+    """A complete row of ``table_name`` that satisfies structure and contract.
+
+    Every declared column is filled (including the optional ones), so a test names only the
+    values that matter to it; ``overrides`` replace defaults, and an override of ``""`` writes a
+    missing value.
+    """
+    from contracts.v1 import contract_for  # noqa: PLC0415 - only the cleaning tests need it
+
+    spec = table(table_name)
+    allowed = {rule.column: rule.values for rule in contract_for(table_name).allowed}
+    row = {
+        column.name: _default_value(column.name, column.dtype, allowed.get(column.name))
+        for column in spec.columns
+    }
+    return {**row, **overrides}
+
+
+def build_clean_dataset(data_dir: Path) -> None:
+    """Build a small dataset in which every row satisfies the contract.
+
+    Two branches, two customers, two products and one exchange rate, plus transactions in two
+    daily partitions. Tests add defects or later deliveries on top of it.
+    """
+    write_dimension(
+        data_dir,
+        "branches",
+        [valid_row("branches", branch_id="B1"), valid_row("branches", branch_id="B2")],
+    )
+    write_dimension(
+        data_dir,
+        "customers",
+        [
+            valid_row(
+                "customers", customer_id="C1", document_number="D1", registration_branch_id="B1"
+            ),
+            valid_row(
+                "customers", customer_id="C2", document_number="D2", registration_branch_id="B2"
+            ),
+        ],
+    )
+    write_dimension(
+        data_dir,
+        "products",
+        [
+            valid_row(
+                "products",
+                product_id="P1",
+                customer_id="C1",
+                product_number="N1",
+                opening_branch_id="B1",
+            ),
+            valid_row(
+                "products",
+                product_id="P2",
+                customer_id="C2",
+                product_number="N2",
+                opening_branch_id="B2",
+            ),
+        ],
+    )
+    write_dimension(
+        data_dir,
+        "daily_exchange_rates",
+        [valid_row("daily_exchange_rates", source_currency="MXN", target_currency="USD")],
+    )
+    write_partition(
+        data_dir,
+        "transactions",
+        date(2025, 1, 10),
+        [
+            valid_row("transactions", transaction_id="T1", product_id="P1", customer_id="C1"),
+            valid_row("transactions", transaction_id="T2", product_id="P2", customer_id="C2"),
+        ],
+    )
+    write_partition(
+        data_dir,
+        "transactions",
+        date(2025, 1, 12),
+        [
+            valid_row(
+                "transactions",
+                transaction_id="T3",
+                product_id="P1",
+                customer_id="C1",
+                process_date="2025-01-12",
+            )
+        ],
+    )
