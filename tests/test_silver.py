@@ -731,3 +731,330 @@ def test_report_describes_the_data_not_the_run(clean: tuple[Path, Path]) -> None
     unchanged = render_quality_report(list(run_silver(raw, out, code_version="test")))
 
     assert built == unchanged
+
+
+# -----------------------------------------------------------------------------
+# Freshness: dependencies, content, stale outputs, damaged artefacts
+# -----------------------------------------------------------------------------
+
+
+def _only_customer_c1(raw: Path) -> None:
+    write_dimension(
+        raw,
+        "customers",
+        [
+            valid_row(
+                "customers", customer_id="C1", document_number="D1", registration_branch_id="B1"
+            )
+        ],
+    )
+
+
+def test_a_change_in_a_referenced_table_rebuilds_the_tables_that_reference_it(
+    clean: tuple[Path, Path],
+) -> None:
+    """Removing customer C2 makes C2's products orphans, though the products file is unchanged."""
+    raw, out = clean
+    _outcomes(raw, out)
+    _only_customer_c1(raw)
+
+    second = _outcomes(raw, out)
+
+    assert second["customers"].status is Status.BUILT
+    assert second["products"].status is Status.BUILT
+    assert second["transactions"].status is Status.BUILT
+    assert second["branches"].status is Status.UNCHANGED
+    manifest = second["products"].manifest
+    assert manifest is not None
+    assert manifest["quarantine_reasons"] == {"reference:customer_id": 1}
+    assert _rows(SilverPaths(out).silver("products"), "SELECT product_id FROM '{path}'") == [
+        ("P1",)
+    ]
+
+
+def test_a_run_over_unchanged_inputs_rebuilds_no_dependent_table(
+    clean: tuple[Path, Path],
+) -> None:
+    """Dependency tracking does not turn a no-op run into a rebuild."""
+    raw, out = clean
+    _outcomes(raw, out)
+
+    second = _outcomes(raw, out)
+
+    assert {o.status for o in second.values()} == {Status.UNCHANGED}
+
+
+def test_a_same_size_edit_of_an_input_file_rebuilds_the_table(clean: tuple[Path, Path]) -> None:
+    """Freshness follows the content of the files, not only their names and sizes."""
+    raw, out = clean
+    _outcomes(raw, out)
+    path = raw / "customers.csv"
+    text = path.read_text(encoding="utf-8")
+    original = valid_row("customers", customer_id="C1")["first_name"]
+    path.write_text(text.replace(original, "X" * len(original), 1), encoding="utf-8")
+
+    second = _outcomes(raw, out)
+
+    assert second["customers"].status is Status.BUILT
+
+
+def test_a_skipped_table_leaves_no_outputs_of_an_earlier_build(
+    clean: tuple[Path, Path],
+) -> None:
+    """A table that stops being readable must not keep serving its previous outputs."""
+    raw, out = clean
+    _outcomes(raw, out)
+    paths = SilverPaths(out)
+    assert paths.silver("branches").exists()
+    (raw / "branches.csv").write_text("branch_id\nB1,extra,fields\n", encoding="utf-8")
+
+    second = _outcomes(raw, out)
+
+    assert second["branches"].status is Status.SKIPPED
+    assert not paths.silver("branches").exists()
+    assert not paths.manifest("branches").exists()
+
+
+def _damage_and_rerun(raw: Path, out: Path, table: str, artefact: Path) -> None:
+    """Corrupt one output of ``table`` and assert the next run rebuilds it identically."""
+    first = _outcomes(raw, out)[table].manifest
+    assert first is not None
+    assert artefact.exists()
+    artefact.write_bytes(b"corrupted")
+
+    second = _outcomes(raw, out)
+
+    assert second[table].status is Status.BUILT
+    assert second[table].manifest == first
+
+
+def test_a_damaged_quarantine_table_is_rebuilt(clean: tuple[Path, Path]) -> None:
+    """The quarantine is verified against the manifest like the main output."""
+    raw, out = clean
+    _corrupted_customers(raw)
+
+    _damage_and_rerun(raw, out, "customers", SilverPaths(out).quarantine("customers"))
+
+
+def test_a_damaged_sidecar_is_rebuilt(clean: tuple[Path, Path]) -> None:
+    """The sidecar of unknown columns is verified against the manifest too."""
+    raw, out = clean
+    write_partition(
+        raw,
+        "transactions",
+        DAY_THREE,
+        [
+            {
+                **valid_row(
+                    "transactions",
+                    transaction_id="T9",
+                    product_id="P1",
+                    customer_id="C1",
+                    process_date="2025-01-11",
+                ),
+                "loyalty_tier": "gold",
+            }
+        ],
+        extra_columns=("loyalty_tier",),
+    )
+
+    _damage_and_rerun(raw, out, "transactions", SilverPaths(out).extras("transactions"))
+
+
+# -----------------------------------------------------------------------------
+# Typing edge cases
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["NaN", "inf", "-inf", "1e30", "9007199254740993", "9223372036854775808", "abc", "7 01"],
+)
+def test_an_integer_column_never_fails_the_table_on_a_hostile_value(
+    clean: tuple[Path, Path], text: str
+) -> None:
+    """Values that are not exact integers are quarantined as type violations, row by row."""
+    raw, out = clean
+    write_dimension(
+        raw,
+        "customers",
+        [
+            valid_row(
+                "customers", customer_id="C1", document_number="D1", registration_branch_id="B1"
+            ),
+            valid_row(
+                "customers",
+                customer_id="C2",
+                document_number="D2",
+                credit_score=text,
+                registration_branch_id="B1",
+            ),
+        ],
+    )
+
+    outcome = _outcomes(raw, out)["customers"]
+
+    assert outcome.status is Status.BUILT
+    assert outcome.manifest is not None
+    assert outcome.manifest["counts"]["quarantined"] == 1
+    assert _rows(SilverPaths(out).silver("customers"), "SELECT customer_id FROM '{path}'") == [
+        ("C1",)
+    ]
+
+
+def test_an_environment_failure_stops_the_run_instead_of_skipping_the_table(
+    clean: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only faults of the files skip a table; a failing disk or out-of-memory error propagates."""
+    raw, out = clean
+
+    def broken(*_args: Any, **_kwargs: Any) -> Any:
+        raise duckdb.IOException("disk full")
+
+    monkeypatch.setattr(silver_module, "_deduplicate", broken)
+
+    with pytest.raises(duckdb.IOException):
+        _outcomes(raw, out)
+
+
+def test_a_newer_invalid_version_leaves_the_older_valid_version_in_place(
+    clean: tuple[Path, Path],
+) -> None:
+    """A newer version that fails the contract is quarantined; the older valid one stays."""
+    raw, out = clean
+    write_dimension(
+        raw,
+        "customers",
+        [
+            valid_row(
+                "customers",
+                customer_id="C1",
+                document_number="D1",
+                first_name="Old",
+                last_updated="2025-01-01 00:00:00",
+                registration_branch_id="B1",
+            ),
+            valid_row(
+                "customers",
+                customer_id="C1",
+                document_number="D1",
+                first_name="New",
+                credit_score="900",
+                last_updated="2025-02-01 00:00:00",
+                registration_branch_id="B1",
+            ),
+        ],
+    )
+
+    manifest = _outcomes(raw, out)["customers"].manifest
+
+    assert manifest is not None
+    assert manifest["quarantine_reasons"] == {"range:credit_score": 1}
+    assert _rows(SilverPaths(out).silver("customers"), "SELECT first_name FROM '{path}'") == [
+        ("Old",)
+    ]
+
+
+def test_equal_versions_are_ordered_by_content_so_the_choice_is_deterministic(
+    clean: tuple[Path, Path],
+) -> None:
+    """Two versions identical in key, timestamp and partition resolve the same way every run."""
+    raw, out = clean
+    rows = [
+        valid_row(
+            "customers",
+            customer_id="C1",
+            document_number="D1",
+            first_name=name,
+            last_updated="2025-01-01 00:00:00",
+            registration_branch_id="B1",
+        )
+        for name in ("Alpha", "Bravo")
+    ]
+    write_dimension(raw, "customers", rows)
+    _outcomes(raw, out)
+    first = _rows(SilverPaths(out).silver("customers"), "SELECT first_name FROM '{path}'")
+    write_dimension(raw, "customers", rows[::-1])
+
+    _outcomes(raw, out)
+
+    assert _rows(SilverPaths(out).silver("customers"), "SELECT first_name FROM '{path}'") == first
+
+
+def test_only_capitalised_booleans_are_accepted(clean: tuple[Path, Path]) -> None:
+    """``true`` is not the source's spelling of a boolean and is quarantined as a type violation."""
+    raw, out = clean
+    write_dimension(
+        raw,
+        "customers",
+        [
+            valid_row(
+                "customers",
+                customer_id="C1",
+                document_number="D1",
+                accepts_marketing="false",
+                registration_branch_id="B1",
+            )
+        ],
+    )
+
+    manifest = _outcomes(raw, out)["customers"].manifest
+
+    assert manifest is not None
+    assert manifest["quarantine_reasons"] == {"type:accepts_marketing": 1}
+
+
+def test_a_value_with_more_decimals_than_the_column_allows_is_rejected_not_rounded(
+    clean: tuple[Path, Path],
+) -> None:
+    """``estimated_monthly_income`` has two decimals; a third is a type violation."""
+    raw, out = clean
+    write_dimension(
+        raw,
+        "customers",
+        [
+            valid_row(
+                "customers",
+                customer_id="C1",
+                document_number="D1",
+                estimated_monthly_income="1000.005",
+                registration_branch_id="B1",
+            )
+        ],
+    )
+
+    manifest = _outcomes(raw, out)["customers"].manifest
+
+    assert manifest is not None
+    assert manifest["quarantine_reasons"] == {"type:estimated_monthly_income": 1}
+
+
+def test_the_code_version_is_marked_when_the_working_tree_has_uncommitted_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Outputs built from modified code are never taken for outputs of the recorded commit."""
+    answers = {"rev-parse": "abc1234", "status": " M pipelines/silver.py"}
+    monkeypatch.setattr(silver_module, "_git", lambda *args: answers[args[0]])
+
+    assert silver_module._git_version() == "abc1234-dirty"
+
+    answers["status"] = ""
+    assert silver_module._git_version() == "abc1234"
+
+
+def test_a_build_that_fails_midway_leaves_no_manifest_of_the_earlier_build(
+    clean: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After a crash no manifest vouches for outputs that no longer match the inputs."""
+    raw, out = clean
+    _outcomes(raw, out)
+    _only_customer_c1(raw)
+
+    def broken(*_args: Any, **_kwargs: Any) -> Any:
+        raise duckdb.IOException("disk full")
+
+    monkeypatch.setattr(silver_module, "_deduplicate", broken)
+    with pytest.raises(duckdb.IOException):
+        _outcomes(raw, out)
+
+    assert not SilverPaths(out).manifest("customers").exists()

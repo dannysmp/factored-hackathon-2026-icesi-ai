@@ -24,10 +24,12 @@ Runtime Contract
 ``table_files(data_dir, spec) -> list[Path]``
 ``scan_table(data_dir, spec) -> TableInventory``
 ``inventory_digest(data_dir, specs) -> str``
+``content_digest(data_dir, specs) -> str``
 
 Limitations
 -----------
-The digest covers relative paths and sizes, not file contents: a same-size edit is not detected.
+``inventory_digest`` covers relative paths and sizes, not file contents: a same-size edit is not
+detected by it. ``content_digest`` reads every file and does detect it.
 """
 
 from __future__ import annotations
@@ -235,5 +237,23 @@ def inventory_digest(data_dir: Path, specs: tuple[TableSpec, ...]) -> str:
     for spec in specs:
         for path in table_files(data_dir, spec):
             entry = f"{path.relative_to(data_dir).as_posix()}\t{path.stat().st_size}\n"
+            digest.update(entry.encode("utf-8"))
+    return digest.hexdigest()
+
+
+def content_digest(data_dir: Path, specs: tuple[TableSpec, ...]) -> str:
+    """Return a SHA-256 digest over the relative path, size and content of every table file.
+
+    Unlike :func:`inventory_digest` this detects an edit that keeps a file's size, at the cost of
+    reading every file once.
+    """
+    digest = hashlib.sha256()
+    for spec in specs:
+        for path in table_files(data_dir, spec):
+            with path.open("rb") as handle:
+                file_digest = hashlib.file_digest(handle, "sha256").hexdigest()
+            entry = (
+                f"{path.relative_to(data_dir).as_posix()}\t{path.stat().st_size}\t{file_digest}\n"
+            )
             digest.update(entry.encode("utf-8"))
     return digest.hexdigest()

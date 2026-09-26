@@ -67,7 +67,7 @@ from contracts.v1 import (  # Rules applied to every table
     contract_for,
     load_order,
 )
-from pipelines.inventory import TableInventory, inventory_digest, scan_table  # Input facts
+from pipelines.inventory import TableInventory, content_digest, scan_table  # Input facts
 from pipelines.outcomes import Status, TableOutcome  # Result of each table
 from pipelines.quality import render_quality_report  # Data-quality report
 from pipelines.raw import (  # Strict loading shared with the profiler
@@ -81,6 +81,13 @@ from pipelines.raw import (  # Strict loading shared with the profiler
 from pipelines.sources import TABLES, Column, TableSpec, table  # Table registry
 
 logger = logging.getLogger(__name__)
+
+# Database errors that come from the content of the files; any other error (disk, memory, an
+# internal failure) is not the data's fault and must stop the run instead of skipping a table.
+FILE_ERRORS = (duckdb.InvalidInputException, duckdb.ConversionException)
+
+# Integers up to 2^53 are exactly representable as DOUBLE.
+EXACT_DOUBLE_LIMIT = 9007199254740992
 
 # -----------------------------------------------------------------------------
 # Types
@@ -122,10 +129,23 @@ def _typed_expression(column: Column) -> str:
     if dtype in {"DATE", "TIMESTAMP", "TIME"}:
         return f"try_cast({raw} AS {dtype})"
     if dtype == "INTEGER":
+        # Exact for integer text (the database would round "701.5" to 702, so the text is matched
+        # first); integers written with a decimal point ("701.0") go through
+        # DOUBLE but only inside the range where every integer is exactly representable, so
+        # NaN, infinities and huge values become NULL instead of failing the query.
         number = f"try_cast({raw} AS DOUBLE)"
-        return f"CASE WHEN {number} = floor({number}) THEN CAST({number} AS BIGINT) END"
+        via_double = (
+            f"CASE WHEN {number} = floor({number}) AND abs({number}) < {EXACT_DOUBLE_LIMIT} "
+            f"THEN CAST({number} AS BIGINT) END"
+        )
+        plain = f"regexp_full_match({raw}, '[+-]?[0-9]+')"
+        return f"CASE WHEN {plain} THEN try_cast({raw} AS BIGINT) ELSE {via_double} END"
     if dtype.startswith("DECIMAL"):
-        return f"try_cast({raw} AS {dtype})"
+        # A value with more decimals than the declared scale would be rounded silently; it is
+        # rejected instead (NULL), by comparing with a wider cast.
+        exact = f"try_cast({raw} AS DECIMAL(38, 10))"
+        narrow = f"try_cast({raw} AS {dtype})"
+        return f"CASE WHEN {exact} = {narrow} THEN {narrow} END"
     if dtype == "BOOLEAN":
         return f"CASE {raw} WHEN 'True' THEN true WHEN 'False' THEN false END"
     return raw
@@ -222,23 +242,66 @@ def _read_manifest(path: Path) -> dict[str, Any] | None:
     return loaded if isinstance(loaded, dict) else None
 
 
+def _dependencies(contract: TableContract, available: dict[str, str]) -> dict[str, str | None]:
+    """Output digest of every table this one references (``None`` when it is not available).
+
+    Recorded in the manifest so a table is rebuilt whenever a table it references changes,
+    because its references must be judged against the new content.
+    """
+    return {rule.ref_table: available.get(rule.ref_table) for rule in contract.references}
+
+
+def _outputs_intact(paths: SilverPaths, name: str, outputs: dict[str, Any]) -> bool:
+    """True when every artefact of the table exists and matches the digest in its manifest."""
+    for kind, path in (
+        ("silver_sha256", paths.silver(name)),
+        ("quarantine_sha256", paths.quarantine(name)),
+    ):
+        if not path.is_file() or outputs.get(kind) != _sha256(path):
+            return False
+    extras = paths.extras(name)
+    recorded = outputs.get("extras_sha256")
+    if recorded is None:
+        return not extras.exists()
+    return extras.is_file() and recorded == _sha256(extras)
+
+
 def _is_current(
-    paths: SilverPaths, name: str, digest: str, code_version: str
+    paths: SilverPaths,
+    name: str,
+    *,
+    digest: str,
+    code_version: str,
+    dependencies: dict[str, str | None],
 ) -> dict[str, Any] | None:
-    """The stored manifest when the table is already built for these exact inputs."""
+    """The stored manifest when the table is already built for exactly these inputs.
+
+    The inputs are the raw files, the contract and code versions, the database engine version
+    and the outputs of the referenced tables; the outputs must also still match their digests.
+    """
     manifest = _read_manifest(paths.manifest(name))
     if manifest is None:
         return None
     same_inputs = (
         manifest.get("contract_version") == CONTRACT_VERSION
         and manifest.get("code_version") == code_version
+        and manifest.get("engine_version") == duckdb.__version__
         and manifest.get("input", {}).get("digest") == digest
+        and manifest.get("dependencies") == dependencies
     )
-    outputs = manifest.get("outputs", {})
-    intact = paths.silver(name).is_file() and outputs.get("silver_sha256") == _sha256(
-        paths.silver(name)
-    )
+    intact = _outputs_intact(paths, name, manifest.get("outputs", {}))
     return manifest if same_inputs and intact else None
+
+
+def _clear_table(paths: SilverPaths, name: str) -> None:
+    """Remove every artefact of a table, manifest first.
+
+    Called before a rebuild and when a table is skipped, so no manifest or output of an earlier
+    build can be mistaken for the result of the current run.
+    """
+    paths.manifest(name).unlink(missing_ok=True)
+    for artefact in (paths.silver(name), paths.quarantine(name), paths.extras(name)):
+        artefact.unlink(missing_ok=True)
 
 
 # -----------------------------------------------------------------------------
@@ -324,7 +387,7 @@ def _apply_references(
     spec: TableSpec,
     contract: TableContract,
     paths: SilverPaths,
-    available: set[str],
+    available: dict[str, str],
 ) -> _References:
     """Enforce or flag references to the tables cleaned in this run.
 
@@ -422,7 +485,7 @@ def _process_table(
     present: set[str],
     *,
     paths: SilverPaths,
-    available: set[str],
+    available: dict[str, str],
     inventory: TableInventory,
     digest: str,
     code_version: str,
@@ -445,6 +508,8 @@ def _process_table(
         "table": spec.name,
         "contract_version": CONTRACT_VERSION,
         "code_version": code_version,
+        "engine_version": duckdb.__version__,
+        "dependencies": _dependencies(contract, available),
         "input": {
             "files": inventory.files,
             "bytes": inventory.total_bytes,
@@ -479,15 +544,18 @@ def _build_table(
     *,
     digest: str,
     paths: SilverPaths,
-    available: set[str],
+    available: dict[str, str],
     code_version: str,
 ) -> TableOutcome:
     """Load and clean one table in a private working database that is removed afterwards.
 
     Removing the database as soon as the table is done keeps the disk footprint of a run at
-    one table at a time.
+    one table at a time. Artefacts of an earlier build are removed first, so a table that fails
+    leaves nothing that could be mistaken for a good build. Only errors caused by the files
+    themselves skip the table; failures of the environment (disk, memory) stop the run.
     """
     started = time.monotonic()
+    _clear_table(paths, spec.name)
     with tempfile.TemporaryDirectory() as workdir:
         con = duckdb.connect(str(Path(workdir) / "work.duckdb"))
         con.execute("SET preserve_insertion_order = false")
@@ -505,13 +573,14 @@ def _build_table(
                 digest=digest,
                 code_version=code_version,
             )
-        except (TableLoadError, duckdb.Error) as exc:
+        except (TableLoadError, *FILE_ERRORS) as exc:
             # The database's own message can quote a line of the data: keep the class only
             reason = (
                 str(exc)
                 if isinstance(exc, TableLoadError)
                 else f"{type(exc).__name__}: the files of table {spec.name} could not be parsed"
             )
+            _clear_table(paths, spec.name)
             logger.warning("silver_table_skipped table=%s reason=%s", spec.name, reason)
             return TableOutcome(spec.name, Status.SKIPPED, reason, None)
         finally:
@@ -562,15 +631,22 @@ def run_silver(
     paths = SilverPaths(out_dir)
     wanted = {spec.name for spec in specs}
     outcomes: list[TableOutcome] = []
-    available: set[str] = set()
+    available: dict[str, str] = {}
     for name in (n for n in load_order() if n in wanted):
         spec = table(name)
         inventory = scan_table(raw_dir, spec)
         if inventory.files == 0:
             logger.warning("silver_table_missing table=%s", name)
             continue
-        digest = inventory_digest(raw_dir, (spec,))
-        current = None if force else _is_current(paths, name, digest, code_version)
+        digest = content_digest(raw_dir, (spec,))
+        dependencies = _dependencies(contract_for(name), available)
+        current = (
+            None
+            if force
+            else _is_current(
+                paths, name, digest=digest, code_version=code_version, dependencies=dependencies
+            )
+        )
         if current is not None:
             outcome = TableOutcome(name, Status.UNCHANGED, None, current)
             logger.info("silver_table_unchanged table=%s", name)
@@ -584,8 +660,8 @@ def run_silver(
                 available=available,
                 code_version=code_version,
             )
-        if outcome.status is not Status.SKIPPED:
-            available.add(name)
+        if outcome.manifest is not None:
+            available[name] = outcome.manifest["outputs"]["silver_sha256"]
         outcomes.append(outcome)
     return tuple(outcomes)
 
@@ -595,19 +671,31 @@ def run_silver(
 # -----------------------------------------------------------------------------
 
 
-def _git_version() -> str:
-    """Short commit id of the working tree, or ``unknown`` outside a repository."""
+def _git(*arguments: str) -> str | None:
+    """Output of a git command, or None when git is unavailable or the command fails."""
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607 - resolved through PATH by design
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            ["git", *arguments],  # noqa: S607 - resolved through PATH by design
             capture_output=True,
             text=True,
             timeout=10,
             check=True,
         )
     except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip()
+
+
+def _git_version() -> str:
+    """Short commit id of the working tree, suffixed ``-dirty`` when tracked files have changes.
+
+    ``unknown`` outside a repository. Uncommitted changes are marked so outputs built from
+    modified code are never taken for outputs of the recorded commit.
+    """
+    commit = _git("rev-parse", "--short", "HEAD")
+    if not commit:
         return "unknown"
-    return result.stdout.strip() or "unknown"
+    return f"{commit}-dirty" if _git("status", "--porcelain", "--untracked-files=no") else commit
 
 
 def main(argv: Sequence[str] | None = None) -> int:
