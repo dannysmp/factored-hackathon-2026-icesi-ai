@@ -48,8 +48,8 @@ from pipelines.sources import Layout, TableSpec  # Declared layout and expected 
 # Constants and types
 # -----------------------------------------------------------------------------
 
-# A column name is an identifier; a first line that is not is data, not a header.
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# A column name is an identifier of at most 64 characters; a first line that is not is data.
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
 
 # UTF-8 byte-order mark that some exporters prepend to every file.
 _BOM = b"\xef\xbb\xbf"

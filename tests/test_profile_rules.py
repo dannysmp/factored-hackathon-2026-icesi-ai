@@ -594,3 +594,62 @@ def test_fraud_assumption_is_not_assessed_when_the_label_column_is_absent(
 
     assert _facts(profile).fraud.transactions == 0
     assert verdicts["The fraud label supports a supervised risk model"] is Verdict.NOT_ASSESSED
+
+
+# -----------------------------------------------------------------------------
+# Header shape, identifier columns and the header verdict
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "header",
+    ["customer_id,x y", "customer_id,not-an-identifier", "customer_id," + "a" * 65, "customer_id,"],
+    ids=["space", "hyphen", "too-long", "empty-name"],
+)
+def test_names_that_are_not_short_identifiers_make_the_header_invalid(
+    tmp_path: Path, header: str
+) -> None:
+    """A first line with a name that is not a short identifier is treated as data."""
+    (tmp_path / "customers.csv").write_text(f"{header}\nC1,x\n", encoding="utf-8")
+
+    inventory = scan_table(tmp_path, table("customers"))
+
+    assert (inventory.invalid_headers, inventory.header_variants) == (1, ())
+
+
+def test_a_name_of_the_maximum_length_is_still_a_valid_header(tmp_path: Path) -> None:
+    """The 64-character limit is inclusive."""
+    (tmp_path / "customers.csv").write_text(f"customer_id,{'a' * 64}\nC1,x\n", encoding="utf-8")
+
+    inventory = scan_table(tmp_path, table("customers"))
+
+    assert (inventory.invalid_headers, len(inventory.header_variants)) == (0, 1)
+
+
+def test_identifier_named_columns_that_are_neither_key_nor_reference_are_not_listed(
+    tmp_path: Path,
+) -> None:
+    """A ``*_number`` column with few distinct values is still an identifier, not a category."""
+    write_dimension(
+        tmp_path,
+        "products",
+        [
+            {"product_id": f"P{i}", "product_number": "1234567890", "product_type": "Card"}
+            for i in range(3)
+        ],
+    )
+
+    columns = {c.name: c for c in _table(profile_data(tmp_path), "products").columns}
+
+    assert columns["product_number"].top_values == ()
+    assert [v.value for v in columns["product_type"].top_values] == ["Card"]
+
+
+def test_a_table_without_a_header_row_turns_the_header_verdict_to_differs(tmp_path: Path) -> None:
+    """Unparseable tables count against the assumption even though they are not profiled."""
+    _write_headerless(tmp_path, f"C3,{SENTINEL}")
+
+    verdicts = {a.statement: a.verdict for a in assess_assumptions(profile_data(tmp_path))}
+
+    header_rule = "Files are UTF-8 CSV whose header equals the dictionary's column list"
+    assert verdicts[header_rule] is Verdict.DIFFERS
