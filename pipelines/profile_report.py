@@ -125,9 +125,14 @@ def _table(headers: list[str], rows: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
+def _inline(value: str) -> str:
+    """Make a category value safe to show inside a Markdown code span on one line."""
+    return " ".join(value.split()).replace("`", "'")
+
+
 def _values(values: tuple[ValueCount, ...], limit: int) -> str:
     """Format the leading values of a distribution as ``value (count)``."""
-    shown = [f"`{item.value}` ({_count(item.count)})" for item in values[:limit]]
+    shown = [f"`{_inline(item.value)}` ({_count(item.count)})" for item in values[:limit]]
     if len(values) > limit:
         shown.append(f"… +{len(values) - limit} more")
     return ", ".join(shown)
@@ -163,6 +168,7 @@ def _layout_assumptions(tables: tuple[TableProfile, ...]) -> list[Assumption]:
     files = sum(t.inventory.files for t in tables)
     matching = sum(t.inventory.files_matching_declared_header for t in tables)
     undecodable = sum(t.inventory.undecodable_headers for t in tables)
+    invalid = sum(t.inventory.invalid_headers for t in tables)
     with_bom = sum(t.inventory.bom_files for t in tables)
     deviating = [
         t.name
@@ -181,9 +187,9 @@ def _layout_assumptions(tables: tuple[TableProfile, ...]) -> list[Assumption]:
             "Files are UTF-8 CSV whose header equals the dictionary's column list",
             "Every file decodes and matches",
             f"{_count(matching)} of {_count(files)} headers match; "
-            f"{_count(undecodable)} undecodable; {_count(with_bom)} files start with a "
-            "byte-order mark",
-            _verdict(matching == files and undecodable == 0, assessed=files > 0),
+            f"{_count(undecodable)} undecodable; {_count(invalid)} without a header row; "
+            f"{_count(with_bom)} files start with a byte-order mark",
+            _verdict(matching == files and undecodable == 0 and invalid == 0, assessed=files > 0),
         ),
         Assumption(
             "Row counts match the dictionary",
@@ -296,6 +302,8 @@ def _workload_assumptions(facts: DomainFacts) -> list[Assumption]:
     consistent = usd.within_tolerance / comparable if comparable else 0.0
     presence = usd.present / fraud.transactions if fraud.transactions else 0.0
     usable = presence >= USD_PRESENCE_MINIMUM and consistent >= USD_CONSISTENCY_MINIMUM
+    # Consistency can only be judged where a rate exists; presence alone can be judged always.
+    checkable = fraud.transactions > 0 and (usd.present == 0 or comparable > 0)
     informational = Verdict.INFORMATIONAL
     return [
         Assumption(
@@ -312,7 +320,7 @@ def _workload_assumptions(facts: DomainFacts) -> list[Assumption]:
             f"present in {_percent(usd.present, fraud.transactions)} of rows; "
             f"{_percent(usd.within_tolerance, comparable)} of {_count(comparable)} comparable "
             "values within tolerance",
-            _verdict(usable, assessed=fraud.transactions > 0),
+            _verdict(usable, assessed=checkable),
         ),
         Assumption(
             "Transcripts exist for interactions flagged as having one",
@@ -392,6 +400,7 @@ def _schema_section(tables: tuple[TableProfile, ...]) -> str:
             _count(len(t.inventory.header_variants)),
             _count(t.inventory.bom_files),
             _count(t.inventory.undecodable_headers),
+            _count(t.inventory.invalid_headers),
             _count(t.inventory.nonconforming_paths),
             ", ".join(t.extra_columns) or "none",
             ", ".join(t.missing_columns) or "none",
@@ -399,7 +408,8 @@ def _schema_section(tables: tuple[TableProfile, ...]) -> str:
         for t in tables
     ]
     headers = ["Table", "Headers matching dictionary", "Header variants"]
-    headers += ["Files with byte-order mark", "Undecodable headers", "Non-conforming paths"]
+    headers += ["Files with byte-order mark", "Undecodable headers", "Files without a header row"]
+    headers += ["Non-conforming paths"]
     return _table([*headers, "Extra columns", "Missing columns"], rows)
 
 
@@ -640,7 +650,9 @@ def render_markdown(profile: DataProfile) -> str:
     introduction = (
         f"Snapshot digest (SHA-256 over file paths and sizes): `{profile.inventory_digest}`\n\n"
         f"Tables profiled: {_count(len(tables))}. Every figure below is computed from the raw "
-        "files by `make profile`; nothing is typed in by hand."
+        "files by `make profile`; nothing is typed in by hand. Verdicts cover only the tables "
+        "that were profiled; tables that were absent or could not be parsed are listed in "
+        "section 2."
     )
     key_note = (
         "Repeated keys are *identical* when the rows differ only by `process_date` (the same "

@@ -19,6 +19,7 @@ from pathlib import Path  # Temporary dataset locations
 import pytest  # Test runner and fixtures
 
 # Local modules
+from pipelines import profile as profiler
 from pipelines.profile import ProfileError, main, profile_data
 from pipelines.profile_models import DataProfile, TableProfile
 from tests.data_fixture import build_dispute_dataset, write_csv
@@ -236,9 +237,25 @@ def test_missing_tables_are_logged_and_skipped(
     assert sum("profile_table_missing" in record.message for record in caplog.records) == 13
 
 
-def test_table_without_its_key_column_fails_loudly(tmp_path: Path) -> None:
-    """A source file that lacks the primary key cannot be profiled, and says which table."""
+def test_table_whose_header_lacks_the_key_is_reported_as_unloadable(tmp_path: Path) -> None:
+    """A file without the primary key in its header cannot be profiled, and the table is named."""
     write_csv(tmp_path / "branches.csv", ["branch_code"], [{"branch_code": "S1"}])
+
+    profile = profile_data(tmp_path)
+
+    assert profile.tables == ()
+    assert [(t.name, t.reason.split(":")[0]) for t in profile.unloadable_tables] == [
+        ("branches", "InvalidHeader")
+    ]
+
+
+def test_loaded_table_that_lacks_its_key_column_fails_loudly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Should the parsed columns ever lack the key, profiling stops and names the table."""
+    write_csv(tmp_path / "branches.csv", ["branch_id"], [{"branch_id": "B1"}])
+    monkeypatch.setattr(profiler, "_verify_headers", lambda *_args: None)
+    monkeypatch.setattr(profiler, "_load_table", lambda *_args: {"other"})
 
     with pytest.raises(ProfileError, match="branches lacks key column"):
         profile_data(tmp_path)
@@ -260,9 +277,13 @@ def test_command_line_writes_markdown_and_json_reports(tmp_path: Path) -> None:
     assert {table["name"] for table in document["tables"]} >= {"transactions", "customers"}
 
 
-def test_command_line_reports_failure_with_exit_code_one(tmp_path: Path) -> None:
+def test_command_line_reports_failure_with_exit_code_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A profiling error is logged and turned into a non-zero exit code, not a traceback."""
-    write_csv(tmp_path / "branches.csv", ["branch_code"], [{"branch_code": "S1"}])
+    write_csv(tmp_path / "branches.csv", ["branch_id"], [{"branch_id": "B1"}])
+    monkeypatch.setattr(profiler, "_verify_headers", lambda *_args: None)
+    monkeypatch.setattr(profiler, "_load_table", lambda *_args: {"other"})
 
     exit_code = main(
         [

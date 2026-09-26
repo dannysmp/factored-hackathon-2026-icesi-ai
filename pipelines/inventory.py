@@ -48,6 +48,9 @@ from pipelines.sources import Layout, TableSpec  # Declared layout and expected 
 # Constants and types
 # -----------------------------------------------------------------------------
 
+# A column name is an identifier; a first line that is not is data, not a header.
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
 # UTF-8 byte-order mark that some exporters prepend to every file.
 _BOM = b"\xef\xbb\xbf"
 
@@ -81,6 +84,7 @@ class TableInventory:
     nonconforming_paths: int
     header_variants: tuple[HeaderVariant, ...]
     files_matching_declared_header: int
+    invalid_headers: int = 0
 
 
 # -----------------------------------------------------------------------------
@@ -116,6 +120,17 @@ def _read_header(path: Path) -> tuple[tuple[str, ...] | None, bool]:
     return tuple(parsed), has_bom
 
 
+def _is_header(columns: tuple[str, ...], spec: TableSpec) -> bool:
+    """True when ``columns`` looks like the header of ``spec``'s files rather than a data row.
+
+    Every name must be an identifier and the primary-key columns must be present. A file that
+    lacks its header row would otherwise put its first data row into the report as column names.
+    """
+    return all(_IDENTIFIER.fullmatch(name) for name in columns) and set(spec.primary_key) <= set(
+        columns
+    )
+
+
 def _partition_day(relative: str, table_name: str) -> tuple[date | None, bool]:
     """Return the partition date encoded in ``relative`` and whether the path is conforming."""
     match = _PARTITION_PATH.search(relative)
@@ -147,11 +162,13 @@ def scan_table(data_dir: Path, spec: TableSpec) -> TableInventory:
     Returns
     -------
     TableInventory
-        Counts, partition span, path conformance and header variants.
+        Counts, partition span, path conformance and header variants. Files whose first line is
+        not a header (it has a name that is not an identifier, or lacks the primary key) are
+        counted as invalid and their content is never recorded.
     """
     files = table_files(data_dir, spec)
     headers: Counter[tuple[str, ...]] = Counter()
-    bom_files = undecodable = nonconforming = 0
+    bom_files = undecodable = invalid = nonconforming = 0
     days: set[date] = set()
     total_bytes = 0
 
@@ -162,6 +179,8 @@ def scan_table(data_dir: Path, spec: TableSpec) -> TableInventory:
         bom_files += has_bom
         if header is None:
             undecodable += 1
+        elif not _is_header(header, spec):
+            invalid += 1
         else:
             headers[header] += 1
         if spec.layout is Layout.DAILY_PARTITIONS:
@@ -194,6 +213,7 @@ def scan_table(data_dir: Path, spec: TableSpec) -> TableInventory:
         nonconforming_paths=nonconforming,
         header_variants=variants,
         files_matching_declared_header=headers.get(declared, 0),
+        invalid_headers=invalid,
     )
 
 

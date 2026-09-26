@@ -20,9 +20,11 @@ import pytest  # Test runner and fixtures
 
 # Local modules
 from pipelines import profile as profiler
+from pipelines.inventory import scan_table
 from pipelines.profile import main, profile_data
-from pipelines.profile_models import DataProfile, TableProfile
-from pipelines.profile_report import render_markdown
+from pipelines.profile_models import DataProfile, DomainFacts, TableProfile
+from pipelines.profile_report import Verdict, assess_assumptions, render_markdown
+from pipelines.sources import table
 from tests.data_fixture import (
     build_dispute_dataset,
     write_csv,
@@ -36,6 +38,11 @@ SENTINEL = "SENTINEL_VALUE_9F3A"
 
 def _table(profile: DataProfile, name: str) -> TableProfile:
     return next(t for t in profile.tables if t.name == name)
+
+
+def _facts(profile: DataProfile) -> DomainFacts:
+    assert profile.facts is not None
+    return profile.facts
 
 
 def _transaction(key: str, currency: str, amount: str, usd: str) -> dict[str, str]:
@@ -85,7 +92,7 @@ def test_usd_check_matches_each_amount_with_the_rate_of_its_own_currency(tmp_pat
         ],
     )
 
-    usd = profile_data(tmp_path).facts.usd_amounts  # type: ignore[union-attr]
+    usd = _facts(profile_data(tmp_path)).usd_amounts
 
     assert (usd.present, usd.within_tolerance, usd.outside_tolerance, usd.without_rate) == (
         3,
@@ -122,7 +129,7 @@ def test_usd_check_separates_deviating_amounts_from_amounts_without_a_rate(
         ],
     )
 
-    usd = profile_data(tmp_path).facts.usd_amounts  # type: ignore[union-attr]
+    usd = _facts(profile_data(tmp_path)).usd_amounts
 
     assert (usd.within_tolerance, usd.outside_tolerance, usd.without_rate) == (1, 1, 1)
 
@@ -377,3 +384,213 @@ def test_columns_parsed_differently_from_the_file_headers_make_the_table_unloada
 
     assert profile.tables == ()
     assert "HeaderMismatch" in profile.unloadable_tables[0].reason
+
+
+# -----------------------------------------------------------------------------
+# Files without a header row, bad partition paths and unsafe category text
+# -----------------------------------------------------------------------------
+
+
+def _write_headerless(data_dir: Path, first_row: str) -> None:
+    """A second complaints partition whose first line is a data row, not a header."""
+    write_partition(
+        data_dir,
+        "complaints",
+        DAY,
+        [{"complaint_id": "K1", "creation_date": "2025-01-10 10:00:00"}],
+    )
+    path = data_dir / "complaints" / "year=2025" / "month=01" / "day=11" / "complaints_20250111.csv"
+    path.parent.mkdir(parents=True)
+    path.write_text(f"{first_row}\nC4,OTHER\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "first_row",
+    [f"C3,{SENTINEL}", f"2025-01-11 09:00:00,{SENTINEL} value"],
+    ids=["names-that-look-like-identifiers", "values-that-are-not-identifiers"],
+)
+def test_file_without_a_header_row_never_puts_a_data_value_in_the_report_or_json(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+    first_row: str,
+) -> None:
+    """The first data row must not become column names in any output; the outcome is stated."""
+    _write_headerless(tmp_path, first_row)
+    report, json_path = tmp_path / "out.md", tmp_path / "out.json"
+
+    with caplog.at_level(logging.DEBUG):
+        exit_code = main(
+            ["--data-dir", str(tmp_path), "--report", str(report), "--json", str(json_path)]
+        )
+
+    text = report.read_text(encoding="utf-8")
+    assert exit_code == 0
+    for output in (
+        text,
+        json_path.read_text(encoding="utf-8"),
+        caplog.text,
+        capsys.readouterr().err,
+    ):
+        assert SENTINEL not in output
+        assert "OTHER" not in output
+    assert "InvalidHeader: 1 file(s) of table complaints have no valid header row" in text
+
+
+def test_inventory_counts_files_without_a_header_row_without_recording_them(
+    tmp_path: Path,
+) -> None:
+    """Only the number of such files is kept; the table's header variants stay clean."""
+    _write_headerless(tmp_path, f"C3,{SENTINEL}")
+
+    inventory = scan_table(tmp_path, table("complaints"))
+
+    assert inventory.invalid_headers == 1
+    assert len(inventory.header_variants) == 1
+    assert all(SENTINEL not in name for v in inventory.header_variants for name in v.columns)
+
+
+def test_partition_path_with_an_impossible_date_is_measured_not_fatal(tmp_path: Path) -> None:
+    """A month 13 directory makes its rows undated, but neither aborts nor hides the table."""
+    write_partition(tmp_path, "transactions", DAY, [_transaction("T1", "MXN", "1", "1")])
+    bad = tmp_path / "transactions" / "year=2025" / "month=13" / "day=10"
+    write_csv(
+        bad / "transactions_20251310.csv",
+        table("transactions").column_names,
+        [_transaction("T2", "MXN", "1", "1")],
+    )
+
+    profile = profile_data(tmp_path)
+    transactions = _table(profile, "transactions")
+
+    assert profile.unloadable_tables == ()
+    assert transactions.key.rows == 2
+    assert transactions.inventory.nonconforming_paths == 1
+    assert transactions.lateness is not None
+    assert transactions.lateness.rows_measured == 1
+
+
+def test_category_text_cannot_break_out_of_the_markdown_code_span(tmp_path: Path) -> None:
+    """A category value with a backtick and a newline is shown on one line, backtick replaced."""
+    write_partition(
+        tmp_path,
+        "complaints",
+        DAY,
+        [{"complaint_id": "K1", "creation_date": "2025-01-10 10:00:00", "category": "Fees`\nX"}],
+    )
+
+    text = render_markdown(profile_data(tmp_path))
+
+    assert "`Fees' X` (1)" in text
+
+
+def test_identifier_and_reference_columns_are_never_listed_as_categories(tmp_path: Path) -> None:
+    """Values of identifier-like and foreign-key columns stay out of the value lists."""
+    write_partition(
+        tmp_path,
+        "complaints",
+        DAY,
+        [
+            {
+                "complaint_id": "K1",
+                "creation_date": "2025-01-10 10:00:00",
+                "category": "Fees",
+                "origin_interaction_id": "I1",
+                "customer_id": "C1",
+            },
+        ],
+    )
+
+    columns = {c.name: c for c in _table(profile_data(tmp_path), "complaints").columns}
+
+    assert [v.value for v in columns["category"].top_values] == ["Fees"]
+    assert columns["origin_interaction_id"].top_values == ()
+    assert columns["customer_id"].top_values == ()
+
+
+# -----------------------------------------------------------------------------
+# Boundaries of the measurement rules
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("usd", "within"),
+    [("5.145", 1), ("5.155", 0)],
+    ids=["2.9-percent-away", "3.1-percent-away"],
+)
+def test_usd_tolerance_is_three_percent(tmp_path: Path, usd: str, within: int) -> None:
+    """An amount 2.9 % from the rate is accepted; one 3.1 % away is not."""
+    write_dimension(
+        tmp_path,
+        "daily_exchange_rates",
+        [
+            {
+                "date": "2025-01-10",
+                "source_currency": "MXN",
+                "target_currency": "USD",
+                "exchange_rate": "0.05",
+            }
+        ],
+    )
+    write_partition(tmp_path, "transactions", DAY, [_transaction("T1", "MXN", "100.00", usd)])
+
+    amounts = _facts(profile_data(tmp_path)).usd_amounts
+
+    assert (amounts.within_tolerance, amounts.outside_tolerance) == (within, 1 - within)
+
+
+def test_only_plain_decimal_numbers_count_as_integers_written_with_a_decimal_point(
+    tmp_path: Path,
+) -> None:
+    """``7.5`` and ``-3.0`` qualify; a trailing dot, a leading dot, exponents and signs do not."""
+    values = ["7.5", "-3.0", "7.", ".5", "1e5", "7.5.5", "+3.0", "12"]
+    write_dimension(
+        tmp_path,
+        "customers",
+        [{"customer_id": f"C{i}", "credit_score": v} for i, v in enumerate(values)],
+    )
+
+    column = next(
+        c for c in _table(profile_data(tmp_path), "customers").columns if c.name == "credit_score"
+    )
+
+    assert column.integers_written_as_decimals == 2
+
+
+def test_verdicts_without_an_exchange_rate_table_say_not_assessed(tmp_path: Path) -> None:
+    """Without rates the consistency of amount_usd cannot be judged, so the verdict is neutral."""
+    write_partition(tmp_path, "transactions", DAY, [_transaction("T1", "MXN", "100", "5")])
+
+    verdicts = {a.statement: a.verdict for a in assess_assumptions(profile_data(tmp_path))}
+
+    assert verdicts["amount_usd is present and consistent with the daily exchange rate"] is (
+        Verdict.NOT_ASSESSED
+    )
+
+
+def test_fraud_assumption_is_not_assessed_when_the_label_column_is_absent(
+    tmp_path: Path,
+) -> None:
+    """Without an ``is_fraud`` column no prevalence can be stated, and none is invented."""
+    write_csv(
+        tmp_path
+        / "transactions"
+        / "year=2025"
+        / "month=01"
+        / "day=10"
+        / "transactions_20250110.csv",
+        ["transaction_id", "transaction_date", "process_date"],
+        [
+            {
+                "transaction_id": "T1",
+                "transaction_date": "2025-01-10 08:00:00",
+                "process_date": "2025-01-10",
+            }
+        ],
+    )
+
+    profile = profile_data(tmp_path)
+    verdicts = {a.statement: a.verdict for a in assess_assumptions(profile)}
+
+    assert _facts(profile).fraud.transactions == 0
+    assert verdicts["The fraud label supports a supervised risk model"] is Verdict.NOT_ASSESSED

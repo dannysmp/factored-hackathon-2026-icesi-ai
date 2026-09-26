@@ -98,6 +98,8 @@ ESTIMATE_LIMIT = 3 * MAX_CATEGORICAL_VALUES
 FREE_TEXT_MIN_LENGTH = 30
 # Rows returned for a distribution of reasons or categories.
 DISTRIBUTION_LIMIT = 40
+# Columns whose names end like this hold identifiers, which are never listed as categories.
+IDENTIFIER_SUFFIXES = ("_id", "_number")
 # Lateness thresholds, in days after the event.
 LATE_AFTER_DAYS = 7
 VERY_LATE_AFTER_DAYS = 30
@@ -211,10 +213,10 @@ def _load_table(con: duckdb.DuckDBPyConnection, data_dir: Path, spec: TableSpec)
     else:
         source = str(data_dir / spec.name / "*" / "*" / "*" / "*.csv")
     partition_date = (
-        "make_date("
-        "try_cast(regexp_extract(filename, 'year=([0-9]{4})/', 1) AS INTEGER), "
-        "try_cast(regexp_extract(filename, 'month=([0-9]{2})/', 1) AS INTEGER), "
-        "try_cast(regexp_extract(filename, 'day=([0-9]{2})/', 1) AS INTEGER))"
+        "try_cast(concat("
+        "regexp_extract(filename, 'year=([0-9]{4})/', 1), '-', "
+        "regexp_extract(filename, 'month=([0-9]{2})/', 1), '-', "
+        "regexp_extract(filename, 'day=([0-9]{2})/', 1)) AS DATE)"
     )
     reader = (
         f"read_csv({_quote_literal(source)}, header = true, skip = 0, all_varchar = true, "
@@ -232,6 +234,19 @@ def _load_table(con: duckdb.DuckDBPyConnection, data_dir: Path, spec: TableSpec)
         ) from None
     described = con.execute(f"DESCRIBE {_quote_identifier(spec.name)}").fetchall()
     return {str(row[0]) for row in described}
+
+
+def _reject_invalid_headers(inventory: TableInventory) -> None:
+    """Fail without loading when a file does not start with a header row.
+
+    Loading such a file would take its first data row as column names and drop that row. Only
+    the number of files is reported, never their content.
+    """
+    if inventory.invalid_headers:
+        raise TableLoadError(
+            f"InvalidHeader: {inventory.invalid_headers} file(s) of table {inventory.name} have "
+            "no valid header row (names must be identifiers and include the primary key)"
+        )
 
 
 def _verify_headers(loaded: set[str], inventory: TableInventory) -> None:
@@ -332,6 +347,8 @@ def _column_profiles(
         listable = (
             column.dtype.upper().startswith(("VARCHAR", "BOOLEAN"))
             and column.name not in spec.primary_key
+            and column.name not in {fk.column for fk in spec.foreign_keys}
+            and not column.name.endswith(IDENTIFIER_SUFFIXES)
         )
         top_values: tuple[ValueCount, ...] = ()
         if listable and distinct <= ESTIMATE_LIMIT:
@@ -624,6 +641,7 @@ def profile_data(data_dir: Path, specs: Sequence[TableSpec] = TABLES) -> DataPro
         for spec in available:
             started = time.monotonic()
             try:
+                _reject_invalid_headers(inventories[spec.name])
                 columns = _load_table(con, data_dir, spec)
                 _verify_headers(columns, inventories[spec.name])
                 loaded[spec.name] = columns
