@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging  # Capture log records
 import re  # Look for identifiers anywhere in the text
 import shutil  # Copy the assumptions file for edits
+from datetime import date  # Month of the handmade marts
 from pathlib import Path  # Temporary locations
 from typing import Any  # Mart rows
 
@@ -118,7 +119,7 @@ def test_demand_figures_match_the_fixture(report: str) -> None:
     """Six of ten complaints are disputes, in two months."""
     assert "Dispute cases: **6** between 2025-01 and 2025-02 (2 months with cases)" in report
     assert "3 per month on average; the busiest month is 2025-02 with 3." in report
-    assert "- Share of all complaints: **60.0 %** (6 of 10)." in report
+    assert "- Share of all complaints: **54.5 %** (6 of 11)." in report
     assert "- Share of `Transactions` complaints: **75.0 %**." in report
     assert "| 2025 | 6 |" in report
     assert "| Transaccional | 3 | 60.0 % |" in report
@@ -146,7 +147,7 @@ def test_contact_figures_match_the_fixture(report: str) -> None:
         "| Transaccional | 7.5 | 1.5 | 33.3 % | 33.3 % | -0.25 | 4.00 | 33.3 % | 0.0 % | 33.3 % |"
     )
     unspecified = (
-        "| unspecified | 1.0 | 0.2 | 0.0 % | 100.0 % | 0.00 | n/a | 0.0 % | 0.0 % | 0.0 % |"
+        "| unspecified | 1.0 | 0.2 | 0.0 % | 100.0 % | 0.00 | 5.00 | 0.0 % | 0.0 % | 0.0 % |"
     )
     assert report.index(queja) < report.index(transactional) < report.index(unspecified)
 
@@ -158,8 +159,8 @@ def test_a_category_recorded_almost_always_as_neutral_is_flagged(report: str) ->
 
 
 def test_surveys_without_a_contact_are_reported(report: str) -> None:
-    """One survey references no contact; the report says how many."""
-    assert "Surveys that reference no contact (1) are not attributed" in report
+    """Two surveys reference no contact (one has no reference, one a missing contact)."""
+    assert "Surveys that reference no contact (2) are not attributed" in report
 
 
 def test_the_contact_table_lists_reasons_by_volume_then_name(report: str) -> None:
@@ -175,9 +176,10 @@ def test_the_dispute_definition_is_sized_with_its_neighbours(report: str) -> Non
     assert "| Fees | Cobro indebido | 1 | adjacent (sensitivity) |" in report
     assert "| Transactions | unspecified | 1 | unclassified (sensitivity) |" in report
     assert "| Fees | Cargo no reconocido | 1 | not a dispute |" in report
-    assert "| Primary: `Transactions` / `Cargo no reconocido` | 6 | 60.0 % |" in report
-    assert "| Plus undue charges (`Fees` / `Cobro indebido`) | 7 | 70.0 % |" in report
-    assert "| Plus `Transactions` without a subcategory | 8 | 80.0 % |" in report
+    assert "| Fees | unspecified | 1 | not a dispute |" in report
+    assert "| Primary: `Transactions` / `Cargo no reconocido` | 6 | 54.5 % |" in report
+    assert "| Plus undue charges (`Fees` / `Cobro indebido`) | 7 | 63.6 % |" in report
+    assert "| Plus `Transactions` without a subcategory | 8 | 72.7 % |" in report
 
 
 def test_the_baseline_median_is_qualified_as_covering_closed_cases_only(report: str) -> None:
@@ -188,6 +190,11 @@ def test_the_baseline_median_is_qualified_as_covering_closed_cases_only(report: 
 
 def test_the_cost_by_category_shows_how_the_proxy_changes_the_answer(report: str) -> None:
     """Each reason category's base cost per dispute is listed beside its handling time."""
+    assert (
+        "moves the base cost per dispute between USD 0.22 and USD 1.69; the low-to-high "
+        "assumptions move it between USD 0.75 and USD 4.38." in report
+    )
+    assert "matters more than" not in report
     assert "| Queja | 2.0 | USD 0.45 |" in report
     assert "| Transaccional | 7.5 | USD 1.69 |" in report
 
@@ -327,3 +334,40 @@ def test_a_handling_category_that_matches_no_reason_is_rejected(
         render_workflow_analysis(marts, load_assumptions(bad), manifest)
     assert main([*_arguments(tmp_path, silver), "--assumptions", str(bad)]) == 1
     assert not (tmp_path / "reports").exists()
+
+
+def _marts_with_neutral_share(neutral: int, total: int) -> dict[str, list[dict[str, Any]]]:
+    """Marts of one reason category whose contacts are ``neutral`` of ``total`` neutral."""
+    marts: dict[str, list[dict[str, Any]]] = {name: [] for name in MART_NAMES}
+    marts["dispute_resolution_overall"] = [
+        {"cases_with_days": 0, "median_days": None, "p90_days": None}
+    ]
+    marts["contact_demand_monthly"] = [
+        {
+            "month": date(2025, 1, 1),
+            "reason_category": "Transaccional",
+            "interactions": total,
+            "interactions_with_duration": total,
+            "duration_seconds_sum": 60 * total,
+            "interactions_with_wait": total,
+            "wait_seconds_sum": 10 * total,
+            "resolved_interactions": 0,
+            "escalated_interactions": 0,
+            "followup_interactions": 0,
+            "neutral_interactions": neutral,
+            "negative_interactions": 0,
+            "interactions_with_score": total,
+            "sentiment_score_sum": 0,
+        }
+    ]
+    return marts
+
+
+@pytest.mark.parametrize(("neutral", "flagged"), [(95, True), (94, False)])
+def test_the_neutral_caveat_starts_at_ninety_five_percent(neutral: int, flagged: bool) -> None:
+    """95 of 100 neutral contacts is flagged; 94 is not."""
+    text = render_workflow_analysis(
+        _marts_with_neutral_share(neutral, 100), load_assumptions(), {"inputs": {}, "marts": {}}
+    )
+
+    assert ("`Transaccional` contacts are recorded as neutral in" in text) is flagged

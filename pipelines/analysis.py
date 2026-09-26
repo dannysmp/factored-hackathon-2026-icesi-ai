@@ -611,6 +611,13 @@ def _cost_section(marts: Marts, assumptions: Assumptions, profiles: list[Contact
             "reason category in the data"
         )
     per_case = _handling_cost(assumptions, profile)
+    base_costs = [
+        cost
+        for other in profiles
+        if (cost := _handling_cost(assumptions, other)["base"]) is not None
+    ]
+    category_low = min(base_costs, default=None)
+    category_high = max(base_costs, default=None)
     alternatives = [
         [
             other.category,
@@ -660,8 +667,10 @@ def _cost_section(marts: Marts, assumptions: Assumptions, profiles: list[Contact
                 ],
             ),
             "",
-            "Which reason category models a dispute contact matters more than the low-to-high "
-            "range: at the base assumptions, the cost per dispute by category is",
+            f"Taking another reason category as the model of a dispute contact moves the base cost "
+            f"per dispute between {_usd(category_low)} and {_usd(category_high)}; the low-to-high "
+            f"assumptions move it between {_usd(per_case['low'])} and {_usd(per_case['high'])}. "
+            "At the base assumptions, the cost per dispute by category is",
             "",
             _table(
                 ["Reason category", "Mean handling (min)", "Base cost per dispute"], alternatives

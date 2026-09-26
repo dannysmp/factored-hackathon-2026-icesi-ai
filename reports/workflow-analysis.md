@@ -128,7 +128,7 @@ The source records neither the cost of an agent nor the contacts a dispute needs
 | Cost per dispute | USD 0.37 | USD 0.83 | USD 2.15 |
 | Cost per month at 332 cases | USD 122.31 | USD 275.19 | USD 713.46 |
 
-Which reason category models a dispute contact matters more than the low-to-high range: at the base assumptions, the cost per dispute by category is
+Taking another reason category as the model of a dispute contact moves the base cost per dispute between USD 0.83 and USD 2.02; the low-to-high assumptions move it between USD 0.37 and USD 2.15. At the base assumptions, the cost per dispute by category is
 
 | Reason category | Mean handling (min) | Base cost per dispute |
 |---|---|---|

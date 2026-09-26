@@ -119,14 +119,19 @@ def test_satisfaction_is_tied_to_the_reason_of_the_contact(gold: Path) -> None:
         for row in read_mart(gold, "contact_satisfaction")
     }
 
-    assert scores == {"Queja": (1, 1), "Transaccional": (3, 12), "unmatched": (1, 2)}
+    assert scores == {
+        "Queja": (1, 1),
+        "Transaccional": (3, 12),
+        "unmatched": (2, 5),
+        "unspecified": (1, 5),
+    }
 
 
 def test_complaint_categories_count_every_complaint(gold: Path) -> None:
-    """The category mix covers all ten complaints, disputes or not."""
+    """The category mix covers all eleven complaints, disputes or not."""
     mix = read_mart(gold, "complaint_category_mix")
 
-    assert sum(row["cases"] for row in mix) == 10
+    assert sum(row["cases"] for row in mix) == 11
 
 
 def test_marts_and_manifest_are_byte_identical_across_builds(
@@ -191,7 +196,7 @@ def test_surveys_that_reference_no_contact_are_counted_not_dropped(gold: Path) -
     """The satisfaction mart accounts for every survey, with its own label for unmatched ones."""
     rows = read_mart(gold, "contact_satisfaction")
 
-    assert sum(row["surveys"] for row in rows) == 5
+    assert sum(row["surveys"] for row in rows) == 7
 
 
 def test_a_survey_without_a_score_is_not_counted_in_the_score_denominator(tmp_path: Path) -> None:

@@ -376,13 +376,13 @@ def build_service_dataset(data_dir: Path) -> None:
     """Build the clean dataset plus service contacts, complaints and surveys of known values.
 
     Five contacts (transactional of 300 and 600 seconds and one without duration, wait or score;
-    a complaint of 120 seconds; one without a reason category), ten complaints of which six are
+    a complaint of 120 seconds; one without a reason category), eleven complaints of which six are
     disputes (resolved in 10 and 20 days, one of them with the SLA
     breached and a repeat complainer; closed in 30 days; open; rejected; escalated with days
     recorded that the overall figure must ignore), one complaint that only looks like a dispute
     (another subcategory), one of the neighbouring undue-charge subcategory, one of the Transactions
-    category without a subcategory, one in another category, and a survey per contact plus one
-    that references no contact.
+    category without a subcategory, one of another category without a subcategory, one in another
+    category, and a survey per contact plus one with no contact and one with a dangling reference.
     """
     build_clean_dataset(data_dir)
     write_dimension(data_dir, "service_agents", [valid_row("service_agents", agent_id="A1")])
@@ -579,6 +579,14 @@ def build_service_dataset(data_dir: Path) -> None:
                 resolution_days="",
             ),
             complaint(
+                "K11",
+                february,
+                category="Fees",
+                subcategory="",
+                status="Open",
+                resolution_days="",
+            ),
+            complaint(
                 "K10",
                 february,
                 category="Transactions",
@@ -618,6 +626,8 @@ def build_service_dataset(data_dir: Path) -> None:
             survey("S3", "I3", "1", january),
             survey("S4", "I4", "4", january),
             survey("S5", "", "2", january),
+            survey("S6", "I99", "3", january),
+            survey("S7", "I5", "5", january),
         ],
     )
     write_partition(data_dir, "satisfaction_surveys", february, [survey("S2", "I2", "3", february)])
