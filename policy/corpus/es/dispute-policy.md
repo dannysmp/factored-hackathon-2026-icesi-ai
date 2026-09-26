@@ -44,7 +44,7 @@ Aunque la solicitud cumpla las reglas, pasa a revisión de un asesor en estos ca
 - Es un reporte de fraude.
 - El sistema no entendió la solicitud con suficiente certeza (confianza inferior al 60 %).
 - El cliente ha presentado reclamos repetidos.
-- El monto es de 5 000 USD o más.
+- El monto es de 5 000 USD o más.
 - No se conoce el monto en dólares.
 - El puntaje de riesgo de la transacción es 0,80 o más. El puntaje solo sirve para enviar el caso a revisión; nunca decide el resultado.
 

@@ -44,7 +44,7 @@ Even when a request meets the rules, a person reviews it in these cases:
 - It is a fraud claim.
 - The request was not understood with enough confidence (below 60%).
 - The customer has filed repeated complaints.
-- The amount is 5,000 USD or more.
+- The amount is 5,000 USD or more.
 - The amount in US dollars is not known.
 - The transaction's risk score is 0.80 or higher. The score only decides that a person reviews the dispute; it never decides the outcome.
 

@@ -44,7 +44,7 @@ Mesmo que o pedido cumpra as regras, ele é encaminhado para análise de um aten
 - É uma contestação por fraude.
 - O sistema não entendeu o pedido com segurança suficiente (confiança abaixo de 60%).
 - O cliente apresentou reclamações repetidas.
-- O valor é de 5.000 USD ou mais.
+- O valor é de 5.000 USD ou mais.
 - O valor em dólares não é conhecido.
 - A pontuação de risco da transação é 0,80 ou mais. A pontuação serve apenas para encaminhar o caso para análise; nunca decide o resultado.
 
@@ -67,9 +67,9 @@ Cada decisão traz um destes motivos.
 | `transaction_date_in_future` | A data da transação está no futuro. |
 | `filing_window_expired` | O prazo para apresentar esta contestação expirou. |
 | `duplicate_open_case` | Já existe uma contestação aberta para esta transação. |
-| `escalate_fraud_claim` | É uma contestação por fraude; é encaminhada para análise de um atendente. |
-| `escalate_low_nlu_confidence` | O sistema não entendeu o pedido com segurança suficiente; é encaminhado para análise de um atendente. |
-| `escalate_repeat_complainer` | O cliente tem reclamações repetidas; é encaminhado para análise de um atendente. |
-| `escalate_amount_above_threshold` | O valor atinge o valor de referência para análise; é encaminhado para análise de um atendente. |
-| `escalate_amount_unknown` | O valor em dólares não é conhecido; é encaminhado para análise de um atendente. |
-| `escalate_risk_score` | A pontuação de risco atinge o valor de referência; é encaminhado para análise de um atendente. |
+| `escalate_fraud_claim` | É uma contestação por fraude; o caso é encaminhado para análise de um atendente. |
+| `escalate_low_nlu_confidence` | O sistema não entendeu o pedido com segurança suficiente; o caso é encaminhado para análise de um atendente. |
+| `escalate_repeat_complainer` | O cliente tem reclamações repetidas; o caso é encaminhado para análise de um atendente. |
+| `escalate_amount_above_threshold` | O valor da transação alcança o valor de referência para análise; o caso é encaminhado para análise de um atendente. |
+| `escalate_amount_unknown` | O valor em dólares não é conhecido; o caso é encaminhado para análise de um atendente. |
+| `escalate_risk_score` | A pontuação de risco atinge o valor de referência; o caso é encaminhado para análise de um atendente. |

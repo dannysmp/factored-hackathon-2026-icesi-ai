@@ -111,7 +111,7 @@ class Messages:
     codes_intro: str
     codes_header: tuple[str, str]
     categories: dict[DisputeCategory, str]
-    product_names: dict[str, str]
+    product_names: dict[str, str]  # proper names: capitalised inside a sentence
     transaction_types_indefinite: dict[str, str]
     transaction_types_plural: dict[str, str]
     statuses: dict[TransactionStatus, str]
@@ -120,6 +120,8 @@ class Messages:
     and_word: str
     or_word: str
     nor_word: str
+    day_one: str
+    day_many: str
 
 
 _ES = Messages(
@@ -159,17 +161,18 @@ _ES = Messages(
     windows_intro=(
         "La disputa debe presentarse dentro de un plazo, contado en días calendario desde la "
         "fecha de la transacción. El último día del plazo todavía es válido: por ejemplo, con "
-        "un plazo de {example} días, la disputa se puede presentar el día {example}, pero no "
+        "un plazo de {example_days}, la disputa se puede presentar el día {example}, pero no "
         "el día {next}."
     ),
-    window_line="- {category}: {days} días.",
+    window_line="- {category}: {days}.",
     confirmation_all=(
         "Antes de presentar una disputa, el cliente confirma exactamente lo que se va a "
         "presentar: la transacción, el motivo y los datos de la solicitud."
     ),
     confirmation_some=(
-        "Antes de presentar una disputa por {categories}, el cliente confirma exactamente lo "
-        "que se va a presentar: la transacción, el motivo y los datos de la solicitud."
+        "En los casos de {categories}, antes de presentar la disputa, el cliente confirma "
+        "exactamente lo que se va a presentar: la transacción, el motivo y los datos de la "
+        "solicitud."
     ),
     confirmation_none="La política no exige confirmación previa a la presentación.",
     human_intro=(
@@ -181,7 +184,7 @@ _ES = Messages(
         "{percent})."
     ),
     human_repeat="- El cliente ha presentado reclamos repetidos.",
-    human_amount="- El monto es de {amount} USD o más.",
+    human_amount="- El monto es de {amount} o más.",
     human_unknown_amount="- No se conoce el monto en dólares.",
     human_risk=(
         "- El puntaje de riesgo de la transacción es {score} o más. El puntaje solo sirve para "
@@ -273,6 +276,8 @@ _ES = Messages(
     and_word="y",
     or_word="o",
     nor_word="ni",
+    day_one="día",
+    day_many="días",
 )
 
 _PT = Messages(
@@ -312,17 +317,17 @@ _PT = Messages(
     windows_intro=(
         "A contestação deve ser apresentada dentro de um prazo, contado em dias corridos a "
         "partir da data da transação. O último dia do prazo ainda é válido: por exemplo, com "
-        "um prazo de {example} dias, a contestação pode ser apresentada no {example}º dia, "
+        "um prazo de {example_days}, a contestação pode ser apresentada no {example}º dia, "
         "mas não no {next}º."
     ),
-    window_line="- {category}: {days} dias.",
+    window_line="- {category}: {days}.",
     confirmation_all=(
         "Antes de apresentar uma contestação, o cliente confirma exatamente o que será "
         "apresentado: a transação, o motivo e os dados do pedido."
     ),
     confirmation_some=(
-        "Antes de apresentar uma contestação por {categories}, o cliente confirma exatamente "
-        "o que será apresentado: a transação, o motivo e os dados do pedido."
+        "Nos casos de {categories}, antes de apresentar a contestação, o cliente confirma "
+        "exatamente o que será apresentado: a transação, o motivo e os dados do pedido."
     ),
     confirmation_none="A política não exige confirmação antes da apresentação.",
     human_intro=(
@@ -335,7 +340,7 @@ _PT = Messages(
         "{percent})."
     ),
     human_repeat="- O cliente apresentou reclamações repetidas.",
-    human_amount="- O valor é de {amount} USD ou mais.",
+    human_amount="- O valor é de {amount} ou mais.",
     human_unknown_amount="- O valor em dólares não é conhecido.",
     human_risk=(
         "- A pontuação de risco da transação é {score} ou mais. A pontuação serve apenas para "
@@ -407,30 +412,33 @@ _PT = Messages(
         ReasonCode.FILING_WINDOW_EXPIRED: "O prazo para apresentar esta contestação expirou.",
         ReasonCode.DUPLICATE_OPEN_CASE: "Já existe uma contestação aberta para esta transação.",
         ReasonCode.ESCALATE_FRAUD_CLAIM: (
-            "É uma contestação por fraude; é encaminhada para análise de um atendente."
+            "É uma contestação por fraude; o caso é encaminhado para análise de um atendente."
         ),
         ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: (
-            "O sistema não entendeu o pedido com segurança suficiente; é encaminhado para "
-            "análise de um atendente."
+            "O sistema não entendeu o pedido com segurança suficiente; o caso é encaminhado "
+            "para análise de um atendente."
         ),
         ReasonCode.ESCALATE_REPEAT_COMPLAINER: (
-            "O cliente tem reclamações repetidas; é encaminhado para análise de um atendente."
+            "O cliente tem reclamações repetidas; o caso é encaminhado para análise de um "
+            "atendente."
         ),
         ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: (
-            "O valor atinge o valor de referência para análise; é encaminhado para análise de "
-            "um atendente."
+            "O valor da transação alcança o valor de referência para análise; o caso é "
+            "encaminhado para análise de um atendente."
         ),
         ReasonCode.ESCALATE_AMOUNT_UNKNOWN: (
-            "O valor em dólares não é conhecido; é encaminhado para análise de um atendente."
+            "O valor em dólares não é conhecido; o caso é encaminhado para análise de um atendente."
         ),
         ReasonCode.ESCALATE_RISK_SCORE: (
-            "A pontuação de risco atinge o valor de referência; é encaminhado para análise de "
-            "um atendente."
+            "A pontuação de risco atinge o valor de referência; o caso é encaminhado para "
+            "análise de um atendente."
         ),
     },
     and_word="e",
     or_word="ou",
     nor_word="nem",
+    day_one="dia",
+    day_many="dias",
 )
 
 _EN = Messages(
@@ -470,24 +478,24 @@ _EN = Messages(
     windows_intro=(
         "A dispute must be filed within a deadline, counted in calendar days from the "
         "transaction date. The last day of the deadline is still valid: for example, with a "
-        "deadline of {example} days, the dispute can be filed on day {example} but not on day "
+        "deadline of {example_days}, the dispute can be filed on day {example} but not on day "
         "{next}."
     ),
-    window_line="- {category}: {days} days.",
+    window_line="- {category}: {days}.",
     confirmation_all=(
         "Before a dispute is filed, the customer confirms exactly what is going to be filed: "
         "the transaction, the reason and the details of the request."
     ),
     confirmation_some=(
-        "Before a dispute for {categories} is filed, the customer confirms exactly what is "
-        "going to be filed: the transaction, the reason and the details of the request."
+        "For {categories} disputes, before the dispute is filed, the customer confirms exactly "
+        "what is going to be filed: the transaction, the reason and the details of the request."
     ),
     confirmation_none="The policy does not require confirmation before filing.",
     human_intro="Even when a request meets the rules, a person reviews it in these cases:",
     human_fraud="- It is a fraud claim.",
     human_confidence="- The request was not understood with enough confidence (below {percent}).",
     human_repeat="- The customer has filed repeated complaints.",
-    human_amount="- The amount is {amount} USD or more.",
+    human_amount="- The amount is {amount} or more.",
     human_unknown_amount="- The amount in US dollars is not known.",
     human_risk=(
         "- The transaction's risk score is {score} or higher. The score only decides that a "
@@ -577,6 +585,8 @@ _EN = Messages(
     and_word="and",
     or_word="or",
     nor_word="or",
+    day_one="day",
+    day_many="days",
 )
 
 MESSAGES: dict[str, Messages] = {"es": _ES, "pt": _PT, "en": _EN}
@@ -628,6 +638,12 @@ def _percent(value: float, messages: Messages) -> str:
 def _capitalise(text: str) -> str:
     """The text with its first letter in upper case and the rest untouched."""
     return text[:1].upper() + text[1:]
+
+
+def _days(count: int, messages: Messages) -> str:
+    """A number of days with the unit in the singular or the plural."""
+    unit = messages.day_one if count == 1 else messages.day_many
+    return f"{count} {unit}"
 
 
 def _label(mapping: dict[str, str], key: str) -> str:
@@ -704,11 +720,13 @@ def _filing_windows(policy: Policy, m: Messages) -> str:
     """The deadline rule with a worked example, then one line per category with its window."""
     windows = [policy.categories[category].filing_window_days for category in DisputeCategory]
     example = min(windows)
-    intro = m.windows_intro.format(example=example, next=example + 1)
+    intro = m.windows_intro.format(
+        example=example, example_days=_days(example, m), next=example + 1
+    )
     lines = [
         m.window_line.format(
             category=_capitalise(m.categories[category]),
-            days=policy.categories[category].filing_window_days,
+            days=_days(policy.categories[category].filing_window_days, m),
         )
         for category in DisputeCategory
     ]
@@ -735,7 +753,8 @@ def _human_review(policy: Policy, m: Messages) -> str:
     ]
     if routing.escalate_repeat_complainer:
         lines.append(m.human_repeat)
-    lines.append(m.human_amount.format(amount=_amount(routing.escalate_amount_usd, m)))
+    dollars = f"{_amount(routing.escalate_amount_usd, m)}{NO_BREAK_SPACE}USD"
+    lines.append(m.human_amount.format(amount=dollars))
     if routing.escalate_unknown_amount:
         lines.append(m.human_unknown_amount)
     lines.append(m.human_risk.format(score=_rate(routing.risk_score_threshold, m)))

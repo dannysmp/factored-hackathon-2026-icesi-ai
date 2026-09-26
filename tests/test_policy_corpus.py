@@ -150,9 +150,9 @@ def test_every_reason_code_appears_in_every_language(policy: Policy) -> None:
 @pytest.mark.parametrize(
     ("language", "amount", "percent", "score", "days"),
     [
-        ("en", "5,000 USD", "60%", "0.80", "120 days"),
-        ("es", f"5{NBSP}000 USD", f"60{NBSP}%", "0,80", "120 días"),
-        ("pt", "5.000 USD", "60%", "0,80", "120 dias"),
+        ("en", f"5,000{NBSP}USD", "60%", "0.80", "120 days"),
+        ("es", f"5{NBSP}000{NBSP}USD", f"60{NBSP}%", "0,80", "120 días"),
+        ("pt", f"5.000{NBSP}USD", "60%", "0,80", "120 dias"),
     ],
 )
 def test_every_parameter_of_the_policy_appears_in_the_language_s_own_format(
@@ -227,6 +227,7 @@ def test_rates_and_percentages_are_never_rounded() -> None:
 
 def _parse_number(text: str, language: str) -> Decimal:
     """Read a number written in a language's format back into a Decimal."""
+    text = text.strip()
     if language == "en":
         return Decimal(text.replace(",", ""))
     if language == "es":
@@ -260,7 +261,7 @@ def test_the_numbers_in_the_text_parse_back_to_exactly_the_policy_values(
     number = rf"([\d.,{NBSP}]+)"
     percent = re.search(rf"\([^()]*?{number}\s?%\)", section)
     score = re.search(r"([\d.,]+) (?:or|o|ou) (?:higher|más|mais)", section)
-    money = re.search(rf"{number} USD", section)
+    money = re.search(rf"{number}{NBSP}USD", section)
     assert percent and score and money
     assert _parse_number(percent.group(1), language) == Decimal(str(floor)) * 100
     assert _parse_number(score.group(1), language) == Decimal(str(threshold))
@@ -575,5 +576,144 @@ def test_spanish_numbers_use_the_neutral_form(policy: Policy) -> None:
     es = render_corpus(policy)["es/dispute-policy.md"]
     pt = render_corpus(policy)["pt/dispute-policy.md"]
 
-    assert f"5{NBSP}000 USD" in es and f"60{NBSP}%" in es and "0,80" in es
-    assert "5.000 USD" in pt and "60%" in pt and "0,80" in pt
+    assert f"5{NBSP}000{NBSP}USD" in es and f"60{NBSP}%" in es and "0,80" in es
+    assert f"5.000{NBSP}USD" in pt and "60%" in pt and "0,80" in pt
+
+
+# -----------------------------------------------------------------------------
+# Terminology pinned in the text itself (survives regenerating the corpus)
+# -----------------------------------------------------------------------------
+
+
+def _document(policy: Policy, language: str) -> str:
+    return render_corpus(policy)[f"{language}/dispute-policy.md"]
+
+
+@pytest.mark.parametrize(
+    ("language", "category_line", "fraud_bullet", "advisor_line"),
+    [
+        (
+            "es",
+            "- Reporte de fraude: 180 días.",
+            "- Es un reporte de fraude.",
+            "pasa a revisión de un asesor en estos casos:",
+        ),
+        (
+            "pt",
+            "- Contestação por fraude: 180 dias.",
+            "- É uma contestação por fraude.",
+            "ele é encaminhado para análise de um atendente nestes casos:",
+        ),
+    ],
+)
+def test_the_fraud_category_and_the_human_step_use_their_own_words(
+    policy: Policy, language: str, category_line: str, fraud_bullet: str, advisor_line: str
+) -> None:
+    """The exact list line, bullet and intro are asserted, so a changed template fails here."""
+    text = _document(policy, language)
+
+    assert category_line in text
+    assert fraud_bullet in text
+    assert advisor_line in text
+
+
+@pytest.mark.parametrize("language", ["es", "pt"])
+def test_complaint_words_appear_only_for_repeated_complaints(policy: Policy, language: str) -> None:
+    """`reclamo` / `reclamação` never sits next to fraud and appears only for repeat complainers."""
+    text = _document(policy, language)
+    root = {"es": "reclam", "pt": "reclamaç"}[language]
+    repeated = {"es": "repetidos", "pt": "repetidas"}[language]
+
+    lines = [line for line in text.splitlines() if root in line.lower()]
+
+    assert len(lines) == 2  # the routing bullet and its row in the reason table
+    assert all(repeated in line for line in lines)
+    assert not any("fraude" in line.lower() for line in lines)
+
+
+@pytest.mark.parametrize(
+    ("language", "advisor", "forbidden"),
+    [("es", "asesor", "agente"), ("pt", "atendente", "agente")],
+)
+def test_the_human_step_is_always_the_advisor_term(
+    policy: Policy, language: str, advisor: str, forbidden: str
+) -> None:
+    """Every routing sentence and reason row names the advisor, never another term."""
+    text = _document(policy, language)
+
+    assert text.count(advisor) >= 8
+    assert forbidden not in text.lower()
+
+
+def test_portuguese_names_the_review_threshold_a_reference_value_not_a_limit(
+    policy: Policy,
+) -> None:
+    """`limite` would be read as the card's credit limit."""
+    text = _document(policy, "pt")
+
+    assert "valor de referência" in text
+    assert "limite" not in text.lower()
+
+
+def test_spanish_names_the_thresholds_umbral(policy: Policy) -> None:
+    """The amount and risk-score rows of the reason table use the same word."""
+    text = _document(policy, "es")
+
+    assert "El monto alcanza el umbral de revisión;" in text
+    assert "El puntaje de riesgo alcanza el umbral;" in text
+
+
+def test_portuguese_reason_rows_name_the_case_as_the_subject_of_the_referral(
+    policy: Policy,
+) -> None:
+    """A feminine or neutral subject is never followed by a masculine verb about another noun."""
+    rows = [
+        line for line in _document(policy, "pt").splitlines() if line.startswith("| `escalate_")
+    ]
+
+    assert len(rows) == 6
+    assert all("o caso é encaminhado" in row for row in rows)
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_a_category_that_alone_requires_confirmation_is_named_once(
+    policy: Policy, language: str
+) -> None:
+    """Only the fraud category confirms: the sentence names it once and is grammatical."""
+    only_fraud = policy.model_copy(
+        update={
+            "categories": {
+                c: policy.categories[c].model_copy(
+                    update={"requires_confirmation": c is DisputeCategory.FRAUD_CLAIM}
+                )
+                for c in DisputeCategory
+            }
+        }
+    )
+    messages = MESSAGES[language]
+    label = messages.categories[DisputeCategory.FRAUD_CLAIM]
+
+    text = _document(only_fraud, language)
+    sentence = messages.confirmation_some.format(categories=label)
+
+    opening = {
+        "es": "En los casos de reporte de fraude, antes de presentar la disputa,",
+        "pt": "Nos casos de contestação por fraude, antes de apresentar a contestação,",
+        "en": "For fraud claim disputes, before the dispute is filed,",
+    }[language]
+    assert sentence in text
+    assert text.count(opening) == 1
+    assert sentence.count(label) == 1
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_a_window_of_one_day_uses_the_singular(policy: Policy, language: str) -> None:
+    """`1 día`, `1 dia` and `1 day`, never `1 días`."""
+    messages = MESSAGES[language]
+    one_day = _window(policy, DisputeCategory.DUPLICATE_CHARGE, 1)
+
+    text = _document(one_day, language)
+
+    assert f": 1 {messages.day_one}." in text
+    assert f"de 1 {messages.day_one}," in text or f"of 1 {messages.day_one}," in text
+    assert re.search(rf"(?<!\d)1 {messages.day_many}", text) is None
