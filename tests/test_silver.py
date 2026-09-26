@@ -789,9 +789,12 @@ def test_a_same_size_edit_of_an_input_file_rebuilds_the_table(clean: tuple[Path,
     raw, out = clean
     _outcomes(raw, out)
     path = raw / "customers.csv"
-    text = path.read_text(encoding="utf-8")
-    original = valid_row("customers", customer_id="C1")["first_name"]
-    path.write_text(text.replace(original, "X" * len(original), 1), encoding="utf-8")
+    before = path.read_bytes()
+    original = valid_row("customers", customer_id="C1")["first_name"].encode()
+    after = before.replace(original, b"X" * len(original), 1)
+    assert after != before
+    assert len(after) == len(before)
+    path.write_bytes(after)
 
     second = _outcomes(raw, out)
 
@@ -1058,3 +1061,126 @@ def test_a_build_that_fails_midway_leaves_no_manifest_of_the_earlier_build(
         _outcomes(raw, out)
 
     assert not SilverPaths(out).manifest("customers").exists()
+
+
+def test_adding_a_missing_referenced_row_returns_the_orphans_to_the_cleaned_table(
+    clean: tuple[Path, Path],
+) -> None:
+    """The dependency rule works in both directions: the orphans are recovered on the next run."""
+    raw, out = clean
+    full = (raw / "customers.csv").read_bytes()
+    _only_customer_c1(raw)
+    _outcomes(raw, out)
+    (raw / "customers.csv").write_bytes(full)
+
+    second = _outcomes(raw, out)
+
+    assert second["products"].status is Status.BUILT
+    assert _rows(
+        SilverPaths(out).silver("products"), "SELECT product_id FROM '{path}' ORDER BY 1"
+    ) == [("P1",), ("P2",)]
+
+
+def test_a_different_engine_version_rebuilds_the_table(
+    clean: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Outputs are only trusted for the database engine version that produced them."""
+    raw, out = clean
+    _outcomes(raw, out)
+    monkeypatch.setattr(duckdb, "__version__", "0.0.0-other")
+
+    second = _outcomes(raw, out)
+
+    assert all(o.status is Status.BUILT for o in second.values())
+
+
+def test_a_sidecar_the_manifest_does_not_list_triggers_a_rebuild(clean: tuple[Path, Path]) -> None:
+    """A stray sidecar next to a table without unknown columns is stale and removed."""
+    raw, out = clean
+    _outcomes(raw, out)
+    paths = SilverPaths(out)
+    paths.extras("customers").parent.mkdir(parents=True, exist_ok=True)
+    paths.extras("customers").write_bytes(b"stale")
+
+    second = _outcomes(raw, out)
+
+    assert second["customers"].status is Status.BUILT
+    assert not paths.extras("customers").exists()
+
+
+@pytest.mark.parametrize("text", ["9007199254740993.0", " 700 ", "1e3", "700.5"])
+def test_integer_text_is_matched_exactly(clean: tuple[Path, Path], text: str) -> None:
+    """Padding, exponents and decimal forms beyond exact range are not integers."""
+    raw, out = clean
+    write_dimension(
+        raw,
+        "customers",
+        [
+            valid_row(
+                "customers",
+                customer_id="C1",
+                document_number="D1",
+                credit_score=text,
+                registration_branch_id="B1",
+            )
+        ],
+    )
+
+    manifest = _outcomes(raw, out)["customers"].manifest
+
+    assert manifest is not None
+    assert manifest["quarantine_reasons"] == {"type:credit_score": 1}
+
+
+def test_a_value_beyond_the_declared_scale_is_rejected_at_any_length(
+    clean: tuple[Path, Path],
+) -> None:
+    """Eleven decimals are as invalid as three; nothing is rounded silently."""
+    raw, out = clean
+    write_dimension(
+        raw,
+        "customers",
+        [
+            valid_row(
+                "customers",
+                customer_id="C1",
+                document_number="D1",
+                estimated_monthly_income="1000.00000000004",
+                registration_branch_id="B1",
+            )
+        ],
+    )
+
+    manifest = _outcomes(raw, out)["customers"].manifest
+
+    assert manifest is not None
+    assert manifest["quarantine_reasons"] == {"type:estimated_monthly_income": 1}
+
+
+def test_rows_quarantined_for_an_orphan_reference_hold_their_typed_values_as_text(
+    clean: tuple[Path, Path],
+) -> None:
+    """The documented rule: orphan rows are typed before they are quarantined."""
+    raw, out = clean
+    write_dimension(
+        raw,
+        "products",
+        [
+            valid_row(
+                "products",
+                product_id="P1",
+                customer_id="ORPHAN",
+                product_number="N1",
+                opening_branch_id="B1",
+                credit_limit="10.5",
+                has_linked_app="False",
+            )
+        ],
+    )
+
+    _outcomes(raw, out)
+
+    assert _rows(
+        SilverPaths(out).quarantine("products"),
+        "SELECT customer_id, credit_limit, has_linked_app FROM '{path}'",
+    ) == [("ORPHAN", "10.50", "false")]

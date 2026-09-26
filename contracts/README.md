@@ -11,3 +11,9 @@ registry in `pipelines/sources.py`; each contract module adds what the registry 
 
 A released contract never changes. A change is a new module (`v2.py`) and a new version string,
 which every cleaned artefact records in its manifest.
+
+## Quarantined rows
+
+A quarantined row holds its values as text. Rows rejected for a type, value, range or missing
+value hold the text as delivered (canonical spellings applied); rows rejected for an orphan
+reference were typed first, so booleans and decimals appear in their rendered form.

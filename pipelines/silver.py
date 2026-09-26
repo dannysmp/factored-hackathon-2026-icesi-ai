@@ -39,8 +39,10 @@ this is exact and takes minutes at the current data size. Partition-level increm
 the designated step when the data outgrows that.
 
 A version of a key that breaks the contract is quarantined and never supersedes an older valid
-version: the older version stays in the cleaned table. Quarantined rows hold the raw text of the
-source, with canonical spellings applied, so a row can be read as it arrived. The code version
+version: the older version stays in the cleaned table. Quarantined rows hold the text as
+delivered, with canonical spellings applied; rows quarantined for an orphan reference have
+already been typed and hold their values rendered as text (``false`` for ``False``, ``10.0000``
+for ``10.00``). The code version
 records the commit, suffixed ``-dirty`` when tracked files have uncommitted changes.
 """
 
@@ -140,17 +142,18 @@ def _typed_expression(column: Column) -> str:
         # NaN, infinities and huge values become NULL instead of failing the query.
         number = f"try_cast({raw} AS DOUBLE)"
         via_double = (
-            f"CASE WHEN {number} = floor({number}) AND abs({number}) < {EXACT_DOUBLE_LIMIT} "
+            f"CASE WHEN regexp_full_match({raw}, '[+-]?[0-9]+[.][0-9]+') "
+            f"AND {number} = floor({number}) AND abs({number}) < {EXACT_DOUBLE_LIMIT} "
             f"THEN CAST({number} AS BIGINT) END"
         )
         plain = f"regexp_full_match({raw}, '[+-]?[0-9]+')"
         return f"CASE WHEN {plain} THEN try_cast({raw} AS BIGINT) ELSE {via_double} END"
     if dtype.startswith("DECIMAL"):
         # A value with more decimals than the declared scale would be rounded silently; it is
-        # rejected instead (NULL), by comparing with a wider cast.
-        exact = f"try_cast({raw} AS DECIMAL(38, 10))"
+        # rejected instead (NULL), by looking at the digits after the point.
+        scale = int(dtype.rstrip(")").split(",")[1])
         narrow = f"try_cast({raw} AS {dtype})"
-        return f"CASE WHEN {exact} = {narrow} THEN {narrow} END"
+        return f"CASE WHEN NOT regexp_matches({raw}, '[.][0-9]{{{scale + 1},}}') THEN {narrow} END"
     if dtype == "BOOLEAN":
         return f"CASE {raw} WHEN 'True' THEN true WHEN 'False' THEN false END"
     return raw
