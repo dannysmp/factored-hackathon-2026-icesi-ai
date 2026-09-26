@@ -40,9 +40,11 @@ from pathlib import Path  # Type of the optional .env file location
 
 # Third-party libraries
 from pydantic import (
+    Field,  # Bounds on numeric settings
     SecretStr,  # Secret values that never print
     ValidationError,  # Wrapped into ConfigError with safe messages
     field_validator,  # Model allow-list check
+    model_validator,  # Rules that involve several settings
 )
 from pydantic_settings import (
     BaseSettings,  # Environment-backed settings
@@ -62,6 +64,11 @@ ALLOWED_MODELS: frozenset[str] = frozenset(
         "claude-fable-5-1",
     }
 )
+
+
+# Shortest accepted secrets, in characters.
+MIN_SIGNING_KEY_LENGTH = 32
+MIN_TEST_KEY_LENGTH = 16
 
 
 class AppEnvironment(StrEnum):
@@ -115,6 +122,15 @@ class Settings(BaseSettings):
         Pinned model ids for understanding and rendering; must be in ``ALLOWED_MODELS``.
     anthropic_api_key : SecretStr | None
         Anthropic API key; optional until an LLM call needs it.
+    session_signing_key : SecretStr | None
+        Key that signs session tokens (at least 32 characters). Optional in ``local``, where the
+        service generates a throw-away key at start-up; required in ``dev`` and ``prod``.
+    session_ttl_seconds : int
+        Lifetime of a session token, between one minute and one hour.
+    test_identity_enabled : bool
+        Turns on the sandbox login endpoint; never allowed in ``prod``.
+    test_identity_key : SecretStr | None
+        Shared secret the sandbox login endpoint requires (at least 16 characters).
     """
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)
@@ -126,6 +142,10 @@ class Settings(BaseSettings):
     nlu_model: str = "claude-haiku-4-5-20251001"
     render_model: str = "claude-sonnet-5"
     anthropic_api_key: SecretStr | None = None
+    session_signing_key: SecretStr | None = None
+    session_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+    test_identity_enabled: bool = False
+    test_identity_key: SecretStr | None = None
 
     @field_validator("nlu_model", "render_model")
     @classmethod
@@ -142,6 +162,39 @@ class Settings(BaseSettings):
         if value is not None and not value.get_secret_value().strip():
             return None
         return value
+
+    @field_validator("session_signing_key", "test_identity_key")
+    @classmethod
+    def _blank_secret_means_absent(cls, value: SecretStr | None) -> SecretStr | None:
+        """Treat an empty secret (as in the template) as not configured."""
+        if value is not None and not value.get_secret_value().strip():
+            return None
+        return value
+
+    @field_validator("session_signing_key")
+    @classmethod
+    def _signing_key_is_long_enough(cls, value: SecretStr | None) -> SecretStr | None:
+        """A short signing key can be guessed; require at least 32 characters."""
+        if value is not None and len(value.get_secret_value()) < MIN_SIGNING_KEY_LENGTH:
+            raise ValueError(f"must be at least {MIN_SIGNING_KEY_LENGTH} characters")
+        return value
+
+    @field_validator("test_identity_key")
+    @classmethod
+    def _test_key_is_long_enough(cls, value: SecretStr | None) -> SecretStr | None:
+        """The sandbox login secret must not be trivially guessable either."""
+        if value is not None and len(value.get_secret_value()) < MIN_TEST_KEY_LENGTH:
+            raise ValueError(f"must be at least {MIN_TEST_KEY_LENGTH} characters")
+        return value
+
+    @model_validator(mode="after")
+    def _test_identity_rules(self) -> Settings:
+        """The sandbox login needs its key, and it can never run in production."""
+        if self.test_identity_enabled and self.app_env is AppEnvironment.PROD:
+            raise ValueError("TEST_IDENTITY_ENABLED is not allowed when APP_ENV=prod")
+        if self.test_identity_enabled and self.test_identity_key is None:
+            raise ValueError("TEST_IDENTITY_KEY is required when TEST_IDENTITY_ENABLED is true")
+        return self
 
     def require_anthropic_key(self) -> SecretStr:
         """Return the Anthropic API key or fail with an actionable message.

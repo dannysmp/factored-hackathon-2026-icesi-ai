@@ -48,7 +48,9 @@ medium ≤ 30 days**; exceptions are documented with the compensating controls.
 | Dependency lockfile, vulnerability audit in CI, dependency update automation | Implemented |
 | CI workflow hardening: read-only token, actions pinned by commit SHA, no cloud credentials | Implemented |
 | Review workflow: write scopes limited to commit statuses, labels and comments; third-party action pinned by commit SHA | Planned (scopes limited today; the action is pinned by release tag) |
-| Session authentication and per-customer authorization in the tool layer | Planned |
+| Session authentication: short-lived signed tokens, default-deny middleware, structured re-authentication errors, sandbox login limited per client and impossible in production | Implemented |
+| Per-customer authorization in the tool layer | Planned |
+| One error format with stable codes and request identifiers; no stack traces or request data in responses | Implemented |
 | Deterministic policy engine with stable reason codes | Planned |
 | Structured logging with correlation identifiers and redaction filter | Planned |
 | Append-only audit records | Planned |

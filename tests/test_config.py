@@ -33,6 +33,10 @@ _ENV_KEYS = (
     "NLU_MODEL",
     "RENDER_MODEL",
     "ANTHROPIC_API_KEY",
+    "SESSION_SIGNING_KEY",
+    "SESSION_TTL_SECONDS",
+    "TEST_IDENTITY_ENABLED",
+    "TEST_IDENTITY_KEY",
 )
 
 
@@ -145,3 +149,108 @@ def test_settings_are_immutable() -> None:
 
     with pytest.raises(ValueError, match="frozen"):
         settings.service_version = "changed"  # type: ignore[misc]
+
+
+# -----------------------------------------------------------------------------
+# Session and sandbox-login settings
+# -----------------------------------------------------------------------------
+
+
+def test_session_settings_default_to_no_key_a_quarter_hour_and_no_sandbox_login() -> None:
+    """Nothing about sessions is enabled or secret-bearing by default."""
+    settings = load_settings(env_file=None)
+
+    assert settings.session_signing_key is None
+    assert settings.session_ttl_seconds == 900
+    assert settings.test_identity_enabled is False
+    assert settings.test_identity_key is None
+
+
+def test_blank_secrets_in_the_template_mean_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The committed template leaves the keys empty; that must not be a validation error."""
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "  ")
+    monkeypatch.setenv("TEST_IDENTITY_KEY", "")
+
+    settings = load_settings(env_file=None)
+
+    assert settings.session_signing_key is None and settings.test_identity_key is None
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        ("SESSION_SIGNING_KEY", "short"),
+        ("SESSION_SIGNING_KEY", "k" * 31),
+        ("TEST_IDENTITY_KEY", "k" * 15),
+    ],
+)
+def test_short_secrets_are_rejected_without_echoing_them(
+    monkeypatch: pytest.MonkeyPatch, variable: str, value: str
+) -> None:
+    """A guessable secret stops the start-up; the message names the key, never the value."""
+    monkeypatch.setenv(variable, value)
+
+    with pytest.raises(ConfigError) as raised:
+        load_settings(env_file=None)
+
+    assert variable in str(raised.value) and value not in str(raised.value)
+
+
+def test_the_shortest_accepted_secrets_are_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The bounds are inclusive: 32 and 16 characters."""
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "k" * 32)
+    monkeypatch.setenv("TEST_IDENTITY_KEY", "t" * 16)
+
+    settings = load_settings(env_file=None)
+
+    assert settings.session_signing_key is not None and settings.test_identity_key is not None
+
+
+@pytest.mark.parametrize("ttl", ["59", "3601", "0", "-1", "soon"])
+def test_a_session_lifetime_outside_one_minute_to_one_hour_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, ttl: str
+) -> None:
+    """Sessions are short-lived by construction."""
+    monkeypatch.setenv("SESSION_TTL_SECONDS", ttl)
+
+    with pytest.raises(ConfigError, match="SESSION_TTL_SECONDS"):
+        load_settings(env_file=None)
+
+
+@pytest.mark.parametrize("ttl", ["60", "3600"])
+def test_the_lifetime_bounds_are_inclusive(monkeypatch: pytest.MonkeyPatch, ttl: str) -> None:
+    """One minute and one hour are valid."""
+    monkeypatch.setenv("SESSION_TTL_SECONDS", ttl)
+
+    assert load_settings(env_file=None).session_ttl_seconds == int(ttl)
+
+
+def test_the_sandbox_login_needs_its_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enabling it without the shared secret is a start-up error."""
+    monkeypatch.setenv("TEST_IDENTITY_ENABLED", "true")
+
+    with pytest.raises(ConfigError, match="TEST_IDENTITY_KEY is required"):
+        load_settings(env_file=None)
+
+
+def test_the_sandbox_login_can_never_be_enabled_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Whatever else is set, prod refuses the sandbox login."""
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("TEST_IDENTITY_ENABLED", "true")
+    monkeypatch.setenv("TEST_IDENTITY_KEY", "t" * 32)
+
+    with pytest.raises(ConfigError, match="not allowed when APP_ENV=prod"):
+        load_settings(env_file=None)
+
+
+def test_the_sandbox_login_can_be_enabled_outside_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Local and dev may enable it with its secret."""
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.setenv("TEST_IDENTITY_ENABLED", "true")
+    monkeypatch.setenv("TEST_IDENTITY_KEY", "t" * 16)
+
+    assert load_settings(env_file=None).test_identity_enabled is True
