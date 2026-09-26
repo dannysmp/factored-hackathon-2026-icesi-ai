@@ -26,7 +26,7 @@ Runtime Contract
 
 Limitations
 -----------
-Percentiles are computed by the database engine and rounded by the renderer, not here.
+Percentiles are computed by the database engine and rounded to two decimals when measured.
 """
 
 from __future__ import annotations
@@ -78,18 +78,25 @@ class ColumnProfile:
 
 @dataclass(frozen=True, slots=True)
 class KeyProfile:
-    """Primary-key uniqueness facts."""
+    """Primary-key uniqueness facts.
+
+    Rows whose key contains a missing value are counted apart (``null_keys``): a missing key is a
+    completeness problem, not a repeated record. Repeated keys are compared on the declared
+    columns only, so an extra column that appears in some partitions never turns an identical
+    re-delivery into a conflicting version.
+    """
 
     rows: int
     distinct_keys: int
+    null_keys: int
     duplicate_groups: int
     identical_groups: int
     conflicting_groups: int
 
     @property
     def extra_rows(self) -> int:
-        """Rows that repeat an already-seen key."""
-        return self.rows - self.distinct_keys
+        """Rows that repeat an already-seen, non-missing key."""
+        return self.rows - self.null_keys - self.distinct_keys
 
     @property
     def duplicate_rate(self) -> float:
@@ -118,7 +125,9 @@ class LatenessProfile:
     """How long after the event a row arrived, measured against its partition day.
 
     ``lag_days`` is partition day minus event day: positive means the row arrived after the
-    day it describes; negative means the event is stamped after its partition.
+    day it describes; negative means the event is stamped after its partition. For the events
+    stamped after their partition, the first and last hour of the day they fall in are kept:
+    a cluster in the early hours points to partitions cut in another time zone.
     """
 
     rows_measured: int
@@ -131,6 +140,26 @@ class LatenessProfile:
     stamped_after_partition: int
     lagged_over_7_days: int
     lagged_over_30_days: int
+    stamped_after_first_hour: int | None = None
+    stamped_after_last_hour: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SkippedReference:
+    """A declared foreign key that could not be checked, and why."""
+
+    column: str
+    ref_table: str
+    ref_column: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class UnloadableTable:
+    """A table whose files exist but could not be parsed; only the error class is kept."""
+
+    name: str
+    reason: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +174,7 @@ class TableProfile:
     missing_columns: tuple[str, ...]
     columns: tuple[ColumnProfile, ...]
     foreign_keys: tuple[ForeignKeyProfile, ...]
+    skipped_references: tuple[SkippedReference, ...]
     lateness: LatenessProfile | None
 
     @property
@@ -230,3 +260,5 @@ class DataProfile:
     inventory_digest: str
     tables: tuple[TableProfile, ...]
     facts: DomainFacts | None
+    absent_tables: tuple[str, ...] = ()
+    unloadable_tables: tuple[UnloadableTable, ...] = ()

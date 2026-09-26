@@ -34,6 +34,7 @@ from __future__ import annotations
 # Standard libraries
 from dataclasses import dataclass  # Result object for one assumption check
 from enum import StrEnum  # Closed set of verdicts
+from statistics import median  # Typical missing-value rate across columns
 
 # Local modules
 from pipelines.profile_models import (  # Measured facts consumed by the renderer
@@ -74,6 +75,7 @@ class Verdict(StrEnum):
     HOLDS = "Holds"
     DIFFERS = "Differs"
     INFORMATIONAL = "Informational"
+    NOT_ASSESSED = "Not assessed"  # nothing was available to check the assumption against
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +149,13 @@ def _nullable_cells(tables: tuple[TableProfile, ...]) -> tuple[int, int]:
     return missing, total
 
 
+def _verdict(condition: bool, *, assessed: bool) -> Verdict:
+    """HOLDS or DIFFERS from ``condition``, or NOT_ASSESSED when there was nothing to check."""
+    if not assessed:
+        return Verdict.NOT_ASSESSED
+    return Verdict.HOLDS if condition else Verdict.DIFFERS
+
+
 def _layout_assumptions(tables: tuple[TableProfile, ...]) -> list[Assumption]:
     """Assumptions about paths, encoding, headers and row counts."""
     nonconforming = sum(t.inventory.nonconforming_paths for t in tables)
@@ -166,7 +175,7 @@ def _layout_assumptions(tables: tuple[TableProfile, ...]) -> list[Assumption]:
             "No path deviates from the layout",
             f"{_count(nonconforming)} non-conforming paths; "
             f"{_count(without_file)} calendar days without a file",
-            Verdict.HOLDS if nonconforming == 0 else Verdict.DIFFERS,
+            _verdict(nonconforming == 0, assessed=files > 0),
         ),
         Assumption(
             "Files are UTF-8 CSV whose header equals the dictionary's column list",
@@ -174,7 +183,7 @@ def _layout_assumptions(tables: tuple[TableProfile, ...]) -> list[Assumption]:
             f"{_count(matching)} of {_count(files)} headers match; "
             f"{_count(undecodable)} undecodable; {_count(with_bom)} files start with a "
             "byte-order mark",
-            Verdict.HOLDS if matching == files and undecodable == 0 else Verdict.DIFFERS,
+            _verdict(matching == files and undecodable == 0, assessed=files > 0),
         ),
         Assumption(
             "Row counts match the dictionary",
@@ -182,9 +191,27 @@ def _layout_assumptions(tables: tuple[TableProfile, ...]) -> list[Assumption]:
             "all tables within tolerance"
             if not deviating
             else "outside tolerance: " + ", ".join(deviating),
-            Verdict.HOLDS if not deviating else Verdict.DIFFERS,
+            _verdict(not deviating, assessed=bool(tables)),
         ),
     ]
+
+
+def _lateness_text(lagged: list[TableProfile], stamped: list[TableProfile]) -> str:
+    """Describe positive lags and rows stamped after their partition day."""
+    parts = [
+        f"{t.name}: {_count(t.lateness.lagged_over_7_days)} rows over 7 days, "
+        f"max {_optional(t.lateness.lag_max)} days"
+        for t in lagged
+        if t.lateness
+    ]
+    parts += [
+        f"{t.name}: {_count(t.lateness.stamped_after_partition)} rows stamped after their "
+        f"partition day (event hours {t.lateness.stamped_after_first_hour}"
+        f" to {t.lateness.stamped_after_last_hour})"
+        for t in stamped
+        if t.lateness
+    ]
+    return "; ".join(parts) or "no positive lag measured"
 
 
 def _quality_assumptions(tables: tuple[TableProfile, ...]) -> list[Assumption]:
@@ -196,8 +223,8 @@ def _quality_assumptions(tables: tuple[TableProfile, ...]) -> list[Assumption]:
     per_table = f"per table {_percent(min(rates), 1)} to {_percent(max(rates), 1)}" if rates else ""
     missing_cells, cells = _nullable_cells(tables)
     null_share = missing_cells / cells if cells else 0.0
-    checked = sum(fk.checked for t in tables for fk in t.foreign_keys)
-    orphans = sum(fk.orphans for t in tables for fk in t.foreign_keys)
+    column_rates = [c.null_rate for t in tables for c in t.columns if c.declared_nullable]
+    typical = f"; median column {_percent(median(column_rates), 1)}" if column_rates else ""
     references = [(t.name, fk) for t in tables for fk in t.foreign_keys if fk.checked]
     worst_table, worst_fk = max(
         references, key=lambda item: item[1].orphan_rate, default=(None, None)
@@ -207,50 +234,52 @@ def _quality_assumptions(tables: tuple[TableProfile, ...]) -> list[Assumption]:
         f"worst {worst_table}.{worst_fk.column} → {worst_fk.ref_table} "
         f"({_percent(worst_fk.orphans, worst_fk.checked)})"
         if worst_fk
-        else "no references checked"
+        else "no reference could be checked"
     )
+    checked = sum(fk.checked for _, fk in references)
+    orphans = sum(fk.orphans for _, fk in references)
+    skipped = sum(len(t.skipped_references) for t in tables)
+    skipped_note = f"; {_count(skipped)} references could not be checked" if skipped else ""
     drifting = [t.name for t in tables if len(t.inventory.header_variants) > 1]
-    lagged = [t for t in tables if t.lateness and (t.lateness.lag_max or 0) > 0]
-    lateness_text = "; ".join(
-        f"{t.name}: {_count(t.lateness.lagged_over_7_days)} rows over 7 days, "
-        f"max {_optional(t.lateness.lag_max)} days"
-        for t in lagged
-        if t.lateness
-    )
+    measured = [t for t in tables if t.lateness and t.lateness.rows_measured]
+    lagged = [t for t in measured if t.lateness and (t.lateness.lag_max or 0) > 0]
+    stamped = [t for t in measured if t.lateness and t.lateness.stamped_after_partition]
     return [
         Assumption(
             "About 2 % of records are duplicates",
             f"{_percent(DUPLICATE_BAND[0], 1, 0)} to {_percent(DUPLICATE_BAND[1], 1, 0)} overall",
             f"{_percent(extra, total_rows)} overall; {per_table}",
-            Verdict.HOLDS
-            if DUPLICATE_BAND[0] <= duplicate_share <= DUPLICATE_BAND[1]
-            else Verdict.DIFFERS,
+            _verdict(
+                DUPLICATE_BAND[0] <= duplicate_share <= DUPLICATE_BAND[1], assessed=total_rows > 0
+            ),
         ),
         Assumption(
             "About 5 % of values are missing in nullable fields",
             f"{_percent(NULL_BAND[0], 1, 0)} to {_percent(NULL_BAND[1], 1, 0)} of nullable cells",
-            f"{_percent(missing_cells, cells)} of {_count(cells)} nullable cells",
-            Verdict.HOLDS if NULL_BAND[0] <= null_share <= NULL_BAND[1] else Verdict.DIFFERS,
+            f"{_percent(missing_cells, cells)} of {_count(cells)} nullable cells{typical}",
+            _verdict(NULL_BAND[0] <= null_share <= NULL_BAND[1], assessed=cells > 0),
         ),
         Assumption(
             "Only a small share of foreign keys are orphans",
-            f"Every reference at most {_percent(ORPHAN_LIMIT, 1, 0)} orphans",
+            f"Every reference at most {_percent(ORPHAN_LIMIT, 1, 0)} orphans "
+            "(judged per reference: one broken reference invalidates joins on it whatever the "
+            "overall share)",
             f"{_count(orphans)} of {_count(checked)} references overall "
-            f"({_percent(orphans, checked)}); {worst_reference}",
-            Verdict.HOLDS if worst_rate <= ORPHAN_LIMIT else Verdict.DIFFERS,
+            f"({_percent(orphans, checked)}); {worst_reference}{skipped_note}",
+            _verdict(worst_rate <= ORPHAN_LIMIT, assessed=checked > 0),
         ),
         Assumption(
             "Schemas may evolve between partitions",
             "Drift is possible and must be handled",
             "tables with more than one header: "
             + (", ".join(drifting) if drifting else "none in this snapshot"),
-            Verdict.INFORMATIONAL,
+            Verdict.INFORMATIONAL if tables else Verdict.NOT_ASSESSED,
         ),
         Assumption(
             "Partitions can arrive after the day they describe",
             "Some rows have a positive lag",
-            lateness_text or "no positive lag measured",
-            Verdict.HOLDS if lagged else Verdict.DIFFERS,
+            _lateness_text(lagged, stamped),
+            _verdict(bool(lagged), assessed=bool(measured)),
         ),
     ]
 
@@ -263,39 +292,41 @@ def _workload_assumptions(facts: DomainFacts) -> list[Assumption]:
         facts.contacts,
         facts.complaints,
     )
-    comparable = usd.present - usd.without_rate
+    comparable = usd.within_tolerance + usd.outside_tolerance
     consistent = usd.within_tolerance / comparable if comparable else 0.0
     presence = usd.present / fraud.transactions if fraud.transactions else 0.0
     usable = presence >= USD_PRESENCE_MINIMUM and consistent >= USD_CONSISTENCY_MINIMUM
+    informational = Verdict.INFORMATIONAL
     return [
         Assumption(
             "The fraud label supports a supervised risk model",
             "Enough positive examples; prevalence known",
             f"{_count(fraud.positives)} positives in {_count(fraud.transactions)} transactions "
             f"({_percent(fraud.positives, fraud.transactions, 3)})",
-            Verdict.INFORMATIONAL,
+            informational if fraud.transactions else Verdict.NOT_ASSESSED,
         ),
         Assumption(
             "amount_usd is present and consistent with the daily exchange rate",
             f"Present in at least {_percent(USD_PRESENCE_MINIMUM, 1, 0)} of rows and consistent "
             f"in at least {_percent(USD_CONSISTENCY_MINIMUM, 1, 0)}",
             f"present in {_percent(usd.present, fraud.transactions)} of rows; "
-            f"{_percent(usd.within_tolerance, comparable)} of comparable values within tolerance",
-            Verdict.HOLDS if usable else Verdict.DIFFERS,
+            f"{_percent(usd.within_tolerance, comparable)} of {_count(comparable)} comparable "
+            "values within tolerance",
+            _verdict(usable, assessed=fraud.transactions > 0),
         ),
         Assumption(
             "Transcripts exist for interactions flagged as having one",
             "About one transcript per flagged interaction",
             f"{_count(contacts.flagged_with_transcript)} interactions flagged; "
             f"{_count(contacts.transcript_interactions)} distinct interactions have a transcript",
-            Verdict.INFORMATIONAL,
+            informational if contacts.interactions else Verdict.NOT_ASSESSED,
         ),
         Assumption(
             "Complaint data contains dispute-like categories and a repeat-complainer signal",
             "Categories and a repeat flag are present",
             f"{_count(len(complaints.categories))} categories; repeat complainers "
             f"{_percent(complaints.repeat_complainers, complaints.complaints)}",
-            Verdict.INFORMATIONAL,
+            informational if complaints.complaints else Verdict.NOT_ASSESSED,
         ),
     ]
 
@@ -380,6 +411,7 @@ def _key_section(tables: tuple[TableProfile, ...]) -> str:
             ", ".join(source_table(t.name).primary_key),
             _count(t.key.rows),
             _count(t.key.distinct_keys),
+            _count(t.key.null_keys),
             _count(t.key.extra_rows),
             _percent(t.key.extra_rows, t.key.rows),
             _count(t.key.identical_groups),
@@ -387,8 +419,9 @@ def _key_section(tables: tuple[TableProfile, ...]) -> str:
         ]
         for t in tables
     ]
-    headers = ["Table", "Primary key", "Rows", "Distinct keys", "Extra rows", "Duplicate rate"]
-    return _table([*headers, "Identical re-deliveries", "Conflicting versions"], rows)
+    headers = ["Table", "Primary key", "Rows", "Distinct keys", "Rows with a missing key"]
+    headers += ["Extra rows", "Duplicate rate", "Identical re-deliveries", "Conflicting versions"]
+    return _table(headers, rows)
 
 
 def _quality_issues(column: ColumnProfile) -> list[tuple[str, int]]:
@@ -430,7 +463,7 @@ def _missing_values_section(tables: tuple[TableProfile, ...]) -> str:
 
 
 def _reference_section(tables: tuple[TableProfile, ...]) -> str:
-    """Orphan references per declared foreign key."""
+    """Orphan references per declared foreign key, and the keys that could not be checked."""
     rows = [
         [
             t.name,
@@ -442,7 +475,17 @@ def _reference_section(tables: tuple[TableProfile, ...]) -> str:
         for t in tables
         for fk in t.foreign_keys
     ]
-    return _table(["Table", "Reference", "Non-null references", "Orphans", "Orphan rate"], rows)
+    skipped = [
+        [t.name, f"{ref.column} → {ref.ref_table}.{ref.ref_column}", ref.reason]
+        for t in tables
+        for ref in t.skipped_references
+    ]
+    text = _table(["Table", "Reference", "Non-null references", "Orphans", "Orphan rate"], rows)
+    if skipped:
+        text += "\n\nReferences that could not be checked:\n\n" + _table(
+            ["Table", "Reference", "Reason"], skipped
+        )
+    return text
 
 
 def _lateness_section(tables: tuple[TableProfile, ...]) -> str:
@@ -452,12 +495,18 @@ def _lateness_section(tables: tuple[TableProfile, ...]) -> str:
         lateness = profile.lateness
         if lateness is None:
             continue
+        hours = (
+            f"{lateness.stamped_after_first_hour} to {lateness.stamped_after_last_hour}"
+            if lateness.stamped_after_first_hour is not None
+            else NOT_AVAILABLE
+        )
         rows.append(
             [
                 profile.name,
                 _count(lateness.rows_measured),
                 _count(lateness.partition_process_date_mismatches),
                 _count(lateness.stamped_after_partition),
+                hours,
                 _optional(lateness.lag_min),
                 _optional(lateness.lag_p50),
                 _optional(lateness.lag_p95),
@@ -468,10 +517,13 @@ def _lateness_section(tables: tuple[TableProfile, ...]) -> str:
             ]
         )
     headers = ["Table", "Rows measured", "Partition ≠ process_date", "Event after partition day"]
-    headers += ["Lag min (days)", "p50", "p95", "p99", "Max", "Over 7 days", "Over 30 days"]
+    headers += ["Hours of those events", "Lag min (days)", "p50", "p95", "p99", "Max"]
+    headers += ["Over 7 days", "Over 30 days"]
     return (
         "Lag is the partition day minus the event day; positive values arrived after the day "
-        "they describe.\n\n" + _table(headers, rows)
+        "they describe. Events stamped after their own partition day that cluster in the first "
+        "hours of the day point to partitions cut in a different time zone from the "
+        "timestamps.\n\n" + _table(headers, rows)
     )
 
 
@@ -529,6 +581,13 @@ def _workload_section(profile: DataProfile) -> str:
             f"### Complaints\n\n{complaint_text}\n\nCategories: {categories}",
         ]
     )
+
+
+def _not_profiled_section(profile: DataProfile) -> str:
+    """Tables that were expected but not measured, with the reason."""
+    rows = [[name, "no files found"] for name in profile.absent_tables]
+    rows += [[t.name, t.reason] for t in profile.unloadable_tables]
+    return _table(["Table", "Reason"], rows)
 
 
 def _appendix(tables: tuple[TableProfile, ...]) -> str:
@@ -591,13 +650,14 @@ def render_markdown(profile: DataProfile) -> str:
         "# Raw Data Profile",
         introduction,
         "## 1. Assumptions checked against the data\n\n" + verdicts,
-        "## 2. Inventory\n\n" + _inventory_section(tables),
-        "## 3. Files and schema\n\n" + _schema_section(tables),
-        f"## 4. Keys and duplicates\n\n{key_note}\n\n" + _key_section(tables),
-        "## 5. Missing and malformed values\n\n" + _missing_values_section(tables),
-        "## 6. Referential integrity\n\n" + _reference_section(tables),
-        "## 7. Arrival lateness\n\n" + _lateness_section(tables),
-        "## 8. Workload facts\n\n" + _workload_section(profile),
+        "## 2. Tables not profiled\n\n" + _not_profiled_section(profile),
+        "## 3. Inventory\n\n" + _inventory_section(tables),
+        "## 4. Files and schema\n\n" + _schema_section(tables),
+        f"## 5. Keys and duplicates\n\n{key_note}\n\n" + _key_section(tables),
+        "## 6. Missing and malformed values\n\n" + _missing_values_section(tables),
+        "## 7. Referential integrity\n\n" + _reference_section(tables),
+        "## 8. Arrival lateness\n\n" + _lateness_section(tables),
+        "## 9. Workload facts\n\n" + _workload_section(profile),
         "## Appendix. Column detail\n\n" + _appendix(tables),
     ]
     return "\n\n".join(sections) + "\n"

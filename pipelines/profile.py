@@ -33,6 +33,8 @@ Runtime Contract
 
 Limitations
 -----------
+A table whose files cannot be parsed (for example a row with more fields than the header) is
+listed as unloadable, with the error class only, and the other tables are still profiled.
 Distinct counts use DuckDB's approximate estimator; values shown for low-cardinality columns
 are exact. The text-encoding check catches the common UTF-8-read-as-Latin-1 pattern and the
 replacement character, not every possible corruption.
@@ -56,7 +58,11 @@ from typing import Any  # Row values returned by the database driver
 import duckdb  # Columnar SQL engine over the CSV files
 
 # Local modules
-from pipelines.inventory import inventory_digest, scan_table  # Filesystem-level facts
+from pipelines.inventory import (  # Filesystem-level facts
+    TableInventory,
+    inventory_digest,
+    scan_table,
+)
 from pipelines.profile_models import (  # Result objects
     ColumnProfile,
     ComplaintFacts,
@@ -68,7 +74,9 @@ from pipelines.profile_models import (  # Result objects
     KeyProfile,
     LatenessProfile,
     MonthlyCount,
+    SkippedReference,
     TableProfile,
+    UnloadableTable,
     UsdAmountFacts,
     ValueCount,
 )
@@ -83,8 +91,9 @@ logger = logging.getLogger(__name__)
 
 # Values are listed for a column only when it has at most this many distinct values.
 MAX_CATEGORICAL_VALUES = 25
-# Estimated distinct count above which the exact value listing is not even attempted.
-ESTIMATE_LIMIT = 40
+# The distinct-value estimator can be off by about 20 %; the exact listing is attempted whenever
+# the estimate stays within this margin of the limit above.
+ESTIMATE_LIMIT = 3 * MAX_CATEGORICAL_VALUES
 # Columns declared at least this long hold free text, where encoding damage is likely.
 FREE_TEXT_MIN_LENGTH = 30
 # Rows returned for a distribution of reasons or categories.
@@ -105,7 +114,15 @@ DECIMAL_POINT_PATTERN = r"^-?[0-9]+\.[0-9]+$"
 
 
 class ProfileError(Exception):
-    """Raised when a table cannot be loaded or a declared key column is missing."""
+    """Raised when a declared key column is missing from a table."""
+
+
+class TableLoadError(ProfileError):
+    """Raised when a table's files cannot be parsed.
+
+    Only the error class and a fixed hint are kept: the database's own message can quote the
+    offending line, and data values must never reach logs or reports.
+    """
 
 
 # -----------------------------------------------------------------------------
@@ -183,6 +200,11 @@ def _load_table(con: duckdb.DuckDBPyConnection, data_dir: Path, spec: TableSpec)
 
     ``_partition_date`` is the day encoded in the file path (null for single-file tables), which
     is the arrival day used by the lateness measurement.
+
+    Raises
+    ------
+    TableLoadError
+        When the files cannot be parsed, for example a row with more fields than the header.
     """
     if spec.layout is Layout.SINGLE_FILE:
         source = str(data_dir / f"{spec.name}.csv")
@@ -195,7 +217,7 @@ def _load_table(con: duckdb.DuckDBPyConnection, data_dir: Path, spec: TableSpec)
         "try_cast(regexp_extract(filename, 'day=([0-9]{2})/', 1) AS INTEGER))"
     )
     reader = (
-        f"read_csv({_quote_literal(source)}, header = true, all_varchar = true, "
+        f"read_csv({_quote_literal(source)}, header = true, skip = 0, all_varchar = true, "
         "union_by_name = true, filename = true, hive_partitioning = false, "
         "delim = ',', quote = '\"', escape = '\"')"
     )
@@ -205,9 +227,25 @@ def _load_table(con: duckdb.DuckDBPyConnection, data_dir: Path, spec: TableSpec)
             f"SELECT * EXCLUDE (filename), {partition_date} AS _partition_date FROM {reader}"
         )
     except duckdb.Error as exc:
-        raise ProfileError(f"cannot load table {spec.name}: {exc}") from exc
+        raise TableLoadError(
+            f"{type(exc).__name__}: the files of table {spec.name} could not be parsed"
+        ) from None
     described = con.execute(f"DESCRIBE {_quote_identifier(spec.name)}").fetchall()
     return {str(row[0]) for row in described}
+
+
+def _verify_headers(loaded: set[str], inventory: TableInventory) -> None:
+    """Fail when the parsed columns differ from the headers found in the files.
+
+    Guards against a reader that silently mis-detects the header of a malformed file: the
+    columns read by the database must be exactly the union of the columns in the file headers.
+    """
+    expected = {name for variant in inventory.header_variants for name in variant.columns}
+    if inventory.header_variants and loaded - {"_partition_date"} != expected:
+        raise TableLoadError(
+            f"HeaderMismatch: the parsed columns of table {inventory.name} differ from the "
+            "file headers and could not be parsed reliably"
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -218,33 +256,36 @@ def _load_table(con: duckdb.DuckDBPyConnection, data_dir: Path, spec: TableSpec)
 def _key_profile(con: duckdb.DuckDBPyConnection, spec: TableSpec, present: set[str]) -> KeyProfile:
     """Measure primary-key uniqueness and whether repeated keys carry identical content.
 
-    Content is compared without ``process_date``, so the same record delivered again in a later
-    partition counts as an identical re-delivery rather than a conflicting update.
+    Rows with a missing key are counted apart. Content is compared on the declared columns
+    without ``process_date``, so the same record delivered again in a later partition counts as
+    an identical re-delivery rather than a conflicting update.
     """
     missing = [key for key in spec.primary_key if key not in present]
     if missing:
         raise ProfileError(f"table {spec.name} lacks key column(s) {missing}")
     table = _quote_identifier(spec.name)
     key = ", ".join(_quote_identifier(name) for name in spec.primary_key)
+    complete = " AND ".join(f"{_quote_identifier(name)} IS NOT NULL" for name in spec.primary_key)
     content = ", ".join(
         f"coalesce({_quote_identifier(column.name)}, '<null>')"
         for column in spec.columns
         if column.name in present and column.name != "process_date"
     )
-    rows, distinct = _integers(
+    rows, null_keys, distinct = _integers(
         con,
-        f"SELECT count(*), (SELECT count(*) FROM (SELECT 1 FROM {table} GROUP BY {key})) "
+        f"SELECT count(*), count(*) FILTER (WHERE NOT ({complete})), "
+        f"(SELECT count(*) FROM (SELECT 1 FROM {table} WHERE {complete} GROUP BY {key})) "
         f"FROM {table}",
     )
     groups, identical, conflicting = _integers(
         con,
         "WITH repeated AS ("
         f"SELECT count(DISTINCT md5(concat_ws('|', {content}))) AS variants "
-        f"FROM {table} GROUP BY {key} HAVING count(*) > 1) "
+        f"FROM {table} WHERE {complete} GROUP BY {key} HAVING count(*) > 1) "
         "SELECT count(*), count(*) FILTER (WHERE variants = 1), "
         "count(*) FILTER (WHERE variants > 1) FROM repeated",
     )
-    return KeyProfile(rows, distinct, groups, identical, conflicting)
+    return KeyProfile(rows, distinct, null_keys, groups, identical, conflicting)
 
 
 def _column_aggregates(column: Column, index: int) -> list[str]:
@@ -323,12 +364,23 @@ def _foreign_keys(
     spec: TableSpec,
     present: set[str],
     loaded: dict[str, set[str]],
-) -> tuple[ForeignKeyProfile, ...]:
-    """Count references that point at no existing row, for every declared foreign key."""
+) -> tuple[tuple[ForeignKeyProfile, ...], tuple[SkippedReference, ...]]:
+    """Count references that point at no existing row, for every declared foreign key.
+
+    A key that cannot be checked is returned with the reason instead of being dropped.
+    """
     results: list[ForeignKeyProfile] = []
+    skipped: list[SkippedReference] = []
     for fk in spec.foreign_keys:
-        reference_available = fk.ref_column in loaded.get(fk.ref_table, set())
-        if fk.column not in present or not reference_available:
+        reason = None
+        if fk.column not in present:
+            reason = f"column {fk.column} is absent from {spec.name}"
+        elif fk.ref_table not in loaded:
+            reason = f"table {fk.ref_table} was not profiled"
+        elif fk.ref_column not in loaded[fk.ref_table]:
+            reason = f"column {fk.ref_column} is absent from {fk.ref_table}"
+        if reason is not None:
+            skipped.append(SkippedReference(fk.column, fk.ref_table, fk.ref_column, reason))
             continue
         column, referenced = _quote_identifier(fk.column), _quote_identifier(fk.ref_column)
         known = (
@@ -342,7 +394,7 @@ def _foreign_keys(
             f"FROM {_quote_identifier(spec.name)}",
         )
         results.append(ForeignKeyProfile(fk.column, fk.ref_table, fk.ref_column, checked, orphans))
-    return tuple(results)
+    return tuple(results), tuple(skipped)
 
 
 def _optional_int(value: Any) -> int | None:
@@ -358,7 +410,12 @@ def _optional_rounded(value: Any) -> float | None:
 def _lateness(
     con: duckdb.DuckDBPyConnection, spec: TableSpec, present: set[str]
 ) -> LatenessProfile | None:
-    """Measure how long after the event each row arrived, in partition days."""
+    """Measure how long after the event each row arrived, in partition days.
+
+    Rows stamped after their own partition day are also located in the day: when they cluster
+    in the first hours it indicates that the partition uses a different time zone from the
+    event timestamps.
+    """
     if spec.kind is not TableKind.FACT or "process_date" not in present:
         return None
     table = _quote_identifier(spec.name)
@@ -373,20 +430,22 @@ def _lateness(
             f"FROM {table}",
         )
         return LatenessProfile(measured, mismatches, None, None, None, None, None, 0, 0, 0)
-    event_day = f"try_cast({_quote_identifier(event)} AS TIMESTAMP)::DATE"
+    stamp = f"try_cast({_quote_identifier(event)} AS TIMESTAMP)"
     row = _row(
         con,
-        f"WITH stamped AS (SELECT {event_day} AS event_day, "
+        f"WITH stamped AS (SELECT {stamp}::DATE AS event_day, hour({stamp}) AS event_hour, "
         f"_partition_date AS partition_day, {process_day} AS process_day FROM {table}), "
-        "lagged AS (SELECT partition_day - event_day AS lag, partition_day, process_day "
-        "FROM stamped WHERE partition_day IS NOT NULL AND event_day IS NOT NULL) "
+        "lagged AS (SELECT partition_day - event_day AS lag, event_hour, partition_day, "
+        "process_day FROM stamped WHERE partition_day IS NOT NULL AND event_day IS NOT NULL) "
         "SELECT count(*), "
         "count(*) FILTER (WHERE process_day IS NOT NULL AND partition_day <> process_day), "
         "min(lag), quantile_cont(lag, 0.5), quantile_cont(lag, 0.95), "
         "quantile_cont(lag, 0.99), max(lag), "
         "count(*) FILTER (WHERE lag < 0), "
         f"count(*) FILTER (WHERE lag > {LATE_AFTER_DAYS}), "
-        f"count(*) FILTER (WHERE lag > {VERY_LATE_AFTER_DAYS}) FROM lagged",
+        f"count(*) FILTER (WHERE lag > {VERY_LATE_AFTER_DAYS}), "
+        "min(event_hour) FILTER (WHERE lag < 0), max(event_hour) FILTER (WHERE lag < 0) "
+        "FROM lagged",
     )
     return LatenessProfile(
         rows_measured=int(row[0]),
@@ -399,6 +458,8 @@ def _lateness(
         stamped_after_partition=int(row[7]),
         lagged_over_7_days=int(row[8]),
         lagged_over_30_days=int(row[9]),
+        stamped_after_first_hour=_optional_int(row[10]),
+        stamped_after_last_hour=_optional_int(row[11]),
     )
 
 
@@ -422,14 +483,20 @@ def _fraud_facts(con: duckdb.DuckDBPyConnection) -> FraudFacts:
 
 
 def _usd_amount_facts(con: duckdb.DuckDBPyConnection, with_rates: bool) -> UsdAmountFacts:
-    """Compare the stated USD amount with the local amount converted at the daily rate."""
+    """Compare the stated USD amount with the local amount converted at the daily rate.
+
+    Each stated amount is matched with the rate of its own currency on its own day; amounts in
+    USD use a rate of 1. Rows without a rate cannot be checked and are counted apart.
+    """
     (present,) = _integers(
         con, "SELECT count(*) FILTER (WHERE amount_usd IS NOT NULL) FROM transactions"
     )
     if not with_rates:
         return UsdAmountFacts(present, 0, 0, present)
+    deviation = "abs(usd_amount - local_amount * rate)"
     tolerance = f"greatest({FX_ABSOLUTE_TOLERANCE}, {FX_RELATIVE_TOLERANCE} * abs(usd_amount))"
-    _, without_rate, within = _integers(
+    comparable = "rate IS NOT NULL AND local_amount IS NOT NULL AND usd_amount IS NOT NULL"
+    without_rate, within, outside = _integers(
         con,
         'WITH rates AS (SELECT try_cast("date" AS DATE) AS day, source_currency AS currency, '
         "min(try_cast(exchange_rate AS DOUBLE)) AS rate FROM daily_exchange_rates "
@@ -442,13 +509,12 @@ def _usd_amount_facts(con: duckdb.DuckDBPyConnection, with_rates: bool) -> UsdAm
         "CASE WHEN stated.currency = 'USD' THEN 1.0 ELSE rates.rate END AS rate "
         "FROM stated LEFT JOIN rates "
         "ON rates.day = stated.day AND rates.currency = stated.currency) "
-        "SELECT count(*), "
-        "count(*) FILTER (WHERE rate IS NULL OR local_amount IS NULL OR usd_amount IS NULL), "
-        "count(*) FILTER (WHERE rate IS NOT NULL AND local_amount IS NOT NULL "
-        f"AND usd_amount IS NOT NULL AND abs(usd_amount - local_amount * rate) <= {tolerance}) "
-        "FROM converted",
+        "SELECT count(*) FILTER (WHERE rate IS NULL OR local_amount IS NULL "
+        "OR usd_amount IS NULL), "
+        f"count(*) FILTER (WHERE {comparable} AND {deviation} <= {tolerance}), "
+        f"count(*) FILTER (WHERE {comparable} AND {deviation} > {tolerance}) FROM converted",
     )
-    return UsdAmountFacts(present, within, present - without_rate - within, without_rate)
+    return UsdAmountFacts(present, within, outside, without_rate)
 
 
 def _contact_facts(con: duckdb.DuckDBPyConnection, loaded: dict[str, set[str]]) -> ContactFacts:
@@ -529,7 +595,8 @@ def profile_data(data_dir: Path, specs: Sequence[TableSpec] = TABLES) -> DataPro
     data_dir : Path
         Root of the raw data (dimension CSV files and partitioned fact directories).
     specs : Sequence[TableSpec]
-        Tables to profile; tables without files are skipped with a warning.
+        Tables to profile. Tables without files are listed as absent, and tables whose files
+        cannot be parsed as unloadable.
 
     Returns
     -------
@@ -539,13 +606,16 @@ def profile_data(data_dir: Path, specs: Sequence[TableSpec] = TABLES) -> DataPro
     Raises
     ------
     ProfileError
-        When a table cannot be loaded or lacks its key column.
+        When a loaded table lacks its key column. Tables whose files cannot be parsed are
+        reported in the profile instead of aborting the run.
     """
     inventories = {spec.name: scan_table(data_dir, spec) for spec in specs}
+    absent = tuple(spec.name for spec in specs if inventories[spec.name].files == 0)
+    for name in absent:
+        logger.warning("profile_table_missing table=%s", name)
     available = [spec for spec in specs if inventories[spec.name].files > 0]
-    for spec in specs:
-        if inventories[spec.name].files == 0:
-            logger.warning("profile_table_missing table=%s", spec.name)
+    unloadable: list[UnloadableTable] = []
+    tables: list[TableProfile] = []
     with tempfile.TemporaryDirectory() as workdir:
         con = duckdb.connect(str(Path(workdir) / "profile.duckdb"))
         con.execute("SET preserve_insertion_order = false")
@@ -553,13 +623,22 @@ def profile_data(data_dir: Path, specs: Sequence[TableSpec] = TABLES) -> DataPro
         loaded: dict[str, set[str]] = {}
         for spec in available:
             started = time.monotonic()
-            loaded[spec.name] = _load_table(con, data_dir, spec)
+            try:
+                columns = _load_table(con, data_dir, spec)
+                _verify_headers(columns, inventories[spec.name])
+                loaded[spec.name] = columns
+            except TableLoadError as exc:
+                unloadable.append(UnloadableTable(spec.name, str(exc)))
+                logger.warning("profile_table_unloadable table=%s reason=%s", spec.name, exc)
+                continue
             elapsed = time.monotonic() - started
             logger.info("profile_table_loaded table=%s seconds=%.1f", spec.name, elapsed)
-        tables: list[TableProfile] = []
         for spec in available:
+            if spec.name not in loaded:
+                continue
             present = loaded[spec.name]
             key = _key_profile(con, spec, present)
+            references, skipped = _foreign_keys(con, spec, present, loaded)
             declared = set(spec.column_names)
             tables.append(
                 TableProfile(
@@ -570,14 +649,16 @@ def profile_data(data_dir: Path, specs: Sequence[TableSpec] = TABLES) -> DataPro
                     extra_columns=tuple(sorted(present - declared - {"_partition_date"})),
                     missing_columns=tuple(n for n in spec.column_names if n not in present),
                     columns=_column_profiles(con, spec, present, key.rows),
-                    foreign_keys=_foreign_keys(con, spec, present, loaded),
+                    foreign_keys=references,
+                    skipped_references=skipped,
                     lateness=_lateness(con, spec, present),
                 )
             )
             logger.info("profile_table_profiled table=%s rows=%d", spec.name, key.rows)
         facts = _domain_facts(con, loaded)
         con.close()
-    return DataProfile(inventory_digest(data_dir, tuple(available)), tuple(tables), facts)
+    digest = inventory_digest(data_dir, tuple(available))
+    return DataProfile(digest, tuple(tables), facts, absent, tuple(unloadable))
 
 
 # -----------------------------------------------------------------------------
