@@ -1,5 +1,7 @@
-# ======================================================================# pyproject.toml — project manifest, dependency groups and tool configuration
-# ======================================================================# Purpose:
+# =============================================================================
+# pyproject.toml — project manifest, dependency groups and tool configuration
+# =============================================================================
+# Purpose:
 #   Single source for the Python runtime version, dependencies and the settings
 #   of ruff, mypy, pytest and coverage. Versions are pinned by uv.lock.
 #
@@ -11,7 +13,8 @@
 # Usage:
 #   make setup     # uv sync --frozen
 #   make lint test # the same targets CI runs
-# ======================================================================
+# =============================================================================
+
 [project]
 name = "dispute-intake"
 version = "0.1.0"
