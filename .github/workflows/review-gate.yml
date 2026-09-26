@@ -18,6 +18,8 @@
 #   <!-- architect: verdict=CONFORMS sha=<full head sha> -->
 #   pending  → staff review passed but the architecture note is missing
 #   failure  → the architecture note is DEVIATION
+#   pending  → the ownership map exists but can't be read or parsed (never passes silently)
+# A rename counts for both its old and its new path.
 # It also keeps exactly one review label on the PR, so its state is visible at a glance:
 #   review: approved · review: changes requested · review: pending · review: identity mismatch
 # Make `review-gate` a required status check on the base branch. Merging stays a human action.
@@ -142,22 +144,43 @@ jobs:
             // 3. Architecture: changes to the paths the ownership map lists under
             //    required_reviews.architect also need the architect's CONFORMS note for this SHA.
             let architectPaths = [];
+            let mapError = null;
             try {
               const { data: file } = await github.rest.repos.getContent({
                 owner, repo, path: '.claude/ownership.json', ref: context.payload.repository.default_branch,
               });
               const map = JSON.parse(Buffer.from(file.content, 'base64').toString('utf8'));
-              architectPaths = ((map.required_reviews || {}).architect || []).map(String);
+              const listed = (map.required_reviews || {}).architect || [];
+              if (!Array.isArray(listed)) throw new Error('required_reviews.architect is not a list');
+              architectPaths = listed.map(String);
             } catch (err) {
-              if (err.status !== 404) core.warning(`Could not read .claude/ownership.json: ${err.message}`);
+              // No map means no architecture review; an unreadable map must never pass silently.
+              if (err.status !== 404) {
+                mapError = err.message;
+                core.warning(`Could not read .claude/ownership.json: ${err.message}`);
+              }
             }
+            // Glob to pattern: `**/` matches zero or more directories, `**` any path, `*` one
+            // segment; every other character is literal.
             const escape = (text) => text.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-            const globToRegex = (glob) => new RegExp('^' + glob.split('**').map(part => part.split('*').map(escape).join('[^/]*')).join('.*') + '$');
+            const globToRegex = (glob) => {
+              let out = '';
+              for (let i = 0; i < glob.length;) {
+                if (glob.startsWith('**/', i)) { out += '(?:.*/)?'; i += 3; }
+                else if (glob.startsWith('**', i)) { out += '.*'; i += 2; }
+                else if (glob[i] === '*') { out += '[^/]*'; i += 1; }
+                else { out += escape(glob[i]); i += 1; }
+              }
+              return new RegExp('^' + out + '$');
+            };
             let architecture = { required: false, touched: [], note: null };
             if (architectPaths.length) {
               const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: number, per_page: 100 });
               const patterns = architectPaths.map(globToRegex);
-              const touched = files.map(f => f.filename).filter(name => patterns.some(p => p.test(name)));
+              // A rename counts for its old and its new path, so moving a file out of a governed
+              // path is reviewed too.
+              const paths = [...new Set(files.flatMap(f => [f.filename, f.previous_filename].filter(Boolean)))];
+              const touched = paths.filter(name => patterns.some(p => p.test(name)));
               if (touched.length) {
                 const noteMarker = /<!--\s*architect:\s*verdict=(CONFORMS|DEVIATION)\s+sha=([0-9a-f]{40})\s*-->/;
                 let note = null;
@@ -176,6 +199,9 @@ jobs:
               state = 'failure';
               description = `${latest.verdict} (round ${latest.round}) — handed to programmer to fix and resubmit`;
               target_url = latest.url;
+            } else if (mapError) {
+              state = 'pending';
+              description = `Architecture check can't be evaluated: .claude/ownership.json on the default branch is unreadable (${mapError})`;
             } else if (architecture.required && architecture.note?.verdict === 'DEVIATION') {
               state = 'failure';
               description = 'Architecture DEVIATION — handed to programmer to resolve (code change or ratified ADR)';
