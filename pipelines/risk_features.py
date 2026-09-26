@@ -17,10 +17,12 @@ Out: training or evaluating a model.
 
 Design Principles
 -----------------
-- **No information from the future.** Every feature of a transaction is computed from that
-  transaction and from earlier transactions of the same customer only; the velocity windows end
-  strictly before the transaction. A test appends later transactions and changes later labels and
-  shows that earlier rows do not move.
+- **No information from the future, with three stated exceptions.** The velocity, gap and distance
+  features of a transaction use that transaction and strictly earlier ones of the same customer
+  only (nothing at the same instant); a test appends later transactions and changes later labels
+  and shows that earlier rows do not move. The exceptions, measured in the report: the customer's
+  country is the latest recorded one (the cleaned layer keeps one version per customer), the
+  exchange rate is the transaction day's, and window totals treat an unconvertible amount as zero.
 - **Only what an authorisation system would know.** The outcome of the transaction (its status and
   response code) and the source's own fraud score are excluded: they are produced after, or from,
   the fraud decision the model is meant to predict.
@@ -39,11 +41,13 @@ Runtime Contract
 
 Limitations
 -----------
-The distance feature measures movement from the customer's previous located transaction, not from
-home: the registration branch of almost every customer never resolves to a branch (5 of 150,000),
-so there is no home to measure from. It exists only for the share of transactions that carry
-coordinates. The amount in US dollars is converted with the day's rate when the source does not
-state it. The label is the source's synthetic ``is_fraud``.
+``customer_country`` and ``country_mismatch`` are a latest-snapshot attribute, not point in time
+(see the design principles). The distance feature measures movement from the customer's previous
+located transaction, not from home: the registration branch of almost every customer never
+resolves to a branch (5 of 150,000), so there is no home to measure from. It exists only for the
+share of transactions that carry coordinates. The amount in US dollars is converted with the
+day's rate when the source does not state it (the source does not say when in the day the rate
+was published). The label is the source's synthetic ``is_fraud``.
 """
 
 from __future__ import annotations
@@ -86,7 +90,7 @@ FEATURES: dict[str, str] = {
     "transaction_type": "purchase, withdrawal, transfer, payment, deposit or adjustment",
     "merchant_category": "category of the merchant, `unknown` when not stated",
     "transaction_country": "country where the transaction happened",
-    "customer_country": "country of the customer's address",
+    "customer_country": "the customer's latest recorded country (see section 3)",
     "country_mismatch": "the two countries differ (empty when either is unknown)",
     "hour": "hour of the day of the transaction",
     "day_of_week": "day of the week, 1 (Monday) to 7 (Sunday)",
@@ -159,6 +163,8 @@ class RiskFeaturesManifest:
     positives: dict[str, int]
     coverage: dict[str, int]
     fraud_score_evidence: dict[str, Any]
+    customer_snapshot: dict[str, int]
+    proxies: dict[str, dict[str, dict[str, list[int]]]]
     output_sha256: str
 
     def as_dict(self) -> dict[str, Any]:
@@ -176,6 +182,8 @@ class RiskFeaturesManifest:
             "features": list(FEATURES),
             "excluded": list(EXCLUDED),
             "fraud_score_evidence": self.fraud_score_evidence,
+            "customer_snapshot": self.customer_snapshot,
+            "proxies": self.proxies,
             "output_sha256": self.output_sha256,
         }
 
@@ -252,8 +260,7 @@ def _query(split: SplitConfig) -> str:
         coalesce(sum(amount_usd) OVER w24, 0.0) AS tx_sum_usd_24h,
         CAST(count(*) OVER w7 AS INTEGER) AS tx_count_7d,
         coalesce(sum(amount_usd) OVER w7, 0.0) AS tx_sum_usd_7d,
-        date_diff('second', lag(transaction_ts) OVER ordered, transaction_ts)
-            AS seconds_since_previous,
+        date_diff('second', previous_ts, transaction_ts) AS seconds_since_previous,
         CASE
             WHEN latitude IS NOT NULL AND longitude IS NOT NULL AND previous_place IS NOT NULL
             THEN round(2 * 6371.0 * asin(sqrt(
@@ -265,19 +272,21 @@ def _query(split: SplitConfig) -> str:
         END AS distance_previous_km
     FROM (
         SELECT *,
-            last_value(
+            max(transaction_ts) OVER previous AS previous_ts,
+            max(
                 CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL
-                     THEN struct_pack(lat := latitude, lon := longitude) END
-                IGNORE NULLS
-            ) OVER earlier AS previous_place
+                     THEN struct_pack(
+                         ts := transaction_ts, id := transaction_id,
+                         lat := latitude, lon := longitude
+                     ) END
+            ) OVER previous AS previous_place
         FROM enriched
-        WINDOW earlier AS (
-            PARTITION BY customer_id ORDER BY transaction_ts, transaction_id
-            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        WINDOW previous AS (
+            PARTITION BY customer_id ORDER BY transaction_ts
+            RANGE BETWEEN UNBOUNDED PRECEDING AND INTERVAL 1 MICROSECOND PRECEDING
         )
     )
     WINDOW
-        ordered AS (PARTITION BY customer_id ORDER BY transaction_ts, transaction_id),
         w24 AS (
             PARTITION BY customer_id ORDER BY transaction_ts
             RANGE BETWEEN INTERVAL 24 HOURS PRECEDING AND INTERVAL 1 MICROSECOND PRECEDING
@@ -322,7 +331,7 @@ def build_risk_features(
                 f"COPY ({_query(split)}) TO {quote_literal(str(temporary))} (FORMAT PARQUET)"
             )
             os.replace(temporary, target)
-            rows, positives, coverage, evidence = _measure(con, target)
+            measured = _measure(con, target, split)
         finally:
             con.close()
 
@@ -330,10 +339,12 @@ def build_risk_features(
         code_version=code_version,
         inputs=inputs,
         split=split,
-        rows=rows,
-        positives=positives,
-        coverage=coverage,
-        fraud_score_evidence=evidence,
+        rows=measured["rows"],
+        positives=measured["positives"],
+        coverage=measured["coverage"],
+        fraud_score_evidence=measured["evidence"],
+        customer_snapshot=measured["snapshot"],
+        proxies=measured["proxies"],
         output_sha256=_sha256(target),
     )
     text = json.dumps(manifest.as_dict(), indent=2, sort_keys=True) + "\n"
@@ -343,10 +354,24 @@ def build_risk_features(
     return manifest
 
 
-def _measure(
-    con: duckdb.DuckDBPyConnection, mart: Path
-) -> tuple[dict[str, int], dict[str, int], dict[str, int], dict[str, Any]]:
-    """Rows and positives per period, non-empty count per feature, and the fraud-score evidence."""
+# What each proxy check groups by: a label and the SQL that gives the group of a row of the mart
+# joined to its transaction (``m`` is the mart, ``t`` the cleaned transaction).
+PROXIES: dict[str, str] = {
+    "amount_usd_source": "m.amount_usd_source",
+    "merchant category stated": (
+        "CASE WHEN m.merchant_category = 'unknown' THEN 'no' ELSE 'yes' END"
+    ),
+    "currency": "m.currency",
+    "channel": "m.channel",
+    "transaction_country": "m.transaction_country",
+    "coordinates present": (
+        "CASE WHEN t.latitude IS NOT NULL AND t.longitude IS NOT NULL THEN 'yes' ELSE 'no' END"
+    ),
+}
+
+
+def _measure(con: duckdb.DuckDBPyConnection, mart: Path, split: SplitConfig) -> dict[str, Any]:
+    """Everything the manifest and report say about the mart: sizes, coverage, evidence, proxies."""
     source = f"read_parquet({quote_literal(str(mart))})"
     rows = dict.fromkeys(SPLITS, 0)
     positives = dict.fromkeys(SPLITS, 0)
@@ -371,7 +396,41 @@ def _measure(
         "fraud_rows": int(total),
         "fraud_rows_above_that": int(above),
     }
-    return rows, positives, coverage, evidence
+
+    # The customer's country is the latest snapshot: measure how far it can postdate a transaction
+    (customers, after_training, later, joined) = con.execute(
+        "SELECT (SELECT count(*) FROM customers), "
+        "(SELECT count(*) FROM customers WHERE CAST(last_updated AS DATE) > ?), "
+        "count(*) FILTER (WHERE c.last_updated > t.transaction_date), count(*) "
+        "FROM transactions AS t JOIN customers AS c ON c.customer_id = t.customer_id",
+        [split.train_end],
+    ).fetchone() or (0, 0, 0, 0)
+    snapshot = {
+        "customers": int(customers),
+        "customers_updated_after_train_end": int(after_training),
+        "transactions_with_a_customer": int(joined),
+        "transactions_before_the_customer_snapshot": int(later),
+    }
+
+    # Whether a remaining feature stands in for an excluded outcome column: prevalence per value
+    proxies: dict[str, dict[str, dict[str, list[int]]]] = {}
+    for label, expression in PROXIES.items():
+        grouped: dict[str, dict[str, list[int]]] = {}
+        for value, period, count, fraud in con.execute(
+            f"SELECT {expression} AS value, m.split, count(*), count(*) FILTER (WHERE m.is_fraud) "
+            f"FROM {source} AS m JOIN transactions AS t ON t.transaction_id = m.transaction_id "
+            "GROUP BY 1, 2 ORDER BY 1, 2"
+        ).fetchall():
+            grouped.setdefault(str(value), {})[period] = [int(count), int(fraud)]
+        proxies[label] = grouped
+    return {
+        "rows": rows,
+        "positives": positives,
+        "coverage": coverage,
+        "evidence": evidence,
+        "snapshot": snapshot,
+        "proxies": proxies,
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -386,30 +445,58 @@ def _table(headers: list[str], body: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
+def _percentage(part: int, whole: int) -> str:
+    """``part`` as a percentage of ``whole`` with one decimal, or ``n/a`` when ``whole`` is zero."""
+    return f"{part / whole * 100:.1f} %" if whole else "n/a"
+
+
+def _prevalence(rows: int, fraud: int) -> str:
+    """Fraud share of ``rows`` as a percentage, or ``n/a`` when there are none."""
+    return f"{fraud / rows * 100:.3f} %" if rows else "n/a"
+
+
+def _proxy_tables(manifest: RiskFeaturesManifest) -> list[str]:
+    """One table per checked feature: fraud prevalence per value, overall and per period."""
+    lines: list[str] = []
+    for label, values in manifest.proxies.items():
+        body = []
+        for value in sorted(values):
+            per_period = values[value]
+            rows = sum(per_period.get(period, [0, 0])[0] for period in SPLITS)
+            fraud = sum(per_period.get(period, [0, 0])[1] for period in SPLITS)
+            body.append(
+                [
+                    f"`{value}`",
+                    f"{rows:,}",
+                    f"{fraud:,}",
+                    _prevalence(rows, fraud),
+                    *[_prevalence(*per_period.get(period, [0, 0])) for period in SPLITS],
+                ]
+            )
+        headers = [label, "Transactions", "Fraud", "Prevalence", "Train", "Validation", "Test"]
+        lines += [_table(headers, body), ""]
+    return lines
+
+
 def render_report(manifest: RiskFeaturesManifest) -> str:
     """Render ``reports/risk-features.md`` from the manifest (a pure function of it)."""
     total = sum(manifest.rows.values())
     positives = sum(manifest.positives.values())
-    split_rows = []
-    for period, until in zip(
-        SPLITS,
-        (
-            f"up to and including {manifest.split.train_end}",
-            f"after {manifest.split.train_end}, through {manifest.split.validation_end}",
-            f"after {manifest.split.validation_end}",
-        ),
-        strict=True,
-    ):
-        rows, fraud = manifest.rows[period], manifest.positives[period]
-        split_rows.append(
-            [
-                period,
-                until,
-                f"{rows:,}",
-                f"{fraud:,}",
-                f"{fraud / rows * 100:.3f} %" if rows else "n/a",
-            ]
-        )
+    boundaries = (
+        f"up to and including {manifest.split.train_end}",
+        f"after {manifest.split.train_end}, through {manifest.split.validation_end}",
+        f"after {manifest.split.validation_end}",
+    )
+    split_rows = [
+        [
+            period,
+            until,
+            f"{manifest.rows[period]:,}",
+            f"{manifest.positives[period]:,}",
+            _prevalence(manifest.rows[period], manifest.positives[period]),
+        ]
+        for period, until in zip(SPLITS, boundaries, strict=True)
+    ]
     coverage_rows = [
         [
             f"`{name}`",
@@ -420,60 +507,84 @@ def render_report(manifest: RiskFeaturesManifest) -> str:
     ]
     excluded_rows = [[f"`{name}`", reason] for name, reason in EXCLUDED.items()]
     evidence = manifest.fraud_score_evidence
-    share = (
-        f"{evidence['fraud_rows_above_that'] / evidence['fraud_rows'] * 100:.1f} %"
-        if evidence["fraud_rows"]
-        else "n/a"
+    share = _percentage(evidence["fraud_rows_above_that"], evidence["fraud_rows"])
+    snapshot = manifest.customer_snapshot
+    later_share = _percentage(
+        snapshot["transactions_before_the_customer_snapshot"],
+        snapshot["transactions_with_a_customer"],
     )
-    return (
-        "\n".join(
-            [
-                "# Risk features",
-                "",
-                "The table the transaction risk model learns from: one row per transaction, with "
-                "features known when it happened, the fraud label and the period of the row. "
-                "Every figure is computed by `make features` from the cleaned layer.",
-                "",
-                "## 1. Periods",
-                "",
-                f"{total:,} transactions, {positives:,} labelled fraud "
-                f"({positives / total * 100:.3f} % overall)."
-                if total
-                else "No transactions.",
-                "",
-                _table(["Period", "Days", "Transactions", "Fraud", "Prevalence"], split_rows),
-                "",
-                "The boundaries are in `models/split.toml`; the model is evaluated on a period "
-                "that follows the days it learned from.",
-                "",
-                "## 2. Features and how much of each is present",
-                "",
-                "Each feature of a transaction uses that transaction and the customer's earlier "
-                "transactions only; the windows end strictly before it.",
-                "",
-                _table(["Feature", "Meaning", "Present"], coverage_rows),
-                "",
-                "## 3. Left out on purpose",
-                "",
-                _table(["Source column", "Why"], excluded_rows),
-                "",
-                "Evidence for the fraud score: no transaction that is not fraud scores above "
-                f"{evidence['highest_score_when_not_fraud']}, while {share} of the fraud "
-                "transactions "
-                "do, so the score carries the label and is left out.",
-                "",
-                "## 4. Lineage",
-                "",
-                _table(
-                    ["Cleaned table", "SHA-256"],
-                    [[name, digest[:12]] for name, digest in sorted(manifest.inputs.items())],
-                ),
-                "",
-                f"Output digest `{manifest.output_sha256[:12]}`.",
-            ]
-        )
-        + "\n"
-    )
+    lines = [
+        "# Risk features",
+        "",
+        "The table the transaction risk model learns from: one row per transaction, with "
+        "features known when it happened (with the exceptions in section 3), the fraud label and "
+        "the period of the row. Every figure is computed by `make features` from the cleaned "
+        "layer.",
+        "",
+        "## 1. Periods",
+        "",
+        (
+            f"{total:,} transactions, {positives:,} labelled fraud "
+            f"({_prevalence(total, positives)} overall)."
+            if total
+            else "No transactions."
+        ),
+        "",
+        _table(["Period", "Days", "Transactions", "Fraud", "Prevalence"], split_rows),
+        "",
+        "The boundaries are in `models/split.toml`; the model is evaluated on a period "
+        "that follows the days it learned from.",
+        "",
+        "## 2. Features and how much of each is present",
+        "",
+        "The velocity, gap and distance features of a transaction use the same customer's "
+        "strictly earlier transactions only; nothing recorded at the same instant or later is "
+        "used.",
+        "",
+        _table(["Feature", "Meaning", "Present"], coverage_rows),
+        "",
+        "## 3. Where a feature is not strictly point-in-time",
+        "",
+        "- **The customer's country** (`customer_country`, and so `country_mismatch`) is the "
+        "customer's latest recorded country, because the cleaned layer keeps one version of "
+        f"each customer. {snapshot['customers_updated_after_train_end']:,} of "
+        f"{snapshot['customers']:,} customers were last updated after the training period "
+        f"ended, and {later_share} of the transactions belong to a customer whose record is "
+        "newer than the transaction. A country that changed would be read as it is now; the "
+        "model epic compares results with and without these two features.",
+        "- **The exchange rate** used to convert an amount is the rate of the transaction's day; "
+        "the source does not say at what time of the day it was published. The amounts the "
+        "source states itself use the same day's rate.",
+        "- **Totals over a window** treat an amount that could not be converted as zero, while "
+        "the count includes the transaction; a total can therefore be slightly low.",
+        "",
+        "## 4. Left out on purpose",
+        "",
+        _table(["Source column", "Why"], excluded_rows),
+        "",
+        "Evidence for the fraud score: no transaction that is not fraud scores above "
+        f"{evidence['highest_score_when_not_fraud']}, while {share} of the fraud transactions do, "
+        "so the score carries the label (or a detector that already ran) and is left out.",
+        "",
+        "## 5. Do the remaining features stand in for the excluded columns?",
+        "",
+        "Fraud prevalence for each value of a feature that could reflect the outcome of the "
+        "transaction (whether the amount had to be converted, whether the merchant is known, "
+        "whether coordinates exist) and of the categorical features, overall and per period. "
+        "A value whose prevalence differs sharply from the overall one, on many positives, "
+        "would be a warning; differences on a handful of positives are noise.",
+        "",
+        *_proxy_tables(manifest),
+        "## 6. Lineage",
+        "",
+        _table(
+            ["Cleaned table", "SHA-256"],
+            [[name, digest[:12]] for name, digest in sorted(manifest.inputs.items())],
+        ),
+        "",
+        f"Output digest `{manifest.output_sha256[:12]}`.",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 # -----------------------------------------------------------------------------

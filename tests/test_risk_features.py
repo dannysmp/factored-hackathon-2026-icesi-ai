@@ -27,6 +27,7 @@ from pipelines.risk_features import (
     DEFAULT_SPLIT,
     EXCLUDED,
     FEATURES,
+    PROXIES,
     SplitConfig,
     build_risk_features,
     load_split,
@@ -62,6 +63,8 @@ BASE: list[Row] = [
     ("C2", "T5", "2025-04-01 10:00:00", 60, "COP", 30, "Colombia", "Services", None, False, 7),
     ("C2", "T7", "2025-09-30 23:59:59", 70, "COP", 35, "Colombia", "Services", None, True, 60),
     ("C2", "T8", "2025-10-01 00:00:00", 80, "COP", 40, "Colombia", "Services", None, False, 9),
+    # a customer that is missing from the customers table
+    ("C3", "T12", "2025-01-20 12:00:00", 1, "USD", 1, "USA", "Food", None, False, 3),
 ]
 
 
@@ -109,8 +112,14 @@ def _write_silver(root: Path, rows: list[Row]) -> Path:
                 score,
             ],
         )
-    con.execute("CREATE TABLE customers (customer_id VARCHAR, country VARCHAR)")
-    con.execute("INSERT INTO customers VALUES ('C1', 'México'), ('C2', 'Colombia')")
+    con.execute(
+        "CREATE TABLE customers (customer_id VARCHAR, country VARCHAR, last_updated TIMESTAMP)"
+    )
+    # C2 is updated the day after the training period; C4 (no transactions) exactly on its last day
+    con.execute(
+        "INSERT INTO customers VALUES ('C1', 'México', '2025-06-01 00:00:00'), "
+        "('C2', 'Colombia', '2025-04-01 00:00:00'), ('C4', 'Colombia', '2025-03-31 12:00:00')"
+    )
     con.execute(
         "CREATE TABLE daily_exchange_rates (date DATE, source_currency VARCHAR, "
         "target_currency VARCHAR, exchange_rate DECIMAL(12,6))"
@@ -206,6 +215,15 @@ def test_categories_country_mismatch_and_unknowns(built: Any) -> None:
     assert mart["T1"]["country_mismatch"] is False and mart["T5"]["country_mismatch"] is False
 
 
+def test_a_transaction_of_a_customer_missing_from_the_customer_table_is_kept(built: Any) -> None:
+    """The join never drops a transaction: its customer country and mismatch are empty."""
+    _, mart = built
+
+    assert mart["T12"]["customer_country"] is None
+    assert mart["T12"]["country_mismatch"] is None
+    assert mart["T12"]["transaction_country"] == "USA"
+
+
 def test_velocity_windows_count_only_earlier_transactions_and_exclude_ties(built: Any) -> None:
     """T1 and T4 share a timestamp: neither sees the other; T2 sees both; T3 sees them in 7 days."""
     _, mart = built
@@ -237,12 +255,14 @@ def test_the_windows_include_the_last_second_of_their_span_and_exclude_the_next(
     assert (mart["W3"]["tx_count_7d"], mart["W3"]["tx_sum_usd_7d"]) == (3, 35.0)
 
 
-def test_seconds_since_the_previous_transaction_use_time_then_identifier(built: Any) -> None:
-    """The first transaction has none; ties are ordered by identifier; gaps are in seconds."""
+def test_seconds_since_the_previous_transaction_use_strictly_earlier_time(built: Any) -> None:
+    """The first transaction has none; a same-instant peer is not earlier; gaps are in seconds."""
     _, mart = built
 
     assert mart["T1"]["seconds_since_previous"] is None
-    assert mart["T4"]["seconds_since_previous"] == 0
+    assert (
+        mart["T4"]["seconds_since_previous"] is None
+    )  # same instant as T1: nothing strictly earlier
     assert mart["T2"]["seconds_since_previous"] == 6 * 3600
     assert mart["T3"]["seconds_since_previous"] == 66 * 3600
 
@@ -281,10 +301,12 @@ def test_the_manifest_counts_rows_positives_and_coverage_per_period(built: Any) 
     gold, _ = built
     manifest = json.loads((gold / "manifest.json").read_text(encoding="utf-8"))
 
-    assert manifest["rows"] == {"train": 5, "validation": 2, "test": 1}
+    assert manifest["rows"] == {"train": 6, "validation": 2, "test": 1}
     assert manifest["positives"] == {"train": 1, "validation": 1, "test": 0}
-    assert manifest["coverage"]["amount_usd"] == 7
-    assert manifest["coverage"]["seconds_since_previous"] == 6
+    assert manifest["coverage"]["amount_usd"] == 8
+    assert manifest["coverage"]["seconds_since_previous"] == 5
+    assert manifest["coverage"]["customer_country"] == 8
+    assert manifest["coverage"]["country_mismatch"] == 8
     assert manifest["coverage"]["distance_previous_km"] == 1
     assert manifest["split"] == {"train_end": "2025-03-31", "validation_end": "2025-09-30"}
     assert manifest["features"] == list(FEATURES)
@@ -408,13 +430,22 @@ def test_the_report_states_the_periods_the_exclusions_and_the_lineage(built: Any
     text = render_report(manifest)
 
     assert render_report(manifest) == text
-    assert "| train | up to and including 2025-03-31 | 5 | 1 | 20.000 % |" in text
+    assert "| train | up to and including 2025-03-31 | 6 | 1 | 16.667 % |" in text
     assert "| validation | after 2025-03-31, through 2025-09-30 | 2 | 1 | 50.000 % |" in text
     assert "| test | after 2025-09-30 | 1 | 0 | 0.000 % |" in text
     for name in ("fraud_score", "response_code", "transaction_status"):
         assert f"`{name}`" in text
     assert "no transaction that is not fraud scores above 30.0, while 100.0 % of the fraud" in text
     assert "`distance_previous_km`" in text and "| `transaction_id`" not in text
+    assert "2 of 3 customers were last updated after the training period ended" in text
+    assert "62.5 % of the transactions belong to a customer whose record is newer" in text
+    assert "## 5. Do the remaining features stand in for the excluded columns?" in text
+    for label in PROXIES:
+        assert (
+            f"| {label} | Transactions | Fraud | Prevalence | Train | Validation | Test |" in text
+        )
+    assert "| `converted` | 1 | 0 | 0.000 % | 0.000 % | n/a | n/a |" in text
+    assert "| `unavailable` | 1 | 1 | 100.000 % | 100.000 % | n/a | n/a |" in text
 
 
 def test_the_command_writes_the_report_and_is_idempotent(tmp_path: Path) -> None:
@@ -484,3 +515,83 @@ def test_an_invalid_split_is_refused(tmp_path: Path, content: str, message: str)
 
     with pytest.raises(ValueError, match=message):
         load_split(path)
+
+
+# -----------------------------------------------------------------------------
+# What the manifest says about the customer snapshot, the proxies and unavailable amounts
+# -----------------------------------------------------------------------------
+
+
+def test_the_manifest_measures_how_far_the_customer_snapshot_postdates_the_transactions(
+    built: Any,
+) -> None:
+    """Two of three customers were updated after the training period (one exactly on its last day
+    does not count); five of eight transactions with a customer are older than their record."""
+    gold, _ = built
+    snapshot = json.loads((gold / "manifest.json").read_text(encoding="utf-8"))["customer_snapshot"]
+
+    assert snapshot == {
+        "customers": 3,
+        "customers_updated_after_train_end": 2,
+        "transactions_with_a_customer": 8,
+        "transactions_before_the_customer_snapshot": 5,
+    }
+
+
+def test_the_manifest_gives_the_prevalence_inputs_of_every_proxy_check(built: Any) -> None:
+    """Rows and positives per value and period, so the report can show whether a feature stands in
+    for an outcome column."""
+    gold, _ = built
+    proxies = json.loads((gold / "manifest.json").read_text(encoding="utf-8"))["proxies"]
+
+    assert set(proxies) == set(PROXIES)
+    assert proxies["amount_usd_source"]["reported"] == {
+        "train": [4, 0],
+        "validation": [2, 1],
+        "test": [1, 0],
+    }
+    assert proxies["amount_usd_source"]["converted"] == {"train": [1, 0]}
+    assert proxies["amount_usd_source"]["unavailable"] == {"train": [1, 1]}
+    assert proxies["coordinates present"]["yes"] == {"train": [2, 1]}
+    assert proxies["merchant category stated"]["no"]["train"] == [1, 0]
+
+
+def test_an_unconvertible_amount_counts_in_a_window_but_adds_nothing_to_its_total(
+    tmp_path: Path,
+) -> None:
+    """The count includes the transaction; the total treats its amount as zero (documented)."""
+    rows: list[Row] = [
+        ("C1", "U1", "2025-01-11 10:00:00", 100, "MXN", None, "México", "Food", None, False, 1),
+        ("C1", "U2", "2025-01-11 11:00:00", 1, "USD", 10, "México", "Food", None, False, 1),
+        ("C1", "U3", "2025-01-11 12:00:00", 1, "USD", 20, "México", "Food", None, False, 1),
+    ]
+    silver = _write_silver(tmp_path / "s", rows)
+    build_risk_features(silver, tmp_path / "g", SPLIT, code_version="test")
+
+    mart = _mart(tmp_path / "g")
+
+    assert mart["U1"]["amount_usd_source"] == "unavailable"
+    assert (mart["U2"]["tx_count_24h"], mart["U2"]["tx_sum_usd_24h"]) == (1, 0.0)
+    assert (mart["U3"]["tx_count_24h"], mart["U3"]["tx_sum_usd_24h"]) == (2, 10.0)
+
+
+def test_the_previous_located_transaction_is_the_latest_one_not_the_highest_identifier(
+    tmp_path: Path,
+) -> None:
+    """Two earlier located transactions whose identifiers sort against their times."""
+    rows: list[Row] = [
+        ("C1", "Z9", "2025-01-11 08:00:00", 1, "USD", 1, "México", "Food", GUADALAJARA, False, 1),
+        ("C1", "A1", "2025-01-11 09:00:00", 1, "USD", 1, "México", "Food", MEXICO_CITY, False, 1),
+        ("C1", "M5", "2025-01-11 10:00:00", 1, "USD", 1, "México", "Food", GUADALAJARA, False, 1),
+    ]
+    silver = _write_silver(tmp_path / "s", rows)
+    build_risk_features(silver, tmp_path / "g", SPLIT, code_version="test")
+
+    mart = _mart(tmp_path / "g")
+
+    assert mart["M5"]["distance_previous_km"] == pytest.approx(
+        _haversine(MEXICO_CITY, GUADALAJARA), abs=0.01
+    )
+    assert mart["A1"]["distance_previous_km"] == pytest.approx(
+        _haversine(GUADALAJARA, MEXICO_CITY), abs=0.01
+    )
