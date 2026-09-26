@@ -41,7 +41,7 @@ jobs:
     if: github.event_name == 'pull_request' || github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@v9
         env:
           REPORT_AUTHOR: ${{ vars.REVIEW_REPORT_AUTHOR }}
           ALLOWED_AUTHORS: ${{ vars.ALLOWED_PR_AUTHORS }}
