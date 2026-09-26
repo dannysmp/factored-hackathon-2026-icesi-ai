@@ -21,7 +21,8 @@ Requirements: [uv](https://docs.astral.sh/uv/) and [gitleaks](https://github.com
 make setup      # install locked dependencies (Python 3.11) and create .env from the template
 make lint       # ruff format check, ruff lint, mypy strict
 make test       # hermetic tests with the coverage gate
-make secrets    # secret scan of history and staged changes, plus a planted-key self-test
+make secrets    # secret scan of committed history and staged changes, plus a self-test
+                # (unstaged and untracked files are not scanned: `git add` them first)
 make audit      # dependency vulnerability scan
 make run        # serve http://localhost:8000  (GET /health/live, GET /health/ready)
 make help       # every target

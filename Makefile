@@ -38,7 +38,7 @@ test: ## Fast hermetic tests (unit + contract) with the coverage gate
 test-all: ## All tests except live smoke (integration + recorded evals)
 	$(RUN) pytest -m "not smoke"
 
-secrets: ## Scan committed history and staged changes for secrets, then prove the scanner works
+secrets: ## Scan history + staged changes (NOT unstaged/untracked files), then run the self-test
 	gitleaks git . --config .gitleaks.toml --no-banner --redact
 	gitleaks git . --config .gitleaks.toml --no-banner --redact --pre-commit --staged
 	bash scripts/verify_secret_scan.sh
