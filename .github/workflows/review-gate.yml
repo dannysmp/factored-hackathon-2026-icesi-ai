@@ -12,6 +12,12 @@
 #   success  → latest report for this exact SHA is APPROVE or APPROVE_WITH_COMMENTS
 #   failure  → latest report for this SHA is REQUEST_CHANGES or BLOCK
 #   pending  → no report for this SHA yet (any new push invalidates earlier reports)
+# Architecture: when the PR changes a path listed under required_reviews.architect in
+# .claude/ownership.json (read from the DEFAULT branch), the architect's note is also
+# required for this exact SHA:
+#   <!-- architect: verdict=CONFORMS sha=<full head sha> -->
+#   pending  → staff review passed but the architecture note is missing
+#   failure  → the architecture note is DEVIATION
 # It also keeps exactly one review label on the PR, so its state is visible at a glance:
 #   review: approved · review: changes requested · review: pending · review: identity mismatch
 # Make `review-gate` a required status check on the base branch. Merging stays a human action.
@@ -133,18 +139,60 @@ jobs:
               if (m && m[2] === sha) latest = { verdict: m[1], round: m[3], url: c.html_url };
             }
 
+            // 3. Architecture: changes to the paths the ownership map lists under
+            //    required_reviews.architect also need the architect's CONFORMS note for this SHA.
+            let architectPaths = [];
+            try {
+              const { data: file } = await github.rest.repos.getContent({
+                owner, repo, path: '.claude/ownership.json', ref: context.payload.repository.default_branch,
+              });
+              const map = JSON.parse(Buffer.from(file.content, 'base64').toString('utf8'));
+              architectPaths = ((map.required_reviews || {}).architect || []).map(String);
+            } catch (err) {
+              if (err.status !== 404) core.warning(`Could not read .claude/ownership.json: ${err.message}`);
+            }
+            const escape = (text) => text.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+            const globToRegex = (glob) => new RegExp('^' + glob.split('**').map(part => part.split('*').map(escape).join('[^/]*')).join('.*') + '$');
+            let architecture = { required: false, touched: [], note: null };
+            if (architectPaths.length) {
+              const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: number, per_page: 100 });
+              const patterns = architectPaths.map(globToRegex);
+              const touched = files.map(f => f.filename).filter(name => patterns.some(p => p.test(name)));
+              if (touched.length) {
+                const noteMarker = /<!--\s*architect:\s*verdict=(CONFORMS|DEVIATION)\s+sha=([0-9a-f]{40})\s*-->/;
+                let note = null;
+                for (const c of comments) {
+                  if (c.user?.login !== process.env.REPORT_AUTHOR) continue;
+                  const m = (c.body || '').match(noteMarker);
+                  if (m && m[2] === sha) note = { verdict: m[1], url: c.html_url };
+                }
+                architecture = { required: true, touched, note };
+              }
+            }
+
             const passing = ['APPROVE', 'APPROVE_WITH_COMMENTS'];
             let state, description, target_url;
-            if (!latest) {
-              state = 'pending';
-              description = `No staff-reviewer report for ${sha.slice(0, 7)} yet`;
-            } else if (passing.includes(latest.verdict)) {
-              state = 'success';
-              description = `${latest.verdict} (round ${latest.round}) — handed to maintainer for final review and merge`;
-              target_url = latest.url;
-            } else {
+            if (latest && !passing.includes(latest.verdict)) {
               state = 'failure';
               description = `${latest.verdict} (round ${latest.round}) — handed to programmer to fix and resubmit`;
+              target_url = latest.url;
+            } else if (architecture.required && architecture.note?.verdict === 'DEVIATION') {
+              state = 'failure';
+              description = 'Architecture DEVIATION — handed to programmer to resolve (code change or ratified ADR)';
+              target_url = architecture.note.url;
+            } else if (!latest) {
+              state = 'pending';
+              description = `No staff-reviewer report for ${sha.slice(0, 7)} yet`
+                + (architecture.required && !architecture.note ? '; architecture note also required' : '');
+            } else if (architecture.required && !architecture.note) {
+              state = 'pending';
+              description = `Staff review passed; architecture note required (${architecture.touched.length} contract path(s) changed)`;
+              target_url = latest.url;
+            } else {
+              state = 'success';
+              description = `${latest.verdict} (round ${latest.round})`
+                + (architecture.required ? ', architecture CONFORMS' : '')
+                + ' — handed to maintainer for final review and merge';
               target_url = latest.url;
             }
 
