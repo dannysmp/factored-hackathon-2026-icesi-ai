@@ -9,7 +9,7 @@ Tables profiled: 13. Every figure below is computed from the raw files by `make 
 | Assumption | Expected | Observed | Verdict |
 |---|---|---|---|
 | Fact tables are partitioned as year/month/day, one file per day | No path deviates from the layout | 0 non-conforming paths; 0 calendar days without a file | Holds |
-| Files are UTF-8 CSV whose header equals the dictionary's column list | Every file decodes and matches | 7,671 of 7,671 headers match; 0 undecodable; 0 without a header row; 7,671 files start with a byte-order mark | Holds |
+| Files are UTF-8 CSV whose header equals the dictionary's column list | Every file decodes and matches | 7,671 of 7,671 headers match; 0 undecodable; 0 without a header row; 7,671 files start with a byte-order mark; 0 tables could not be parsed | Holds |
 | Row counts match the dictionary | Within 5 % of the stated figure | outside tolerance: transactions, call_center_interactions, call_transcripts, satisfaction_surveys, digital_events, complaints, campaign_sends, daily_exchange_rates | Differs |
 | About 2 % of records are duplicates | 1 % to 3 % overall | 0.00 % overall; per table 0.00 % to 0.00 % | Differs |
 | About 5 % of values are missing in nullable fields | 3 % to 7 % of nullable cells | 44.68 % of 384,675,615 nullable cells; median column 23.77 % | Differs |

@@ -37,6 +37,11 @@ Limitations
 A changed table is rebuilt from all of its partitions rather than only from the changed ones;
 this is exact and takes minutes at the current data size. Partition-level incremental loading is
 the designated step when the data outgrows that.
+
+A version of a key that breaks the contract is quarantined and never supersedes an older valid
+version: the older version stays in the cleaned table. Quarantined rows hold the raw text of the
+source, with canonical spellings applied, so a row can be read as it arrived. The code version
+records the commit, suffixed ``-dirty`` when tracked files have uncommitted changes.
 """
 
 from __future__ import annotations
