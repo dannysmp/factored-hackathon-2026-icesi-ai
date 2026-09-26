@@ -1,6 +1,6 @@
 # Security Policy
 
-This is a hackathon prototype built on synthetic data. It is not a production banking service.
+This is a prototype built on synthetic data. It is not a production banking service.
 
 ## Reporting a vulnerability
 

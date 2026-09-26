@@ -1,10 +1,9 @@
-# factored-hackathon-2026-icesi-ai
+# Dispute Intake
 
-AI-first **transaction-dispute intake** for a simulated LATAM bank, built for the Factored AI & Data
-Hackathon 2026. A customer reports a problem with a transaction in Spanish, Portuguese or English;
-the system authenticates the session, locates the transaction, decides deterministically what policy
-allows, files the case when permitted, verifies the filing and escalates to a human with a structured
-packet when required.
+AI-first **transaction-dispute intake** for a simulated LATAM bank. A customer reports a problem
+with a transaction in Spanish, Portuguese or English; the system authenticates the session, locates
+the transaction, decides deterministically what policy allows, files the case when permitted,
+verifies the filing and escalates to a human with a structured packet when required.
 
 Guiding constraint: **AI should not be autonomous just because it can be.** The model understands and
 renders language; code decides and acts.
@@ -45,7 +44,7 @@ adds the LLM calls.
 | `web/` | Chat UI and human-agent console | E10 |
 | `infra/` | AWS provisioning and deploy pipeline | E11 |
 | `reports/` | Generated reports (git-ignored) | E1, E2, E8 |
-| `docs/` | Public documentation for the submission | E12 |
+| `docs/` | Public project documentation | E12 |
 
 ## Development workflow
 

@@ -16,7 +16,7 @@
 # =============================================================================
 
 [project]
-name = "factored-hackathon-2026-icesi-ai"
+name = "dispute-intake"
 version = "0.1.0"
 description = "AI-first transaction-dispute intake system for a simulated LATAM bank"
 requires-python = "==3.11.*"
