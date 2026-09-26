@@ -34,7 +34,7 @@ dev = [
     "hypothesis>=6.100,<7",  # Property-based tests
     "httpx>=0.27,<1",  # Client used by FastAPI's in-process TestClient
     "ruff>=0.6,<1",  # Formatter and linter
-    "mypy>=1.11,<2",  # Strict static typing
+    "mypy>=1.11,<3",  # Strict static typing
     "pip-audit>=2.7,<3",  # Dependency vulnerability scan
 ]
 
