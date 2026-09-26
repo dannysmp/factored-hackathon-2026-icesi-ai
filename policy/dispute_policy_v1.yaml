@@ -1,0 +1,64 @@
+# =============================================================================
+# Dispute policy, version 1
+# =============================================================================
+# Purpose:  The parameters of the dispute policy: what can be disputed, for how long, and
+#           when a request goes to a person. The engine (app/domain/policy) applies them;
+#           the policy corpus that explains them is generated from this file.
+# Design:   Parameters are data, rules are code. A change here is a new policy version.
+# Usage:    Loaded once at start-up by app.domain.policy.loader.load_policy.
+# Notes:    Synthetic planning values for a Latin American retail bank, inspired by common
+#           chargeback and complaint-handling practice; they are not those of any bank or
+#           regulator.
+# =============================================================================
+
+version: "1"
+provenance: "Synthetic policy written for this project; not a statement of any bank's or regulator's rules."
+
+# Products whose transactions can be disputed here. Loans, investments and insurance have
+# their own claim processes.
+in_scope_product_types:
+  - "Cuenta Ahorro"
+  - "Cuenta Corriente"
+  - "Tarjeta Crédito"
+  - "Tarjeta Débito"
+
+# Transaction types that represent a charge to the customer. Deposits and adjustments are
+# credits or bank corrections and are not disputed by the customer.
+disputable_transaction_types:
+  - "Purchase"
+  - "Withdrawal"
+  - "Transfer"
+  - "Payment"
+
+# Days after the transaction date during which a dispute can be filed (the last valid day is
+# the day equal to the window) and whether the customer must confirm the exact filing.
+categories:
+  unrecognized_charge:
+    filing_window_days: 120
+    requires_confirmation: true
+  duplicate_charge:
+    filing_window_days: 60
+    requires_confirmation: true
+  wrong_amount:
+    filing_window_days: 90
+    requires_confirmation: true
+  service_not_received:
+    filing_window_days: 120
+    requires_confirmation: true
+  fraud_claim:
+    filing_window_days: 180
+    requires_confirmation: true
+
+# A request that satisfies every eligibility rule is still routed to a person when one of
+# these applies.
+routing:
+  # Amount, in US dollars, from which a dispute is reviewed by a person (the amount itself
+  # is included).
+  escalate_amount_usd: "5000.00"
+  # Below this confidence in the understood request, a person takes over.
+  nlu_confidence_floor: 0.60
+  # From this transaction risk score, a person reviews the dispute. The score only routes.
+  risk_score_threshold: 0.80
+  escalate_repeat_complainer: true
+  # The amount in US dollars is not always known; when it is not, a person decides.
+  escalate_unknown_amount: true
