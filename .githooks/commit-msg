@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# Remove AI tool attribution trailers so commits carry only the author's identity.
+# Enabled once per clone with: git config core.hooksPath .githooks
+set -eu
+msg_file="$1"
+tmp="$(mktemp)"
+grep -viE '^(co-authored-by:.*(claude|anthropic)|claude-session:|.*generated with \[?claude code)' "$msg_file" > "$tmp" || true
+# Trim trailing blank lines left behind.
+awk 'NF {for (i = 0; i < blank; i++) print ""; blank = 0; print; next} {blank++}' "$tmp" > "$msg_file"
+rm -f "$tmp"
