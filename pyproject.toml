@@ -37,6 +37,13 @@ dev = [
     "mypy>=1.11,<2",  # Strict static typing
     "pip-audit>=2.7,<3",  # Dependency vulnerability scan
 ]
+data = [
+    "duckdb>=1.1,<2",  # Columnar SQL engine for profiling and pipelines over CSV/Parquet
+]
+
+[tool.uv]
+# Data tooling ships with the default environment so `make setup` covers pipelines too.
+default-groups = ["dev", "data"]
 
 [tool.ruff]
 line-length = 100
