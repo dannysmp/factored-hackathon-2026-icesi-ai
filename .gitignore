@@ -1,4 +1,28 @@
+# Local-only working context (distributed to the team privately; never staged)
 /CLAUDE.md
 /data/
 /plan/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Python tooling
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Generated reports are rebuilt by make targets, except the tracked README
+/reports/*
+!/reports/README.md
+
+# Editor, OS and agent worktrees
 .DS_Store
+.claude/worktrees/
+.claude/settings.local.json
