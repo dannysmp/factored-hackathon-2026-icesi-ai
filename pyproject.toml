@@ -62,6 +62,7 @@ ignore = ["PLR0913"]
 "pipelines/profile.py" = ["S608"]
 "pipelines/raw.py" = ["S608"]
 "pipelines/gold.py" = ["S608"]
+"pipelines/risk_features.py" = ["S608"]
 "pipelines/silver.py" = ["S608"]
 
 [tool.mypy]

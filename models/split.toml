@@ -1,0 +1,16 @@
+# =============================================================================
+# Time split of the transaction risk model
+# =============================================================================
+# Purpose:  The dates that separate the training, validation and test periods, so the model is
+#           always evaluated on a period that follows the data it learned from.
+# Design:   One place for the boundaries: the feature mart labels every row with its period and
+#           the training code reads the label, never a date of its own.
+# Usage:    Read by pipelines/risk_features.py; changing a date is a new experiment.
+# Notes:    Both dates are inclusive upper bounds. Training is every day up to train_end,
+#           validation the days after it up to validation_end, test everything after that.
+#           The source spans June 2023 to June 2026; these dates leave about twenty-two months
+#           to train on and about nine months for the held-out test.
+# =============================================================================
+
+train_end = 2025-03-31
+validation_end = 2025-09-30

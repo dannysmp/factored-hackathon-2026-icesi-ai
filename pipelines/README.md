@@ -13,6 +13,7 @@ Offline data tooling. Nothing here runs inside the service's request path.
 | `silver.py` | The cleaning stage: typing, contract checks, de-duplication, reference handling, quarantine, manifests; `python -m pipelines.silver` or `make pipeline` |
 | `outcomes.py`, `quality.py` | Result objects of a cleaning run and the `reports/data-quality.md` renderer |
 | `gold.py` | The dispute demand marts: aggregates over the cleaned tables with a manifest of inputs and outputs |
+| `risk_features.py` | The risk feature mart: features known when a transaction happened, the fraud label and its training, validation or test period (`models/split.toml`); `python -m pipelines.risk_features` or `make features` |
 | `analysis.py`, `analysis_assumptions.toml` | Renders `reports/workflow-analysis.md` from the marts; every figure that is not measured comes from the assumptions file; `python -m pipelines.analysis` or `make analyze` |
 
 Planned stages: the remaining analytical marts (risk features, evaluation seeds).
