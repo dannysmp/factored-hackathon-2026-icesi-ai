@@ -69,7 +69,6 @@ def render_quality_report(outcomes: Sequence[TableOutcome]) -> str:
         summary.append(
             [
                 outcome.table,
-                outcome.status.value,
                 _count(counts["rows_in"]),
                 _count(counts["rows_out"]),
                 _count(counts["superseded"]),
@@ -95,14 +94,14 @@ def render_quality_report(outcomes: Sequence[TableOutcome]) -> str:
     version = built[0].manifest["contract_version"] if built and built[0].manifest else "n/a"
     sections = [
         "# Data Quality Report",
-        f"Contract version {version}. Every figure is computed by `make pipeline`; a row is "
-        "either kept, superseded by a newer version of the same key, or quarantined with a "
-        "reason.",
+        f"Contract version {version}. Every figure is computed by `make pipeline` from the "
+        "manifests of the cleaned layer, so the report describes the state of the data and "
+        "not the actions of the last run. A row is either kept, superseded by a newer version "
+        "of the same key, or quarantined with a reason.",
         "## 1. Outcome per table\n\n"
         + _table(
             [
                 "Table",
-                "Status",
                 "Rows in",
                 "Rows out",
                 "Superseded",

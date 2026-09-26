@@ -540,7 +540,7 @@ def test_command_line_builds_everything_and_writes_the_report(clean: tuple[Path,
     text = report.read_text(encoding="utf-8")
     assert exit_code == 0
     assert "| customers | range:credit_score | 1 |" in text
-    assert "| customers | built | 6 | 1 | 0 | 5 |" in text
+    assert "| customers | 6 | 1 | 0 | 5 |" in text
 
 
 def test_command_line_exits_with_one_when_a_table_could_not_be_processed(
@@ -721,3 +721,13 @@ def test_a_ragged_file_skips_the_table_without_quoting_its_content(
     assert secret not in caplog.text
     assert secret not in report.read_text(encoding="utf-8")
     assert secret not in (outcomes["branches"].reason or "")
+
+
+def test_report_describes_the_data_not_the_run(clean: tuple[Path, Path]) -> None:
+    """A rebuild and a no-op run of the same data render the same report."""
+    raw, out = clean
+    built = render_quality_report(list(run_silver(raw, out, code_version="test")))
+
+    unchanged = render_quality_report(list(run_silver(raw, out, code_version="test")))
+
+    assert built == unchanged
