@@ -1,0 +1,11 @@
+# Automated update PRs for Python dependencies and GitHub Actions (delivery standard).
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
