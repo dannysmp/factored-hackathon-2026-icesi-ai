@@ -130,6 +130,33 @@ optional `.env` file. Every variable is documented in `.env.example`. The servic
 `ANTHROPIC_API_KEY`; it is only required once a feature makes an LLM call. Invalid configuration
 fails at startup with a message that names the offending key and never echoes its value.
 
+### Authentication and sessions
+
+Every path under `/v1/` requires a session; only the sandbox login is public, and adding a route
+later does not change that (default deny). A session is a short-lived signed token that binds a
+request to one customer: the customer always comes from the token, never from a parameter of the
+request.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/auth/test-sessions` | Sandbox login for trusted test clients: body `{"customer_id": "..."}` and the header `X-Test-Login-Key`. Exists only when `TEST_IDENTITY_ENABLED=true` (never in `prod`); failed attempts are limited per client address |
+| `GET /v1/session` | Who the session belongs to and when it ends |
+| `POST /v1/auth/logout` | Ends the session immediately |
+
+Send the token as `Authorization: Bearer <token>`. A missing, invalid, expired or ended session
+gets `401` with `reauth_required: true`, so a client knows to sign in again. An identifier a
+customer types (a document number, a name) is never accepted as proof of identity: the sandbox login
+rejects any field but `customer_id`, and real deployments receive sessions from the bank's
+identity provider.
+
+Failed sandbox logins are counted per connection address; behind a reverse proxy that address is the proxy's unless the server is configured to trust forwarded headers, and the limiter is per process.
+
+Every failure has the same shape (an RFC 9457 problem document) with a stable `code`, a safe message
+and a `request_id`; the same identifier is in the `X-Request-ID` response header, which a client may
+also supply. Set `SESSION_SIGNING_KEY` (at least 32 characters, for example `openssl rand -hex 32`);
+in `local` a throw-away key is used when it is empty, in `dev` and `prod` the service refuses to
+start without it.
+
 ## Quality and security
 
 Every change passes formatting, linting, strict type-checking, tests with a coverage gate, a
@@ -147,4 +174,6 @@ requirements, and which controls exist today, are in [SECURITY.md](SECURITY.md).
 | `make profile` fails with `cannot load table …` or `lacks key column` | The message names the table; check that the raw files match the layout described under *Data* |
 | `make pipeline` exits with code 1 | A table could not be cleaned; `reports/data-quality.md` names it and the reason (for example a file without a header row) |
 | `make analyze` exits with code 1 and `cleaned table … not found` | Run `make pipeline` first: the analysis reads the cleaned layer |
+| The service exits with `SESSION_SIGNING_KEY is required` | Set `SESSION_SIGNING_KEY` in `.env` (32 or more characters); only `APP_ENV=local` may start without it |
+| Every request answers `401` with `session_expired` | Sessions last `SESSION_TTL_SECONDS` (default 15 minutes); sign in again |
 | `make train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |
