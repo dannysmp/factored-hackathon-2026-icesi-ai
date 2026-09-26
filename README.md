@@ -78,6 +78,7 @@ make run        # serve http://localhost:8000  (GET /health/live, GET /health/re
 | `make profile` | Profile the raw data and write `reports/data-profile.md` |
 | `make pipeline` | Clean the raw data into typed Parquet and write `reports/data-quality.md` |
 | `make analyze` | Build the dispute marts from the cleaned layer and write `reports/workflow-analysis.md` |
+| `make features` | Build the risk feature mart from the cleaned layer and write `reports/risk-features.md` |
 | `make corpus` | Regenerate the multilingual policy corpus in `policy/corpus` from the policy YAML |
 | `make corpus-check` | Fail when the committed corpus differs from what the policy generates |
 | `make help` | List every target |
@@ -122,6 +123,12 @@ how much of the service demand is about disputed transactions, how those cases a
 how customers feel about the contacts, what handling a dispute costs under stated assumptions
 (`pipelines/analysis_assumptions.toml`) and which outcomes an automated workflow should reach. It
 builds the aggregate marts under `data/gold/dispute_demand`; the report holds counts and rates only.
+
+`make features` reads the cleaned layer and builds the table the transaction risk model will learn from
+(`data/gold/risk_features`), with the report [`reports/risk-features.md`](reports/risk-features.md).
+Every feature uses only what was known when the transaction happened (the velocity windows end
+strictly before it), the source's own fraud score and the authorisation outcome are left out on
+purpose, and every row carries its training, validation or test period from `models/split.toml`.
 
 ### Configuration
 
