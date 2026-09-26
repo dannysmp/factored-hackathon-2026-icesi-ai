@@ -7,7 +7,8 @@
 #
 # Jobs:
 #   lint         Formatting, linting, strict type-checking and the dependency audit.
-#   test         Hermetic tests with the coverage gate (runs after lint).
+#   test         Hermetic tests with the coverage gate, and the policy-corpus drift check
+#                (runs after lint).
 #   secret-scan  Full-history secret scan and the scanner self-test.
 #
 # Security posture:
@@ -79,6 +80,8 @@ jobs:
         run: make setup
       - name: Run unit and contract tests with the coverage gate
         run: make test
+      - name: Check the policy corpus is what the policy generates
+        run: make corpus-check
 
   # ---------------------------------------------------------------------------
   # Secret scanning

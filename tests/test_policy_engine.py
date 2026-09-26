@@ -672,7 +672,7 @@ _FORBIDDEN_NAMES = {"open", "print", "input", "exec", "eval", "getenv", "uuid4",
 
 def test_the_pure_modules_are_the_ones_expected() -> None:
     """The purity check covers the whole package: a new module is checked without editing this."""
-    assert {path.name for path in _PURE_MODULES} == {"engine.py", "models.py"}
+    assert {path.name for path in _PURE_MODULES} == {"corpus.py", "engine.py", "models.py"}
 
 
 @pytest.mark.parametrize("module", _PURE_MODULES, ids=lambda path: path.name)
