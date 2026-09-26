@@ -3,10 +3,10 @@
 # =============================================================================
 # Purpose:  One command surface; CI calls these same targets, so "works locally"
 #           and "works in CI" mean the same thing.
-# Requires: uv (https://docs.astral.sh/uv/), gitleaks (secret scan), docker (later epics).
+# Requires: uv (https://docs.astral.sh/uv/), gitleaks (secret scan), docker (compose stack).
 # Usage:    make help
-# Notes:    Targets for epics that have not landed yet fail loudly with the epic that
-#           delivers them; they never pretend to succeed.
+# Notes:    Targets for capabilities that are not implemented yet fail loudly instead of
+#           pretending to succeed.
 # =============================================================================
 
 .DEFAULT_GOAL := help
@@ -53,22 +53,22 @@ clean: ## Remove caches and build artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .hypothesis .coverage htmlcov
 	find . -type d -name __pycache__ -not -path './.venv/*' -prune -exec rm -rf {} +
 
-# ---- Targets delivered by later epics (fail loudly until then) ----------------
+# ---- Not yet implemented (fail loudly until they are) --------------------------
 
-profile: ## (E1) Profile the raw data and write reports/data-profile.md
-	@echo "make profile is delivered by epic E1" >&2; exit 2
+profile: ## Profile the raw data and write reports/data-profile.md
+	@echo "make profile is not implemented yet" >&2; exit 2
 
-pipeline: ## (E1) Run the bronze -> silver -> gold pipeline
-	@echo "make pipeline is delivered by epic E1" >&2; exit 2
+pipeline: ## Run the bronze -> silver -> gold pipeline
+	@echo "make pipeline is not implemented yet" >&2; exit 2
 
-analyze: ## (E2) Regenerate reports/workflow-analysis.md
-	@echo "make analyze is delivered by epic E2" >&2; exit 2
+analyze: ## Regenerate reports/workflow-analysis.md
+	@echo "make analyze is not implemented yet" >&2; exit 2
 
-train: ## (E6) Train and log the risk model
-	@echo "make train is delivered by epic E6" >&2; exit 2
+train: ## Train and log the risk model
+	@echo "make train is not implemented yet" >&2; exit 2
 
-evaluate: ## (E8) Run the evaluation harness: make evaluate SYSTEM={P|B0|B1}
-	@echo "make evaluate is delivered by epic E8" >&2; exit 2
+evaluate: ## Run the evaluation harness: make evaluate SYSTEM={P|B0|B1}
+	@echo "make evaluate is not implemented yet" >&2; exit 2
 
-up: ## (E11) Start the full stack with docker compose
-	@echo "make up is delivered by epic E11 (compose stack)" >&2; exit 2
+up: ## Start the full stack with docker compose
+	@echo "make up is not implemented yet" >&2; exit 2

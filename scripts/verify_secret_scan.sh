@@ -2,7 +2,7 @@
 # =============================================================================
 # verify_secret_scan.sh — proves the secret scanner blocks a planted fake AWS key
 # =============================================================================
-# Purpose:  Epic E0 acceptance: "a planted fake AWS key is blocked by the scanner".
+# Purpose:  Prove that the secret scanner blocks a planted fake AWS key.
 #           The scanner is only trustworthy if it is seen failing on a real-shaped key
 #           in every scan mode the gates use: `gitleaks git` (committed history, run by
 #           `make secrets` and CI) and `gitleaks git --pre-commit --staged` (staged changes).

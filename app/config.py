@@ -11,7 +11,7 @@ starts, so a bad deployment fails immediately with a message naming the offendin
 Scope
 -----
 In: reading, validating and exposing settings; the pinned model allow-list.
-Out: creating LLM clients or any other resource (composition root, later epics).
+Out: creating LLM clients or any other resource (composition root).
 
 Design Principles
 -----------------
@@ -28,8 +28,8 @@ is absent.
 
 Limitations
 -----------
-The allow-list holds Anthropic API model ids; Bedrock model ids are added with the provider
-adapter once ADR-7 is ratified.
+The allow-list holds Anthropic API model ids; Bedrock model ids are added with the Bedrock provider
+adapter.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ class AppEnvironment(StrEnum):
 
 
 class LlmProvider(StrEnum):
-    """Providers selectable behind the LLM provider interface (ADR-7)."""
+    """Providers selectable behind the LLM provider interface."""
 
     ANTHROPIC = "anthropic"
     BEDROCK = "bedrock"
@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     nlu_model, render_model : str
         Pinned model ids for understanding and rendering; must be in ``ALLOWED_MODELS``.
     anthropic_api_key : SecretStr | None
-        Anthropic API key; optional until an LLM call needs it (epic E5).
+        Anthropic API key; optional until an LLM call needs it.
     """
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)

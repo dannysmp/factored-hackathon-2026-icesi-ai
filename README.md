@@ -8,10 +8,6 @@ verifies the filing and escalates to a human with a structured packet when requi
 Guiding constraint: **AI should not be autonomous just because it can be.** The model understands and
 renders language; code decides and acts.
 
-> **Status:** foundation only. The repository currently provides the service skeleton, configuration,
-> quality gates and CI. Data pipelines, the policy engine, the conversation layer, evaluation and
-> deployment land epic by epic; each directory below states which epic delivers it.
-
 ## Quickstart
 
 Requirements: [uv](https://docs.astral.sh/uv/) and [gitleaks](https://github.com/gitleaks/gitleaks).
@@ -28,29 +24,28 @@ make help       # every target
 ```
 
 Configuration is a single validated object (`app/config.py`); every variable is documented in
-`.env.example`. The service starts without `ANTHROPIC_API_KEY`; it is required from the epic that
-adds the LLM calls.
+`.env.example`. The service starts without `ANTHROPIC_API_KEY`; it is only required once a feature
+makes an LLM call.
 
 ## Layout
 
-| Path | Purpose | Delivered by |
+| Path | Purpose | Status |
 |---|---|---|
-| `app/` | FastAPI backend: configuration, composition root, later policy engine, tools, controller | E0 → E9 |
-| `policy/` | Dispute-policy YAML and the multilingual corpus generated from it | E3 |
-| `contracts/` | Versioned schemas per source table | E1 |
-| `pipelines/` | Bronze → silver → gold jobs, profiling, fixtures | E1 |
-| `models/` | Risk-model training, experiment log, model cards | E6 |
-| `evals/` | Golden set, adversarial cases, harness, judge rubric | E8 |
-| `web/` | Chat UI and human-agent console | E10 |
-| `infra/` | AWS provisioning and deploy pipeline | E11 |
-| `reports/` | Generated reports (git-ignored) | E1, E2, E8 |
-| `docs/` | Public project documentation | E12 |
+| `app/` | FastAPI backend: configuration, composition root; later the policy engine, tools and controller | In progress |
+| `pipelines/` | Bronze → silver → gold jobs, profiling, fixtures | In progress |
+| `contracts/` | Versioned schemas per source table | Planned |
+| `policy/` | Dispute-policy YAML and the multilingual corpus generated from it | Planned |
+| `models/` | Risk-model training, experiment log, model cards | Planned |
+| `evals/` | Golden set, adversarial cases, harness, judge rubric | Planned |
+| `web/` | Chat UI and human-agent console | Planned |
+| `infra/` | AWS provisioning and deploy pipeline | Planned |
+| `reports/` | Generated reports | Planned |
+| `docs/` | Public project documentation | Planned |
 
-## Development workflow
+## Contributing
 
-Work lands through draft pull requests using `.github/pull_request_template.md`; each PR must pass
-CI (`lint`, `test`, `secret-scan`) and the `review-gate` check before the maintainer merges it.
-Commits and PRs carry only the maintainer's identity.
+Changes land through pull requests using `.github/pull_request_template.md`. Every pull request
+must pass CI (`lint`, `test`, `secret-scan`) and an independent code review before it is merged.
 
 ## Troubleshooting
 
@@ -60,4 +55,4 @@ Commits and PRs carry only the maintainer's identity.
 | `gitleaks: command not found` when running `make secrets` | `brew install gitleaks` |
 | `ConfigError: Invalid configuration — LOG_LEVEL: …` | The message names the bad key; fix it in `.env` (see `.env.example` for accepted values) |
 | `make setup` fails with a stale lockfile | Run `uv lock` and commit the updated `uv.lock` |
-| `make profile`, `pipeline`, `analyze`, `train`, `evaluate`, `up` exit with code 2 | Expected: they are delivered by the epic named in their message |
+| `make pipeline`, `analyze`, `train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |
