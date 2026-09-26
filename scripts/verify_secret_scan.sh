@@ -2,7 +2,7 @@
 # =============================================================================
 # verify_secret_scan.sh — proves the secret scanner blocks a planted fake AWS key
 # =============================================================================
-# Purpose:  Epic E0 acceptance: "a planted fake AWS key is blocked by the scanner".
+# Purpose:  Prove that the secret scanner blocks a planted fake AWS key.
 #           The scanner is only trustworthy if it is seen failing on a real-shaped key
 #           in every scan mode the gates use: `gitleaks git` (committed history, run by
 #           `make secrets` and CI) and `gitleaks git --pre-commit --staged` (staged changes).
@@ -48,8 +48,9 @@ expect_rc() {
   if [ "$want" = "clean" ] && [ "$got" != "0" ]; then
     echo "FAIL: $label — clean control was flagged (rc=$got)" >&2; exit 1
   fi
-  if [ "$want" = "leak" ] && [ "$got" = "0" ]; then
-    echo "FAIL: $label — planted AWS key was not flagged" >&2; exit 1
+  # gitleaks exits 1 when it finds a leak; any other non-zero code is a crash, not a detection.
+  if [ "$want" = "leak" ] && [ "$got" != "1" ]; then
+    echo "FAIL: $label — planted AWS key was not flagged (rc=$got, expected 1)" >&2; exit 1
   fi
 }
 

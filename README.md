@@ -1,56 +1,116 @@
 # Dispute Intake
 
-AI-first **transaction-dispute intake** for a simulated LATAM bank. A customer reports a problem
-with a transaction in Spanish, Portuguese or English; the system authenticates the session, locates
-the transaction, decides deterministically what policy allows, files the case when permitted,
-verifies the filing and escalates to a human with a structured packet when required.
+AI-first **transaction-dispute intake** for a LATAM retail bank. A customer reports a problem
+with a card or account transaction in Spanish, Portuguese or English. The system authenticates the
+session, locates the transaction, collects the reason, decides what policy allows, files the case
+when it is permitted, verifies the filing and hands the case to a human agent, with a structured
+summary, whenever a person is required.
 
-Guiding constraint: **AI should not be autonomous just because it can be.** The model understands and
-renders language; code decides and acts.
+The guiding principle is that **AI is not autonomous just because it can be**: the language model
+understands and renders language, while deterministic code decides and acts.
 
-> **Status:** foundation only. The repository currently provides the service skeleton, configuration,
-> quality gates and CI. Data pipelines, the policy engine, the conversation layer, evaluation and
-> deployment land epic by epic; each directory below states which epic delivers it.
+## How it works
 
-## Quickstart
+This section describes the target design; the implementation status of each control is tracked in
+[SECURITY.md](SECURITY.md).
 
-Requirements: [uv](https://docs.astral.sh/uv/) and [gitleaks](https://github.com/gitleaks/gitleaks).
+Every customer message goes through the same five stages:
+
+| Stage | What happens | Where it lives |
+|---|---|---|
+| **Understand** | Detect the language, extract the intent and slots as structured output, keep conversation state | Language layer (LLM with a strict output schema) |
+| **Decide** | Apply the dispute policy: eligibility, confirmation requirements, routing; each decision carries a stable reason code | Policy engine (pure, deterministic code) |
+| **Act** | Call tools scoped to the authenticated customer; filing a case needs explicit confirmation and an idempotency key | Tool layer with authorization middleware |
+| **Verify** | Read back every write before reporting it to the customer | Dialogue controller |
+| **Escalate** | Transfer to a human with the request, verified facts, actions taken, evidence and open questions | Handoff builder and agent console |
+
+Design rules that follow from this:
+
+- Policy and permissions are enforced in code and in the tool layer, never in prompts.
+- A document number alone never proves identity; access is bound to an authenticated session.
+- The model may only use facts and sources that the decision layer put in its input, and its
+  wording must agree with the decisions taken.
+- A learned risk score can route a case to human review; it never decides an outcome.
+
+## Repository structure
+
+| Path | Purpose |
+|---|---|
+| `app/` | FastAPI backend: validated configuration, composition root, health endpoints; home of the policy engine, tool layer and dialogue controller |
+| `pipelines/` | Raw-data inventory and profiling; bronze → silver → gold jobs |
+| `contracts/` | Versioned schemas for each source table |
+| `policy/` | Dispute-policy rules (YAML) and the multilingual policy corpus generated from them |
+| `models/` | Risk-model training code, experiment log and model cards |
+| `evals/` | Golden set, adversarial cases, evaluation harness and judge rubric |
+| `web/` | Customer chat and human-agent console |
+| `infra/` | AWS provisioning and deployment pipeline |
+| `docs/` | Project documentation |
+| `reports/` | Generated reports (data profile, analyses, evaluation results) |
+| `scripts/` | Repository tooling, such as the secret-scan self-test |
+| `tests/` | Hermetic unit and contract tests |
+
+## Getting started
+
+### Prerequisites
+
+| Tool | What it is used for | Install |
+|---|---|---|
+| [uv](https://docs.astral.sh/uv/) | Python package and environment manager. It downloads Python 3.11, installs the exact dependency versions pinned in `uv.lock` and runs every command in that environment, so every machine and CI run behaves the same. | `brew install uv` |
+| [gitleaks](https://github.com/gitleaks/gitleaks) | Secret scanner. `make secrets` and CI use it to make sure no credential or key is ever committed to the repository. | `brew install gitleaks` |
+
+Docker is not needed yet; it is required once the containerized stack is added.
+
+### Set up and run
 
 ```bash
 make setup      # install locked dependencies (Python 3.11) and create .env from the template
-make lint       # ruff format check, ruff lint, mypy strict
-make test       # hermetic tests with the coverage gate
-make secrets    # secret scan of committed history and staged changes, plus a self-test
-                # (unstaged and untracked files are not scanned: `git add` them first)
-make audit      # dependency vulnerability scan
 make run        # serve http://localhost:8000  (GET /health/live, GET /health/ready)
-make help       # every target
 ```
 
-Configuration is a single validated object (`app/config.py`); every variable is documented in
-`.env.example`. The service starts without `ANTHROPIC_API_KEY`; it is required from the epic that
-adds the LLM calls.
+### Development commands
 
-## Layout
+| Command | What it does |
+|---|---|
+| `make lint` | Format check, lint and strict type-check |
+| `make test` | Fast hermetic tests with a coverage gate |
+| `make secrets` | Scan committed history and staged changes for secrets, then run the scanner self-test |
+| `make audit` | Dependency vulnerability scan |
+| `make profile` | Profile the raw data and write `reports/data-profile.md` |
+| `make help` | List every target |
 
-| Path | Purpose | Delivered by |
-|---|---|---|
-| `app/` | FastAPI backend: configuration, composition root, later policy engine, tools, controller | E0 → E9 |
-| `policy/` | Dispute-policy YAML and the multilingual corpus generated from it | E3 |
-| `contracts/` | Versioned schemas per source table | E1 |
-| `pipelines/` | Bronze → silver → gold jobs, profiling, fixtures | E1 |
-| `models/` | Risk-model training, experiment log, model cards | E6 |
-| `evals/` | Golden set, adversarial cases, harness, judge rubric | E8 |
-| `web/` | Chat UI and human-agent console | E10 |
-| `infra/` | AWS provisioning and deploy pipeline | E11 |
-| `reports/` | Generated reports (git-ignored) | E1, E2, E8 |
-| `docs/` | Public project documentation | E12 |
+`make secrets` does not scan unstaged or untracked files: `git add` them first.
 
-## Development workflow
+### Data
 
-Work lands through draft pull requests using `.github/pull_request_template.md`; each PR must pass
-CI (`lint`, `test`, `secret-scan`) and the `review-gate` check before the maintainer merges it.
-Commits and PRs carry only the maintainer's identity.
+The source data is a set of CSV files that are never committed. Place them under `data/raw`, or
+point `DATA_DIR` at another location:
+
+```text
+data/raw/
+├── customers.csv, products.csv, branches.csv, …      one file per dimension table
+└── transactions/year=YYYY/month=MM/day=DD/transactions_YYYYMMDD.csv
+    (and the same layout for the other daily fact tables)
+```
+
+`make profile` measures the files against the data dictionary and writes
+[`reports/data-profile.md`](reports/data-profile.md): row counts, schema conformance, duplicate
+keys, missing and malformed values, referential integrity, arrival lateness and the workload
+facts (fraud prevalence, USD amount consistency, transcript availability, complaint categories),
+with a verdict on each assumption made about the data. The profile is deterministic, so a change
+in the report reflects a change in the data.
+
+### Configuration
+
+Configuration is a single validated object (`app/config.py`) loaded from the environment and an
+optional `.env` file. Every variable is documented in `.env.example`. The service starts without
+`ANTHROPIC_API_KEY`; it is only required once a feature makes an LLM call. Invalid configuration
+fails at startup with a message that names the offending key and never echoes its value.
+
+## Quality and security
+
+Every change passes formatting, linting, strict type-checking, tests with a coverage gate, a
+dependency audit and a full-history secret scan in CI before it is reviewed. The security
+requirements, and which controls exist today, are in [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting
 
@@ -60,4 +120,5 @@ Commits and PRs carry only the maintainer's identity.
 | `gitleaks: command not found` when running `make secrets` | `brew install gitleaks` |
 | `ConfigError: Invalid configuration — LOG_LEVEL: …` | The message names the bad key; fix it in `.env` (see `.env.example` for accepted values) |
 | `make setup` fails with a stale lockfile | Run `uv lock` and commit the updated `uv.lock` |
-| `make profile`, `pipeline`, `analyze`, `train`, `evaluate`, `up` exit with code 2 | Expected: they are delivered by the epic named in their message |
+| `make profile` fails with `cannot load table …` or `lacks key column` | The message names the table; check that the raw files match the layout described under *Data* |
+| `make pipeline`, `analyze`, `train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |

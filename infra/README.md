@@ -1,3 +1,3 @@
 # infra/
 
-AWS provisioning and deploy pipeline. Delivered by epic E11.
+AWS provisioning and deploy pipeline.

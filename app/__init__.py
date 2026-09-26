@@ -5,7 +5,7 @@ Dispute Intake Application Package
 Overview
 --------
 Backend of the AI-first transaction-dispute intake system: configuration, the FastAPI
-composition root and (in later epics) the policy engine, tool layer and dialogue controller.
+composition root and (as they are added) the policy engine, tool layer and dialogue controller.
 
 Scope
 -----

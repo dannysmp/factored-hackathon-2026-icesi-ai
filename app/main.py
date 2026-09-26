@@ -10,7 +10,7 @@ the module is free of side effects and tests can inject their own settings.
 Scope
 -----
 In: application factory and health endpoints.
-Out: business routes, middleware and tools (added by later epics).
+Out: business routes, middleware and tools.
 
 Design Principles
 -----------------
@@ -25,7 +25,7 @@ Runtime Contract
 
 Limitations
 -----------
-Request logging, tracing and error mapping arrive with epic E9 (observability).
+Request logging, tracing and error mapping are not implemented yet.
 """
 
 from __future__ import annotations
