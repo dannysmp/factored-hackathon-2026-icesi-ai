@@ -32,7 +32,7 @@ makes an LLM call.
 | Path | Purpose | Status |
 |---|---|---|
 | `app/` | FastAPI backend: configuration, composition root; later the policy engine, tools and controller | In progress |
-| `pipelines/` | Bronze → silver → gold jobs, profiling, fixtures | In progress |
+| `pipelines/` | Bronze → silver → gold jobs, profiling, fixtures | Planned |
 | `contracts/` | Versioned schemas per source table | Planned |
 | `policy/` | Dispute-policy YAML and the multilingual corpus generated from it | Planned |
 | `models/` | Risk-model training, experiment log, model cards | Planned |
@@ -55,4 +55,4 @@ must pass CI (`lint`, `test`, `secret-scan`) and an independent code review befo
 | `gitleaks: command not found` when running `make secrets` | `brew install gitleaks` |
 | `ConfigError: Invalid configuration — LOG_LEVEL: …` | The message names the bad key; fix it in `.env` (see `.env.example` for accepted values) |
 | `make setup` fails with a stale lockfile | Run `uv lock` and commit the updated `uv.lock` |
-| `make pipeline`, `analyze`, `train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |
+| `make profile`, `pipeline`, `analyze`, `train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |
