@@ -1,12 +1,26 @@
 # =============================================================================
-# CI — lint, tests, dependency audit and secret scan on every PR and on main
+# Continuous integration
 # =============================================================================
-# Purpose:  Gate every change with the same make targets developers run locally.
-# Design Principles:
-#   - Least privilege: read-only token, no cloud credentials of any kind.
-#   - Third-party actions pinned to commit SHAs; gitleaks pinned by version + checksum.
-#   - Later epics add jobs (smoke eval slice, image build) to this file.
-# Usage:    Runs automatically; locally: make lint test audit secrets
+# Purpose:
+#   Verify every pull request and every push to main with the same make targets that
+#   developers run locally, so a green run means the same thing on any machine.
+#
+# Jobs:
+#   lint         Formatting, linting, strict type-checking and the dependency audit.
+#   test         Hermetic tests with the coverage gate (runs after lint).
+#   secret-scan  Full-history secret scan and the scanner self-test.
+#
+# Security posture:
+#   The workflow token is read-only and no cloud credentials are configured. Third-party
+#   actions are pinned to full commit SHAs, and the gitleaks release is pinned by version and
+#   verified against its published checksum before it is installed.
+#
+# Pinned actions:
+#   actions/checkout       11d5960a326750d5838078e36cf38b85af677262   release v4
+#   astral-sh/setup-uv     d0d8abe699bfb85fec6de9f7adb5ae17292296ff   release v6
+#
+# Usage:
+#   Runs automatically. To reproduce locally: make lint test audit secrets
 # =============================================================================
 
 name: CI
@@ -27,46 +41,57 @@ env:
   GITLEAKS_VERSION: "8.30.1"
 
 jobs:
-  # ---- Static checks ---------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Static checks
+  # ---------------------------------------------------------------------------
   lint:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install uv with dependency caching
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
         with:
           enable-cache: true
       - name: Install locked dependencies
         run: make setup
-      - name: Format, lint and type-check
+      - name: Check formatting, lint rules and types
         run: make lint
-      - name: Dependency vulnerability audit
+      - name: Audit dependencies for known vulnerabilities
         run: make audit
 
-  # ---- Tests -----------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Tests
+  # ---------------------------------------------------------------------------
   test:
     name: test
     needs: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install uv with dependency caching
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
         with:
           enable-cache: true
       - name: Install locked dependencies
         run: make setup
-      - name: Unit and contract tests with coverage gate
+      - name: Run unit and contract tests with the coverage gate
         run: make test
 
-  # ---- Secret scanning -------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Secret scanning
+  # ---------------------------------------------------------------------------
   secrets:
     name: secret-scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Check out the full history so earlier commits are scanned too
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          fetch-depth: 0   # full history so committed-then-removed secrets are found
-      - name: Install gitleaks (pinned release, checksum verified)
+          fetch-depth: 0
+      - name: Install the pinned gitleaks release after verifying its checksum
         run: |
           set -euo pipefail
           base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
@@ -76,5 +101,5 @@ jobs:
           grep " ${tarball}\$" checksums.txt | sha256sum --check --strict
           tar -xzf "$tarball" gitleaks
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
-      - name: Scan history and tree, then prove the scanner blocks a planted key
+      - name: Scan history and staged changes, then prove the scanner blocks a planted key
         run: make secrets
