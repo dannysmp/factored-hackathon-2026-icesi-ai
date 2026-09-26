@@ -4,7 +4,7 @@ Which part of the service demand is about disputed transactions, how it is handl
 
 ## 1. Scope, definitions and limits of the source
 
-- **Dispute case:** a complaint of the category `Transactions` whose subcategory is `Cargo no reconocido` (an unrecognised charge). The source has no dispute flag; this is the closest it offers, and it cannot tell duplicate charges or wrong amounts apart.
+- **Dispute case:** a complaint of the category `Transactions` whose subcategory is `Cargo no reconocido` (an unrecognised charge). The source has no dispute flag, so this is a proxy. Undue charges (category `Fees`, subcategory `Cobro indebido`) are a neighbouring kind of dispute and are sized in section 2 as a sensitivity, together with the `Transactions` complaints that carry no subcategory. Duplicate charges cannot be told apart.
 - **Contacts cannot be tied to cases:** the link from a complaint to the contact that originated it is empty in the source, and the contact reason repeats the six broad categories. Contact figures describe reason categories, not disputes; the cost model states how it bridges the gap.
 - **Statuses:** only `Resolved` and `Closed` cases carry days to resolution; open, in-process, escalated and rejected cases do not.
 - **Amounts** are reported per currency and never added across currencies; many cases carry no currency.
@@ -47,6 +47,29 @@ Complaints by category:
 | Branch | 13,361 | 19.9 % |
 | Service | 13,194 | 19.7 % |
 
+Complaints by category and subcategory, with the role each plays in the dispute definition:
+
+| Category | Subcategory | Cases | Role |
+|---|---|---|---|
+| Branch | Atención en sucursal | 11,892 | not a dispute |
+| Branch | unspecified | 1,469 | not a dispute |
+| Fees | Cobro indebido | 12,194 | adjacent (sensitivity) |
+| Fees | unspecified | 1,359 | not a dispute |
+| Service | Calidad de servicio | 11,886 | not a dispute |
+| Service | unspecified | 1,308 | not a dispute |
+| Technical | Problema con app | 12,128 | not a dispute |
+| Technical | unspecified | 1,279 | not a dispute |
+| Transactions | Cargo no reconocido | 12,297 | primary dispute |
+| Transactions | unspecified | 1,283 | unclassified (sensitivity) |
+
+Sensitivity of the dispute count to the definition:
+
+| Definition | Cases | Share of complaints |
+|---|---|---|
+| Primary: `Transactions` / `Cargo no reconocido` | 12,297 | 18.3 % |
+| Plus undue charges (`Fees` / `Cobro indebido`) | 24,491 | 36.5 % |
+| Plus `Transactions` without a subcategory | 25,774 | 38.4 % |
+
 ## 3. Resolution today
 
 - Cases that reached `Resolved` or `Closed`: **24.5 %**; still open, in process or escalated: 74.6 %; rejected: 0.9 %.
@@ -84,8 +107,11 @@ Negative share is the share of contacts detected as `Negativo` or `Muy Negativo`
 | Producto | 4.4 | 2.0 | 19.2 % | 67.2 % | -0.04 | 3.74 | 89.6 % | 10.0 % | 23.8 % |
 | Queja | 7.2 | 2.0 | 34.9 % | 40.2 % | -0.07 | 3.00 | 43.6 % | 10.0 % | 63.0 % |
 | Retención | 8.0 | 2.0 | 34.9 % | 39.8 % | -0.07 | 3.26 | 60.2 % | 9.8 % | 49.1 % |
-| Transaccional | 3.7 | 2.0 | 0.0 % | 100.0 % | -0.00 | 3.76 | 91.5 % | 9.9 % | 22.1 % |
+| Transaccional | 3.7 | 2.0 | 0.0 % | 100.0 % | 0.00 | 3.76 | 91.5 % | 9.9 % | 22.1 % |
 | Técnico | 6.0 | 2.0 | 35.0 % | 39.9 % | -0.07 | 3.42 | 69.9 % | 10.1 % | 40.6 % |
+
+`Transaccional` contacts are recorded as neutral in 100.0 % of cases, so their sentiment says little about how a customer feels about a dispute.
+Surveys that reference no contact (0) are not attributed to a reason category.
 
 ## 5. Agent handling cost per dispute
 
@@ -102,7 +128,18 @@ The source records neither the cost of an agent nor the contacts a dispute needs
 | Cost per dispute | USD 0.37 | USD 0.83 | USD 2.15 |
 | Cost per month at 332 cases | USD 122.31 | USD 275.19 | USD 713.46 |
 
-Waiting time is not costed: the customer waits, the agent does not. Back-office work on a case (investigation, contacting the merchant) is not recorded in the source and is not included, so the figures are a floor: the case for automation rests more on resolution time and SLA breaches (section 6) than on agent minutes. The assumptions live in `pipelines/analysis_assumptions.toml`.
+Which reason category models a dispute contact matters more than the low-to-high range: at the base assumptions, the cost per dispute by category is
+
+| Reason category | Mean handling (min) | Base cost per dispute |
+|---|---|---|
+| Comercial | 9.0 | USD 2.02 |
+| Producto | 4.4 | USD 1.00 |
+| Queja | 7.2 | USD 1.63 |
+| Retención | 8.0 | USD 1.80 |
+| Transaccional | 3.7 | USD 0.83 |
+| Técnico | 6.0 | USD 1.35 |
+
+Waiting time is not costed: the customer waits, the agent does not. Back-office work on a case (investigation, contacting the merchant) is not recorded in the source and is not included, so agent time is understated by an unknown amount; the case for automation rests more on resolution time and SLA breaches (section 6) than on agent minutes. The assumptions live in `pipelines/analysis_assumptions.toml`.
 
 ## 6. Target outcomes for automation
 
@@ -112,9 +149,11 @@ The customer outcome is a dispute that is understood, confirmed and filed correc
 |---|---|---|
 | Safe automated resolution rate | not measured today | >= 40.0 % |
 | SLA breach rate | 20.4 % | <= 5.0 % |
-| Median days to resolution | 15.0 | <= 3 |
+| Median days to resolution (resolved and closed cases only) | 15.0 | <= 3 |
 | Repeat-complainer rate | 14.7 % | <= 10.0 % |
-| Unsafe action rate | not measured today | = 0.0 % |
+| Unsafe action rate | not measured today | <= 0.0 % |
+
+The median is over the cases that reached `Resolved` or `Closed` (24.5 % of cases); the rest have no resolution time yet, so the baseline understates how long an open case waits.
 
 ## 7. Lineage
 

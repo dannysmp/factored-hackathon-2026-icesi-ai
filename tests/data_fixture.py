@@ -375,11 +375,14 @@ def build_clean_dataset(data_dir: Path) -> None:
 def build_service_dataset(data_dir: Path) -> None:
     """Build the clean dataset plus service contacts, complaints and surveys of known values.
 
-    Three contacts (two transactional of 300 and 600 seconds, one complaint of 120 seconds), eight
-    complaints of which six are disputes (resolved in 10 and 20 days, one of them with the SLA
+    Five contacts (transactional of 300 and 600 seconds and one without duration, wait or score;
+    a complaint of 120 seconds; one without a reason category), ten complaints of which six are
+    disputes (resolved in 10 and 20 days, one of them with the SLA
     breached and a repeat complainer; closed in 30 days; open; rejected; escalated with days
     recorded that the overall figure must ignore), one complaint that only looks like a dispute
-    (another subcategory) and one in another category, and one survey per contact.
+    (another subcategory), one of the neighbouring undue-charge subcategory, one of the Transactions
+    category without a subcategory, one in another category, and a survey per contact plus one
+    that references no contact.
     """
     build_clean_dataset(data_dir)
     write_dimension(data_dir, "service_agents", [valid_row("service_agents", agent_id="A1")])
@@ -410,6 +413,24 @@ def build_service_dataset(data_dir: Path) -> None:
                 was_resolved="True",
                 was_escalated="False",
                 requires_followup="False",
+                detected_sentiment="Neutral",
+                sentiment_score="0.00",
+            ),
+            contact(
+                "I4",
+                january,
+                reason_category="Transaccional",
+                duration_seconds="",
+                wait_time_seconds="",
+                detected_sentiment="Positivo",
+                sentiment_score="",
+            ),
+            contact(
+                "I5",
+                january,
+                reason_category="",
+                duration_seconds="60",
+                wait_time_seconds="10",
                 detected_sentiment="Neutral",
                 sentiment_score="0.00",
             ),
@@ -550,6 +571,22 @@ def build_service_dataset(data_dir: Path) -> None:
                 resolution_days="",
             ),
             complaint(
+                "K9",
+                february,
+                category="Fees",
+                subcategory="Cobro indebido",
+                status="Open",
+                resolution_days="",
+            ),
+            complaint(
+                "K10",
+                february,
+                category="Transactions",
+                subcategory="",
+                status="Open",
+                resolution_days="",
+            ),
+            complaint(
                 "K5",
                 february,
                 category="Fees",
@@ -576,6 +613,11 @@ def build_service_dataset(data_dir: Path) -> None:
         data_dir,
         "satisfaction_surveys",
         january,
-        [survey("S1", "I1", "5", january), survey("S3", "I3", "1", january)],
+        [
+            survey("S1", "I1", "5", january),
+            survey("S3", "I3", "1", january),
+            survey("S4", "I4", "4", january),
+            survey("S5", "", "2", january),
+        ],
     )
     write_partition(data_dir, "satisfaction_surveys", february, [survey("S2", "I2", "3", february)])

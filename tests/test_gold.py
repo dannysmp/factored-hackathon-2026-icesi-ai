@@ -16,6 +16,7 @@ from datetime import date  # Months of the marts
 from pathlib import Path  # Temporary locations
 
 # Third-party libraries
+import duckdb  # Handmade cleaned tables for NULL handling
 import pytest  # Test runner and fixtures
 
 # Local modules
@@ -95,15 +96,18 @@ def test_claims_are_kept_per_currency_and_missing_currency_is_named(gold: Path) 
 
 
 def test_contact_demand_carries_sums_that_recompose_the_means(gold: Path) -> None:
-    """Two transactional contacts of 300 and 600 seconds: the mart holds count and sum."""
+    """Three transactional contacts, one without duration, wait or score: counts and sums differ."""
     rows = [
         row
         for row in read_mart(gold, "contact_demand_monthly")
         if row["reason_category"] == "Transaccional"
     ]
 
-    assert sum(row["interactions"] for row in rows) == 2
+    assert sum(row["interactions"] for row in rows) == 3
+    assert sum(row["interactions_with_duration"] for row in rows) == 2
     assert sum(row["duration_seconds_sum"] for row in rows) == 900
+    assert sum(row["interactions_with_wait"] for row in rows) == 2
+    assert sum(row["interactions_with_score"] for row in rows) == 2
     assert sum(row["negative_interactions"] for row in rows) == 1
     assert sum(row["neutral_interactions"] for row in rows) == 1
 
@@ -115,14 +119,14 @@ def test_satisfaction_is_tied_to_the_reason_of_the_contact(gold: Path) -> None:
         for row in read_mart(gold, "contact_satisfaction")
     }
 
-    assert scores == {"Queja": (1, 1), "Transaccional": (2, 8)}
+    assert scores == {"Queja": (1, 1), "Transaccional": (3, 12), "unmatched": (1, 2)}
 
 
 def test_complaint_categories_count_every_complaint(gold: Path) -> None:
-    """The category mix covers all eight complaints, disputes or not."""
+    """The category mix covers all ten complaints, disputes or not."""
     mix = read_mart(gold, "complaint_category_mix")
 
-    assert sum(row["cases"] for row in mix) == 8
+    assert sum(row["cases"] for row in mix) == 10
 
 
 def test_marts_and_manifest_are_byte_identical_across_builds(
@@ -173,3 +177,51 @@ def test_reading_an_unknown_or_unbuilt_mart_fails_clearly(tmp_path: Path) -> Non
         read_mart(tmp_path, "nonsense")
     with pytest.raises(FileNotFoundError, match="dispute_cases_monthly"):
         read_mart(tmp_path, "dispute_cases_monthly")
+
+
+def test_contacts_without_a_reason_are_kept_under_their_own_label(gold: Path) -> None:
+    """No contact drops out of the demand totals because its reason is missing."""
+    rows = read_mart(gold, "contact_demand_monthly")
+
+    assert sum(row["interactions"] for row in rows) == 5
+    assert sum(row["interactions"] for row in rows if row["reason_category"] == "unspecified") == 1
+
+
+def test_surveys_that_reference_no_contact_are_counted_not_dropped(gold: Path) -> None:
+    """The satisfaction mart accounts for every survey, with its own label for unmatched ones."""
+    rows = read_mart(gold, "contact_satisfaction")
+
+    assert sum(row["surveys"] for row in rows) == 5
+
+
+def test_a_survey_without_a_score_is_not_counted_in_the_score_denominator(tmp_path: Path) -> None:
+    """Means use the surveys that have a score: the mart carries both counts."""
+    silver = tmp_path / "silver"
+    (silver / "silver").mkdir(parents=True)
+    con = duckdb.connect()
+    con.execute(
+        "CREATE TABLE complaints AS SELECT NULL::TIMESTAMP creation_date, NULL::VARCHAR status, "
+        "NULL::BOOLEAN sla_breached, NULL::BOOLEAN is_repeat_complainer, "
+        "NULL::TIMESTAMP first_response_date, NULL::INTEGER resolution_days, "
+        "NULL::VARCHAR currency, NULL::DECIMAL(15,2) claimed_amount, NULL::VARCHAR category, "
+        "NULL::VARCHAR subcategory WHERE false"
+    )
+    con.execute(
+        "CREATE TABLE call_center_interactions AS SELECT 'I1' interaction_id, "
+        "TIMESTAMP '2025-01-10 09:00:00' interaction_date, 'Queja' reason_category, "
+        "60 duration_seconds, 10 wait_time_seconds, true was_resolved, false was_escalated, "
+        "false requires_followup, 'Neutral' detected_sentiment, 0.00::DECIMAL(3,2) sentiment_score"
+    )
+    con.execute(
+        "CREATE TABLE satisfaction_surveys AS SELECT * FROM (VALUES ('I1', 4), ('I1', NULL)) "
+        "AS t(interaction_id, main_score)"
+    )
+    for name in ("complaints", "call_center_interactions", "satisfaction_surveys"):
+        con.execute(f"COPY {name} TO '{silver / 'silver' / (name + '.parquet')}' (FORMAT PARQUET)")
+    con.close()
+    gold = tmp_path / "gold"
+
+    build_marts(silver, gold, code_version="test")
+
+    (row,) = read_mart(gold, "contact_satisfaction")
+    assert (row["surveys"], row["surveys_with_score"], row["score_sum"]) == (2, 1, 4)

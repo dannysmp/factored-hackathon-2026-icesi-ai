@@ -35,8 +35,10 @@ Runtime Contract
 
 Limitations
 -----------
-The dispute proxy covers unrecognised charges only; other kinds of dispute (duplicates, wrong
-amounts) cannot be told apart in the source. Contacts cannot be tied to the cases they produced.
+The primary dispute definition covers unrecognised charges. Undue charges (a Fees subcategory) are
+a neighbouring kind of dispute and are reported as a sensitivity, and complaints of the
+Transactions category without a subcategory cannot be classified; duplicate charges cannot be told
+apart in the source. Contacts cannot be tied to the cases they produced.
 """
 
 from __future__ import annotations
@@ -63,6 +65,16 @@ from pipelines.raw import quote_literal  # Safe SQL string literals
 # A dispute case is an unrecognised-charge complaint about a transaction.
 DISPUTE_CATEGORY = "Transactions"
 DISPUTE_SUBCATEGORY = "Cargo no reconocido"
+
+# Undue charges are the neighbouring kind of dispute (a customer contests an amount billed); they
+# are counted in a sensitivity, not in the primary definition.
+ADJACENT_CATEGORY = "Fees"
+ADJACENT_SUBCATEGORY = "Cobro indebido"
+
+# Label of complaints and contacts whose category or subcategory is missing in the source.
+UNSPECIFIED = "unspecified"
+# Label of surveys that reference no contact.
+UNMATCHED = "unmatched"
 
 # Cleaned tables the marts read.
 SILVER_INPUTS = ("complaints", "call_center_interactions", "satisfaction_surveys")
@@ -151,7 +163,7 @@ _MARTS: dict[str, str] = {
     "contact_demand_monthly": f"""
         SELECT
             CAST(date_trunc('month', interaction_date) AS DATE) AS month,
-            reason_category,
+            coalesce(reason_category, 'unspecified') AS reason_category,
             count(*) AS interactions,
             count(duration_seconds) AS interactions_with_duration,
             sum(duration_seconds) AS duration_seconds_sum,
@@ -171,12 +183,15 @@ _MARTS: dict[str, str] = {
     """,
     "contact_satisfaction": """
         SELECT
-            i.reason_category,
+            CASE
+                WHEN i.interaction_id IS NULL THEN 'unmatched'
+                ELSE coalesce(i.reason_category, 'unspecified')
+            END AS reason_category,
             count(*) AS surveys,
             count(s.main_score) AS surveys_with_score,
             sum(s.main_score) AS score_sum
         FROM satisfaction_surveys AS s
-        JOIN call_center_interactions AS i ON i.interaction_id = s.interaction_id
+        LEFT JOIN call_center_interactions AS i ON i.interaction_id = s.interaction_id
         GROUP BY 1
         ORDER BY 1
     """,

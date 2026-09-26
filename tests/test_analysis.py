@@ -11,6 +11,7 @@ from __future__ import annotations
 
 # Standard libraries
 import logging  # Capture log records
+import re  # Look for identifiers anywhere in the text
 import shutil  # Copy the assumptions file for edits
 from pathlib import Path  # Temporary locations
 from typing import Any  # Mart rows
@@ -22,6 +23,7 @@ import pytest  # Test runner and fixtures
 from pipelines.analysis import (
     DEFAULT_ASSUMPTIONS,
     Assumptions,
+    _number,
     load_assumptions,
     main,
     render_workflow_analysis,
@@ -113,13 +115,13 @@ def test_a_missing_assumption_is_named(tmp_path: Path) -> None:
 
 
 def test_demand_figures_match_the_fixture(report: str) -> None:
-    """Six of eight complaints are disputes, in two months."""
+    """Six of ten complaints are disputes, in two months."""
     assert "Dispute cases: **6** between 2025-01 and 2025-02 (2 months with cases)" in report
     assert "3 per month on average; the busiest month is 2025-02 with 3." in report
-    assert "- Share of all complaints: **75.0 %** (6 of 8)." in report
-    assert "- Share of `Transactions` complaints: **85.7 %**." in report
+    assert "- Share of all complaints: **60.0 %** (6 of 10)." in report
+    assert "- Share of `Transactions` complaints: **75.0 %**." in report
     assert "| 2025 | 6 |" in report
-    assert "| Transaccional | 2 | 66.7 % |" in report
+    assert "| Transaccional | 3 | 60.0 % |" in report
 
 
 def test_resolution_figures_match_the_fixture(report: str) -> None:
@@ -138,11 +140,63 @@ def test_resolution_figures_match_the_fixture(report: str) -> None:
 
 
 def test_contact_figures_match_the_fixture(report: str) -> None:
-    """Transactional contacts: 7.5 min handling, 1.5 min wait, half negative, half neutral."""
-    assert (
-        "| Transaccional | 7.5 | 1.5 | 50.0 % | 50.0 % | -0.25 | 4.00 | 50.0 % | 0.0 % | 50.0 % |"
-        in report
+    """Means use the contacts that have the value; every reason has its row, in name order."""
+    queja = "| Queja | 2.0 | 0.5 | 100.0 % | 0.0 % | -0.85 | 1.00 | 0.0 % | 100.0 % | 100.0 % |"
+    transactional = (
+        "| Transaccional | 7.5 | 1.5 | 33.3 % | 33.3 % | -0.25 | 4.00 | 33.3 % | 0.0 % | 33.3 % |"
     )
+    unspecified = (
+        "| unspecified | 1.0 | 0.2 | 0.0 % | 100.0 % | 0.00 | n/a | 0.0 % | 0.0 % | 0.0 % |"
+    )
+    assert report.index(queja) < report.index(transactional) < report.index(unspecified)
+
+
+def test_a_category_recorded_almost_always_as_neutral_is_flagged(report: str) -> None:
+    """The contacts without a reason are all neutral, so the report warns against reading them."""
+    assert "`unspecified` contacts are recorded as neutral in 100.0 % of cases" in report
+    assert "`Queja` contacts are recorded as neutral" not in report
+
+
+def test_surveys_without_a_contact_are_reported(report: str) -> None:
+    """One survey references no contact; the report says how many."""
+    assert "Surveys that reference no contact (1) are not attributed" in report
+
+
+def test_the_contact_table_lists_reasons_by_volume_then_name(report: str) -> None:
+    """Order is part of the contract: largest first, ties by name."""
+    order = ["| Transaccional | 3 |", "| Queja | 1 |", "| unspecified | 1 |"]
+    positions = [report.index(row) for row in order]
+    assert positions == sorted(positions)
+
+
+def test_the_dispute_definition_is_sized_with_its_neighbours(report: str) -> None:
+    """Undue charges and unclassified transaction complaints are shown as a sensitivity."""
+    assert "| Transactions | Cargo no reconocido | 6 | primary dispute |" in report
+    assert "| Fees | Cobro indebido | 1 | adjacent (sensitivity) |" in report
+    assert "| Transactions | unspecified | 1 | unclassified (sensitivity) |" in report
+    assert "| Fees | Cargo no reconocido | 1 | not a dispute |" in report
+    assert "| Primary: `Transactions` / `Cargo no reconocido` | 6 | 60.0 % |" in report
+    assert "| Plus undue charges (`Fees` / `Cobro indebido`) | 7 | 70.0 % |" in report
+    assert "| Plus `Transactions` without a subcategory | 8 | 80.0 % |" in report
+
+
+def test_the_baseline_median_is_qualified_as_covering_closed_cases_only(report: str) -> None:
+    """The 20-day baseline excludes open cases and the report says so."""
+    assert "| Median days to resolution (resolved and closed cases only) | 20.0 | <= 3 |" in report
+    assert "the rest have no resolution time yet" in report
+
+
+def test_the_cost_by_category_shows_how_the_proxy_changes_the_answer(report: str) -> None:
+    """Each reason category's base cost per dispute is listed beside its handling time."""
+    assert "| Queja | 2.0 | USD 0.45 |" in report
+    assert "| Transaccional | 7.5 | USD 1.69 |" in report
+
+
+def test_a_value_that_rounds_to_zero_is_shown_without_a_sign() -> None:
+    """Negative zero is never printed."""
+    assert _number(-0.001, 2) == "0.00"
+    assert _number(-0.5, 0) == "0"
+    assert _number(-0.25, 2) == "-0.25"
 
 
 def test_cost_is_contacts_times_hours_times_rate_at_each_assumption(report: str) -> None:
@@ -155,8 +209,8 @@ def test_cost_is_contacts_times_hours_times_rate_at_each_assumption(report: str)
 def test_targets_are_shown_against_the_measured_baseline(report: str) -> None:
     """Baselines come from the data; targets from the assumptions file."""
     assert "| SLA breach rate | 16.7 % | <= 5.0 % |" in report
-    assert "| Median days to resolution | 20.0 | <= 3 |" in report
     assert "| Safe automated resolution rate | not measured today | >= 40.0 % |" in report
+    assert "| Unsafe action rate | not measured today | <= 0.0 % |" in report
 
 
 def test_lineage_lists_every_input_and_mart_with_digests(report: str) -> None:
@@ -167,9 +221,9 @@ def test_lineage_lists_every_input_and_mart_with_digests(report: str) -> None:
 
 
 def test_the_report_holds_no_identifier_or_free_text(report: str) -> None:
-    """Only aggregates: none of the fixture's identifiers can appear."""
-    for identifier in ("K1", "I1", "C1", "A1", "S1"):
-        assert f"| {identifier} " not in report
+    """Only aggregates: no identifier of the fixture appears anywhere, in a table or in prose."""
+    identifiers = re.compile(r"\b(?:K(?:10|[1-9])|I[1-5]|S[1-5]|C[12]|A1|P[12]|B[12]|D[12])\b")
+    assert identifiers.findall(report) == []
 
 
 def test_rendering_is_a_pure_function_of_its_inputs(tmp_path: Path, silver: Path) -> None:
@@ -195,6 +249,9 @@ def test_empty_marts_render_without_dividing_by_zero() -> None:
     text = render_workflow_analysis(marts, load_assumptions(), manifest)
 
     assert "Dispute cases: **0** between n/a and n/a" in text
+    assert "- Share of all complaints: **n/a** (0 of 0)." in text
+    assert "- Share of `Transactions` complaints: **n/a**." in text
+    assert "- SLA breached: **n/a** of cases." in text
     assert "median **n/a**" in text
     assert "| Cost per dispute | n/a | n/a | n/a |" in text
 
@@ -251,3 +308,22 @@ def test_the_command_fails_with_one_on_invalid_assumptions(tmp_path: Path, silve
 
     assert code == 1
     assert not (tmp_path / "gold").exists()
+
+
+def test_a_handling_category_that_matches_no_reason_is_rejected(
+    tmp_path: Path, silver: Path
+) -> None:
+    """A typo in the assumptions stops the run instead of silently costing nothing."""
+    bad = _edited(
+        tmp_path,
+        'handling_reason_category = "Transaccional"',
+        'handling_reason_category = "Transacional"',
+    )
+    gold = tmp_path / "gold"
+    manifest = build_marts(silver, gold, code_version="test").as_dict()
+    marts = {name: read_mart(gold, name) for name in MART_NAMES}
+
+    with pytest.raises(ValueError, match="Transacional"):
+        render_workflow_analysis(marts, load_assumptions(bad), manifest)
+    assert main([*_arguments(tmp_path, silver), "--assumptions", str(bad)]) == 1
+    assert not (tmp_path / "reports").exists()

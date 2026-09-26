@@ -50,13 +50,17 @@ from typing import Any  # Mart rows
 
 # Local modules
 from pipelines.gold import (  # Marts and the definitions the report quotes
+    ADJACENT_CATEGORY,
+    ADJACENT_SUBCATEGORY,
     DISPUTE_CATEGORY,
     DISPUTE_SUBCATEGORY,
     MART_NAMES,
+    UNMATCHED,
+    UNSPECIFIED,
     build_marts,
     read_mart,
 )
-from pipelines.silver import _git_version  # Same code-version rule as the cleaning stage
+from pipelines.silver import git_version  # Same code-version rule as the cleaning stage
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +179,10 @@ def _pct(value: float | None) -> str:
 
 def _number(value: float | None, digits: int = 1) -> str:
     """Decimal number, or ``n/a`` when undefined."""
-    return "n/a" if value is None else f"{value:,.{digits}f}"
+    if value is None:
+        return "n/a"
+    # A value that rounds to zero is shown without a sign ("-0.00" would suggest a direction)
+    return f"{0.0 if round(value, digits) == 0 else value:,.{digits}f}"
 
 
 def _usd(value: float | None) -> str:
@@ -305,8 +312,11 @@ def _scope_section(marts: Marts) -> str:
             "",
             f"- **Dispute case:** a complaint of the category `{DISPUTE_CATEGORY}` whose "
             f"subcategory is `{DISPUTE_SUBCATEGORY}` (an unrecognised charge). The source has no "
-            "dispute flag; this is the closest it offers, and it cannot tell duplicate charges "
-            "or wrong amounts apart.",
+            "dispute flag, so this is a proxy. Undue charges (category "
+            f"`{ADJACENT_CATEGORY}`, subcategory `{ADJACENT_SUBCATEGORY}`) are a neighbouring kind "
+            "of dispute and are sized in section 2 as a sensitivity, together with the "
+            f"`{DISPUTE_CATEGORY}` complaints that carry no subcategory. Duplicate charges cannot "
+            "be told apart.",
             "- **Contacts cannot be tied to cases:** the link from a complaint to the contact "
             "that originated it is empty in the source, and the contact reason repeats the "
             "six broad categories. Contact figures describe reason categories, not disputes; "
@@ -387,8 +397,70 @@ def _demand_section(marts: Marts, profiles: list[ContactProfile]) -> str:
                 )
             ],
         ),
+        "",
+        "Complaints by category and subcategory, with the role each plays in the dispute "
+        "definition:",
+        "",
+        _table(
+            ["Category", "Subcategory", "Cases", "Role"],
+            [
+                [
+                    row["category"],
+                    row["subcategory"],
+                    _count(row["cases"]),
+                    _dispute_role(row["category"], row["subcategory"]),
+                ]
+                for row in mix
+            ],
+        ),
+        "",
+        "Sensitivity of the dispute count to the definition:",
+        "",
+        _table(
+            ["Definition", "Cases", "Share of complaints"],
+            [
+                [label, _count(cases), _pct(_ratio(cases, all_complaints))]
+                for label, cases in _definition_sizes(mix)
+            ],
+        ),
     ]
     return "\n".join(lines)
+
+
+def _dispute_role(category: str, subcategory: str) -> str:
+    """Role of a complaint category and subcategory in the dispute definition."""
+    if (category, subcategory) == (DISPUTE_CATEGORY, DISPUTE_SUBCATEGORY):
+        return "primary dispute"
+    if (category, subcategory) == (ADJACENT_CATEGORY, ADJACENT_SUBCATEGORY):
+        return "adjacent (sensitivity)"
+    if category == DISPUTE_CATEGORY and subcategory == UNSPECIFIED:
+        return "unclassified (sensitivity)"
+    return "not a dispute"
+
+
+def _definition_sizes(mix: Sequence[Row]) -> list[tuple[str, float]]:
+    """Cases under the primary definition and under each widening of it."""
+
+    def cases(category: str, subcategory: str) -> float:
+        return _total(
+            [r for r in mix if (r["category"], r["subcategory"]) == (category, subcategory)],
+            "cases",
+        )
+
+    primary = cases(DISPUTE_CATEGORY, DISPUTE_SUBCATEGORY)
+    adjacent = cases(ADJACENT_CATEGORY, ADJACENT_SUBCATEGORY)
+    unclassified = cases(DISPUTE_CATEGORY, UNSPECIFIED)
+    return [
+        (f"Primary: `{DISPUTE_CATEGORY}` / `{DISPUTE_SUBCATEGORY}`", primary),
+        (
+            f"Plus undue charges (`{ADJACENT_CATEGORY}` / `{ADJACENT_SUBCATEGORY}`)",
+            primary + adjacent,
+        ),
+        (
+            f"Plus `{DISPUTE_CATEGORY}` without a subcategory",
+            primary + adjacent + unclassified,
+        ),
+    ]
 
 
 def _group_total(rows: Sequence[Row], key: str) -> dict[str, float]:
@@ -467,8 +539,20 @@ def _resolution_section(marts: Marts) -> str:
     )
 
 
-def _sentiment_section(profiles: list[ContactProfile]) -> str:
+NEUTRAL_CAVEAT_SHARE = 0.95
+
+
+def _sentiment_section(marts: Marts, profiles: list[ContactProfile]) -> str:
     """Sentiment and satisfaction of contacts by reason category."""
+    unmatched = _total(
+        [r for r in marts["contact_satisfaction"] if r["reason_category"] == UNMATCHED], "surveys"
+    )
+    caveats = [
+        f"`{profile.category}` contacts are recorded as neutral in {_pct(profile.neutral_rate)} "
+        "of cases, so their sentiment says little about how a customer feels about a dispute."
+        for profile in profiles
+        if profile.neutral_rate is not None and profile.neutral_rate >= NEUTRAL_CAVEAT_SHARE
+    ]
     rows = [
         [
             profile.category,
@@ -507,6 +591,10 @@ def _sentiment_section(profiles: list[ContactProfile]) -> str:
                 ],
                 rows,
             ),
+            "",
+            *caveats,
+            f"Surveys that reference no contact ({_count(unmatched)}) are not attributed to a "
+            "reason category.",
         ]
     )
 
@@ -517,7 +605,20 @@ def _cost_section(marts: Marts, assumptions: Assumptions, profiles: list[Contact
     profile = next(
         (p for p in profiles if p.category == assumptions.handling_reason_category), None
     )
+    if profile is None and profiles:
+        raise ValueError(
+            f"handling_reason_category {assumptions.handling_reason_category!r} matches no "
+            "reason category in the data"
+        )
     per_case = _handling_cost(assumptions, profile)
+    alternatives = [
+        [
+            other.category,
+            _number(other.handle_minutes),
+            _usd(_handling_cost(assumptions, other)["base"]),
+        ]
+        for other in profiles
+    ]
     monthly_cases = _ratio(totals["cases"], totals["months"])
     monthly = {
         key: None if value is None or monthly_cases is None else value * monthly_cases
@@ -559,11 +660,19 @@ def _cost_section(marts: Marts, assumptions: Assumptions, profiles: list[Contact
                 ],
             ),
             "",
+            "Which reason category models a dispute contact matters more than the low-to-high "
+            "range: at the base assumptions, the cost per dispute by category is",
+            "",
+            _table(
+                ["Reason category", "Mean handling (min)", "Base cost per dispute"], alternatives
+            ),
+            "",
             "Waiting time is not costed: the customer waits, the agent does not. Back-office "
             "work on a case (investigation, contacting the merchant) is not recorded in the "
-            "source and is not included, so the figures are a floor: the case for automation "
-            "rests more on resolution time and SLA breaches (section 6) than on agent minutes. "
-            "The assumptions live in `pipelines/analysis_assumptions.toml`.",
+            "source and is not included, so agent time is understated by an unknown amount; the "
+            "case for automation rests more on resolution time and SLA breaches (section 6) "
+            "than on agent minutes. The assumptions live in "
+            "`pipelines/analysis_assumptions.toml`.",
         ]
     )
 
@@ -585,7 +694,7 @@ def _kpi_section(marts: Marts, assumptions: Assumptions) -> str:
             f"<= {_pct(targets.sla_breach_rate_max)}",
         ],
         [
-            "Median days to resolution",
+            "Median days to resolution (resolved and closed cases only)",
             _number(median),
             f"<= {targets.median_days_to_resolution_max:g}",
         ],
@@ -597,7 +706,7 @@ def _kpi_section(marts: Marts, assumptions: Assumptions) -> str:
         [
             "Unsafe action rate",
             "not measured today",
-            f"= {_pct(targets.unsafe_action_rate_max)}",
+            f"<= {_pct(targets.unsafe_action_rate_max)}",
         ],
     ]
     return "\n".join(
@@ -611,6 +720,10 @@ def _kpi_section(marts: Marts, assumptions: Assumptions) -> str:
             "baseline is what the data shows today.",
             "",
             _table(["Outcome", "Baseline today", "Target"], rows),
+            "",
+            "The median is over the cases that reached `Resolved` or `Closed` "
+            f"({_pct(_ratio(totals['closed'], totals['cases']))} of cases); the rest have no "
+            "resolution time yet, so the baseline understates how long an open case waits.",
         ]
     )
 
@@ -679,7 +792,7 @@ def render_workflow_analysis(
         "",
         _resolution_section(marts),
         "",
-        _sentiment_section(profiles),
+        _sentiment_section(marts, profiles),
         "",
         _cost_section(marts, assumptions, profiles),
         "",
@@ -709,13 +822,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         assumptions = load_assumptions(args.assumptions)
         manifest = build_marts(
-            args.silver, args.gold, code_version=args.code_version or _git_version()
+            args.silver, args.gold, code_version=args.code_version or git_version()
         )
+        marts = {name: read_mart(args.gold, name) for name in MART_NAMES}
+        text = render_workflow_analysis(marts, assumptions, manifest.as_dict())
     except (FileNotFoundError, ValueError, OSError) as error:
         logger.error("analysis_failed reason=%s", error)
         return 1
-    marts = {name: read_mart(args.gold, name) for name in MART_NAMES}
-    text = render_workflow_analysis(marts, assumptions, manifest.as_dict())
 
     args.report.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.report.with_suffix(".md.tmp")
