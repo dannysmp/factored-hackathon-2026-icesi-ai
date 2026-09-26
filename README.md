@@ -48,7 +48,16 @@ Design rules that follow from this:
 
 ## Getting started
 
-Requirements: [uv](https://docs.astral.sh/uv/) and [gitleaks](https://github.com/gitleaks/gitleaks).
+### Prerequisites
+
+| Tool | What it is used for | Install |
+|---|---|---|
+| [uv](https://docs.astral.sh/uv/) | Python package and environment manager. It downloads Python 3.11, installs the exact dependency versions pinned in `uv.lock` and runs every command in that environment, so every machine and CI run behaves the same. | `brew install uv` |
+| [gitleaks](https://github.com/gitleaks/gitleaks) | Secret scanner. `make secrets` and CI use it to make sure no credential or key is ever committed to the repository. | `brew install gitleaks` |
+
+Docker is not needed yet; it is required once the containerized stack is added.
+
+### Set up and run
 
 ```bash
 make setup      # install locked dependencies (Python 3.11) and create .env from the template
