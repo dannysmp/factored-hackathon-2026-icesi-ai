@@ -47,6 +47,7 @@ from pipelines.policy_corpus import (
 )
 
 SOURCE = "policy/dispute_policy_v1.yaml"
+NBSP = chr(0xA0)  # thousands separator and the space before % in Spanish
 
 
 @pytest.fixture(scope="module")
@@ -116,8 +117,8 @@ def test_each_document_states_its_language_and_policy_version(policy: Policy) ->
     """The front matter lets retrieval filter by language and version."""
     for language, text in zip(LANGUAGES, render_corpus(policy).values(), strict=True):
         assert text.startswith(f'---\nlang: {language}\npolicy_version: "{policy.version}"\n')
-        assert f"(`{SOURCE}`" not in text
-        assert SOURCE in text
+        assert f'generated_from: "{SOURCE}"' in text.split("---")[1]
+        assert SOURCE not in text.split("---", 2)[2]
 
 
 def test_every_language_covers_every_category_status_reason_and_section() -> None:
@@ -126,8 +127,12 @@ def test_every_language_covers_every_category_status_reason_and_section() -> Non
         messages = MESSAGES[language]
         assert set(messages.categories) == set(DisputeCategory)
         assert set(messages.statuses) == set(TransactionStatus)
+        assert set(messages.statuses_plural) == set(TransactionStatus)
         assert set(messages.reason_codes) == set(ReasonCode)
         assert set(messages.section_titles) == set(SECTION_IDS)
+        assert set(messages.product_names) == set(KNOWN_PRODUCT_TYPES)
+        assert set(messages.transaction_types_indefinite) == set(KNOWN_TRANSACTION_TYPES)
+        assert set(messages.transaction_types_plural) == set(KNOWN_TRANSACTION_TYPES)
 
 
 def test_every_reason_code_appears_in_every_language(policy: Policy) -> None:
@@ -146,7 +151,7 @@ def test_every_reason_code_appears_in_every_language(policy: Policy) -> None:
     ("language", "amount", "percent", "score", "days"),
     [
         ("en", "5,000 USD", "60%", "0.80", "120 days"),
-        ("es", "5.000 USD", "60 %", "0,80", "120 días"),
+        ("es", f"5{NBSP}000 USD", f"60{NBSP}%", "0,80", "120 días"),
         ("pt", "5.000 USD", "60%", "0,80", "120 dias"),
     ],
 )
@@ -178,8 +183,10 @@ def test_a_changed_parameter_reaches_the_text_and_the_old_value_leaves(
     text = render_corpus(changed)[f"{language}/dispute-policy.md"]
 
     assert "200" in text and "180" not in text
-    assert ("7,500.50" if language == "en" else "7.500,50") in text
-    assert "5.000" not in text and "5,000" not in text
+    assert {"en": "7,500.50", "es": f"7{NBSP}500,50", "pt": "7.500,50"}[language] in text
+    assert not {"5.000", "5,000", f"5{NBSP}000"} & {
+        n for n in ("5.000", "5,000", f"5{NBSP}000") if n in text
+    }
     percent = MESSAGES[language].percent_format
     assert percent.format(value=75) in text
     assert percent.format(value=60) not in text
@@ -187,21 +194,23 @@ def test_a_changed_parameter_reaches_the_text_and_the_old_value_leaves(
 
 
 @pytest.mark.parametrize(
-    ("value", "english", "spanish"),
+    ("value", "english", "spanish", "portuguese"),
     [
-        (Decimal("5000.00"), "5,000", "5.000"),
-        (Decimal("1234.5"), "1,234.50", "1.234,50"),
-        (Decimal("0.01"), "0.01", "0,01"),
-        (Decimal("1000000"), "1,000,000", "1.000.000"),
-        (Decimal("4999.999"), "4,999.999", "4.999,999"),
-        (Decimal("5000.10"), "5,000.10", "5.000,10"),
+        (Decimal("5000.00"), "5,000", f"5{NBSP}000", "5.000"),
+        (Decimal("1234.5"), "1,234.50", f"1{NBSP}234,50", "1.234,50"),
+        (Decimal("0.01"), "0.01", "0,01", "0,01"),
+        (Decimal("1000000"), "1,000,000", f"1{NBSP}000{NBSP}000", "1.000.000"),
+        (Decimal("4999.999"), "4,999.999", f"4{NBSP}999,999", "4.999,999"),
+        (Decimal("5000.10"), "5,000.10", f"5{NBSP}000,10", "5.000,10"),
     ],
 )
-def test_amounts_use_each_language_s_separators(value: Decimal, english: str, spanish: str) -> None:
+def test_amounts_use_each_language_s_separators(
+    value: Decimal, english: str, spanish: str, portuguese: str
+) -> None:
     """A whole amount drops its fraction; a fractional one keeps two decimals."""
     assert _amount(value, MESSAGES["en"]) == english
     assert _amount(value, MESSAGES["es"]) == spanish
-    assert _amount(value, MESSAGES["pt"]) == spanish
+    assert _amount(value, MESSAGES["pt"]) == portuguese
     assert _rate(0.8, MESSAGES["es"]) == "0,80"
     assert _rate(0.8, MESSAGES["en"]) == "0.80"
 
@@ -212,14 +221,16 @@ def test_rates_and_percentages_are_never_rounded() -> None:
 
     assert _rate(0.855, en) == "0.855" and _rate(0.995, es) == "0,995"
     assert _rate(0.8, en) == "0.80" and _rate(1.0, en) == "1.00" and _rate(0.0, en) == "0.00"
-    assert _percent(0.605, en) == "60.5%" and _percent(0.999, es) == "99,9 %"
-    assert _percent(0.6, en) == "60%" and _percent(1.0, es) == "100 %"
+    assert _percent(0.605, en) == "60.5%" and _percent(0.999, es) == f"99,9{NBSP}%"
+    assert _percent(0.6, en) == "60%" and _percent(1.0, es) == f"100{NBSP}%"
 
 
 def _parse_number(text: str, language: str) -> Decimal:
     """Read a number written in a language's format back into a Decimal."""
     if language == "en":
         return Decimal(text.replace(",", ""))
+    if language == "es":
+        return Decimal(text.replace(NBSP, "").replace(",", "."))
     return Decimal(text.replace(".", "").replace(",", "."))
 
 
@@ -246,9 +257,10 @@ def test_the_numbers_in_the_text_parse_back_to_exactly_the_policy_values(
     text = render_corpus(changed)[f"{language}/dispute-policy.md"]
     section = text.split("{#human-review}")[1].split("{#fraud-claims}")[0]
 
-    percent = re.search(r"\([^()]*?([\d.,]+) ?%\)", section)
+    number = rf"([\d.,{NBSP}]+)"
+    percent = re.search(rf"\([^()]*?{number}\s?%\)", section)
     score = re.search(r"([\d.,]+) (?:or|o|ou) (?:higher|más|mais)", section)
-    money = re.search(r"([\d.,]+) USD", section)
+    money = re.search(rf"{number} USD", section)
     assert percent and score and money
     assert _parse_number(percent.group(1), language) == Decimal(str(floor)) * 100
     assert _parse_number(score.group(1), language) == Decimal(str(threshold))
@@ -288,14 +300,14 @@ def test_exclusions_are_derived_from_what_the_policy_accepts(policy: Policy, lan
 
     other = messages.products_out_of_scope.split("{products}")[0]
     excluded_types = messages.types_excluded.split("{types}")[0]
-    assert "Seguro" in base.split(other)[1].split(")")[0]
-    assert "Seguro" not in widened.split(other)[1].split(")")[0]
-    assert messages.transaction_types["Deposit"] in base.split(excluded_types)[1].split(".")[0]
-    assert (
-        messages.transaction_types["Deposit"] not in widened.split(excluded_types)[1].split(".")[0]
-    )
+    insurance = messages.product_names["Seguro"]
+    deposits = messages.transaction_types_plural["Deposit"]
+    assert insurance in base.split(other)[1].split(")")[0]
+    assert insurance not in widened.split(other)[1].split(")")[0]
+    assert deposits in base.split(excluded_types)[1].split(".")[0]
+    assert deposits not in widened.split(excluded_types)[1].split(".")[0]
     assert other not in complete
-    assert excluded_types not in complete
+    assert deposits not in complete
 
 
 def test_stray_hidden_files_are_not_drift(tmp_path: Path, policy: Policy) -> None:
@@ -369,7 +381,7 @@ def test_a_type_without_a_translation_appears_as_the_source_spells_it(policy: Po
 
     text = render_corpus(custom)["en/dispute-policy.md"]
 
-    assert "(purchase and Refund)" in text or "(Refund and purchase)" in text
+    assert "(a purchase or Refund)" in text
 
 
 def test_the_fraud_section_states_the_rule_the_engine_enforces(policy: Policy) -> None:
@@ -438,3 +450,130 @@ def test_the_source_is_quoted_relative_to_the_repository_when_inside_it(tmp_path
     """A policy elsewhere is quoted by its file name only."""
     assert _source_name(DEFAULT_POLICY_PATH) == SOURCE
     assert _source_name(tmp_path / "custom.yaml") == "custom.yaml"
+
+
+# -----------------------------------------------------------------------------
+# Language: display names, wording of lists, terminology, calendar days
+# -----------------------------------------------------------------------------
+
+
+def test_no_dataset_product_code_reaches_the_customer_text(policy: Policy) -> None:
+    """The codes are engine identifiers; every language shows its own display names."""
+    for text in render_corpus(policy).values():
+        for code in KNOWN_PRODUCT_TYPES:
+            assert not re.search(rf"\b{re.escape(code)}\b", text)
+
+
+@pytest.mark.parametrize(
+    ("language", "covered", "others"),
+    [
+        (
+            "es",
+            "Cuenta de ahorros, Cuenta corriente, Tarjeta de crédito y Tarjeta de débito",
+            "Préstamo personal, Crédito hipotecario, Inversiones y Seguros",
+        ),
+        (
+            "pt",
+            "Conta poupança, Conta corrente, Cartão de crédito e Cartão de débito",
+            "Empréstimo pessoal, Financiamento imobiliário, Investimentos e Seguros",
+        ),
+        (
+            "en",
+            "Savings account, Checking account, Credit card and Debit card",
+            "Personal loan, Mortgage, Investments and Insurance",
+        ),
+    ],
+)
+def test_products_are_named_in_the_language_and_listed_in_a_fixed_order(
+    policy: Policy, language: str, covered: str, others: str
+) -> None:
+    """Covered products and the others read as the customer's language names them."""
+    text = render_corpus(policy)[f"{language}/dispute-policy.md"]
+
+    assert f": {covered}." in text
+    assert f"({others})" in text
+
+
+@pytest.mark.parametrize(
+    ("language", "charges", "excluded", "statuses"),
+    [
+        (
+            "es",
+            "(una compra, un retiro, una transferencia o un pago)",
+            "No se pueden disputar depósitos ni ajustes.",
+            "Tampoco se pueden disputar transacciones rechazadas, pendientes o revertidas.",
+        ),
+        (
+            "pt",
+            "(uma compra, um saque, uma transferência ou um pagamento)",
+            "Não podem ser contestados depósitos nem ajustes.",
+            "Também não podem ser contestadas transações recusadas, pendentes ou estornadas.",
+        ),
+        (
+            "en",
+            "(a purchase, a withdrawal, a transfer or a payment)",
+            "Transactions that are deposits or adjustments cannot be disputed.",
+            "Transactions that are declined, pending or reversed cannot be disputed either.",
+        ),
+    ],
+)
+def test_alternatives_use_or_and_exclusions_use_nor_with_agreeing_forms(
+    policy: Policy, language: str, charges: str, excluded: str, statuses: str
+) -> None:
+    """A charge is one of the types, not all of them; exclusions and statuses agree in number."""
+    text = render_corpus(policy)[f"{language}/dispute-policy.md"]
+
+    assert charges in text
+    assert excluded in text
+    assert statuses in text
+
+
+def test_a_fraud_report_is_never_called_a_complaint(policy: Policy) -> None:
+    """In Spanish and Portuguese the fraud category has its own word; complaints keep theirs."""
+    es = render_corpus(policy)["es/dispute-policy.md"]
+    pt = render_corpus(policy)["pt/dispute-policy.md"]
+
+    assert "reporte de fraude" in es.lower() and "reclamo de fraude" not in es.lower()
+    assert "reclamos repetidos" in es and "reclamos de fraude" not in es.lower()
+    assert "contestação por fraude" in pt.lower() and "alegação" not in pt.lower()
+    assert "reclamações repetidas" in pt
+
+
+def _example(days: str, after: str, text: str) -> bool:
+    """Whether the deadline paragraph states ``days`` twice, then ``after`` as the day past it."""
+    paragraph = text.split("{#filing-windows}", 1)[1].split("\n- ", 1)[0]
+    pattern = rf"(?<!\d){days}(?!\d)\D+(?<!\d){days}(?!\d)\D+(?<!\d){after}(?!\d)"
+    return re.search(pattern, paragraph) is not None
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_deadline_is_in_calendar_days_with_an_example_from_the_policy(
+    policy: Policy, language: str
+) -> None:
+    """The worked example uses the shortest window of the policy, and follows it when it changes."""
+    calendar = {"es": "días calendario", "pt": "dias corridos", "en": "calendar days"}[language]
+    shorter = _window(policy, DisputeCategory.DUPLICATE_CHARGE, 45)
+
+    base = render_corpus(policy)[f"{language}/dispute-policy.md"]
+    changed = render_corpus(shorter)[f"{language}/dispute-policy.md"]
+
+    assert calendar in base
+    assert _example("60", "61", base)
+    assert _example("45", "46", changed)
+
+
+def test_generation_details_are_not_part_of_the_readable_text(policy: Policy) -> None:
+    """The note about regenerating lives in the front matter, outside every section."""
+    for text in render_corpus(policy).values():
+        body = text.split("---", 2)[2]
+        assert "Generado" not in body and "Gerado" not in body and "Generated" not in body
+        assert SOURCE not in body
+
+
+def test_spanish_numbers_use_the_neutral_form(policy: Policy) -> None:
+    """A space keeps thousands together and the comma marks decimals; Portuguese uses dots."""
+    es = render_corpus(policy)["es/dispute-policy.md"]
+    pt = render_corpus(policy)["pt/dispute-policy.md"]
+
+    assert f"5{NBSP}000 USD" in es and f"60{NBSP}%" in es and "0,80" in es
+    assert "5.000 USD" in pt and "60%" in pt and "0,80" in pt

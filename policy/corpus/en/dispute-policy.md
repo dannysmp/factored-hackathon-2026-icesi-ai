@@ -2,31 +2,30 @@
 lang: en
 policy_version: "1"
 generated: true
+generated_from: "policy/dispute_policy_v1.yaml"
 ---
 
 # Transaction dispute policy
 
-Generated from the policy `policy/dispute_policy_v1.yaml` (version 1). Do not edit by hand: any change is made in the policy and regenerated.
-
 ## What this policy is {#overview}
 
-This policy explains how a request to dispute a transaction on an account or card is decided. It is a synthetic policy written for this project: it is not any bank's or regulator's policy, and it is not legal advice. Every decision is made with fixed rules and recorded with a reason.
+This policy explains how a request to dispute a transaction made with an account or a card is decided. It is a synthetic policy written for this project: it is not any bank's or regulator's policy, and it is not legal advice. Every decision is made with fixed rules and recorded with a reason.
 
 ## Which transactions can be disputed {#who-can-dispute}
 
-Transactions on these products can be disputed: Cuenta Ahorro, Cuenta Corriente, Tarjeta Crédito and Tarjeta Débito.
+Transactions on these products can be disputed: Savings account, Checking account, Credit card and Debit card.
 
-The other products (Préstamo Personal, Préstamo Hipotecario, Inversión and Seguro) have their own claim processes and are not disputed here.
+The other products (Personal loan, Mortgage, Investments and Insurance) have their own claim processes and are not handled by this policy.
 
-To file a dispute, the transaction must be a charge to the customer (payment, purchase, transfer and withdrawal), have the status approved, be within the deadline of its category (see below) and have no other open dispute.
+To file a dispute, the transaction must be a charge to the customer (a purchase, a withdrawal, a transfer or a payment), be approved, be within the deadline of its category (see below) and have no other open dispute.
 
-Transactions of these types cannot be disputed: deposit and adjustment.
+Transactions that are deposits or adjustments cannot be disputed.
 
-Transactions with the status declined, pending or reversed cannot be disputed.
+Transactions that are declined, pending or reversed cannot be disputed either.
 
 ## Deadlines to file a dispute {#filing-windows}
 
-A dispute must be filed within a deadline, counted in days from the transaction date. The last valid day is the day the deadline states; the next day it can no longer be filed.
+A dispute must be filed within a deadline, counted in calendar days from the transaction date. The last day of the deadline is still valid: for example, with a deadline of 60 days, the dispute can be filed on day 60 but not on day 61.
 
 - Unrecognized charge: 120 days.
 - Duplicate charge: 60 days.
@@ -36,7 +35,7 @@ A dispute must be filed within a deadline, counted in days from the transaction 
 
 ## Confirmation before filing {#confirmation}
 
-When a dispute can be filed, and before it is filed, the customer confirms the exact filing (transaction, reason and details).
+Before a dispute is filed, the customer confirms exactly what is going to be filed: the transaction, the reason and the details of the request.
 
 ## When a person reviews it {#human-review}
 
@@ -65,7 +64,7 @@ Every decision carries one of these reasons.
 | `transaction_declined` | The transaction was declined: there was no charge. |
 | `transaction_pending` | The transaction is still pending. |
 | `transaction_reversed` | The transaction has already been reversed. |
-| `transaction_date_in_future` | The transaction date is after today. |
+| `transaction_date_in_future` | The transaction date is in the future. |
 | `filing_window_expired` | The deadline to file this dispute has passed. |
 | `duplicate_open_case` | A dispute is already open for this transaction. |
 | `escalate_fraud_claim` | It is a fraud claim; a person reviews it. |
