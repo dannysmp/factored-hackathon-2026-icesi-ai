@@ -82,7 +82,8 @@ class Messages:
     products: str
     products_out_of_scope: str
     transactions: str
-    transactions_excluded: str
+    types_excluded: str
+    statuses_excluded: str
     windows_intro: str
     window_line: str
     confirmation_all: str
@@ -131,15 +132,17 @@ _ES = Messages(
     ),
     products="Se pueden disputar las transacciones de estos productos: {products}.",
     products_out_of_scope=(
-        "Los préstamos, las inversiones y los seguros tienen sus propios procesos de reclamo."
+        "Los demás productos ({products}) tienen sus propios procesos de reclamo y no se "
+        "disputan aquí."
     ),
     transactions=(
-        "Se puede disputar una transacción que sea un cargo al cliente ({types}) y cuyo estado "
-        "sea {approved}."
+        "Para presentar una disputa, la transacción debe ser un cargo al cliente ({types}), "
+        "tener estado {approved}, estar dentro del plazo de su categoría (ver más abajo) y no "
+        "tener ya otra disputa abierta."
     ),
-    transactions_excluded=(
-        "No se pueden disputar los depósitos ni los ajustes del banco, ni las transacciones con "
-        "estado {declined}, {pending} o {reversed}."
+    types_excluded="No se pueden disputar las transacciones de estos tipos: {types}.",
+    statuses_excluded=(
+        "No se pueden disputar las transacciones con estado {declined}, {pending} o {reversed}."
     ),
     windows_intro=(
         "La disputa debe presentarse dentro de un plazo, contado en días desde la fecha de la "
@@ -148,12 +151,12 @@ _ES = Messages(
     ),
     window_line="- {category}: {days} días.",
     confirmation_all=(
-        "Antes de presentar cualquier disputa, el cliente confirma la presentación exacta "
-        "(transacción, motivo y datos)."
+        "Cuando una disputa se puede presentar, y antes de presentarla, el cliente confirma la "
+        "presentación exacta (transacción, motivo y datos)."
     ),
     confirmation_some=(
-        "Antes de presentar una disputa por {categories}, el cliente confirma la presentación "
-        "exacta (transacción, motivo y datos)."
+        "Cuando una disputa por {categories} se puede presentar, y antes de presentarla, el "
+        "cliente confirma la presentación exacta (transacción, motivo y datos)."
     ),
     confirmation_none="La política no exige confirmación previa a la presentación.",
     human_intro=("Aunque la solicitud cumpla las reglas, la revisa una persona en estos casos:"),
@@ -187,6 +190,8 @@ _ES = Messages(
         "Withdrawal": "retiro",
         "Transfer": "transferencia",
         "Payment": "pago",
+        "Deposit": "depósito",
+        "Adjustment": "ajuste",
     },
     statuses={
         TransactionStatus.APPROVED: "aprobado",
@@ -206,21 +211,21 @@ _ES = Messages(
         ReasonCode.TRANSACTION_DATE_IN_FUTURE: "La fecha de la transacción es posterior a hoy.",
         ReasonCode.FILING_WINDOW_EXPIRED: "Venció el plazo para presentar esta disputa.",
         ReasonCode.DUPLICATE_OPEN_CASE: "Ya hay una disputa abierta para esta transacción.",
-        ReasonCode.ESCALATE_FRAUD_CLAIM: "Es un reclamo de fraude; lo revisa una persona.",
+        ReasonCode.ESCALATE_FRAUD_CLAIM: "Es un reclamo de fraude; pasa a revisión de una persona.",
         ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: (
-            "No se entendió la solicitud con suficiente seguridad; lo revisa una persona."
+            "No se entendió la solicitud con suficiente seguridad; pasa a revisión de una persona."
         ),
         ReasonCode.ESCALATE_REPEAT_COMPLAINER: (
-            "El cliente tiene reclamos repetidos; lo revisa una persona."
+            "El cliente tiene reclamos repetidos; pasa a revisión de una persona."
         ),
         ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: (
-            "El monto alcanza el umbral de revisión; lo revisa una persona."
+            "El monto alcanza el umbral de revisión; pasa a revisión de una persona."
         ),
         ReasonCode.ESCALATE_AMOUNT_UNKNOWN: (
-            "No se conoce el monto en dólares; lo revisa una persona."
+            "No se conoce el monto en dólares; pasa a revisión de una persona."
         ),
         ReasonCode.ESCALATE_RISK_SCORE: (
-            "El puntaje de riesgo alcanza el umbral; lo revisa una persona."
+            "El puntaje de riesgo alcanza el umbral; pasa a revisión de una persona."
         ),
     },
     and_word="y",
@@ -234,7 +239,7 @@ _PT = Messages(
     ),
     decimal_separator=",",
     thousands_separator=".",
-    percent_format="{value} %",
+    percent_format="{value}%",
     section_titles={
         "overview": "O que é esta política",
         "who-can-dispute": "Quais transações podem ser contestadas",
@@ -252,15 +257,17 @@ _PT = Messages(
     ),
     products="Podem ser contestadas as transações destes produtos: {products}.",
     products_out_of_scope=(
-        "Empréstimos, investimentos e seguros têm seus próprios processos de reclamação."
+        "Os demais produtos ({products}) têm seus próprios processos de reclamação e não são "
+        "contestados aqui."
     ),
     transactions=(
-        "Pode ser contestada uma transação que seja uma cobrança ao cliente ({types}) e cujo "
-        "status seja {approved}."
+        "Para apresentar uma contestação, a transação deve ser uma cobrança ao cliente "
+        "({types}), ter status {approved}, estar dentro do prazo da sua categoria (veja "
+        "abaixo) e não ter outra contestação aberta."
     ),
-    transactions_excluded=(
-        "Não podem ser contestados os depósitos nem os ajustes do banco, nem as transações com "
-        "status {declined}, {pending} ou {reversed}."
+    types_excluded="Não podem ser contestadas as transações destes tipos: {types}.",
+    statuses_excluded=(
+        "Não podem ser contestadas as transações com status {declined}, {pending} ou {reversed}."
     ),
     windows_intro=(
         "A contestação deve ser apresentada dentro de um prazo, contado em dias a partir da data "
@@ -269,12 +276,12 @@ _PT = Messages(
     ),
     window_line="- {category}: {days} dias.",
     confirmation_all=(
-        "Antes de apresentar qualquer contestação, o cliente confirma a apresentação exata "
-        "(transação, motivo e dados)."
+        "Quando uma contestação pode ser apresentada, e antes de apresentá-la, o cliente "
+        "confirma a apresentação exata (transação, motivo e dados)."
     ),
     confirmation_some=(
-        "Antes de apresentar uma contestação por {categories}, o cliente confirma a apresentação "
-        "exata (transação, motivo e dados)."
+        "Quando uma contestação por {categories} pode ser apresentada, e antes de apresentá-la, "
+        "o cliente confirma a apresentação exata (transação, motivo e dados)."
     ),
     confirmation_none="A política não exige confirmação antes da apresentação.",
     human_intro=("Mesmo que o pedido cumpra as regras, uma pessoa o revisa nestes casos:"),
@@ -309,6 +316,8 @@ _PT = Messages(
         "Withdrawal": "saque",
         "Transfer": "transferência",
         "Payment": "pagamento",
+        "Deposit": "depósito",
+        "Adjustment": "ajuste",
     },
     statuses={
         TransactionStatus.APPROVED: "aprovado",
@@ -328,21 +337,23 @@ _PT = Messages(
         ReasonCode.TRANSACTION_DATE_IN_FUTURE: "A data da transação é posterior a hoje.",
         ReasonCode.FILING_WINDOW_EXPIRED: "O prazo para apresentar esta contestação venceu.",
         ReasonCode.DUPLICATE_OPEN_CASE: "Já existe uma contestação aberta para esta transação.",
-        ReasonCode.ESCALATE_FRAUD_CLAIM: "É uma alegação de fraude; uma pessoa a revisa.",
+        ReasonCode.ESCALATE_FRAUD_CLAIM: (
+            "É uma alegação de fraude; passa para revisão de uma pessoa."
+        ),
         ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: (
-            "O pedido não foi entendido com segurança suficiente; uma pessoa o revisa."
+            "O pedido não foi entendido com segurança suficiente; passa para revisão de uma pessoa."
         ),
         ReasonCode.ESCALATE_REPEAT_COMPLAINER: (
-            "O cliente tem reclamações repetidas; uma pessoa revisa."
+            "O cliente tem reclamações repetidas; passa para revisão de uma pessoa."
         ),
         ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: (
-            "O valor atinge o limite de revisão; uma pessoa revisa."
+            "O valor atinge o limite de revisão; passa para revisão de uma pessoa."
         ),
         ReasonCode.ESCALATE_AMOUNT_UNKNOWN: (
-            "O valor em dólares não é conhecido; uma pessoa revisa."
+            "O valor em dólares não é conhecido; passa para revisão de uma pessoa."
         ),
         ReasonCode.ESCALATE_RISK_SCORE: (
-            "A pontuação de risco atinge o limite; uma pessoa revisa."
+            "A pontuação de risco atinge o limite; passa para revisão de uma pessoa."
         ),
     },
     and_word="e",
@@ -373,14 +384,17 @@ _EN = Messages(
         "and recorded with a reason."
     ),
     products="Transactions on these products can be disputed: {products}.",
-    products_out_of_scope="Loans, investments and insurance have their own claim processes.",
-    transactions=(
-        "A transaction can be disputed if it is a charge to the customer ({types}) and its "
-        "status is {approved}."
+    products_out_of_scope=(
+        "The other products ({products}) have their own claim processes and are not disputed here."
     ),
-    transactions_excluded=(
-        "Deposits and bank adjustments cannot be disputed, and neither can {declined}, "
-        "{pending} or {reversed} transactions."
+    transactions=(
+        "To file a dispute, the transaction must be a charge to the customer ({types}), have "
+        "the status {approved}, be within the deadline of its category (see below) and have no "
+        "other open dispute."
+    ),
+    types_excluded="Transactions of these types cannot be disputed: {types}.",
+    statuses_excluded=(
+        "Transactions with the status {declined}, {pending} or {reversed} cannot be disputed."
     ),
     windows_intro=(
         "A dispute must be filed within a deadline, counted in days from the transaction date. "
@@ -389,12 +403,12 @@ _EN = Messages(
     ),
     window_line="- {category}: {days} days.",
     confirmation_all=(
-        "Before any dispute is filed, the customer confirms the exact filing (transaction, "
-        "reason and details)."
+        "When a dispute can be filed, and before it is filed, the customer confirms the exact "
+        "filing (transaction, reason and details)."
     ),
     confirmation_some=(
-        "Before a dispute for {categories} is filed, the customer confirms the exact filing "
-        "(transaction, reason and details)."
+        "When a dispute for {categories} can be filed, and before it is filed, the customer "
+        "confirms the exact filing (transaction, reason and details)."
     ),
     confirmation_none="The policy does not require confirmation before filing.",
     human_intro="Even when a request meets the rules, a person reviews it in these cases:",
@@ -426,6 +440,8 @@ _EN = Messages(
         "Withdrawal": "withdrawal",
         "Transfer": "transfer",
         "Payment": "payment",
+        "Deposit": "deposit",
+        "Adjustment": "adjustment",
     },
     statuses={
         TransactionStatus.APPROVED: "approved",
@@ -480,25 +496,39 @@ def _join(items: list[str], word: str) -> str:
     return f"{', '.join(items[:-1])} {word} {items[-1]}"
 
 
+def _plain(number: Decimal) -> str:
+    """A decimal written out in full, without an exponent and without trailing zeros."""
+    text = format(number, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
 def _amount(value: Decimal, messages: Messages) -> str:
-    """A US-dollar amount with the language's separators, without a needless fraction."""
-    whole, _, fraction = f"{value:,.2f}".partition(".")
-    grouped = whole.replace(",", messages.thousands_separator)
-    return grouped if set(fraction) <= {"0"} else f"{grouped}{messages.decimal_separator}{fraction}"
+    """A US-dollar amount exactly as the policy holds it, with the language's separators.
+
+    A whole amount drops its fraction; a fractional one keeps every digit and at least two
+    decimals, so the text never states a value other than the one the engine compares with.
+    """
+    whole, _, fraction = _plain(value).partition(".")
+    grouped = f"{int(whole):,}".replace(",", messages.thousands_separator)
+    if not fraction:
+        return grouped
+    return f"{grouped}{messages.decimal_separator}{fraction.ljust(2, '0')}"
 
 
 def _rate(value: float, messages: Messages) -> str:
-    """A rate between 0 and 1 with two decimals and the language's separator."""
-    return f"{value:.2f}".replace(".", messages.decimal_separator)
+    """A rate exactly as the policy holds it (at least two decimals), in the language's format."""
+    whole, _, fraction = _plain(Decimal(str(value))).partition(".")
+    return f"{whole}{messages.decimal_separator}{fraction.ljust(2, '0')}"
 
 
 def _percent(value: float, messages: Messages) -> str:
-    """A rate as a whole percentage in the language's format."""
-    return messages.percent_format.format(value=f"{round(value * 100):d}")
+    """A rate as a percentage without rounding: 0.6 is 60 and 0.605 is 60.5."""
+    number = _plain(Decimal(str(value)) * 100).replace(".", messages.decimal_separator)
+    return messages.percent_format.format(value=number)
 
 
 def _capitalise(text: str) -> str:
-    """The text with its first letter in upper case (``str.capitalize`` would lower the rest)."""
+    """The text with its first letter in upper case and the rest untouched."""
     return text[:1].upper() + text[1:]
 
 
@@ -512,26 +542,61 @@ def _label(mapping: dict[str, str], key: str) -> str:
 # -----------------------------------------------------------------------------
 
 
+# Labels the source uses for products and transaction types. The text lists as excluded whichever
+# of these the policy does not accept, so an exclusion can only be stated when the policy makes it.
+KNOWN_PRODUCT_TYPES: tuple[str, ...] = (
+    "Cuenta Ahorro",
+    "Cuenta Corriente",
+    "Tarjeta Crédito",
+    "Tarjeta Débito",
+    "Préstamo Personal",
+    "Préstamo Hipotecario",
+    "Inversión",
+    "Seguro",
+)
+KNOWN_TRANSACTION_TYPES: tuple[str, ...] = (
+    "Purchase",
+    "Withdrawal",
+    "Transfer",
+    "Payment",
+    "Deposit",
+    "Adjustment",
+)
+
+
 def _who_can_dispute(policy: Policy, m: Messages) -> str:
-    """Products and transaction types that can be disputed."""
-    products = _join(sorted(policy.in_scope_product_types), m.and_word)
-    types = _join(
-        [_label(m.transaction_types, t) for t in sorted(policy.disputable_transaction_types)],
-        m.and_word,
+    """The conditions a transaction must meet, and what the policy leaves out."""
+
+    def types(names: list[str]) -> str:
+        return _join([_label(m.transaction_types, name) for name in names], m.and_word)
+
+    accepted_types = sorted(policy.disputable_transaction_types)
+    other_products = [p for p in KNOWN_PRODUCT_TYPES if p not in policy.in_scope_product_types]
+    other_types = [
+        t for t in KNOWN_TRANSACTION_TYPES if t not in policy.disputable_transaction_types
+    ]
+    paragraphs = [
+        m.products.format(products=_join(sorted(policy.in_scope_product_types), m.and_word))
+    ]
+    if other_products:
+        paragraphs.append(
+            m.products_out_of_scope.format(products=_join(other_products, m.and_word))
+        )
+    paragraphs.append(
+        m.transactions.format(
+            types=types(accepted_types), approved=m.statuses[TransactionStatus.APPROVED]
+        )
     )
-    excluded = m.transactions_excluded.format(
-        declined=m.statuses[TransactionStatus.DECLINED],
-        pending=m.statuses[TransactionStatus.PENDING],
-        reversed=m.statuses[TransactionStatus.REVERSED],
+    if other_types:
+        paragraphs.append(m.types_excluded.format(types=types(other_types)))
+    paragraphs.append(
+        m.statuses_excluded.format(
+            declined=m.statuses[TransactionStatus.DECLINED],
+            pending=m.statuses[TransactionStatus.PENDING],
+            reversed=m.statuses[TransactionStatus.REVERSED],
+        )
     )
-    return "\n\n".join(
-        [
-            m.products.format(products=products),
-            m.products_out_of_scope,
-            m.transactions.format(types=types, approved=m.statuses[TransactionStatus.APPROVED]),
-            excluded,
-        ]
-    )
+    return "\n\n".join(paragraphs)
 
 
 def _filing_windows(policy: Policy, m: Messages) -> str:

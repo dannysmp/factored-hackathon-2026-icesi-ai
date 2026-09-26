@@ -20,7 +20,7 @@ Design Principles
   policy change that forgets to regenerate the corpus cannot be merged.
 - Files are replaced atomically and only when their content changes.
 - A file in the corpus folder that the policy does not generate is reported as drift, so a
-  stale language or a hand-added file is noticed.
+  stale language or a hand-added file is noticed; hidden files are ignored.
 
 Runtime Contract
 ----------------
@@ -87,10 +87,12 @@ def check_corpus(policy: Policy, directory: Path, *, source: str) -> list[str]:
         if not target.is_file() or target.read_text(encoding="utf-8") != text:
             drift.append(relative)
     if directory.is_dir():
+        # Hidden files (``.DS_Store`` and the like) are tooling debris, not corpus content
         present = {
-            path.relative_to(directory).as_posix()
-            for path in directory.rglob("*")
-            if path.is_file()
+            relative.as_posix()
+            for relative in (path.relative_to(directory) for path in directory.rglob("*"))
+            if (directory / relative).is_file()
+            and not any(part.startswith(".") for part in relative.parts)
         }
         drift.extend(sorted(present - set(expected)))
     return drift

@@ -16,11 +16,13 @@ This policy explains how a request to dispute a transaction on an account or car
 
 Transactions on these products can be disputed: Cuenta Ahorro, Cuenta Corriente, Tarjeta Crédito and Tarjeta Débito.
 
-Loans, investments and insurance have their own claim processes.
+The other products (Préstamo Personal, Préstamo Hipotecario, Inversión and Seguro) have their own claim processes and are not disputed here.
 
-A transaction can be disputed if it is a charge to the customer (payment, purchase, transfer and withdrawal) and its status is approved.
+To file a dispute, the transaction must be a charge to the customer (payment, purchase, transfer and withdrawal), have the status approved, be within the deadline of its category (see below) and have no other open dispute.
 
-Deposits and bank adjustments cannot be disputed, and neither can declined, pending or reversed transactions.
+Transactions of these types cannot be disputed: deposit and adjustment.
+
+Transactions with the status declined, pending or reversed cannot be disputed.
 
 ## Deadlines to file a dispute {#filing-windows}
 
@@ -34,7 +36,7 @@ A dispute must be filed within a deadline, counted in days from the transaction 
 
 ## Confirmation before filing {#confirmation}
 
-Before any dispute is filed, the customer confirms the exact filing (transaction, reason and details).
+When a dispute can be filed, and before it is filed, the customer confirms the exact filing (transaction, reason and details).
 
 ## When a person reviews it {#human-review}
 

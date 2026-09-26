@@ -27,11 +27,14 @@ from app.domain.policy import (
     load_policy,
 )
 from app.domain.policy.corpus import (
+    KNOWN_PRODUCT_TYPES,
+    KNOWN_TRANSACTION_TYPES,
     LANGUAGES,
     MESSAGES,
     SECTION_IDS,
     _amount,
     _join,
+    _percent,
     _rate,
     render_corpus,
 )
@@ -144,7 +147,7 @@ def test_every_reason_code_appears_in_every_language(policy: Policy) -> None:
     [
         ("en", "5,000 USD", "60%", "0.80", "120 days"),
         ("es", "5.000 USD", "60 %", "0,80", "120 días"),
-        ("pt", "5.000 USD", "60 %", "0,80", "120 dias"),
+        ("pt", "5.000 USD", "60%", "0,80", "120 dias"),
     ],
 )
 def test_every_parameter_of_the_policy_appears_in_the_language_s_own_format(
@@ -177,9 +180,9 @@ def test_a_changed_parameter_reaches_the_text_and_the_old_value_leaves(
     assert "200" in text and "180" not in text
     assert ("7,500.50" if language == "en" else "7.500,50") in text
     assert "5.000" not in text and "5,000" not in text
-    percent = "{}%" if language == "en" else "{} %"
-    assert percent.format(75) in text
-    assert percent.format(60) not in text
+    percent = MESSAGES[language].percent_format
+    assert percent.format(value=75) in text
+    assert percent.format(value=60) not in text
     assert ("0.95" if language == "en" else "0,95") in text
 
 
@@ -190,6 +193,8 @@ def test_a_changed_parameter_reaches_the_text_and_the_old_value_leaves(
         (Decimal("1234.5"), "1,234.50", "1.234,50"),
         (Decimal("0.01"), "0.01", "0,01"),
         (Decimal("1000000"), "1,000,000", "1.000.000"),
+        (Decimal("4999.999"), "4,999.999", "4.999,999"),
+        (Decimal("5000.10"), "5,000.10", "5.000,10"),
     ],
 )
 def test_amounts_use_each_language_s_separators(value: Decimal, english: str, spanish: str) -> None:
@@ -199,6 +204,107 @@ def test_amounts_use_each_language_s_separators(value: Decimal, english: str, sp
     assert _amount(value, MESSAGES["pt"]) == spanish
     assert _rate(0.8, MESSAGES["es"]) == "0,80"
     assert _rate(0.8, MESSAGES["en"]) == "0.80"
+
+
+def test_rates_and_percentages_are_never_rounded() -> None:
+    """The text states exactly the value the engine compares with."""
+    en, es = MESSAGES["en"], MESSAGES["es"]
+
+    assert _rate(0.855, en) == "0.855" and _rate(0.995, es) == "0,995"
+    assert _rate(0.8, en) == "0.80" and _rate(1.0, en) == "1.00" and _rate(0.0, en) == "0.00"
+    assert _percent(0.605, en) == "60.5%" and _percent(0.999, es) == "99,9 %"
+    assert _percent(0.6, en) == "60%" and _percent(1.0, es) == "100 %"
+
+
+def _parse_number(text: str, language: str) -> Decimal:
+    """Read a number written in a language's format back into a Decimal."""
+    if language == "en":
+        return Decimal(text.replace(",", ""))
+    return Decimal(text.replace(".", "").replace(",", "."))
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+@pytest.mark.parametrize(
+    ("floor", "threshold", "amount"),
+    [
+        (0.605, 0.855, Decimal("4999.999")),
+        (0.999, 0.995, Decimal("0.01")),
+        (0.6, 0.8, Decimal("5000.00")),
+        (0.0, 1.0, Decimal("1234567.89")),
+    ],
+)
+def test_the_numbers_in_the_text_parse_back_to_exactly_the_policy_values(
+    policy: Policy, language: str, floor: float, threshold: float, amount: Decimal
+) -> None:
+    """No rounding for display: floor, threshold and amount round-trip through the text."""
+    changed = _routing(
+        policy,
+        nlu_confidence_floor=floor,
+        risk_score_threshold=threshold,
+        escalate_amount_usd=amount,
+    )
+    text = render_corpus(changed)[f"{language}/dispute-policy.md"]
+    section = text.split("{#human-review}")[1].split("{#fraud-claims}")[0]
+
+    percent = re.search(r"\([^()]*?([\d.,]+) ?%\)", section)
+    score = re.search(r"([\d.,]+) (?:or|o|ou) (?:higher|más|mais)", section)
+    money = re.search(r"([\d.,]+) USD", section)
+    assert percent and score and money
+    assert _parse_number(percent.group(1), language) == Decimal(str(floor)) * 100
+    assert _parse_number(score.group(1), language) == Decimal(str(threshold))
+    assert _parse_number(money.group(1), language) == amount
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_conditions_of_a_dispute_are_all_stated(policy: Policy, language: str) -> None:
+    """The text lists every gate the engine applies: type, status, deadline and no open dispute."""
+    messages = MESSAGES[language]
+    text = render_corpus(policy)[f"{language}/dispute-policy.md"]
+    section = text.split("{#who-can-dispute}")[1].split("{#filing-windows}")[0]
+
+    assert messages.transactions.split("{types}")[0] in section
+    assert messages.transactions.split("{approved}")[1] in section
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_exclusions_are_derived_from_what_the_policy_accepts(policy: Policy, language: str) -> None:
+    """A product or type the policy accepts is never listed as excluded, and vice versa."""
+    messages = MESSAGES[language]
+    wider = policy.model_copy(
+        update={
+            "in_scope_product_types": policy.in_scope_product_types | {"Seguro"},
+            "disputable_transaction_types": policy.disputable_transaction_types | {"Deposit"},
+        }
+    )
+    everything = policy.model_copy(
+        update={
+            "in_scope_product_types": frozenset(KNOWN_PRODUCT_TYPES),
+            "disputable_transaction_types": frozenset(KNOWN_TRANSACTION_TYPES),
+        }
+    )
+    base = render_corpus(policy)[f"{language}/dispute-policy.md"]
+    widened = render_corpus(wider)[f"{language}/dispute-policy.md"]
+    complete = render_corpus(everything)[f"{language}/dispute-policy.md"]
+
+    other = messages.products_out_of_scope.split("{products}")[0]
+    excluded_types = messages.types_excluded.split("{types}")[0]
+    assert "Seguro" in base.split(other)[1].split(")")[0]
+    assert "Seguro" not in widened.split(other)[1].split(")")[0]
+    assert messages.transaction_types["Deposit"] in base.split(excluded_types)[1].split(".")[0]
+    assert (
+        messages.transaction_types["Deposit"] not in widened.split(excluded_types)[1].split(".")[0]
+    )
+    assert other not in complete
+    assert excluded_types not in complete
+
+
+def test_stray_hidden_files_are_not_drift(tmp_path: Path, policy: Policy) -> None:
+    """Editor and operating-system debris in the corpus folder does not fail the check."""
+    write_corpus(policy, tmp_path, source=SOURCE)
+    (tmp_path / ".DS_Store").write_bytes(b"x")
+    (tmp_path / "en" / ".swp").write_bytes(b"x")
+
+    assert check_corpus(policy, tmp_path, source=SOURCE) == []
 
 
 @pytest.mark.parametrize(

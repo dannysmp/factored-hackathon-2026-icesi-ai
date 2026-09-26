@@ -16,11 +16,13 @@ Esta política explica cómo se decide una solicitud de disputa sobre una transa
 
 Se pueden disputar las transacciones de estos productos: Cuenta Ahorro, Cuenta Corriente, Tarjeta Crédito y Tarjeta Débito.
 
-Los préstamos, las inversiones y los seguros tienen sus propios procesos de reclamo.
+Los demás productos (Préstamo Personal, Préstamo Hipotecario, Inversión y Seguro) tienen sus propios procesos de reclamo y no se disputan aquí.
 
-Se puede disputar una transacción que sea un cargo al cliente (pago, compra, transferencia y retiro) y cuyo estado sea aprobado.
+Para presentar una disputa, la transacción debe ser un cargo al cliente (pago, compra, transferencia y retiro), tener estado aprobado, estar dentro del plazo de su categoría (ver más abajo) y no tener ya otra disputa abierta.
 
-No se pueden disputar los depósitos ni los ajustes del banco, ni las transacciones con estado rechazado, pendiente o revertido.
+No se pueden disputar las transacciones de estos tipos: depósito y ajuste.
+
+No se pueden disputar las transacciones con estado rechazado, pendiente o revertido.
 
 ## Plazos para presentar una disputa {#filing-windows}
 
@@ -34,7 +36,7 @@ La disputa debe presentarse dentro de un plazo, contado en días desde la fecha 
 
 ## Confirmación antes de presentar {#confirmation}
 
-Antes de presentar cualquier disputa, el cliente confirma la presentación exacta (transacción, motivo y datos).
+Cuando una disputa se puede presentar, y antes de presentarla, el cliente confirma la presentación exacta (transacción, motivo y datos).
 
 ## Cuándo lo revisa una persona {#human-review}
 
@@ -66,9 +68,9 @@ Cada decisión lleva uno de estos motivos.
 | `transaction_date_in_future` | La fecha de la transacción es posterior a hoy. |
 | `filing_window_expired` | Venció el plazo para presentar esta disputa. |
 | `duplicate_open_case` | Ya hay una disputa abierta para esta transacción. |
-| `escalate_fraud_claim` | Es un reclamo de fraude; lo revisa una persona. |
-| `escalate_low_nlu_confidence` | No se entendió la solicitud con suficiente seguridad; lo revisa una persona. |
-| `escalate_repeat_complainer` | El cliente tiene reclamos repetidos; lo revisa una persona. |
-| `escalate_amount_above_threshold` | El monto alcanza el umbral de revisión; lo revisa una persona. |
-| `escalate_amount_unknown` | No se conoce el monto en dólares; lo revisa una persona. |
-| `escalate_risk_score` | El puntaje de riesgo alcanza el umbral; lo revisa una persona. |
+| `escalate_fraud_claim` | Es un reclamo de fraude; pasa a revisión de una persona. |
+| `escalate_low_nlu_confidence` | No se entendió la solicitud con suficiente seguridad; pasa a revisión de una persona. |
+| `escalate_repeat_complainer` | El cliente tiene reclamos repetidos; pasa a revisión de una persona. |
+| `escalate_amount_above_threshold` | El monto alcanza el umbral de revisión; pasa a revisión de una persona. |
+| `escalate_amount_unknown` | No se conoce el monto en dólares; pasa a revisión de una persona. |
+| `escalate_risk_score` | El puntaje de riesgo alcanza el umbral; pasa a revisión de una persona. |

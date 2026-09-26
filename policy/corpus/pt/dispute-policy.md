@@ -16,11 +16,13 @@ Esta política explica como se decide um pedido de contestação de uma transaç
 
 Podem ser contestadas as transações destes produtos: Cuenta Ahorro, Cuenta Corriente, Tarjeta Crédito e Tarjeta Débito.
 
-Empréstimos, investimentos e seguros têm seus próprios processos de reclamação.
+Os demais produtos (Préstamo Personal, Préstamo Hipotecario, Inversión e Seguro) têm seus próprios processos de reclamação e não são contestados aqui.
 
-Pode ser contestada uma transação que seja uma cobrança ao cliente (pagamento, compra, transferência e saque) e cujo status seja aprovado.
+Para apresentar uma contestação, a transação deve ser uma cobrança ao cliente (pagamento, compra, transferência e saque), ter status aprovado, estar dentro do prazo da sua categoria (veja abaixo) e não ter outra contestação aberta.
 
-Não podem ser contestados os depósitos nem os ajustes do banco, nem as transações com status recusado, pendente ou estornado.
+Não podem ser contestadas as transações destes tipos: depósito e ajuste.
+
+Não podem ser contestadas as transações com status recusado, pendente ou estornado.
 
 ## Prazos para apresentar uma contestação {#filing-windows}
 
@@ -34,14 +36,14 @@ A contestação deve ser apresentada dentro de um prazo, contado em dias a parti
 
 ## Confirmação antes de apresentar {#confirmation}
 
-Antes de apresentar qualquer contestação, o cliente confirma a apresentação exata (transação, motivo e dados).
+Quando uma contestação pode ser apresentada, e antes de apresentá-la, o cliente confirma a apresentação exata (transação, motivo e dados).
 
 ## Quando uma pessoa revisa {#human-review}
 
 Mesmo que o pedido cumpra as regras, uma pessoa o revisa nestes casos:
 
 - É uma alegação de fraude.
-- O pedido não foi entendido com segurança suficiente (menos de 60 %).
+- O pedido não foi entendido com segurança suficiente (menos de 60%).
 - O cliente apresentou reclamações repetidas.
 - O valor é de 5.000 USD ou mais.
 - O valor em dólares não é conhecido.
@@ -66,9 +68,9 @@ Cada decisão traz um destes motivos.
 | `transaction_date_in_future` | A data da transação é posterior a hoje. |
 | `filing_window_expired` | O prazo para apresentar esta contestação venceu. |
 | `duplicate_open_case` | Já existe uma contestação aberta para esta transação. |
-| `escalate_fraud_claim` | É uma alegação de fraude; uma pessoa a revisa. |
-| `escalate_low_nlu_confidence` | O pedido não foi entendido com segurança suficiente; uma pessoa o revisa. |
-| `escalate_repeat_complainer` | O cliente tem reclamações repetidas; uma pessoa revisa. |
-| `escalate_amount_above_threshold` | O valor atinge o limite de revisão; uma pessoa revisa. |
-| `escalate_amount_unknown` | O valor em dólares não é conhecido; uma pessoa revisa. |
-| `escalate_risk_score` | A pontuação de risco atinge o limite; uma pessoa revisa. |
+| `escalate_fraud_claim` | É uma alegação de fraude; passa para revisão de uma pessoa. |
+| `escalate_low_nlu_confidence` | O pedido não foi entendido com segurança suficiente; passa para revisão de uma pessoa. |
+| `escalate_repeat_complainer` | O cliente tem reclamações repetidas; passa para revisão de uma pessoa. |
+| `escalate_amount_above_threshold` | O valor atinge o limite de revisão; passa para revisão de uma pessoa. |
+| `escalate_amount_unknown` | O valor em dólares não é conhecido; passa para revisão de uma pessoa. |
+| `escalate_risk_score` | A pontuação de risco atinge o limite; passa para revisão de uma pessoa. |
