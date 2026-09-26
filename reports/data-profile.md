@@ -12,16 +12,22 @@ Tables profiled: 13. Every figure below is computed from the raw files by `make 
 | Files are UTF-8 CSV whose header equals the dictionary's column list | Every file decodes and matches | 7,671 of 7,671 headers match; 0 undecodable; 7,671 files start with a byte-order mark | Holds |
 | Row counts match the dictionary | Within 5 % of the stated figure | outside tolerance: transactions, call_center_interactions, call_transcripts, satisfaction_surveys, digital_events, complaints, campaign_sends, daily_exchange_rates | Differs |
 | About 2 % of records are duplicates | 1 % to 3 % overall | 0.00 % overall; per table 0.00 % to 0.00 % | Differs |
-| About 5 % of values are missing in nullable fields | 3 % to 7 % of nullable cells | 44.68 % of 384,675,615 nullable cells | Differs |
-| Only a small share of foreign keys are orphans | Every reference at most 2 % orphans | 150,826 of 30,697,924 references overall (0.49 %); worst customers.registration_branch_id → branches (100.00 %) | Differs |
+| About 5 % of values are missing in nullable fields | 3 % to 7 % of nullable cells | 44.68 % of 384,675,615 nullable cells; median column 23.77 % | Differs |
+| Only a small share of foreign keys are orphans | Every reference at most 2 % orphans (judged per reference: one broken reference invalidates joins on it whatever the overall share) | 150,826 of 30,697,924 references overall (0.49 %); worst customers.registration_branch_id → branches (100.00 %) | Differs |
 | Schemas may evolve between partitions | Drift is possible and must be handled | tables with more than one header: none in this snapshot | Informational |
-| Partitions can arrive after the day they describe | Some rows have a positive lag | no positive lag measured | Differs |
+| Partitions can arrive after the day they describe | Some rows have a positive lag | transactions: 1,106,307 rows stamped after their partition day (event hours 0 to 6); call_center_interactions: 228,318 rows stamped after their partition day (event hours 0 to 8); satisfaction_surveys: 169,092 rows stamped after their partition day (event hours 0 to 23); digital_events: 3,930,816 rows stamped after their partition day (event hours 0 to 6); complaints: 22,585 rows stamped after their partition day (event hours 0 to 8); campaign_sends: 436,429 rows stamped after their partition day (event hours 0 to 6) | Differs |
 | The fraud label supports a supervised risk model | Enough positive examples; prevalence known | 4,316 positives in 4,425,008 transactions (0.098 %) | Informational |
-| amount_usd is present and consistent with the daily exchange rate | Present in at least 95 % of rows and consistent in at least 95 % | present in 42.66 % of rows; 100.00 % of comparable values within tolerance | Differs |
+| amount_usd is present and consistent with the daily exchange rate | Present in at least 95 % of rows and consistent in at least 95 % | present in 42.66 % of rows; 100.00 % of 1,886,980 comparable values within tolerance | Differs |
 | Transcripts exist for interactions flagged as having one | About one transcript per flagged interaction | 171,321 interactions flagged; 171,321 distinct interactions have a transcript | Informational |
 | Complaint data contains dispute-like categories and a repeat-complainer signal | Categories and a repeat flag are present | 5 categories; repeat complainers 15.03 % | Informational |
 
-## 2. Inventory
+## 2. Tables not profiled
+
+| Table | Reason |
+|---|---|
+| none |  |
+
+## 3. Inventory
 
 | Table | Kind | Files | Size | Rows | Dictionary rows | Rows / dictionary | Partition span | Days without file |
 |---|---|---|---|---|---|---|---|---|
@@ -39,7 +45,7 @@ Tables profiled: 13. Every figure below is computed from the raw files by `make 
 | campaign_sends | fact | 1,083 | 310.9 MiB | 1,746,801 | 2,000,000 | 87.3 % | 2023-07-01 → 2026-06-17 | 0 |
 | daily_exchange_rates | reference | 1 | 0.7 MiB | 13,164 | 3,000 | 438.8 % | single file | n/a |
 
-## 3. Files and schema
+## 4. Files and schema
 
 | Table | Headers matching dictionary | Header variants | Files with byte-order mark | Undecodable headers | Non-conforming paths | Extra columns | Missing columns |
 |---|---|---|---|---|---|---|---|
@@ -57,27 +63,27 @@ Tables profiled: 13. Every figure below is computed from the raw files by `make 
 | campaign_sends | 1,083 / 1,083 | 1 | 1,083 | 0 | 0 | none | none |
 | daily_exchange_rates | 1 / 1 | 1 | 1 | 0 | 0 | none | none |
 
-## 4. Keys and duplicates
+## 5. Keys and duplicates
 
 Repeated keys are *identical* when the rows differ only by `process_date` (the same record delivered again) and *conflicting* when other columns differ.
 
-| Table | Primary key | Rows | Distinct keys | Extra rows | Duplicate rate | Identical re-deliveries | Conflicting versions |
-|---|---|---|---|---|---|---|---|
-| customers | customer_id | 150,000 | 150,000 | 0 | 0.00 % | 0 | 0 |
-| products | product_id | 400,000 | 400,000 | 0 | 0.00 % | 0 | 0 |
-| branches | branch_id | 350 | 350 | 0 | 0.00 % | 0 | 0 |
-| service_agents | agent_id | 1,200 | 1,200 | 0 | 0.00 % | 0 | 0 |
-| marketing_campaigns | campaign_id | 200 | 200 | 0 | 0.00 % | 0 | 0 |
-| transactions | transaction_id | 4,425,008 | 4,425,008 | 0 | 0.00 % | 0 | 0 |
-| call_center_interactions | interaction_id | 686,296 | 686,296 | 0 | 0.00 % | 0 | 0 |
-| call_transcripts | transcript_id | 171,321 | 171,321 | 0 | 0.00 % | 0 | 0 |
-| satisfaction_surveys | survey_id | 212,759 | 212,759 | 0 | 0.00 % | 0 | 0 |
-| digital_events | event_id | 15,620,994 | 15,620,994 | 0 | 0.00 % | 0 | 0 |
-| complaints | complaint_id | 67,095 | 67,095 | 0 | 0.00 % | 0 | 0 |
-| campaign_sends | send_id | 1,746,801 | 1,746,801 | 0 | 0.00 % | 0 | 0 |
-| daily_exchange_rates | date, source_currency, target_currency | 13,164 | 13,164 | 0 | 0.00 % | 0 | 0 |
+| Table | Primary key | Rows | Distinct keys | Rows with a missing key | Extra rows | Duplicate rate | Identical re-deliveries | Conflicting versions |
+|---|---|---|---|---|---|---|---|---|
+| customers | customer_id | 150,000 | 150,000 | 0 | 0 | 0.00 % | 0 | 0 |
+| products | product_id | 400,000 | 400,000 | 0 | 0 | 0.00 % | 0 | 0 |
+| branches | branch_id | 350 | 350 | 0 | 0 | 0.00 % | 0 | 0 |
+| service_agents | agent_id | 1,200 | 1,200 | 0 | 0 | 0.00 % | 0 | 0 |
+| marketing_campaigns | campaign_id | 200 | 200 | 0 | 0 | 0.00 % | 0 | 0 |
+| transactions | transaction_id | 4,425,008 | 4,425,008 | 0 | 0 | 0.00 % | 0 | 0 |
+| call_center_interactions | interaction_id | 686,296 | 686,296 | 0 | 0 | 0.00 % | 0 | 0 |
+| call_transcripts | transcript_id | 171,321 | 171,321 | 0 | 0 | 0.00 % | 0 | 0 |
+| satisfaction_surveys | survey_id | 212,759 | 212,759 | 0 | 0 | 0.00 % | 0 | 0 |
+| digital_events | event_id | 15,620,994 | 15,620,994 | 0 | 0 | 0.00 % | 0 | 0 |
+| complaints | complaint_id | 67,095 | 67,095 | 0 | 0 | 0.00 % | 0 | 0 |
+| campaign_sends | send_id | 1,746,801 | 1,746,801 | 0 | 0 | 0.00 % | 0 | 0 |
+| daily_exchange_rates | date, source_currency, target_currency | 13,164 | 13,164 | 0 | 0 | 0.00 % | 0 | 0 |
 
-## 5. Missing and malformed values
+## 6. Missing and malformed values
 
 | Table | Nullable columns | Missing share of nullable cells |
 |---|---|---|
@@ -114,7 +120,7 @@ Columns with contract-relevant problems:
 | complaints.resolution_satisfaction | integers written with a decimal point | 2,484 | 3.70 % |
 | campaign_sends.click_count | integers written with a decimal point | 97,793 | 5.60 % |
 
-## 6. Referential integrity
+## 7. Referential integrity
 
 | Table | Reference | Non-null references | Orphans | Orphan rate |
 |---|---|---|---|---|
@@ -143,21 +149,21 @@ Columns with contract-relevant problems:
 | campaign_sends | customer_id → customers.customer_id | 1,746,801 | 0 | 0.00 % |
 | campaign_sends | campaign_id → marketing_campaigns.campaign_id | 1,746,801 | 0 | 0.00 % |
 
-## 7. Arrival lateness
+## 8. Arrival lateness
 
-Lag is the partition day minus the event day; positive values arrived after the day they describe.
+Lag is the partition day minus the event day; positive values arrived after the day they describe. Events stamped after their own partition day that cluster in the first hours of the day point to partitions cut in a different time zone from the timestamps.
 
-| Table | Rows measured | Partition ≠ process_date | Event after partition day | Lag min (days) | p50 | p95 | p99 | Max | Over 7 days | Over 30 days |
-|---|---|---|---|---|---|---|---|---|---|---|
-| transactions | 4,425,008 | 0 | 1,106,307 | -1 | 0.00 | 0.00 | 0.00 | 0 | 0 | 0 |
-| call_center_interactions | 686,296 | 0 | 228,318 | -1 | 0.00 | 0.00 | 0.00 | 0 | 0 | 0 |
-| call_transcripts | 171,321 | 0 | 0 | n/a | n/a | n/a | n/a | n/a | 0 | 0 |
-| satisfaction_surveys | 212,759 | 0 | 169,092 | -2 | -1.00 | 0.00 | 0.00 | 0 | 0 | 0 |
-| digital_events | 15,620,994 | 0 | 3,930,816 | -1 | 0.00 | 0.00 | 0.00 | 0 | 0 | 0 |
-| complaints | 67,095 | 0 | 22,585 | -1 | 0.00 | 0.00 | 0.00 | 0 | 0 | 0 |
-| campaign_sends | 1,746,801 | 0 | 436,429 | -1 | 0.00 | 0.00 | 0.00 | 0 | 0 | 0 |
+| Table | Rows measured | Partition ≠ process_date | Event after partition day | Hours of those events | Lag min (days) | p50 | p95 | p99 | Max | Over 7 days | Over 30 days |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| transactions | 4,425,008 | 0 | 1,106,307 | 0 to 6 | -1 | 0.00 | 0.00 | 0.00 | 0 | 0 | 0 |
+| call_center_interactions | 686,296 | 0 | 228,318 | 0 to 8 | -1 | 0.00 | 0.00 | 0.00 | 0 | 0 | 0 |
+| call_transcripts | 171,321 | 0 | 0 | n/a | n/a | n/a | n/a | n/a | n/a | 0 | 0 |
+| satisfaction_surveys | 212,759 | 0 | 169,092 | 0 to 23 | -2 | -1.00 | 0.00 | 0.00 | 0 | 0 | 0 |
+| digital_events | 15,620,994 | 0 | 3,930,816 | 0 to 6 | -1 | 0.00 | 0.00 | 0.00 | 0 | 0 | 0 |
+| complaints | 67,095 | 0 | 22,585 | 0 to 8 | -1 | 0.00 | 0.00 | 0.00 | 0 | 0 | 0 |
+| campaign_sends | 1,746,801 | 0 | 436,429 | 0 to 6 | -1 | 0.00 | 0.00 | 0.00 | 0 | 0 | 0 |
 
-## 8. Workload facts
+## 9. Workload facts
 
 ### Fraud label
 
