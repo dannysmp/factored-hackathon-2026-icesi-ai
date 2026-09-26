@@ -22,6 +22,9 @@ Design Principles
   dispute; then routing to a person for what could be filed; otherwise the request is eligible.
 - A gate that fails ends the evaluation with the first failing reason. Routing collects every
   trigger that applies, so the person receiving the case sees all of them.
+- One exception, deliberately: a fraud claim always goes to a person. A customer reporting fraud
+  is never refused by a rule, even for a declined transaction or an expired window; the gate
+  that would have failed is recorded in the facts so the person sees it.
 
 Business Flow
 -------------
@@ -31,6 +34,7 @@ Business Flow
 4) Routing: fraud claim; low confidence in the understood request; repeat complainer; amount at
    or above the threshold, or unknown; risk score at or above the threshold.
 5) Otherwise eligible, with the confirmation the category requires.
+A fraud claim is not refused in steps 1-3; it is routed to a person in step 4.
 
 Runtime Contract
 ----------------
@@ -69,7 +73,7 @@ _STATUS_REASONS: dict[TransactionStatus, ReasonCode] = {
 
 
 def _fact(name: str, value: object) -> Fact:
-    """A fact rendered as text."""
+    """A fact rendered as text with ``str``: ``0.6`` for a float, ``5000.00`` for a Decimal."""
     return Fact(name=name, value=str(value))
 
 
@@ -94,6 +98,7 @@ def _decision(
 
 
 def _ineligible(policy: Policy, reason: ReasonCode, *facts: Fact) -> PolicyDecision:
+    """An ineligible decision with the facts that explain the failed gate."""
     return _decision(policy, Outcome.INELIGIBLE, reason, facts)
 
 
@@ -152,6 +157,7 @@ def _age_days(request: DisputeRequest, today: date) -> int:
 
 
 def _gate_product(request: DisputeRequest, policy: Policy, today: date) -> PolicyDecision | None:
+    """Refuse products outside the scope of the policy."""
     if request.product_type in policy.in_scope_product_types:
         return None
     return _ineligible(
@@ -160,6 +166,7 @@ def _gate_product(request: DisputeRequest, policy: Policy, today: date) -> Polic
 
 
 def _gate_type(request: DisputeRequest, policy: Policy, today: date) -> PolicyDecision | None:
+    """Refuse transaction types that are not a charge to the customer."""
     if request.transaction_type in policy.disputable_transaction_types:
         return None
     return _ineligible(
@@ -170,6 +177,7 @@ def _gate_type(request: DisputeRequest, policy: Policy, today: date) -> PolicyDe
 
 
 def _gate_status(request: DisputeRequest, policy: Policy, today: date) -> PolicyDecision | None:
+    """Refuse transactions that are not approved."""
     if request.transaction_status is TransactionStatus.APPROVED:
         return None
     return _ineligible(
@@ -182,6 +190,7 @@ def _gate_status(request: DisputeRequest, policy: Policy, today: date) -> Policy
 def _gate_future_date(
     request: DisputeRequest, policy: Policy, today: date
 ) -> PolicyDecision | None:
+    """Refuse a transaction dated after today."""
     if _age_days(request, today) >= 0:
         return None
     return _ineligible(
@@ -207,9 +216,12 @@ def _gate_window(request: DisputeRequest, policy: Policy, today: date) -> Policy
 
 
 def _gate_open_case(request: DisputeRequest, policy: Policy, today: date) -> PolicyDecision | None:
+    """Refuse a second dispute for a transaction that already has an open one."""
     if not request.has_open_case_for_transaction:
         return None
-    return _ineligible(policy, ReasonCode.DUPLICATE_OPEN_CASE)
+    return _ineligible(
+        policy, ReasonCode.DUPLICATE_OPEN_CASE, _fact("has_open_case_for_transaction", True)
+    )
 
 
 # Eligibility gates in the order they are applied; the first that fails decides.
@@ -246,20 +258,22 @@ def evaluate_dispute(request: DisputeRequest, policy: Policy, *, today: date) ->
     -----
     Pure and deterministic: the same arguments always give the same decision.
     """
-    # Apply the eligibility gates in order; the first failure decides
-    for gate in _GATES:
-        failed = gate(request, policy, today)
-        if failed is not None:
-            return failed
+    # Apply the eligibility gates in order; the first failure decides, except for a fraud claim
+    failed = next(
+        (result for gate in _GATES if (result := gate(request, policy, today)) is not None), None
+    )
+    if failed is not None and request.category is not DisputeCategory.FRAUD_CLAIM:
+        return failed
 
-    # Route to a person when any routing rule applies
+    # Route to a person when any routing rule applies; a fraud claim always does
     triggers = _routing_triggers(request, policy)
     if triggers:
+        note = () if failed is None else (_fact("eligibility_gate", failed.reason_code.value),)
         return _decision(
             policy,
             Outcome.ESCALATE,
             triggers[0],
-            _routing_facts(request, policy),
+            (*_routing_facts(request, policy), *note),
             triggers=triggers,
         )
 

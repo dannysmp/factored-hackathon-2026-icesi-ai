@@ -106,7 +106,11 @@ def test_confirmation_follows_the_category_rule(policy: Policy) -> None:
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("category", list(DisputeCategory), ids=lambda c: c.value)
+@pytest.mark.parametrize(
+    "category",
+    [c for c in DisputeCategory if c is not DisputeCategory.FRAUD_CLAIM],
+    ids=lambda c: c.value,
+)
 def test_the_filing_window_includes_its_last_day_and_excludes_the_next(
     policy: Policy, category: DisputeCategory
 ) -> None:
@@ -114,8 +118,6 @@ def test_the_filing_window_includes_its_last_day_and_excludes_the_next(
     window = policy.categories[category].filing_window_days
     # A request that would otherwise be eligible, so only the window is under test
     base = {"category": category, "nlu_confidence": 1.0}
-    if category is DisputeCategory.FRAUD_CLAIM:
-        base["category"] = category
 
     last_day = evaluate_dispute(
         make_request(**base, transaction_date=TODAY - timedelta(days=window)),
@@ -136,6 +138,24 @@ def test_the_filing_window_includes_its_last_day_and_excludes_the_next(
         "age_days": str(window + 1),
         "filing_window_days": str(window),
     }
+
+
+def test_the_fraud_window_still_marks_the_gate_for_the_person_who_receives_the_claim(
+    policy: Policy,
+) -> None:
+    """Day 180 is inside the fraud window (no gate noted); day 181 is outside (gate noted)."""
+    window = policy.categories[DisputeCategory.FRAUD_CLAIM].filing_window_days
+
+    def facts(days: int) -> dict[str, str]:
+        request = make_request(
+            category=DisputeCategory.FRAUD_CLAIM, transaction_date=TODAY - timedelta(days=days)
+        )
+        decision = evaluate_dispute(request, policy, today=TODAY)
+        assert decision.outcome is Outcome.ESCALATE
+        return {fact.name: fact.value for fact in decision.facts}
+
+    assert "eligibility_gate" not in facts(window)
+    assert facts(window + 1)["eligibility_gate"] == "filing_window_expired"
 
 
 def test_a_transaction_dated_today_is_inside_the_window(policy: Policy) -> None:
@@ -256,18 +276,23 @@ def test_gates_apply_in_a_fixed_order(policy: Policy) -> None:
         assert decision.reason_code is expected
 
 
-def test_an_ineligible_request_is_never_escalated(policy: Policy) -> None:
-    """A fraud claim on a declined transaction cannot be filed by anyone: ineligible wins."""
+def test_a_non_fraud_request_that_cannot_be_filed_is_refused_not_escalated(
+    policy: Policy,
+) -> None:
+    """A dispute the bank cannot take is refused before routing, whatever the routing says."""
     decision = evaluate_dispute(
         make_request(
-            category=DisputeCategory.FRAUD_CLAIM,
             transaction_status=TransactionStatus.DECLINED,
+            nlu_confidence=0.0,
+            is_repeat_complainer=True,
+            amount_usd=Decimal("99999"),
         ),
         policy,
         today=TODAY,
     )
 
     assert decision.outcome is Outcome.INELIGIBLE
+    assert decision.triggers == ()
 
 
 # -----------------------------------------------------------------------------
@@ -284,6 +309,43 @@ def test_a_fraud_claim_is_always_routed_to_a_person(policy: Policy) -> None:
     assert decision.outcome is Outcome.ESCALATE
     assert decision.reason_code is ReasonCode.ESCALATE_FRAUD_CLAIM
     assert decision.requires_confirmation is False
+    assert "eligibility_gate" not in {fact.name for fact in decision.facts}
+
+
+@pytest.mark.parametrize(
+    ("overrides", "gate"),
+    [
+        ({"transaction_status": TransactionStatus.DECLINED}, "transaction_declined"),
+        ({"transaction_date": TODAY - timedelta(days=181)}, "filing_window_expired"),
+        ({"transaction_date": TODAY + timedelta(days=1)}, "transaction_date_in_future"),
+        ({"product_type": "Seguro"}, "product_out_of_scope"),
+        ({"transaction_type": "Deposit"}, "transaction_type_not_disputable"),
+        ({"has_open_case_for_transaction": True}, "duplicate_open_case"),
+    ],
+    ids=["declined", "expired", "future", "product", "type", "open-case"],
+)
+def test_a_fraud_claim_that_fails_a_gate_still_goes_to_a_person_with_the_gate_recorded(
+    policy: Policy, overrides: dict[str, Any], gate: str
+) -> None:
+    """A customer reporting fraud is never refused by a rule; the person sees which gate failed."""
+    decision = evaluate_dispute(
+        make_request(category=DisputeCategory.FRAUD_CLAIM, **overrides), policy, today=TODAY
+    )
+
+    assert decision.outcome is Outcome.ESCALATE
+    assert decision.reason_code is ReasonCode.ESCALATE_FRAUD_CLAIM
+    assert {fact.name: fact.value for fact in decision.facts}["eligibility_gate"] == gate
+
+
+def test_an_open_case_refusal_states_the_fact_it_rests_on(policy: Policy) -> None:
+    """Every refusal carries the fact behind it."""
+    decision = evaluate_dispute(
+        make_request(has_open_case_for_transaction=True), policy, today=TODAY
+    )
+
+    assert [(fact.name, fact.value) for fact in decision.facts] == [
+        ("has_open_case_for_transaction", "True")
+    ]
 
 
 def test_an_amount_at_the_threshold_is_escalated_and_one_cent_below_is_not(
@@ -410,10 +472,22 @@ def test_the_facts_of_an_escalation_omit_a_missing_risk_score(policy: Policy) ->
         {"risk_score": 1.5},
         {"amount_usd": Decimal("-1")},
         {"transaction_status": "Unknown"},
+        {"is_repeat_complainer": "yes"},
+        {"has_open_case_for_transaction": 0},
         {"category": "chargeback"},
         {"unexpected": True},
     ],
-    ids=["conf-high", "conf-low", "score-high", "negative-amount", "status", "category", "extra"],
+    ids=[
+        "conf-high",
+        "conf-low",
+        "score-high",
+        "negative-amount",
+        "status",
+        "text-as-bool",
+        "number-as-bool",
+        "category",
+        "extra",
+    ],
 )
 def test_a_malformed_request_is_rejected_at_the_boundary(overrides: dict[str, Any]) -> None:
     """The engine never sees an out-of-range or unknown value."""
@@ -427,6 +501,16 @@ def test_requests_and_decisions_are_immutable(policy: Policy) -> None:
 
     with pytest.raises(ValidationError):
         decision.outcome = Outcome.ESCALATE  # type: ignore[misc]
+
+
+def test_a_loaded_policy_cannot_be_modified(policy: Policy) -> None:
+    """Neither a field nor a category rule of a loaded policy can be reassigned."""
+    with pytest.raises(ValidationError):
+        policy.version = "2"  # type: ignore[misc]
+    with pytest.raises(TypeError):
+        policy.categories[DisputeCategory.FRAUD_CLAIM] = None  # type: ignore[assignment]
+    with pytest.raises(TypeError):
+        del policy.categories[DisputeCategory.WRONG_AMOUNT]
 
 
 # -----------------------------------------------------------------------------
@@ -479,6 +563,17 @@ def test_outcome_reason_and_triggers_are_consistent(request: DisputeRequest, tod
         assert decision.requires_confirmation is False
 
 
+@given(request=requests, today=days)
+def test_a_fraud_claim_is_never_refused(request: DisputeRequest, today: date) -> None:
+    """Whatever the facts, a fraud claim is escalated: no rule refuses it."""
+    fraud = request.model_copy(update={"category": DisputeCategory.FRAUD_CLAIM})
+
+    decision = evaluate_dispute(fraud, load_policy(), today=today)
+
+    assert decision.outcome is Outcome.ESCALATE
+    assert decision.triggers[0] is ReasonCode.ESCALATE_FRAUD_CLAIM
+
+
 @given(request=requests, today=days, shift=st.integers(min_value=-200, max_value=200))
 def test_only_the_age_of_the_transaction_matters_not_the_calendar(
     request: DisputeRequest, today: date, shift: int
@@ -503,15 +598,52 @@ def test_only_the_age_of_the_transaction_matters_not_the_calendar(
 # Purity
 # -----------------------------------------------------------------------------
 
-_PURE_MODULES = ("models.py", "engine.py")
-_FORBIDDEN_IMPORTS = {"os", "pathlib", "time", "random", "socket", "subprocess", "yaml", "logging"}
-_FORBIDDEN_CALLS = {"today", "now", "utcnow", "open", "read_text", "getenv", "random", "print"}
+_PACKAGE = Path(__file__).resolve().parents[1] / "app" / "domain" / "policy"
+# The loader is the one module that touches the file system; everything else must be pure.
+_PURE_MODULES = sorted(
+    path for path in _PACKAGE.glob("*.py") if path.name not in {"loader.py", "__init__.py"}
+)
+_FORBIDDEN_IMPORTS = {
+    "os",
+    "pathlib",
+    "time",
+    "random",
+    "socket",
+    "subprocess",
+    "yaml",
+    "logging",
+    "secrets",
+    "sys",
+    "io",
+    "shutil",
+    "requests",
+    "httpx",
+    "uuid",
+}
+# Attributes that read the clock, the file system or the environment.
+_FORBIDDEN_ATTRIBUTES = {
+    "today",
+    "now",
+    "utcnow",
+    "read_text",
+    "read_bytes",
+    "getenv",
+    "environ",
+    "urandom",
+}
+# Bare names that read input, run code or generate randomness.
+_FORBIDDEN_NAMES = {"open", "print", "input", "exec", "eval", "getenv", "uuid4", "random"}
 
 
-@pytest.mark.parametrize("module", _PURE_MODULES)
-def test_the_engine_reads_neither_the_clock_nor_the_file_system(module: str) -> None:
-    """No import of an I/O or time module, and no call that reads the clock or a file."""
-    tree = ast.parse((Path("app/domain/policy") / module).read_text(encoding="utf-8"))
+def test_the_pure_modules_are_the_ones_expected() -> None:
+    """The purity check covers the whole package: a new module is checked without editing this."""
+    assert {path.name for path in _PURE_MODULES} == {"engine.py", "models.py"}
+
+
+@pytest.mark.parametrize("module", _PURE_MODULES, ids=lambda path: path.name)
+def test_the_engine_reads_neither_the_clock_nor_the_file_system(module: Path) -> None:
+    """No import of an I/O or time module, and no reference to a clock, file or environment."""
+    tree = ast.parse(module.read_text(encoding="utf-8"))
 
     imported = {
         alias.name.split(".")[0]
@@ -523,11 +655,9 @@ def test_the_engine_reads_neither_the_clock_nor_the_file_system(module: str) -> 
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom)
     }
-    called = {
-        node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-    }
+    attributes = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+    names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
 
     assert imported & _FORBIDDEN_IMPORTS == set()
-    assert called & _FORBIDDEN_CALLS == set()
+    assert attributes & _FORBIDDEN_ATTRIBUTES == set()
+    assert names & _FORBIDDEN_NAMES == set()

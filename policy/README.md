@@ -24,5 +24,20 @@ and complaint-handling practice. They are not those of any bank or regulator, an
 The engine applies, in a fixed order, the eligibility gates (product, transaction type, status,
 date, filing window, open case) and then the routing rules (fraud claim, low confidence, repeat
 complainer, amount, risk score). Every decision carries a stable reason code, the facts it used and
-the policy version. A fraud claim always goes to a person, and a risk score only routes: it never
-decides an outcome.
+the policy version.
+
+Two decisions are worth knowing:
+
+- **A fraud claim always goes to a person.** It is never refused by a rule, even for a declined
+  transaction, an expired window, a product out of scope or an open case: a customer reporting
+  fraud gets a human. The gate that would have failed is recorded as the fact `eligibility_gate`
+  so the person sees it (`tests/test_policy_engine.py`, the fraud tests and the property
+  `test_a_fraud_claim_is_never_refused`).
+- **Any other request that cannot be filed is refused before routing.** Routing to a person is for
+  what could be filed; a declined transaction, for example, is refused whatever the amount or the
+  risk score.
+
+A risk score only routes: it never decides an outcome.
+
+Product and transaction types are compared exactly as spelled; the service layer supplies the
+canonical spellings of the cleaned data.

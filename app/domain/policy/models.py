@@ -31,7 +31,9 @@ Runtime Contract
 Limitations
 -----------
 The parameter values in the shipped policy file are synthetic planning values, not those of any
-bank or regulator.
+bank or regulator. Product and transaction types are compared exactly as spelled: the service
+layer supplies the canonical spellings of the cleaned data, and any other spelling is out of
+scope by design.
 """
 
 from __future__ import annotations
@@ -40,10 +42,18 @@ from __future__ import annotations
 from datetime import date  # Transaction date of a request
 from decimal import Decimal  # Money is never a float
 from enum import StrEnum  # Closed sets of the policy vocabulary
+from types import MappingProxyType  # Read-only view of the category rules
 from typing import Annotated  # Bounded numeric fields
 
 # Third-party libraries
-from pydantic import BaseModel, ConfigDict, Field, model_validator  # Validated immutable models
+from pydantic import (  # Validated immutable models
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    field_validator,
+    model_validator,
+)
 
 # -----------------------------------------------------------------------------
 # Vocabulary
@@ -101,6 +111,9 @@ class ReasonCode(StrEnum):
 # Policy parameters
 # -----------------------------------------------------------------------------
 
+# A rate between 0 and 1 inclusive. For the routing rules the two ends of a comparison differ on
+# purpose: a confidence strictly below its floor escalates, a score or an amount at or above its
+# threshold escalates.
 Rate = Annotated[float, Field(ge=0, le=1)]
 
 
@@ -114,7 +127,7 @@ class CategoryRule(_Frozen):
     """Filing rules of one dispute category."""
 
     filing_window_days: Annotated[int, Field(ge=1, le=3650)]
-    requires_confirmation: bool
+    requires_confirmation: StrictBool
 
 
 class RoutingRules(_Frozen):
@@ -123,8 +136,16 @@ class RoutingRules(_Frozen):
     escalate_amount_usd: Annotated[Decimal, Field(gt=0)]
     nlu_confidence_floor: Rate
     risk_score_threshold: Rate
-    escalate_repeat_complainer: bool
-    escalate_unknown_amount: bool
+    escalate_repeat_complainer: StrictBool
+    escalate_unknown_amount: StrictBool
+
+    @field_validator("escalate_amount_usd", mode="before")
+    @classmethod
+    def _amount_is_not_a_float(cls, value: object) -> object:
+        """Money is written as text in the file; a float would carry binary rounding error."""
+        if isinstance(value, float):
+            raise ValueError('write the amount as text, for example "5000.00"')
+        return value
 
 
 class Policy(_Frozen):
@@ -136,6 +157,14 @@ class Policy(_Frozen):
     disputable_transaction_types: frozenset[str]
     categories: dict[DisputeCategory, CategoryRule]
     routing: RoutingRules
+
+    @field_validator("categories", mode="after")
+    @classmethod
+    def _categories_are_read_only(
+        cls, value: dict[DisputeCategory, CategoryRule]
+    ) -> dict[DisputeCategory, CategoryRule]:
+        """Expose the rules through a read-only mapping so a loaded policy cannot be edited."""
+        return MappingProxyType(dict(value))  # type: ignore[return-value]
 
     @model_validator(mode="after")
     def _every_category_has_a_rule(self) -> Policy:
@@ -169,8 +198,8 @@ class DisputeRequest(_Frozen):
     product_type: str
     amount_usd: Annotated[Decimal, Field(ge=0)] | None
     nlu_confidence: Rate
-    is_repeat_complainer: bool
-    has_open_case_for_transaction: bool
+    is_repeat_complainer: StrictBool
+    has_open_case_for_transaction: StrictBool
     risk_score: Rate | None = None
 
 

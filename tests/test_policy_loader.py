@@ -100,7 +100,7 @@ def _without_category(name: str) -> dict[str, object]:
 @pytest.mark.parametrize(
     ("document", "field"),
     [
-        ({**_shipped(), "unknown_key": 1}, "unknown_key"),
+        ({**_shipped(), "unknown_key": 1}, "?"),
         (_without(_shipped(), "version"), "version"),
         ({**_shipped(), "version": ""}, "version"),
         ({**_shipped(), "in_scope_product_types": []}, "required"),
@@ -153,3 +153,62 @@ def test_a_policy_file_can_be_loaded_from_any_location(tmp_path: Path) -> None:
     path = _write(tmp_path, _shipped())
 
     assert load_policy(path) == load_policy()
+
+
+def test_bytes_that_are_not_text_are_a_policy_error(tmp_path: Path) -> None:
+    """A file that is not valid UTF-8 is unreadable as a policy, not a crash."""
+    path = tmp_path / "binary.yaml"
+    path.write_bytes(b"version: \xff")
+
+    with pytest.raises(PolicyError, match=r"binary\.yaml cannot be read"):
+        load_policy(path)
+
+
+def test_a_repeated_key_is_refused(tmp_path: Path) -> None:
+    """The last value must not silently override the first."""
+    text = DEFAULT_POLICY_PATH.read_text(encoding="utf-8") + '\nversion: "2"\n'
+    path = tmp_path / "duplicate.yaml"
+    path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(PolicyError, match=r"duplicate\.yaml is not valid YAML"):
+        load_policy(path)
+
+
+def test_unknown_keys_and_values_are_never_echoed(tmp_path: Path) -> None:
+    """An unknown key, at any depth, is shown as a placeholder, like a value."""
+    document = _shipped()
+    categories = dict(document["categories"])  # type: ignore[call-overload]
+    categories["SECRET-KEY-abc123"] = {"filing_window_days": 1, "requires_confirmation": True}
+    document = {**document, "categories": categories, "hunter2_token": "hunter2"}
+
+    with pytest.raises(PolicyError) as raised:
+        load_policy(_write(tmp_path, document))
+
+    message = str(raised.value)
+    for leaked in ("SECRET-KEY-abc123", "hunter2_token", "hunter2"):
+        assert leaked not in message
+    assert "?" in message
+
+
+def test_an_amount_written_as_a_float_is_refused(tmp_path: Path) -> None:
+    """Money is text in the file: a float carries binary rounding error."""
+    document = {**_shipped(), "routing": {**_shipped()["routing"], "escalate_amount_usd": 5000.0}}  # type: ignore[dict-item]
+
+    with pytest.raises(PolicyError, match=r"routing\.escalate_amount_usd"):
+        load_policy(_write(tmp_path, document))
+
+
+def test_a_flag_written_as_text_is_refused(tmp_path: Path) -> None:
+    """``"yes"`` is not a boolean; the policy does not guess."""
+    document = {
+        **_shipped(),
+        "routing": {**_shipped()["routing"], "escalate_repeat_complainer": "yes"},  # type: ignore[dict-item]
+    }
+
+    with pytest.raises(PolicyError, match=r"routing\.escalate_repeat_complainer"):
+        load_policy(_write(tmp_path, document))
+
+
+def test_the_loaded_policy_is_equal_across_loads() -> None:
+    """Loading twice gives equal policies (the read-only category mapping compares by value)."""
+    assert load_policy() == load_policy()
