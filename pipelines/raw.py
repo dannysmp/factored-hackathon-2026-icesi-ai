@@ -71,11 +71,15 @@ def quote_literal(text: str) -> str:
 # -----------------------------------------------------------------------------
 
 
-def load_table(con: duckdb.DuckDBPyConnection, data_dir: Path, spec: TableSpec) -> set[str]:
-    """Load one table as text columns plus ``_partition_date``; return the loaded column names.
+def load_table(
+    con: duckdb.DuckDBPyConnection, data_dir: Path, spec: TableSpec, *, as_view: bool = False
+) -> set[str]:
+    """Expose one table as text columns plus ``_partition_date``; return the column names.
 
     ``_partition_date`` is the day encoded in the file path (null for single-file tables), which
-    is the arrival day of the row.
+    is the arrival day of the row. With ``as_view`` the files are read on demand instead of
+    being copied into the database, which keeps very large tables off the disk; errors in the
+    rows then surface when the view is queried rather than here.
 
     Raises
     ------
@@ -97,9 +101,10 @@ def load_table(con: duckdb.DuckDBPyConnection, data_dir: Path, spec: TableSpec) 
         "union_by_name = true, filename = true, hive_partitioning = false, "
         "delim = ',', quote = '\"', escape = '\"')"
     )
+    kind = "VIEW" if as_view else "TABLE"
     try:
         con.execute(
-            f"CREATE TABLE {quote_identifier(spec.name)} AS "
+            f"CREATE {kind} {quote_identifier(spec.name)} AS "
             f"SELECT * EXCLUDE (filename), {partition_date} AS _partition_date FROM {reader}"
         )
     except duckdb.Error as exc:
