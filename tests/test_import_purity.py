@@ -52,7 +52,7 @@ _PROBE = textwrap.dedent(
         return path == root or path.startswith(root + os.sep)
 
     def is_transparent(filename):
-        # Synthetic code (this probe) and the standard library never own a read themselves.
+        # Code compiled from a string (this probe) and the standard library never own a read.
         if filename.startswith("<"):
             return True
         path = os.path.realpath(filename)
@@ -250,6 +250,27 @@ def test_probe_ignores_bulk_reads_from_code_outside_the_owned_roots(
     )
 
     assert observed["env_reads"] == []
+
+
+def test_probe_attributes_reads_reached_through_a_symlink_to_the_project(tmp_path: Path) -> None:
+    """Project code imported through a symlinked path is still the project's own code.
+
+    The owned root is the resolved directory, while the module's file name keeps the symlink;
+    only resolving the file name lets the two meet.
+    """
+    workdir = tmp_path / "work"
+    (workdir / "packages" / "linked_module").mkdir(parents=True)
+    (workdir / "packages" / "linked_module" / "__init__.py").write_text(
+        "import os\nSNAPSHOT = dict(os.environ)\n"
+    )
+    alias = tmp_path / "alias"
+    alias.symlink_to(workdir / "packages", target_is_directory=True)
+
+    observed = _import_in_fresh_interpreter(
+        "linked_module", workdir, {"PYTHONPATH": f"{alias}:{_REPO_ROOT}"}
+    )
+
+    assert observed["env_reads"] == ["*keys"]
 
 
 def test_probe_detects_dotenv_variants(tmp_path: Path) -> None:
