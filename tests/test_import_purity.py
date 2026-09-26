@@ -41,22 +41,48 @@ _SERVICE_KEYS = [
 # Program run in the child: install the probes, import the module, print what was observed.
 _PROBE = textwrap.dedent(
     """
-    import importlib, json, os, sys
+    import importlib, json, os, sys, sysconfig
 
     keys = set(json.loads(sys.argv[2]))
     owned_roots = tuple(json.loads(sys.argv[3]))
+    stdlib_root = os.path.realpath(sysconfig.get_paths()["stdlib"])
     env_reads, env_files = [], []
+
+    def inside(path, root):
+        return path == root or path.startswith(root + os.sep)
+
+    def is_transparent(filename):
+        # Synthetic code (this probe) and the standard library never own a read themselves.
+        if filename.startswith("<"):
+            return True
+        path = os.path.realpath(filename)
+        return inside(path, stdlib_root) and "site-packages" not in path
 
     def called_from_owned_code():
         # Bulk reads by third-party libraries are legitimate; only the project's own code counts.
+        # Transparent frames (for example copy.copy) are skipped: the caller behind them decides.
         frame = sys._getframe(2)
-        return frame.f_code.co_filename.startswith(owned_roots)
+        while frame is not None and is_transparent(frame.f_code.co_filename):
+            frame = frame.f_back
+        if frame is None:
+            return False
+        path = os.path.realpath(frame.f_code.co_filename)
+        return any(inside(path, root) for root in owned_roots)
+
+    # Non-empty while a probed bulk method runs, so the calls it makes internally are not recounted.
+    active = []
 
     def bulk(name):
         def method(self, *args, **kwargs):
+            if active:
+                return getattr(super(Probe, self), name)(*args, **kwargs)
             if called_from_owned_code():
                 env_reads.append("*" + name)
-            return getattr(super(Probe, self), name)(*args, **kwargs)
+            active.append(name)
+            try:
+                return getattr(super(Probe, self), name)(*args, **kwargs)
+            finally:
+                active.pop()
         return method
 
     class Probe(dict):
@@ -80,6 +106,7 @@ _PROBE = textwrap.dedent(
         values = bulk("values")
         items = bulk("items")
         copy = bulk("copy")
+        __copy__ = bulk("copy")
 
     os.environ = Probe(os.environ)
 
@@ -113,7 +140,7 @@ def _import_in_fresh_interpreter(
             module,
             json.dumps(_SERVICE_KEYS),
             # Code under these roots is "ours": the project package and the scratch working dir.
-            json.dumps([str(_REPO_ROOT / "app"), str(workdir)]),
+            json.dumps([str((_REPO_ROOT / "app").resolve()), str(workdir.resolve())]),
         ],
         cwd=workdir,
         env=env,
@@ -182,9 +209,11 @@ def test_probe_detects_a_dotenv_file_read(tmp_path: Path) -> None:
         ("SNAPSHOT = dict(os.environ)", "*keys"),
         ("NAMES = list(os.environ)", "*__iter__"),
         ("PAIRS = list(os.environ.items())", "*items"),
+        ("VALUES = list(os.environ.values())", "*values"),
         ("COPY = os.environ.copy()", "*copy"),
+        ("COPY = copy.copy(os.environ)", "*copy"),
     ],
-    ids=["dict-copy", "iteration", "items", "copy"],
+    ids=["dict-copy", "iteration", "items", "values", "method-copy", "copy-module"],
 )
 def test_probe_detects_bulk_environment_reads(
     tmp_path: Path, statement: str, expected: str
@@ -192,13 +221,35 @@ def test_probe_detects_bulk_environment_reads(
     """Revert check: reading the whole environment at import is caught, whatever the spelling."""
     package = tmp_path / "impure_bulk"
     package.mkdir()
-    (package / "__init__.py").write_text(f"import os\n{statement}\n")
+    (package / "__init__.py").write_text(f"import copy\nimport os\n{statement}\n")
 
     observed = _import_in_fresh_interpreter(
         "impure_bulk", tmp_path, {"PYTHONPATH": f"{tmp_path}:{_REPO_ROOT}"}
     )
 
-    assert expected in observed["env_reads"]
+    assert observed["env_reads"] == [expected]
+
+
+@pytest.mark.parametrize("directory", ["vendor", "work_sibling"])
+def test_probe_ignores_bulk_reads_from_code_outside_the_owned_roots(
+    tmp_path: Path, directory: str
+) -> None:
+    """A bulk read by third-party code is not the project's read, even beside the work dir.
+
+    The ``work_sibling`` case sits next to ``work`` and shares its name as a prefix, which a
+    plain string prefix comparison would wrongly treat as project code.
+    """
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    library = tmp_path / directory / "third_party_lib"
+    library.mkdir(parents=True)
+    (library / "__init__.py").write_text("import os\nSNAPSHOT = dict(os.environ)\n")
+
+    observed = _import_in_fresh_interpreter(
+        "third_party_lib", workdir, {"PYTHONPATH": f"{tmp_path / directory}:{_REPO_ROOT}"}
+    )
+
+    assert observed["env_reads"] == []
 
 
 def test_probe_detects_dotenv_variants(tmp_path: Path) -> None:
