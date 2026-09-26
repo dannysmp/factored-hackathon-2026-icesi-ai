@@ -61,10 +61,10 @@ profile: ## Profile the raw data (DATA_DIR, default data/raw) and write reports/
 pipeline: ## Clean the raw data into typed Parquet (SILVER_DIR, default data/silver) and write reports/data-quality.md
 	$(RUN) python -m pipelines.silver --raw $(DATA_DIR) --out $(SILVER_DIR)
 
-# ---- Not yet implemented (fail loudly until they are) --------------------------
+analyze: ## Build the dispute marts from SILVER_DIR and write reports/workflow-analysis.md
+	$(RUN) python -m pipelines.analysis --silver $(SILVER_DIR)
 
-analyze: ## Regenerate reports/workflow-analysis.md
-	@echo "make analyze is not implemented yet" >&2; exit 2
+# ---- Not yet implemented (fail loudly until they are) --------------------------
 
 train: ## Train and log the risk model
 	@echo "make train is not implemented yet" >&2; exit 2
