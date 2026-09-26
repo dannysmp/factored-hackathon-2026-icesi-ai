@@ -59,7 +59,6 @@ import duckdb  # Columnar SQL engine over the CSV files
 
 # Local modules
 from pipelines.inventory import (  # Filesystem-level facts
-    TableInventory,
     inventory_digest,
     scan_table,
 )
@@ -81,7 +80,23 @@ from pipelines.profile_models import (  # Result objects
     ValueCount,
 )
 from pipelines.profile_report import render_markdown  # Markdown presentation
-from pipelines.sources import TABLES, Column, Layout, TableKind, TableSpec  # Table registry
+from pipelines.raw import (  # Strict raw loading shared with the cleaning stage
+    TableLoadError,
+)
+from pipelines.raw import load_table as _load_table
+from pipelines.raw import (
+    quote_identifier as _quote_identifier,
+)
+from pipelines.raw import (
+    quote_literal as _quote_literal,
+)
+from pipelines.raw import (
+    reject_invalid_headers as _reject_invalid_headers,
+)
+from pipelines.raw import (
+    verify_headers as _verify_headers,
+)
+from pipelines.sources import TABLES, Column, TableKind, TableSpec  # Table registry
 
 logger = logging.getLogger(__name__)
 
@@ -119,27 +134,9 @@ class ProfileError(Exception):
     """Raised when a declared key column is missing from a table."""
 
 
-class TableLoadError(ProfileError):
-    """Raised when a table's files cannot be parsed.
-
-    Only the error class and a fixed hint are kept: the database's own message can quote the
-    offending line, and data values must never reach logs or reports.
-    """
-
-
 # -----------------------------------------------------------------------------
 # SQL helpers
 # -----------------------------------------------------------------------------
-
-
-def _quote_identifier(identifier: str) -> str:
-    """Quote an identifier for DuckDB."""
-    return '"' + identifier.replace('"', '""') + '"'
-
-
-def _quote_literal(text: str) -> str:
-    """Quote a string literal for DuckDB."""
-    return "'" + text.replace("'", "''") + "'"
 
 
 def _row(con: duckdb.DuckDBPyConnection, sql: str) -> tuple[Any, ...]:
@@ -190,77 +187,6 @@ def _is_free_text(column: Column) -> bool:
         return True
     declared_length = dtype.removeprefix("VARCHAR(").removesuffix(")")
     return dtype.startswith("VARCHAR(") and int(declared_length) >= FREE_TEXT_MIN_LENGTH
-
-
-# -----------------------------------------------------------------------------
-# Loading
-# -----------------------------------------------------------------------------
-
-
-def _load_table(con: duckdb.DuckDBPyConnection, data_dir: Path, spec: TableSpec) -> set[str]:
-    """Load one table as text columns plus ``_partition_date``; return the loaded column names.
-
-    ``_partition_date`` is the day encoded in the file path (null for single-file tables), which
-    is the arrival day used by the lateness measurement.
-
-    Raises
-    ------
-    TableLoadError
-        When the files cannot be parsed, for example a row with more fields than the header.
-    """
-    if spec.layout is Layout.SINGLE_FILE:
-        source = str(data_dir / f"{spec.name}.csv")
-    else:
-        source = str(data_dir / spec.name / "*" / "*" / "*" / "*.csv")
-    partition_date = (
-        "try_cast(concat("
-        "regexp_extract(filename, 'year=([0-9]{4})/', 1), '-', "
-        "regexp_extract(filename, 'month=([0-9]{2})/', 1), '-', "
-        "regexp_extract(filename, 'day=([0-9]{2})/', 1)) AS DATE)"
-    )
-    reader = (
-        f"read_csv({_quote_literal(source)}, header = true, skip = 0, all_varchar = true, "
-        "union_by_name = true, filename = true, hive_partitioning = false, "
-        "delim = ',', quote = '\"', escape = '\"')"
-    )
-    try:
-        con.execute(
-            f"CREATE TABLE {_quote_identifier(spec.name)} AS "
-            f"SELECT * EXCLUDE (filename), {partition_date} AS _partition_date FROM {reader}"
-        )
-    except duckdb.Error as exc:
-        raise TableLoadError(
-            f"{type(exc).__name__}: the files of table {spec.name} could not be parsed"
-        ) from None
-    described = con.execute(f"DESCRIBE {_quote_identifier(spec.name)}").fetchall()
-    return {str(row[0]) for row in described}
-
-
-def _reject_invalid_headers(inventory: TableInventory) -> None:
-    """Fail without loading when a file does not start with a header row.
-
-    Loading such a file would take its first data row as column names and drop that row. Only
-    the number of files is reported, never their content.
-    """
-    if inventory.invalid_headers:
-        raise TableLoadError(
-            f"InvalidHeader: {inventory.invalid_headers} file(s) of table {inventory.name} have "
-            "no valid header row (names must be identifiers and include the primary key)"
-        )
-
-
-def _verify_headers(loaded: set[str], inventory: TableInventory) -> None:
-    """Fail when the parsed columns differ from the headers found in the files.
-
-    Guards against a reader that silently mis-detects the header of a malformed file: the
-    columns read by the database must be exactly the union of the columns in the file headers.
-    """
-    expected = {name for variant in inventory.header_variants for name in variant.columns}
-    if inventory.header_variants and loaded - {"_partition_date"} != expected:
-        raise TableLoadError(
-            f"HeaderMismatch: the parsed columns of table {inventory.name} differ from the "
-            "file headers and could not be parsed reliably"
-        )
 
 
 # -----------------------------------------------------------------------------

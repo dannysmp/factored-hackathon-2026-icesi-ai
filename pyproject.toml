@@ -56,9 +56,12 @@ ignore = ["PLR0913"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "PLR2004"]
-# The profiler interpolates only quoted identifiers from the static table registry into SQL and
-# never a value read from the data, so the string-built-query rule does not apply to it.
+# The data stages interpolate only quoted identifiers from the static table registry (and
+# constants from the contracts) into SQL and never a value read from the data, so the
+# string-built-query rule does not apply to them.
 "pipelines/profile.py" = ["S608"]
+"pipelines/raw.py" = ["S608"]
+"pipelines/silver.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.11"
