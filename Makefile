@@ -16,7 +16,7 @@ DATA_DIR ?= data/raw
 SILVER_DIR ?= data/silver
 
 .PHONY: help setup lint format test test-all secrets audit run clean \
-        profile pipeline analyze features train evaluate up
+        profile pipeline analyze features corpus corpus-check train evaluate up
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -66,6 +66,12 @@ analyze: ## Build the dispute marts from SILVER_DIR and write reports/workflow-a
 
 features: ## Build the risk feature mart from SILVER_DIR and write reports/risk-features.md
 	$(RUN) python -m pipelines.risk_features --silver $(SILVER_DIR)
+
+corpus: ## Regenerate the multilingual policy corpus in policy/corpus from the policy YAML
+	$(RUN) python -m pipelines.policy_corpus
+
+corpus-check: ## Fail when policy/corpus differs from what the policy generates
+	$(RUN) python -m pipelines.policy_corpus --check
 
 # ---- Not yet implemented (fail loudly until they are) --------------------------
 

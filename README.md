@@ -36,10 +36,10 @@ Design rules that follow from this:
 
 | Path | Purpose |
 |---|---|
-| `app/` | FastAPI backend: validated configuration, composition root, health endpoints; home of the policy engine, tool layer and dialogue controller |
+| `app/` | FastAPI backend: validated configuration, composition root, health endpoints; the dispute policy engine (`app/domain/policy`); home of the tool layer and dialogue controller |
 | `pipelines/` | Raw-data inventory and profiling; the cleaning stage that produces typed, de-duplicated Parquet tables, quarantine and manifests; the dispute marts and the workflow analysis |
 | `contracts/` | Versioned data contract: allowed values, ranges, canonical spellings and reference handling for each source table |
-| `policy/` | Dispute-policy rules (YAML) and the multilingual policy corpus generated from them |
+| `policy/` | The versioned dispute-policy parameters (YAML) and the multilingual policy corpus generated from them |
 | `models/` | Risk-model training code, experiment log and model cards |
 | `evals/` | Golden set, adversarial cases, evaluation harness and judge rubric |
 | `web/` | Customer chat and human-agent console |
@@ -79,6 +79,8 @@ make run        # serve http://localhost:8000  (GET /health/live, GET /health/re
 | `make pipeline` | Clean the raw data into typed Parquet and write `reports/data-quality.md` |
 | `make analyze` | Build the dispute marts from the cleaned layer and write `reports/workflow-analysis.md` |
 | `make features` | Build the risk feature mart from the cleaned layer and write `reports/risk-features.md` |
+| `make corpus` | Regenerate the multilingual policy corpus in `policy/corpus` from the policy YAML |
+| `make corpus-check` | Fail when the committed corpus differs from what the policy generates |
 | `make help` | List every target |
 
 `make secrets` does not scan unstaged or untracked files: `git add` them first.
