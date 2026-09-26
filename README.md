@@ -1,51 +1,84 @@
 # Dispute Intake
 
 AI-first **transaction-dispute intake** for a LATAM retail bank. A customer reports a problem
-with a transaction in Spanish, Portuguese or English; the system authenticates the session, locates
-the transaction, decides deterministically what policy allows, files the case when permitted,
-verifies the filing and escalates to a human with a structured packet when required.
+with a card or account transaction in Spanish, Portuguese or English. The system authenticates the
+session, locates the transaction, collects the reason, decides what policy allows, files the case
+when it is permitted, verifies the filing and hands the case to a human agent, with a structured
+summary, whenever a person is required.
 
-Guiding constraint: **AI should not be autonomous just because it can be.** The model understands and
-renders language; code decides and acts.
+The guiding principle is that **AI is not autonomous just because it can be**: the language model
+understands and renders language, while deterministic code decides and acts.
 
-## Quickstart
+## How it works
+
+Every customer message goes through the same five stages:
+
+| Stage | What happens | Where it lives |
+|---|---|---|
+| **Understand** | Detect the language, extract the intent and slots as structured output, keep conversation state | Language layer (LLM with a strict output schema) |
+| **Decide** | Apply the dispute policy: eligibility, confirmation requirements, routing; each decision carries a stable reason code | Policy engine (pure, deterministic code) |
+| **Act** | Call tools scoped to the authenticated customer; filing a case needs explicit confirmation and an idempotency key | Tool layer with authorization middleware |
+| **Verify** | Read back every write before reporting it to the customer | Dialogue controller |
+| **Escalate** | Transfer to a human with the request, verified facts, actions taken, evidence and open questions | Handoff builder and agent console |
+
+Design rules that follow from this:
+
+- Policy and permissions are enforced in code and in the tool layer, never in prompts.
+- A document number alone never proves identity; access is bound to an authenticated session.
+- The model may only use facts and sources that the decision layer put in its input, and its
+  wording must agree with the decisions taken.
+- A learned risk score can route a case to human review; it never decides an outcome.
+
+## Repository structure
+
+| Path | Purpose |
+|---|---|
+| `app/` | FastAPI backend: validated configuration, composition root, health endpoints; home of the policy engine, tool layer and dialogue controller |
+| `pipelines/` | Raw-data inventory and profiling; bronze → silver → gold jobs |
+| `contracts/` | Versioned schemas for each source table |
+| `policy/` | Dispute-policy rules (YAML) and the multilingual policy corpus generated from them |
+| `models/` | Risk-model training code, experiment log and model cards |
+| `evals/` | Golden set, adversarial cases, evaluation harness and judge rubric |
+| `web/` | Customer chat and human-agent console |
+| `infra/` | AWS provisioning and deployment pipeline |
+| `docs/` | Project documentation |
+| `reports/` | Generated reports (data profile, analyses, evaluation results) |
+| `scripts/` | Repository tooling, such as the secret-scan self-test |
+| `tests/` | Hermetic unit and contract tests |
+
+## Getting started
 
 Requirements: [uv](https://docs.astral.sh/uv/) and [gitleaks](https://github.com/gitleaks/gitleaks).
 
 ```bash
 make setup      # install locked dependencies (Python 3.11) and create .env from the template
-make lint       # ruff format check, ruff lint, mypy strict
-make test       # hermetic tests with the coverage gate
-make secrets    # secret scan of committed history and staged changes, plus a self-test
-                # (unstaged and untracked files are not scanned: `git add` them first)
-make audit      # dependency vulnerability scan
 make run        # serve http://localhost:8000  (GET /health/live, GET /health/ready)
-make help       # every target
 ```
 
-Configuration is a single validated object (`app/config.py`); every variable is documented in
-`.env.example`. The service starts without `ANTHROPIC_API_KEY`; it is only required once a feature
-makes an LLM call.
+### Development commands
 
-## Layout
+| Command | What it does |
+|---|---|
+| `make lint` | Format check, lint and strict type-check |
+| `make test` | Fast hermetic tests with a coverage gate |
+| `make secrets` | Scan committed history and staged changes for secrets, then run the scanner self-test |
+| `make audit` | Dependency vulnerability scan |
+| `make help` | List every target |
 
-| Path | Purpose | Status |
-|---|---|---|
-| `app/` | FastAPI backend: configuration, composition root; later the policy engine, tools and controller | In progress |
-| `pipelines/` | Bronze → silver → gold jobs, profiling, fixtures | Planned |
-| `contracts/` | Versioned schemas per source table | Planned |
-| `policy/` | Dispute-policy YAML and the multilingual corpus generated from it | Planned |
-| `models/` | Risk-model training, experiment log, model cards | Planned |
-| `evals/` | Golden set, adversarial cases, harness, judge rubric | Planned |
-| `web/` | Chat UI and human-agent console | Planned |
-| `infra/` | AWS provisioning and deploy pipeline | Planned |
-| `reports/` | Generated reports | Planned |
-| `docs/` | Public project documentation | Planned |
+`make secrets` does not scan unstaged or untracked files: `git add` them first.
 
-## Contributing
+### Configuration
 
-Changes land through pull requests using `.github/pull_request_template.md`. Every pull request
-must pass CI (`lint`, `test`, `secret-scan`) and an independent code review before it is merged.
+Configuration is a single validated object (`app/config.py`) loaded from the environment and an
+optional `.env` file. Every variable is documented in `.env.example`. The service starts without
+`ANTHROPIC_API_KEY`; it is only required once a feature makes an LLM call. Invalid configuration
+fails at startup with a message that names the offending key and never echoes its value.
+
+## Quality and security
+
+Every change passes formatting, linting, strict type-checking, tests with a coverage gate, a
+dependency audit and a full-history secret scan in CI before it is reviewed. The security
+requirements, and which controls exist today, are in [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting
 
