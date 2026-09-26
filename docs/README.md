@@ -1,3 +1,3 @@
 # docs/
 
-Public-facing project documentation (architecture overview, model cards, limitations report, demo scripts). Delivered by epic E12.
+Public-facing project documentation (architecture overview, model cards, limitations report, usage walkthroughs). Delivered by epic E12.

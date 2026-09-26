@@ -18,7 +18,7 @@
 [project]
 name = "dispute-intake"
 version = "0.1.0"
-description = "AI-first transaction-dispute intake system for a simulated LATAM bank"
+description = "AI-first transaction-dispute intake system for a LATAM retail bank"
 requires-python = "==3.11.*"
 dependencies = [
     "fastapi>=0.115,<1",  # Web framework for the service API

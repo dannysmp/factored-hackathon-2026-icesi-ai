@@ -1,6 +1,6 @@
 # Dispute Intake
 
-AI-first **transaction-dispute intake** for a simulated LATAM bank. A customer reports a problem
+AI-first **transaction-dispute intake** for a LATAM retail bank. A customer reports a problem
 with a transaction in Spanish, Portuguese or English; the system authenticates the session, locates
 the transaction, decides deterministically what policy allows, files the case when permitted,
 verifies the filing and escalates to a human with a structured packet when required.
