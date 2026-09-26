@@ -11,6 +11,9 @@ understands and renders language, while deterministic code decides and acts.
 
 ## How it works
 
+This section describes the target design; the implementation status of each control is tracked in
+[SECURITY.md](SECURITY.md).
+
 Every customer message goes through the same five stages:
 
 | Stage | What happens | Where it lives |
