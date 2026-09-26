@@ -38,12 +38,13 @@ scope by design.
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping  # Read-only mapping of the category rules
+
 # Standard libraries
 from datetime import date  # Transaction date of a request
 from decimal import Decimal  # Money is never a float
 from enum import StrEnum  # Closed sets of the policy vocabulary
-from types import MappingProxyType  # Read-only view of the category rules
-from typing import Annotated  # Bounded numeric fields
+from typing import Annotated, TypeVar  # Bounded numeric fields and the mapping's type parameters
 
 # Third-party libraries
 from pydantic import (  # Validated immutable models
@@ -51,6 +52,7 @@ from pydantic import (  # Validated immutable models
     ConfigDict,
     Field,
     StrictBool,
+    field_serializer,
     field_validator,
     model_validator,
 )
@@ -123,6 +125,34 @@ class _Frozen(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+K = TypeVar("K")
+V = TypeVar("V")
+
+
+class ReadOnlyMap(Mapping[K, V]):
+    """A mapping that cannot be changed after it is built, yet can be copied and pickled.
+
+    ``types.MappingProxyType`` is read-only but cannot be deep-copied or pickled, which would break
+    copying or serialising a policy; this small class keeps the data in a private dictionary and
+    exposes reads only.
+    """
+
+    def __init__(self, data: Mapping[K, V]) -> None:
+        self._data = dict(data)
+
+    def __getitem__(self, key: K) -> V:
+        return self._data[key]
+
+    def __iter__(self) -> Iterator[K]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __repr__(self) -> str:
+        return f"ReadOnlyMap({self._data!r})"
+
+
 class CategoryRule(_Frozen):
     """Filing rules of one dispute category."""
 
@@ -164,7 +194,14 @@ class Policy(_Frozen):
         cls, value: dict[DisputeCategory, CategoryRule]
     ) -> dict[DisputeCategory, CategoryRule]:
         """Expose the rules through a read-only mapping so a loaded policy cannot be edited."""
-        return MappingProxyType(dict(value))  # type: ignore[return-value]
+        return ReadOnlyMap(value)  # type: ignore[return-value]
+
+    @field_serializer("categories")
+    def _serialize_categories(
+        self, value: Mapping[DisputeCategory, CategoryRule]
+    ) -> dict[DisputeCategory, CategoryRule]:
+        """Write the read-only mapping as a plain dictionary."""
+        return dict(value)
 
     @model_validator(mode="after")
     def _every_category_has_a_rule(self) -> Policy:

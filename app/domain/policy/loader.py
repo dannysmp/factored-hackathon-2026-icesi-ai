@@ -65,7 +65,11 @@ class _UniqueKeyLoader(yaml.SafeLoader):
         seen: set[Any] = set()
         for key_node, _ in node.value:
             key = self.construct_object(key_node, deep=deep)
-            if key in seen:
+            try:
+                repeated = key in seen
+            except TypeError as error:  # a list or mapping used as a key cannot be hashed
+                raise yaml.YAMLError("unhashable key") from error
+            if repeated:
                 raise yaml.YAMLError("duplicate key")
             seen.add(key)
         return super().construct_mapping(node, deep=deep)

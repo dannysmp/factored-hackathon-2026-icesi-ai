@@ -12,6 +12,8 @@ from __future__ import annotations
 
 # Standard libraries
 import ast  # Prove the engine reads neither the clock nor the file system
+import copy  # Deep copies of a loaded policy
+import pickle  # Round trip of a loaded policy
 from datetime import date, timedelta  # Filing-window arithmetic
 from decimal import Decimal  # Exact money in boundary cases
 from pathlib import Path  # Locate the source files that must stay pure
@@ -23,7 +25,6 @@ from hypothesis import given  # Property-based tests
 from hypothesis import strategies as st  # Value generators
 from pydantic import ValidationError  # Boundary validation of requests
 
-# Local modules
 from app.domain.policy import (
     DisputeCategory,
     DisputeRequest,
@@ -34,6 +35,9 @@ from app.domain.policy import (
     evaluate_dispute,
     load_policy,
 )
+
+# Local modules
+from app.domain.policy.models import ReadOnlyMap
 
 TODAY = date(2026, 9, 26)
 
@@ -511,6 +515,37 @@ def test_a_loaded_policy_cannot_be_modified(policy: Policy) -> None:
         policy.categories[DisputeCategory.FRAUD_CLAIM] = None  # type: ignore[assignment]
     with pytest.raises(TypeError):
         del policy.categories[DisputeCategory.WRONG_AMOUNT]
+
+
+@pytest.mark.filterwarnings("error")
+def test_a_loaded_policy_can_be_copied_pickled_and_serialised(policy: Policy) -> None:
+    """Read-only does not mean unusable: every copy or round trip equals the original."""
+    assert copy.deepcopy(policy) == policy
+    assert policy.model_copy(deep=True) == policy
+    assert pickle.loads(pickle.dumps(policy)) == policy  # noqa: S301 - our own object
+    assert Policy.model_validate_json(policy.model_dump_json()) == policy
+    assert Policy.model_validate(policy.model_dump()) == policy
+
+
+def test_the_read_only_mapping_does_not_share_its_source() -> None:
+    """Changing the dictionary it was built from does not change the mapping."""
+    source = {"a": 1}
+    mapping = ReadOnlyMap(source)
+
+    source["a"] = 2
+    source["b"] = 3
+
+    assert dict(mapping) == {"a": 1}
+
+
+def test_the_read_only_mapping_reads_like_a_mapping(policy: Policy) -> None:
+    """Length, iteration, membership and representation behave as for a dictionary."""
+    categories = policy.categories
+
+    assert len(categories) == len(DisputeCategory)
+    assert set(categories) == set(DisputeCategory)
+    assert DisputeCategory.WRONG_AMOUNT in categories
+    assert repr(categories).startswith("ReadOnlyMap(")
 
 
 # -----------------------------------------------------------------------------

@@ -212,3 +212,15 @@ def test_a_flag_written_as_text_is_refused(tmp_path: Path) -> None:
 def test_the_loaded_policy_is_equal_across_loads() -> None:
     """Loading twice gives equal policies (the read-only category mapping compares by value)."""
     assert load_policy() == load_policy()
+
+
+@pytest.mark.parametrize(
+    "key", ["? [a, b]\n: 1\n", "? {a: 1}\n: 1\n"], ids=["list-key", "mapping-key"]
+)
+def test_a_key_that_cannot_be_hashed_is_a_policy_error(tmp_path: Path, key: str) -> None:
+    """A list or mapping used as a key is invalid YAML for a policy, not a crash."""
+    path = tmp_path / "unhashable.yaml"
+    path.write_text(key, encoding="utf-8")
+
+    with pytest.raises(PolicyError, match=r"unhashable\.yaml is not valid YAML"):
+        load_policy(path)
