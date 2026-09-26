@@ -364,6 +364,17 @@ PROXIES: dict[str, str] = {
     "currency": "m.currency",
     "channel": "m.channel",
     "transaction_country": "m.transaction_country",
+    "country_mismatch": (
+        "CASE WHEN m.country_mismatch IS NULL THEN 'unknown' "
+        "WHEN m.country_mismatch THEN 'yes' ELSE 'no' END"
+    ),
+    "customer record newer than the transaction": (
+        "CASE WHEN c.last_updated IS NULL THEN 'unknown' "
+        "WHEN c.last_updated > t.transaction_date THEN 'yes' ELSE 'no' END"
+    ),
+    "earlier transactions in the last 24 hours": (
+        "CASE WHEN m.tx_count_24h > 0 THEN 'yes' ELSE 'no' END"
+    ),
     "coordinates present": (
         "CASE WHEN t.latitude IS NOT NULL AND t.longitude IS NOT NULL THEN 'yes' ELSE 'no' END"
     ),
@@ -409,7 +420,7 @@ def _measure(con: duckdb.DuckDBPyConnection, mart: Path, split: SplitConfig) -> 
         "customers": int(customers),
         "customers_updated_after_train_end": int(after_training),
         "transactions_with_a_customer": int(joined),
-        "transactions_before_the_customer_snapshot": int(later),
+        "transactions_older_than_their_customer_record": int(later),
     }
 
     # Whether a remaining feature stands in for an excluded outcome column: prevalence per value
@@ -419,6 +430,7 @@ def _measure(con: duckdb.DuckDBPyConnection, mart: Path, split: SplitConfig) -> 
         for value, period, count, fraud in con.execute(
             f"SELECT {expression} AS value, m.split, count(*), count(*) FILTER (WHERE m.is_fraud) "
             f"FROM {source} AS m JOIN transactions AS t ON t.transaction_id = m.transaction_id "
+            "LEFT JOIN customers AS c ON c.customer_id = t.customer_id "
             "GROUP BY 1, 2 ORDER BY 1, 2"
         ).fetchall():
             grouped.setdefault(str(value), {})[period] = [int(count), int(fraud)]
@@ -510,7 +522,7 @@ def render_report(manifest: RiskFeaturesManifest) -> str:
     share = _percentage(evidence["fraud_rows_above_that"], evidence["fraud_rows"])
     snapshot = manifest.customer_snapshot
     later_share = _percentage(
-        snapshot["transactions_before_the_customer_snapshot"],
+        snapshot["transactions_older_than_their_customer_record"],
         snapshot["transactions_with_a_customer"],
     )
     lines = [
@@ -550,8 +562,11 @@ def render_report(manifest: RiskFeaturesManifest) -> str:
         f"each customer. {snapshot['customers_updated_after_train_end']:,} of "
         f"{snapshot['customers']:,} customers were last updated after the training period "
         f"ended, and {later_share} of the transactions belong to a customer whose record is "
-        "newer than the transaction. A country that changed would be read as it is now; the "
-        "model epic compares results with and without these two features.",
+        "newer than the transaction. The source does not say what an update records, so these "
+        "figures are an upper bound on how many countries could differ from the one at the time. "
+        "A country that changed would be read as it is now, and a link from a fraud case to a "
+        "later update of the record cannot be excluded from this data; the model epic compares "
+        "results with and without these two features.",
         "- **The exchange rate** used to convert an amount is the rate of the transaction's day; "
         "the source does not say at what time of the day it was published. The amounts the "
         "source states itself use the same day's rate.",
@@ -572,7 +587,10 @@ def render_report(manifest: RiskFeaturesManifest) -> str:
         "transaction (whether the amount had to be converted, whether the merchant is known, "
         "whether coordinates exist) and of the categorical features, overall and per period. "
         "A value whose prevalence differs sharply from the overall one, on many positives, "
-        "would be a warning; differences on a handful of positives are noise.",
+        "would be a warning; differences on a handful of positives are noise, and among many "
+        "groups a few will differ by about two standard errors by chance. These tables compare "
+        "each feature with the label; they cannot show a link to the excluded outcome "
+        "columns themselves.",
         "",
         *_proxy_tables(manifest),
         "## 6. Lineage",

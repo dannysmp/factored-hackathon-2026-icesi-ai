@@ -41,7 +41,7 @@ The velocity, gap and distance features of a transaction use the same customer's
 
 ## 3. Where a feature is not strictly point-in-time
 
-- **The customer's country** (`customer_country`, and so `country_mismatch`) is the customer's latest recorded country, because the cleaned layer keeps one version of each customer. 32,124 of 150,000 customers were last updated after the training period ended, and 25.0 % of the transactions belong to a customer whose record is newer than the transaction. A country that changed would be read as it is now; the model epic compares results with and without these two features.
+- **The customer's country** (`customer_country`, and so `country_mismatch`) is the customer's latest recorded country, because the cleaned layer keeps one version of each customer. 32,124 of 150,000 customers were last updated after the training period ended, and 25.0 % of the transactions belong to a customer whose record is newer than the transaction. The source does not say what an update records, so these figures are an upper bound on how many countries could differ from the one at the time. A country that changed would be read as it is now, and a link from a fraud case to a later update of the record cannot be excluded from this data; the model epic compares results with and without these two features.
 - **The exchange rate** used to convert an amount is the rate of the transaction's day; the source does not say at what time of the day it was published. The amounts the source states itself use the same day's rate.
 - **Totals over a window** treat an amount that could not be converted as zero, while the count includes the transaction; a total can therefore be slightly low.
 
@@ -59,7 +59,7 @@ Evidence for the fraud score: no transaction that is not fraud scores above 30.0
 
 ## 5. Do the remaining features stand in for the excluded columns?
 
-Fraud prevalence for each value of a feature that could reflect the outcome of the transaction (whether the amount had to be converted, whether the merchant is known, whether coordinates exist) and of the categorical features, overall and per period. A value whose prevalence differs sharply from the overall one, on many positives, would be a warning; differences on a handful of positives are noise.
+Fraud prevalence for each value of a feature that could reflect the outcome of the transaction (whether the amount had to be converted, whether the merchant is known, whether coordinates exist) and of the categorical features, overall and per period. A value whose prevalence differs sharply from the overall one, on many positives, would be a warning; differences on a handful of positives are noise, and among many groups a few will differ by about two standard errors by chance. These tables compare each feature with the label; they cannot show a link to the excluded outcome columns themselves.
 
 | amount_usd_source | Transactions | Fraud | Prevalence | Train | Validation | Test |
 |---|---|---|---|---|---|---|
@@ -95,6 +95,21 @@ Fraud prevalence for each value of a feature that could reflect the outcome of t
 | `México` | 2,146,309 | 2,132 | 0.099 % | 0.103 % | 0.099 % | 0.091 % |
 | `Spain` | 40,542 | 39 | 0.096 % | 0.116 % | 0.117 % | 0.031 % |
 | `USA` | 40,621 | 38 | 0.094 % | 0.092 % | 0.073 % | 0.113 % |
+
+| country_mismatch | Transactions | Fraud | Prevalence | Train | Validation | Test |
+|---|---|---|---|---|---|---|
+| `no` | 4,222,208 | 4,100 | 0.097 % | 0.099 % | 0.099 % | 0.090 % |
+| `yes` | 202,800 | 216 | 0.107 % | 0.121 % | 0.095 % | 0.080 % |
+
+| customer record newer than the transaction | Transactions | Fraud | Prevalence | Train | Validation | Test |
+|---|---|---|---|---|---|---|
+| `no` | 3,318,170 | 3,210 | 0.097 % | 0.101 % | 0.098 % | 0.089 % |
+| `yes` | 1,106,838 | 1,106 | 0.100 % | 0.100 % | 0.105 % | 0.092 % |
+
+| earlier transactions in the last 24 hours | Transactions | Fraud | Prevalence | Train | Validation | Test |
+|---|---|---|---|---|---|---|
+| `no` | 4,252,575 | 4,161 | 0.098 % | 0.101 % | 0.099 % | 0.089 % |
+| `yes` | 172,433 | 155 | 0.090 % | 0.091 % | 0.091 % | 0.086 % |
 
 | coordinates present | Transactions | Fraud | Prevalence | Train | Validation | Test |
 |---|---|---|---|---|---|---|

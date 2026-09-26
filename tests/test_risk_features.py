@@ -534,7 +534,7 @@ def test_the_manifest_measures_how_far_the_customer_snapshot_postdates_the_trans
         "customers": 3,
         "customers_updated_after_train_end": 2,
         "transactions_with_a_customer": 8,
-        "transactions_before_the_customer_snapshot": 5,
+        "transactions_older_than_their_customer_record": 5,
     }
 
 
@@ -554,6 +554,21 @@ def test_the_manifest_gives_the_prevalence_inputs_of_every_proxy_check(built: An
     assert proxies["amount_usd_source"]["unavailable"] == {"train": [1, 1]}
     assert proxies["coordinates present"]["yes"] == {"train": [2, 1]}
     assert proxies["merchant category stated"]["no"]["train"] == [1, 0]
+    assert proxies["country_mismatch"] == {
+        "yes": {"train": [1, 0]},
+        "unknown": {"train": [1, 0]},
+        "no": {"train": [4, 1], "validation": [2, 1], "test": [1, 0]},
+    }
+    assert proxies["customer record newer than the transaction"] == {
+        "yes": {"train": [5, 1]},
+        "no": {"validation": [2, 1], "test": [1, 0]},
+        "unknown": {"train": [1, 0]},
+    }
+    assert proxies["earlier transactions in the last 24 hours"]["yes"] == {
+        "train": [1, 0],  # T2, six hours after T1 and T4
+        "validation": [1, 0],  # T5, ten hours after T6
+        "test": [1, 0],  # T8, one second after T7
+    }
 
 
 def test_an_unconvertible_amount_counts_in_a_window_but_adds_nothing_to_its_total(
