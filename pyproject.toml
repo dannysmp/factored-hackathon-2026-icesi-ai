@@ -1,7 +1,5 @@
-# =============================================================================
-# pyproject.toml — project manifest, dependency groups and tool configuration
-# =============================================================================
-# Purpose:
+# ======================================================================# pyproject.toml — project manifest, dependency groups and tool configuration
+# ======================================================================# Purpose:
 #   Single source for the Python runtime version, dependencies and the settings
 #   of ruff, mypy, pytest and coverage. Versions are pinned by uv.lock.
 #
@@ -13,8 +11,7 @@
 # Usage:
 #   make setup     # uv sync --frozen
 #   make lint test # the same targets CI runs
-# =============================================================================
-
+# ======================================================================
 [project]
 name = "dispute-intake"
 version = "0.1.0"
@@ -26,6 +23,7 @@ dependencies = [
     "pydantic>=2.8,<3",  # Validated contracts at every boundary
     "pydantic-settings>=2.4,<3",  # Typed, fail-fast configuration from the environment
     "pyjwt>=2.8,<3",  # Signs and verifies the short-lived session tokens
+    "pyyaml>=6,<7",  # Loads the versioned dispute-policy files
 ]
 
 [dependency-groups]
@@ -37,6 +35,7 @@ dev = [
     "ruff>=0.6,<1",  # Formatter and linter
     "mypy>=1.11,<2",  # Strict static typing
     "pip-audit>=2.7,<3",  # Dependency vulnerability scan
+    "types-pyyaml>=6,<7",  # Type stubs for the YAML loader under strict mypy
 ]
 data = [
     "duckdb>=1.1,<2",  # Columnar SQL engine for profiling and pipelines over CSV/Parquet
