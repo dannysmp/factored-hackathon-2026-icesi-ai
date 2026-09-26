@@ -12,6 +12,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 RUN := uv run
+DATA_DIR ?= data/raw
 
 .PHONY: help setup lint format test test-all secrets audit run clean \
         profile pipeline analyze train evaluate up
@@ -53,10 +54,10 @@ clean: ## Remove caches and build artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .hypothesis .coverage htmlcov
 	find . -type d -name __pycache__ -not -path './.venv/*' -prune -exec rm -rf {} +
 
-# ---- Not yet implemented (fail loudly until they are) --------------------------
+profile: ## Profile the raw data (DATA_DIR, default data/raw) and write reports/data-profile.md
+	$(RUN) python -m pipelines.profile --data-dir $(DATA_DIR)
 
-profile: ## Profile the raw data and write reports/data-profile.md
-	@echo "make profile is not implemented yet" >&2; exit 2
+# ---- Not yet implemented (fail loudly until they are) --------------------------
 
 pipeline: ## Run the bronze -> silver -> gold pipeline
 	@echo "make pipeline is not implemented yet" >&2; exit 2

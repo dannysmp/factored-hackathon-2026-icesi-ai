@@ -37,6 +37,13 @@ dev = [
     "mypy>=1.11,<2",  # Strict static typing
     "pip-audit>=2.7,<3",  # Dependency vulnerability scan
 ]
+data = [
+    "duckdb>=1.1,<2",  # Columnar SQL engine for profiling and pipelines over CSV/Parquet
+]
+
+[tool.uv]
+# Data tooling ships with the default environment so `make setup` covers pipelines too.
+default-groups = ["dev", "data"]
 
 [tool.ruff]
 line-length = 100
@@ -49,12 +56,15 @@ ignore = ["PLR0913"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "PLR2004"]
+# The profiler interpolates only quoted identifiers from the static table registry into SQL and
+# never a value read from the data, so the string-built-query rule does not apply to it.
+"pipelines/profile.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["app", "tests"]
+files = ["app", "pipelines", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -67,7 +77,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["app"]
+source = ["app", "pipelines"]
 
 [tool.coverage.report]
 # Combined line+branch floor; the standard asks for >=85% lines and >=80% branches.

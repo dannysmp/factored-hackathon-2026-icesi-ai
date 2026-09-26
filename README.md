@@ -75,9 +75,29 @@ make run        # serve http://localhost:8000  (GET /health/live, GET /health/re
 | `make test` | Fast hermetic tests with a coverage gate |
 | `make secrets` | Scan committed history and staged changes for secrets, then run the scanner self-test |
 | `make audit` | Dependency vulnerability scan |
+| `make profile` | Profile the raw data and write `reports/data-profile.md` |
 | `make help` | List every target |
 
 `make secrets` does not scan unstaged or untracked files: `git add` them first.
+
+### Data
+
+The source data is a set of CSV files that are never committed. Place them under `data/raw`, or
+point `DATA_DIR` at another location:
+
+```text
+data/raw/
+├── customers.csv, products.csv, branches.csv, …      one file per dimension table
+└── transactions/year=YYYY/month=MM/day=DD/transactions_YYYYMMDD.csv
+    (and the same layout for the other daily fact tables)
+```
+
+`make profile` measures the files against the data dictionary and writes
+[`reports/data-profile.md`](reports/data-profile.md): row counts, schema conformance, duplicate
+keys, missing and malformed values, referential integrity, arrival lateness and the workload
+facts (fraud prevalence, USD amount consistency, transcript availability, complaint categories),
+with a verdict on each assumption made about the data. The profile is deterministic, so a change
+in the report reflects a change in the data.
 
 ### Configuration
 
@@ -100,4 +120,5 @@ requirements, and which controls exist today, are in [SECURITY.md](SECURITY.md).
 | `gitleaks: command not found` when running `make secrets` | `brew install gitleaks` |
 | `ConfigError: Invalid configuration — LOG_LEVEL: …` | The message names the bad key; fix it in `.env` (see `.env.example` for accepted values) |
 | `make setup` fails with a stale lockfile | Run `uv lock` and commit the updated `uv.lock` |
-| `make profile`, `pipeline`, `analyze`, `train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |
+| `make profile` fails with `cannot load table …` or `lacks key column` | The message names the table; check that the raw files match the layout described under *Data* |
+| `make pipeline`, `analyze`, `train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |
