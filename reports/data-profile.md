@@ -2,14 +2,14 @@
 
 Snapshot digest (SHA-256 over file paths and sizes): `7cd43c778552f9fcb7940643ed829ac8b6f3ac1787b01f2ed8e9e23f2b2a7b26`
 
-Tables profiled: 13. Every figure below is computed from the raw files by `make profile`; nothing is typed in by hand.
+Tables profiled: 13. Every figure below is computed from the raw files by `make profile`; nothing is typed in by hand. Verdicts cover only the tables that were profiled; tables that were absent or could not be parsed are listed in section 2.
 
 ## 1. Assumptions checked against the data
 
 | Assumption | Expected | Observed | Verdict |
 |---|---|---|---|
 | Fact tables are partitioned as year/month/day, one file per day | No path deviates from the layout | 0 non-conforming paths; 0 calendar days without a file | Holds |
-| Files are UTF-8 CSV whose header equals the dictionary's column list | Every file decodes and matches | 7,671 of 7,671 headers match; 0 undecodable; 7,671 files start with a byte-order mark | Holds |
+| Files are UTF-8 CSV whose header equals the dictionary's column list | Every file decodes and matches | 7,671 of 7,671 headers match; 0 undecodable; 0 without a header row; 7,671 files start with a byte-order mark | Holds |
 | Row counts match the dictionary | Within 5 % of the stated figure | outside tolerance: transactions, call_center_interactions, call_transcripts, satisfaction_surveys, digital_events, complaints, campaign_sends, daily_exchange_rates | Differs |
 | About 2 % of records are duplicates | 1 % to 3 % overall | 0.00 % overall; per table 0.00 % to 0.00 % | Differs |
 | About 5 % of values are missing in nullable fields | 3 % to 7 % of nullable cells | 44.68 % of 384,675,615 nullable cells; median column 23.77 % | Differs |
@@ -47,21 +47,21 @@ Tables profiled: 13. Every figure below is computed from the raw files by `make 
 
 ## 4. Files and schema
 
-| Table | Headers matching dictionary | Header variants | Files with byte-order mark | Undecodable headers | Non-conforming paths | Extra columns | Missing columns |
-|---|---|---|---|---|---|---|---|
-| customers | 1 / 1 | 1 | 1 | 0 | 0 | none | none |
-| products | 1 / 1 | 1 | 1 | 0 | 0 | none | none |
-| branches | 1 / 1 | 1 | 1 | 0 | 0 | none | none |
-| service_agents | 1 / 1 | 1 | 1 | 0 | 0 | none | none |
-| marketing_campaigns | 1 / 1 | 1 | 1 | 0 | 0 | none | none |
-| transactions | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | none | none |
-| call_center_interactions | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | none | none |
-| call_transcripts | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | none | none |
-| satisfaction_surveys | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | none | none |
-| digital_events | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | none | none |
-| complaints | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | none | none |
-| campaign_sends | 1,083 / 1,083 | 1 | 1,083 | 0 | 0 | none | none |
-| daily_exchange_rates | 1 / 1 | 1 | 1 | 0 | 0 | none | none |
+| Table | Headers matching dictionary | Header variants | Files with byte-order mark | Undecodable headers | Files without a header row | Non-conforming paths | Extra columns | Missing columns |
+|---|---|---|---|---|---|---|---|---|
+| customers | 1 / 1 | 1 | 1 | 0 | 0 | 0 | none | none |
+| products | 1 / 1 | 1 | 1 | 0 | 0 | 0 | none | none |
+| branches | 1 / 1 | 1 | 1 | 0 | 0 | 0 | none | none |
+| service_agents | 1 / 1 | 1 | 1 | 0 | 0 | 0 | none | none |
+| marketing_campaigns | 1 / 1 | 1 | 1 | 0 | 0 | 0 | none | none |
+| transactions | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | 0 | none | none |
+| call_center_interactions | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | 0 | none | none |
+| call_transcripts | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | 0 | none | none |
+| satisfaction_surveys | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | 0 | none | none |
+| digital_events | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | 0 | none | none |
+| complaints | 1,097 / 1,097 | 1 | 1,097 | 0 | 0 | 0 | none | none |
+| campaign_sends | 1,083 / 1,083 | 1 | 1,083 | 0 | 0 | 0 | none | none |
+| daily_exchange_rates | 1 / 1 | 1 | 1 | 0 | 0 | 0 | none | none |
 
 ## 5. Keys and duplicates
 
@@ -470,7 +470,7 @@ Categories: `Transactions` (13,580), `Fees` (13,553), `Technical` (13,407), `Bra
 | page_url | VARCHAR(300) | yes | 5.00 % | 0 | 13 | `/login` (2,312,677), `/logout` (2,312,586), `/products/loans` (1,199,796), `/products/savings` (1,198,797), `/products/credit-card` (1,198,674), `/payments` (952,561), `/transfer` (951,673), `/transactions` (950,903), … +5 more |
 | page_title | VARCHAR(200) | yes | 4.99 % | 0 | 12 | `Cerrar Sesión` (2,312,841), `Iniciar Sesión` (2,312,796), `Préstamos` (1,199,615), `Cuenta de Ahorro` (1,198,585), `Tarjeta de Crédito` (1,198,485), `Pagar Servicios` (952,401), `Transferir` (951,874), `Mis Movimientos` (950,599), … +5 more |
 | action | VARCHAR(100) | yes | 10.00 % | 0 | 10 | `view_product` (3,407,643), `logout` (2,191,640), `login` (2,189,929), `<null>` (1,561,432), `initiate_payment` (902,225), `initiate_transfer` (901,824), `view_transactions` (901,039), `view_accounts` (892,802), … +3 more |
-| element_id | VARCHAR(100) | yes | 15.00 % | 0 | 13 | `<null>` (2,343,244), `login_form` (2,070,024), `logout_btn` (2,069,557), `loans_product` (1,073,762), `cc_product` (1,072,404), `savings_product` (1,071,672), `payment_form` (851,779), `transfer_form` (851,642), … +5 more |
+| element_id | VARCHAR(100) | yes | 15.00 % | 0 | 13 |  |
 | product_id | VARCHAR(20) | yes | 90.78 % | 0 | 465,190 |  |
 | event_value | DECIMAL(15,2) | yes | 94.91 % | 0 | 496,939 |  |
 | duration_seconds | INTEGER | yes | 63.67 % | 0 | 254 |  |
@@ -497,7 +497,7 @@ Categories: `Transactions` (13,580), `Fees` (13,553), `Technical` (13,407), `Bra
 | reception_channel | VARCHAR(30) | no | 0.00 % | 0 | 5 | `Call Center` (33,761), `Email` (13,323), `Web` (9,884), `App` (6,727), `Branch` (2,683), `Regulator` (717) |
 | affected_product_id | VARCHAR(20) | yes | 33.57 % | 0 | 44,958 |  |
 | related_branch_id | VARCHAR(20) | yes | 71.42 % | 0 | 416 |  |
-| origin_interaction_id | VARCHAR(30) | yes | 100.00 % | 0 | 0 | `<null>` (67,095) |
+| origin_interaction_id | VARCHAR(30) | yes | 100.00 % | 0 | 0 |  |
 | description | TEXT | no | 0.00 % | 0 | 5 |  |
 | claimed_amount | DECIMAL(15,2) | yes | 67.58 % | 0 | 22,492 |  |
 | currency | VARCHAR(3) | yes | 67.54 % | 0 | 4 | `<null>` (45,319), `MXN` (5,487), `COP` (5,456), `USD` (5,431), `ARS` (5,402) |
