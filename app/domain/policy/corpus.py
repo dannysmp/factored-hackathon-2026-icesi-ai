@@ -147,8 +147,8 @@ _ES = Messages(
     ),
     transactions=(
         "Para presentar una disputa, la transacción debe ser un cargo al cliente ({types}), "
-        "estar {approved}, estar dentro del plazo de su categoría (ver más abajo) y no tener "
-        "otra disputa abierta."
+        "estar {approved}, no estar fechada en el futuro, estar dentro del plazo de su "
+        "categoría (ver más abajo) y no tener otra disputa abierta."
     ),
     types_excluded="No se pueden disputar {types}.",
     statuses_excluded=(
@@ -302,8 +302,8 @@ _PT = Messages(
     ),
     transactions=(
         "Para apresentar uma contestação, a transação deve ser uma cobrança ao cliente "
-        "({types}), estar {approved}, estar dentro do prazo da sua categoria (veja abaixo) e "
-        "não ter outra contestação em aberto."
+        "({types}), estar {approved}, não estar datada no futuro, estar dentro do prazo da "
+        "sua categoria (veja abaixo) e não ter outra contestação em aberto."
     ),
     types_excluded="Não podem ser contestados {types}.",
     statuses_excluded=(
@@ -463,8 +463,8 @@ _EN = Messages(
     ),
     transactions=(
         "To file a dispute, the transaction must be a charge to the customer ({types}), be "
-        "{approved}, be within the deadline of its category (see below) and have no other "
-        "open dispute."
+        "{approved}, not be dated in the future, be within the deadline of its category (see "
+        "below) and have no other open dispute."
     ),
     types_excluded="Transactions that are {types} cannot be disputed.",
     statuses_excluded=(

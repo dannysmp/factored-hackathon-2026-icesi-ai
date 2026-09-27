@@ -835,14 +835,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         marts = {name: read_mart(args.gold, name) for name in MART_NAMES}
         text = render_workflow_analysis(marts, assumptions, manifest.as_dict())
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        temporary = args.report.with_suffix(".md.tmp")
+        temporary.write_text(text, encoding="utf-8")
+        os.replace(temporary, args.report)
     except (FileNotFoundError, ValueError, OSError) as error:
+        # A report from an earlier run, or a half-written one, must never be mistaken for this
+        # run's result — whether the build or the write itself is what failed.
         logger.error("analysis_failed reason=%s", error)
+        args.report.unlink(missing_ok=True)
         return 1
+    except (Exception, KeyboardInterrupt):
+        # Anything else not already handled above (Ctrl-C is not an Exception, so it is named
+        # explicitly), through the build and the write alike: the stale report is gone rather
+        # than misleading.
+        args.report.unlink(missing_ok=True)
+        raise
 
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    temporary = args.report.with_suffix(".md.tmp")
-    temporary.write_text(text, encoding="utf-8")
-    os.replace(temporary, args.report)
     logger.info("analysis_report_written report=%s", args.report)
     return 0
 
