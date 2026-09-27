@@ -23,15 +23,18 @@ Design Principles
 - Pure function: the same policy always renders the same text, byte for byte.
 - Section identifiers are the same in every language and never change, so an answer can cite
   ``filing-windows`` whichever language the customer used.
-- Rules that a policy version switches off (for example repeat-complainer routing) are left out
-  of the text instead of being described as active.
+- The routing rules that send a request to a person are stated qualitatively: a fraud claim is
+  always named, understanding failure is named without a number, and every other rule (amount,
+  unknown amount, repeat complaints, risk score) is one shared statement that the bank's review
+  criteria apply. Nothing here can tell a customer which specific rule would fire, or with what
+  number, because the numeric thresholds, the confidence floor and any statement about complaint
+  history are never in this text (evasion aid for the fraud routing).
 - The dataset's product codes ("Cuenta Ahorro") are engine identifiers, not customer language: the
   text shows a display name per language ("Conta poupança"), and a code without a display name is
   shown as it is.
 - Wording rules: alternatives use "or" (a charge is a payment or a purchase), exclusions use
-  "nor", "reclamo" means a complaint only (a fraud report is a "reporte de fraude"), and the
-  deadline is stated in calendar days with a worked example taken from the policy's shortest
-  window.
+  "nor", and the deadline is stated in calendar days with a worked example taken from the
+  policy's shortest window.
 
 Runtime Contract
 ----------------
@@ -40,10 +43,8 @@ to its text. ``LANGUAGES`` and ``SECTION_IDS`` name what is rendered.
 
 Limitations
 -----------
-The prose is fixed per language, not per country: Spanish uses a space as the thousands separator
-and a comma as the decimal separator, the neutral form for Mexico, Colombia and Argentina. A chat
-reply that quotes a number should format it for the customer's country at render time. A native
-review of the final wording is still recommended before customer use. The text is synthetic policy
+The prose is fixed per language, not per country. A native review of the final wording is still
+recommended before customer use. The text is synthetic policy
 prose written for this project, not legal advice.
 """
 
@@ -51,7 +52,6 @@ from __future__ import annotations
 
 # Standard libraries
 from dataclasses import dataclass  # Immutable message sets per language
-from decimal import Decimal  # Money formatted without float error
 
 # Local modules
 from app.domain.policy.models import (  # Vocabulary rendered in the text
@@ -68,6 +68,8 @@ SECTION_IDS: tuple[str, ...] = (
     "overview",
     "who-can-dispute",
     "filing-windows",
+    "response-time",
+    "evidence",
     "confirmation",
     "human-review",
     "fraud-claims",
@@ -76,18 +78,12 @@ SECTION_IDS: tuple[str, ...] = (
 
 DOCUMENT_NAME = "dispute-policy.md"
 
-# Separates thousands and precedes the percent sign in Spanish, so a number does not split.
-NO_BREAK_SPACE = chr(0xA0)
-
 
 @dataclass(frozen=True, slots=True)
 class Messages:
     """Every piece of prose of one language."""
 
     title: str
-    decimal_separator: str
-    thousands_separator: str
-    percent_format: str
     section_titles: dict[str, str]
     overview: str
     products: str
@@ -97,16 +93,17 @@ class Messages:
     statuses_excluded: str
     windows_intro: str
     window_line: str
+    response_time_intro: str
+    evidence_intro: str
+    evidence_line: str
+    evidence_items: dict[str, str]
     confirmation_all: str
     confirmation_some: str
     confirmation_none: str
     human_intro: str
     human_fraud: str
     human_confidence: str
-    human_repeat: str
-    human_amount: str
-    human_unknown_amount: str
-    human_risk: str
+    human_criteria: str
     fraud: str
     codes_intro: str
     codes_header: tuple[str, str]
@@ -126,13 +123,12 @@ class Messages:
 
 _ES = Messages(
     title="Política de disputas de transacciones",
-    decimal_separator=",",
-    thousands_separator=NO_BREAK_SPACE,
-    percent_format="{value}" + NO_BREAK_SPACE + "%",
     section_titles={
         "overview": "Qué es esta política",
         "who-can-dispute": "Qué transacciones se pueden disputar",
         "filing-windows": "Plazos para presentar una disputa",
+        "response-time": "Cuándo llega la primera respuesta",
+        "evidence": "Qué tener listo",
         "confirmation": "Confirmación antes de presentar",
         "human-review": "Cuándo lo revisa un asesor",
         "fraud-claims": "Reportes de fraude",
@@ -165,6 +161,26 @@ _ES = Messages(
         "el día {next}."
     ),
     window_line="- {category}: {days}.",
+    response_time_intro=(
+        "Después de presentar una disputa, el banco da una primera respuesta dentro de este "
+        "plazo, contado en días calendario desde la fecha de presentación:"
+    ),
+    evidence_intro="Para cada tipo de disputa, tenga listo lo siguiente:",
+    evidence_line="- {category}: {items}.",
+    evidence_items={
+        "card_in_possession": "confirmar que aún tiene la tarjeta",
+        "merchant_not_recognized": (
+            "indicar qué parte del cargo no reconoce (comercio, fecha o monto)"
+        ),
+        "both_charge_dates_amounts": "las fechas y los montos de ambos cargos",
+        "agreed_amount_proof": (
+            "un comprobante del monto acordado, como un recibo o una confirmación de pedido"
+        ),
+        "order_proof": "un comprobante del pedido o del pago",
+        "merchant_contact_attempt": "cualquier intento de contactar al comercio",
+        "card_status": "si la tarjeta está perdida, robada o aún en su poder",
+        "last_genuine_use": "cuándo la usó por última vez",
+    },
     confirmation_all=(
         "Antes de presentar una disputa, el cliente confirma exactamente lo que se va a "
         "presentar: la transacción, el motivo y los datos de la solicitud."
@@ -179,17 +195,8 @@ _ES = Messages(
         "Aunque la solicitud cumpla las reglas, pasa a revisión de un asesor en estos casos:"
     ),
     human_fraud="- Es un reporte de fraude.",
-    human_confidence=(
-        "- El sistema no entendió la solicitud con suficiente certeza (confianza inferior al "
-        "{percent})."
-    ),
-    human_repeat="- El cliente ha presentado reclamos repetidos.",
-    human_amount="- El monto es de {amount} o más.",
-    human_unknown_amount="- No se conoce el monto en dólares.",
-    human_risk=(
-        "- El puntaje de riesgo de la transacción es {score} o más. El puntaje solo sirve para "
-        "enviar el caso a revisión; nunca decide el resultado."
-    ),
+    human_confidence="- El sistema no entendió la solicitud con suficiente certeza.",
+    human_criteria="- Se aplican otros criterios de revisión del banco.",
     fraud=(
         "Un asesor revisa siempre los reportes de fraude. Nunca se descartan automáticamente, "
         "aunque la transacción haya sido rechazada, esté fuera de plazo o corresponda a un "
@@ -255,23 +262,12 @@ _ES = Messages(
         ReasonCode.TRANSACTION_DATE_IN_FUTURE: "La fecha de la transacción es futura.",
         ReasonCode.FILING_WINDOW_EXPIRED: "Venció el plazo para presentar esta disputa.",
         ReasonCode.DUPLICATE_OPEN_CASE: "Ya hay una disputa abierta para esta transacción.",
-        ReasonCode.ESCALATE_FRAUD_CLAIM: "Es un reporte de fraude; pasa a revisión de un asesor.",
-        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: (
-            "El sistema no entendió la solicitud con suficiente certeza; pasa a revisión de un "
-            "asesor."
-        ),
-        ReasonCode.ESCALATE_REPEAT_COMPLAINER: (
-            "El cliente tiene reclamos repetidos; pasa a revisión de un asesor."
-        ),
-        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: (
-            "El monto alcanza el umbral de revisión; pasa a revisión de un asesor."
-        ),
-        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: (
-            "No se conoce el monto en dólares; pasa a revisión de un asesor."
-        ),
-        ReasonCode.ESCALATE_RISK_SCORE: (
-            "El puntaje de riesgo alcanza el umbral; pasa a revisión de un asesor."
-        ),
+        ReasonCode.ESCALATE_FRAUD_CLAIM: "Un asesor revisa la solicitud.",
+        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: "Un asesor revisa la solicitud.",
+        ReasonCode.ESCALATE_REPEAT_COMPLAINER: "Un asesor revisa la solicitud.",
+        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: "Un asesor revisa la solicitud.",
+        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: "Un asesor revisa la solicitud.",
+        ReasonCode.ESCALATE_RISK_SCORE: "Un asesor revisa la solicitud.",
     },
     and_word="y",
     or_word="o",
@@ -282,13 +278,12 @@ _ES = Messages(
 
 _PT = Messages(
     title="Política de contestação de transações",
-    decimal_separator=",",
-    thousands_separator=".",
-    percent_format="{value}%",
     section_titles={
         "overview": "O que é esta política",
         "who-can-dispute": "Quais transações podem ser contestadas",
         "filing-windows": "Prazos para apresentar uma contestação",
+        "response-time": "Quando chega a primeira resposta",
+        "evidence": "O que ter em mãos",
         "confirmation": "Confirmação antes de apresentar",
         "human-review": "Quando um atendente analisa",
         "fraud-claims": "Contestações por fraude",
@@ -321,6 +316,26 @@ _PT = Messages(
         "mas não no {next}º."
     ),
     window_line="- {category}: {days}.",
+    response_time_intro=(
+        "Depois de apresentar uma contestação, o banco dá uma primeira resposta dentro deste "
+        "prazo, contado em dias corridos a partir da data de apresentação:"
+    ),
+    evidence_intro="Para cada tipo de contestação, tenha isto pronto:",
+    evidence_line="- {category}: {items}.",
+    evidence_items={
+        "card_in_possession": "confirmar que ainda está com o cartão",
+        "merchant_not_recognized": (
+            "dizer qual parte da cobrança não reconhece (comerciante, data ou valor)"
+        ),
+        "both_charge_dates_amounts": "as datas e os valores das duas cobranças",
+        "agreed_amount_proof": (
+            "um comprovante do valor combinado, como um recibo ou uma confirmação de pedido"
+        ),
+        "order_proof": "um comprovante do pedido ou do pagamento",
+        "merchant_contact_attempt": "qualquer tentativa de contato com o comerciante",
+        "card_status": "se o cartão está perdido, roubado ou ainda em seu poder",
+        "last_genuine_use": "quando você mesmo o usou pela última vez",
+    },
     confirmation_all=(
         "Antes de apresentar uma contestação, o cliente confirma exatamente o que será "
         "apresentado: a transação, o motivo e os dados do pedido."
@@ -335,17 +350,8 @@ _PT = Messages(
         "nestes casos:"
     ),
     human_fraud="- É uma contestação por fraude.",
-    human_confidence=(
-        "- O sistema não entendeu o pedido com segurança suficiente (confiança abaixo de "
-        "{percent})."
-    ),
-    human_repeat="- O cliente apresentou reclamações repetidas.",
-    human_amount="- O valor é de {amount} ou mais.",
-    human_unknown_amount="- O valor em dólares não é conhecido.",
-    human_risk=(
-        "- A pontuação de risco da transação é {score} ou mais. A pontuação serve apenas para "
-        "encaminhar o caso para análise; nunca decide o resultado."
-    ),
+    human_confidence="- O sistema não entendeu o pedido com segurança suficiente.",
+    human_criteria="- Aplicam-se outros critérios de revisão do banco.",
     fraud=(
         "Toda contestação por fraude é analisada por um atendente. Ela nunca é descartada "
         "automaticamente, mesmo que a transação tenha sido recusada, esteja fora do prazo ou "
@@ -411,28 +417,18 @@ _PT = Messages(
         ReasonCode.TRANSACTION_DATE_IN_FUTURE: "A data da transação está no futuro.",
         ReasonCode.FILING_WINDOW_EXPIRED: "O prazo para apresentar esta contestação expirou.",
         ReasonCode.DUPLICATE_OPEN_CASE: "Já existe uma contestação aberta para esta transação.",
-        ReasonCode.ESCALATE_FRAUD_CLAIM: (
-            "É uma contestação por fraude; o caso é encaminhado para análise de um atendente."
-        ),
+        ReasonCode.ESCALATE_FRAUD_CLAIM: ("O caso é encaminhado para análise de um atendente."),
         ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: (
-            "O sistema não entendeu o pedido com segurança suficiente; o caso é encaminhado "
-            "para análise de um atendente."
+            "O caso é encaminhado para análise de um atendente."
         ),
         ReasonCode.ESCALATE_REPEAT_COMPLAINER: (
-            "O cliente tem reclamações repetidas; o caso é encaminhado para análise de um "
-            "atendente."
+            "O caso é encaminhado para análise de um atendente."
         ),
         ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: (
-            "O valor da transação alcança o valor de referência para análise; o caso é "
-            "encaminhado para análise de um atendente."
+            "O caso é encaminhado para análise de um atendente."
         ),
-        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: (
-            "O valor em dólares não é conhecido; o caso é encaminhado para análise de um atendente."
-        ),
-        ReasonCode.ESCALATE_RISK_SCORE: (
-            "A pontuação de risco atinge o valor de referência; o caso é encaminhado para "
-            "análise de um atendente."
-        ),
+        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: ("O caso é encaminhado para análise de um atendente."),
+        ReasonCode.ESCALATE_RISK_SCORE: ("O caso é encaminhado para análise de um atendente."),
     },
     and_word="e",
     or_word="ou",
@@ -443,13 +439,12 @@ _PT = Messages(
 
 _EN = Messages(
     title="Transaction dispute policy",
-    decimal_separator=".",
-    thousands_separator=",",
-    percent_format="{value}%",
     section_titles={
         "overview": "What this policy is",
         "who-can-dispute": "Which transactions can be disputed",
         "filing-windows": "Deadlines to file a dispute",
+        "response-time": "When the first response arrives",
+        "evidence": "What to have ready",
         "confirmation": "Confirmation before filing",
         "human-review": "When a person reviews it",
         "fraud-claims": "Fraud claims",
@@ -482,6 +477,26 @@ _EN = Messages(
         "{next}."
     ),
     window_line="- {category}: {days}.",
+    response_time_intro=(
+        "After a dispute is filed, the bank gives a first response within this deadline, "
+        "counted in calendar days from the filing date:"
+    ),
+    evidence_intro="For each type of dispute, have the following ready:",
+    evidence_line="- {category}: {items}.",
+    evidence_items={
+        "card_in_possession": "confirm you still have your card",
+        "merchant_not_recognized": (
+            "say which part of the charge you do not recognize (merchant, date or amount)"
+        ),
+        "both_charge_dates_amounts": "the dates and amounts of both charges",
+        "agreed_amount_proof": (
+            "proof of the agreed amount, such as a receipt or an order confirmation"
+        ),
+        "order_proof": "proof of the order or payment",
+        "merchant_contact_attempt": "any attempt to contact the merchant",
+        "card_status": "whether the card is lost, stolen or still in your hands",
+        "last_genuine_use": "when you last used it yourself",
+    },
     confirmation_all=(
         "Before a dispute is filed, the customer confirms exactly what is going to be filed: "
         "the transaction, the reason and the details of the request."
@@ -493,14 +508,8 @@ _EN = Messages(
     confirmation_none="The policy does not require confirmation before filing.",
     human_intro="Even when a request meets the rules, a person reviews it in these cases:",
     human_fraud="- It is a fraud claim.",
-    human_confidence="- The request was not understood with enough confidence (below {percent}).",
-    human_repeat="- The customer has filed repeated complaints.",
-    human_amount="- The amount is {amount} or more.",
-    human_unknown_amount="- The amount in US dollars is not known.",
-    human_risk=(
-        "- The transaction's risk score is {score} or higher. The score only decides that a "
-        "person reviews the dispute; it never decides the outcome."
-    ),
+    human_confidence="- The request was not understood with enough confidence.",
+    human_criteria="- Other bank review criteria apply.",
     fraud=(
         "A fraud claim is always reviewed by a person. It is never refused automatically, even "
         "when the transaction was declined, is outside the deadline or is on a product outside "
@@ -565,22 +574,12 @@ _EN = Messages(
         ReasonCode.TRANSACTION_DATE_IN_FUTURE: "The transaction date is in the future.",
         ReasonCode.FILING_WINDOW_EXPIRED: "The deadline to file this dispute has passed.",
         ReasonCode.DUPLICATE_OPEN_CASE: "A dispute is already open for this transaction.",
-        ReasonCode.ESCALATE_FRAUD_CLAIM: "It is a fraud claim; a person reviews it.",
-        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: (
-            "The request was not understood with enough confidence; a person reviews it."
-        ),
-        ReasonCode.ESCALATE_REPEAT_COMPLAINER: (
-            "The customer has repeated complaints; a person reviews it."
-        ),
-        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: (
-            "The amount reaches the review threshold; a person reviews it."
-        ),
-        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: (
-            "The amount in US dollars is not known; a person reviews it."
-        ),
-        ReasonCode.ESCALATE_RISK_SCORE: (
-            "The risk score reaches the threshold; a person reviews it."
-        ),
+        ReasonCode.ESCALATE_FRAUD_CLAIM: "A person reviews the request.",
+        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: "A person reviews the request.",
+        ReasonCode.ESCALATE_REPEAT_COMPLAINER: "A person reviews the request.",
+        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: "A person reviews the request.",
+        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: "A person reviews the request.",
+        ReasonCode.ESCALATE_RISK_SCORE: "A person reviews the request.",
     },
     and_word="and",
     or_word="or",
@@ -602,37 +601,6 @@ def _join(items: list[str], word: str) -> str:
     if len(items) <= 1:
         return "".join(items)
     return f"{', '.join(items[:-1])} {word} {items[-1]}"
-
-
-def _plain(number: Decimal) -> str:
-    """A decimal written out in full, without an exponent and without trailing zeros."""
-    text = format(number, "f")
-    return text.rstrip("0").rstrip(".") if "." in text else text
-
-
-def _amount(value: Decimal, messages: Messages) -> str:
-    """A US-dollar amount exactly as the policy holds it, with the language's separators.
-
-    A whole amount drops its fraction; a fractional one keeps every digit and at least two
-    decimals, so the text never states a value other than the one the engine compares with.
-    """
-    whole, _, fraction = _plain(value).partition(".")
-    grouped = f"{int(whole):,}".replace(",", messages.thousands_separator)
-    if not fraction:
-        return grouped
-    return f"{grouped}{messages.decimal_separator}{fraction.ljust(2, '0')}"
-
-
-def _rate(value: float, messages: Messages) -> str:
-    """A rate exactly as the policy holds it (at least two decimals), in the language's format."""
-    whole, _, fraction = _plain(Decimal(str(value))).partition(".")
-    return f"{whole}{messages.decimal_separator}{fraction.ljust(2, '0')}"
-
-
-def _percent(value: float, messages: Messages) -> str:
-    """A rate as a percentage without rounding: 0.6 is 60 and 0.605 is 60.5."""
-    number = _plain(Decimal(str(value)) * 100).replace(".", messages.decimal_separator)
-    return messages.percent_format.format(value=number)
 
 
 def _capitalise(text: str) -> str:
@@ -744,21 +712,42 @@ def _confirmation(policy: Policy, m: Messages) -> str:
     return m.confirmation_some.format(categories=names)
 
 
-def _human_review(policy: Policy, m: Messages) -> str:
-    """The routing rules the policy has switched on."""
-    routing = policy.routing
-    lines = [
-        m.human_fraud,
-        m.human_confidence.format(percent=_percent(routing.nlu_confidence_floor, m)),
-    ]
-    if routing.escalate_repeat_complainer:
-        lines.append(m.human_repeat)
-    dollars = f"{_amount(routing.escalate_amount_usd, m)}{NO_BREAK_SPACE}USD"
-    lines.append(m.human_amount.format(amount=dollars))
-    if routing.escalate_unknown_amount:
-        lines.append(m.human_unknown_amount)
-    lines.append(m.human_risk.format(score=_rate(routing.risk_score_threshold, m)))
+def _human_review(m: Messages) -> str:
+    """The routing rules stated qualitatively: never a number, a threshold or a trigger.
+
+    A customer cannot probe which rule fired: a fraud claim is named because it is never a
+    secret, understanding failure is named without its confidence floor, and every other rule
+    (the amount, an unknown amount, repeat complaints, the risk score) is the one shared
+    statement that the bank's review criteria apply.
+    """
+    lines = [m.human_fraud, m.human_confidence, m.human_criteria]
     return m.human_intro + "\n\n" + "\n".join(lines)
+
+
+def _response_time(policy: Policy, m: Messages) -> str:
+    """The first-response deadline per category, in calendar days from the filing date."""
+    lines = [
+        m.window_line.format(
+            category=_capitalise(m.categories[category]),
+            days=_days(policy.first_response_days[category], m),
+        )
+        for category in DisputeCategory
+    ]
+    return m.response_time_intro + "\n\n" + "\n".join(lines)
+
+
+def _evidence(policy: Policy, m: Messages) -> str:
+    """The evidence a customer is told to have ready, per category."""
+    lines = [
+        m.evidence_line.format(
+            category=_capitalise(m.categories[category]),
+            items=_join(
+                [m.evidence_items[item] for item in policy.evidence_required[category]], m.and_word
+            ),
+        )
+        for category in DisputeCategory
+    ]
+    return m.evidence_intro + "\n\n" + "\n".join(lines)
 
 
 def _decision_codes(m: Messages) -> str:
@@ -775,8 +764,10 @@ def _render_language(policy: Policy, language: str, source: str) -> str:
         "overview": m.overview,
         "who-can-dispute": _who_can_dispute(policy, m),
         "filing-windows": _filing_windows(policy, m),
+        "response-time": _response_time(policy, m),
+        "evidence": _evidence(policy, m),
         "confirmation": _confirmation(policy, m),
-        "human-review": _human_review(policy, m),
+        "human-review": _human_review(m),
         "fraud-claims": m.fraud,
         "decision-codes": _decision_codes(m),
     }

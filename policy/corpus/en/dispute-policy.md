@@ -1,6 +1,6 @@
 ---
 lang: en
-policy_version: "1"
+policy_version: "2"
 generated: true
 generated_from: "policy/dispute_policy_v1.yaml"
 ---
@@ -33,6 +33,26 @@ A dispute must be filed within a deadline, counted in calendar days from the tra
 - Service not received: 120 days.
 - Fraud claim: 180 days.
 
+## When the first response arrives {#response-time}
+
+After a dispute is filed, the bank gives a first response within this deadline, counted in calendar days from the filing date:
+
+- Unrecognized charge: 3 days.
+- Duplicate charge: 3 days.
+- Wrong amount: 3 days.
+- Service not received: 5 days.
+- Fraud claim: 1 day.
+
+## What to have ready {#evidence}
+
+For each type of dispute, have the following ready:
+
+- Unrecognized charge: confirm you still have your card and say which part of the charge you do not recognize (merchant, date or amount).
+- Duplicate charge: the dates and amounts of both charges.
+- Wrong amount: proof of the agreed amount, such as a receipt or an order confirmation.
+- Service not received: proof of the order or payment and any attempt to contact the merchant.
+- Fraud claim: whether the card is lost, stolen or still in your hands and when you last used it yourself.
+
 ## Confirmation before filing {#confirmation}
 
 Before a dispute is filed, the customer confirms exactly what is going to be filed: the transaction, the reason and the details of the request.
@@ -42,11 +62,8 @@ Before a dispute is filed, the customer confirms exactly what is going to be fil
 Even when a request meets the rules, a person reviews it in these cases:
 
 - It is a fraud claim.
-- The request was not understood with enough confidence (below 60%).
-- The customer has filed repeated complaints.
-- The amount is 5,000 USD or more.
-- The amount in US dollars is not known.
-- The transaction's risk score is 0.80 or higher. The score only decides that a person reviews the dispute; it never decides the outcome.
+- The request was not understood with enough confidence.
+- Other bank review criteria apply.
 
 ## Fraud claims {#fraud-claims}
 
@@ -67,9 +84,9 @@ Every decision carries one of these reasons.
 | `transaction_date_in_future` | The transaction date is in the future. |
 | `filing_window_expired` | The deadline to file this dispute has passed. |
 | `duplicate_open_case` | A dispute is already open for this transaction. |
-| `escalate_fraud_claim` | It is a fraud claim; a person reviews it. |
-| `escalate_low_nlu_confidence` | The request was not understood with enough confidence; a person reviews it. |
-| `escalate_repeat_complainer` | The customer has repeated complaints; a person reviews it. |
-| `escalate_amount_above_threshold` | The amount reaches the review threshold; a person reviews it. |
-| `escalate_amount_unknown` | The amount in US dollars is not known; a person reviews it. |
-| `escalate_risk_score` | The risk score reaches the threshold; a person reviews it. |
+| `escalate_fraud_claim` | A person reviews the request. |
+| `escalate_low_nlu_confidence` | A person reviews the request. |
+| `escalate_repeat_complainer` | A person reviews the request. |
+| `escalate_amount_above_threshold` | A person reviews the request. |
+| `escalate_amount_unknown` | A person reviews the request. |
+| `escalate_risk_score` | A person reviews the request. |

@@ -6,7 +6,7 @@ The dispute policy: its vocabulary and parameters (``models``), the file loader 
 the deterministic engine that applies it (``engine``).
 """
 
-from app.domain.policy.engine import evaluate_dispute
+from app.domain.policy.engine import evaluate_dispute, expected_first_response
 from app.domain.policy.loader import DEFAULT_POLICY_PATH, PolicyError, load_policy
 from app.domain.policy.models import (
     DisputeCategory,
@@ -31,5 +31,6 @@ __all__ = [
     "ReasonCode",
     "TransactionStatus",
     "evaluate_dispute",
+    "expected_first_response",
     "load_policy",
 ]

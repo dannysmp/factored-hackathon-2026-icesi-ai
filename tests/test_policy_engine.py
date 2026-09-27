@@ -33,6 +33,7 @@ from app.domain.policy import (
     ReasonCode,
     TransactionStatus,
     evaluate_dispute,
+    expected_first_response,
     load_policy,
 )
 
@@ -46,6 +47,11 @@ TODAY = date(2026, 9, 26)
 def policy() -> Policy:
     """The policy that ships with the repository."""
     return load_policy()
+
+
+def _routing(policy: Policy, **updates: Any) -> Policy:
+    """A copy of ``policy`` with some routing parameters changed."""
+    return policy.model_copy(update={"routing": policy.routing.model_copy(update=updates)})
 
 
 def make_request(**overrides: Any) -> DisputeRequest:
@@ -404,19 +410,31 @@ def test_a_repeat_complainer_is_escalated_unless_the_policy_says_otherwise(polic
     assert evaluate_dispute(repeat, lenient, today=TODAY).outcome is Outcome.ELIGIBLE
 
 
-def test_a_risk_score_at_the_threshold_is_escalated_and_a_missing_score_is_ignored(
+def test_risk_routing_is_off_by_default_so_a_high_score_routes_nothing(policy: Policy) -> None:
+    """The shipped policy ships with no risk model calibrated yet: the score never routes."""
+    assert policy.routing.risk_routing_enabled is False
+
+    decision = evaluate_dispute(make_request(risk_score=0.99), policy, today=TODAY)
+
+    assert decision.outcome is Outcome.ELIGIBLE
+
+
+def test_a_risk_score_at_the_threshold_is_escalated_only_while_routing_is_enabled(
     policy: Policy,
 ) -> None:
-    """The score only routes: at the threshold a person reviews; absent, nothing changes."""
+    """The score only routes when the policy switches it on; at the threshold a person reviews."""
+    enabled = _routing(policy, risk_routing_enabled=True)
     threshold = policy.routing.risk_score_threshold
 
-    at = evaluate_dispute(make_request(risk_score=threshold), policy, today=TODAY)
-    below = evaluate_dispute(make_request(risk_score=threshold - 0.01), policy, today=TODAY)
-    absent = evaluate_dispute(make_request(risk_score=None), policy, today=TODAY)
+    at = evaluate_dispute(make_request(risk_score=threshold), enabled, today=TODAY)
+    below = evaluate_dispute(make_request(risk_score=threshold - 0.01), enabled, today=TODAY)
+    absent = evaluate_dispute(make_request(risk_score=None), enabled, today=TODAY)
+    off = evaluate_dispute(make_request(risk_score=threshold), policy, today=TODAY)
 
     assert at.reason_code is ReasonCode.ESCALATE_RISK_SCORE
     assert below.outcome is Outcome.ELIGIBLE
     assert absent.outcome is Outcome.ELIGIBLE
+    assert off.outcome is Outcome.ELIGIBLE
 
 
 def test_every_routing_trigger_is_reported_in_policy_order(policy: Policy) -> None:
@@ -429,7 +447,7 @@ def test_every_routing_trigger_is_reported_in_policy_order(policy: Policy) -> No
             amount_usd=Decimal("9000"),
             risk_score=0.99,
         ),
-        policy,
+        _routing(policy, risk_routing_enabled=True),
         today=TODAY,
     )
 
@@ -461,6 +479,51 @@ def test_the_facts_of_an_escalation_omit_a_missing_risk_score(policy: Policy) ->
     )
 
     assert "risk_score" not in {fact.name for fact in decision.facts}
+
+
+# -----------------------------------------------------------------------------
+# Expected first response (CR-11)
+# -----------------------------------------------------------------------------
+
+
+def test_the_expected_response_is_the_domain_date_plus_the_category_s_count(
+    policy: Policy,
+) -> None:
+    """Every category's count is taken from the policy, not hardcoded."""
+    for category in DisputeCategory:
+        days = policy.first_response_days[category]
+        assert expected_first_response(policy, category, date(2026, 6, 18)) == date(
+            2026, 6, 18
+        ) + timedelta(days=days)
+
+
+def test_the_expected_response_crosses_a_month_boundary(policy: Policy) -> None:
+    """Calendar days, not business days: the count is added without regard to the month."""
+    filed_near_month_end = date(2026, 1, 30)
+
+    result = expected_first_response(
+        policy, DisputeCategory.SERVICE_NOT_RECEIVED, filed_near_month_end
+    )
+
+    assert result == date(2026, 2, 4)
+
+
+def test_the_expected_response_crosses_a_weekend(policy: Policy) -> None:
+    """A weekend is not skipped: the count is calendar days, never business days."""
+    friday = date(2026, 1, 30)
+    assert friday.weekday() == 4  # Friday, asserted for the reader
+
+    result = expected_first_response(policy, DisputeCategory.UNRECOGNIZED_CHARGE, friday)
+
+    assert result == date(2026, 2, 2)  # the following Monday, 3 calendar days later
+
+
+def test_the_expected_response_never_reads_the_clock(policy: Policy) -> None:
+    """The same policy, category and domain date always give the same date."""
+    once = expected_first_response(policy, DisputeCategory.FRAUD_CLAIM, date(2026, 6, 18))
+    again = expected_first_response(policy, DisputeCategory.FRAUD_CLAIM, date(2026, 6, 18))
+
+    assert once == again == date(2026, 6, 19)
 
 
 # -----------------------------------------------------------------------------

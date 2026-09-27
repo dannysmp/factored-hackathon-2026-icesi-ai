@@ -32,13 +32,16 @@ Business Flow
 2) Transaction date not in the future, and within the filing window of the category.
 3) No open dispute case already exists for the transaction.
 4) Routing: fraud claim; low confidence in the understood request; repeat complainer; amount at
-   or above the threshold, or unknown; risk score at or above the threshold.
+   or above the threshold, or unknown; risk score at or above the threshold, while routing on
+   the score is switched on.
 5) Otherwise eligible, with the confirmation the category requires.
 A fraud claim is not refused in steps 1-3; it is routed to a person in step 4.
 
 Runtime Contract
 ----------------
 ``evaluate_dispute(request, policy, *, today) -> PolicyDecision``
+``expected_first_response(policy, category, domain_date) -> date``: the domain date plus the
+category's ``first_response_days``, both taken as parameters; never the real clock.
 
 Limitations
 -----------
@@ -50,7 +53,7 @@ from __future__ import annotations
 
 # Standard libraries
 from collections.abc import Callable  # Type of an eligibility gate
-from datetime import date  # Today's date, passed in by the caller
+from datetime import date, timedelta  # Today's date and day-count arithmetic, never the clock
 
 # Local modules
 from app.domain.policy.models import (  # Vocabulary and value objects
@@ -124,7 +127,9 @@ def _routing_triggers(request: DisputeRequest, policy: Policy) -> tuple[ReasonCo
             ReasonCode.ESCALATE_AMOUNT_UNKNOWN,
         ),
         (
-            request.risk_score is not None and request.risk_score >= routing.risk_score_threshold,
+            routing.risk_routing_enabled
+            and request.risk_score is not None
+            and request.risk_score >= routing.risk_score_threshold,
             ReasonCode.ESCALATE_RISK_SCORE,
         ),
     )
@@ -290,3 +295,24 @@ def evaluate_dispute(request: DisputeRequest, policy: Policy, *, today: date) ->
         ),
         requires_confirmation=rule.requires_confirmation,
     )
+
+
+def expected_first_response(policy: Policy, category: DisputeCategory, domain_date: date) -> date:
+    """The date by which the bank gives its first response to a case filed on ``domain_date``.
+
+    Parameters
+    ----------
+    policy : Policy
+        The policy version in force.
+    category : DisputeCategory
+        The category of the filed case.
+    domain_date : date
+        The date the case was filed, already in the bank's operating zone; never the real clock.
+
+    Returns
+    -------
+    date
+        ``domain_date`` plus the category's ``first_response_days``, in calendar days: a weekend
+        or a month boundary is not skipped, since the count is calendar days, not business days.
+    """
+    return domain_date + timedelta(days=policy.first_response_days[category])

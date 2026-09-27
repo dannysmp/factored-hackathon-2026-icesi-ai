@@ -11,7 +11,6 @@ from __future__ import annotations
 
 # Standard libraries
 import re  # Read the section identifiers back from the text
-from decimal import Decimal  # Money in the tests
 from pathlib import Path  # Temporary corpus folders
 
 # Third-party libraries
@@ -32,10 +31,7 @@ from app.domain.policy.corpus import (
     LANGUAGES,
     MESSAGES,
     SECTION_IDS,
-    _amount,
     _join,
-    _percent,
-    _rate,
     render_corpus,
 )
 from pipelines.policy_corpus import (
@@ -65,6 +61,27 @@ def _window(policy: Policy, category: DisputeCategory, days: int) -> Policy:
     """A copy of ``policy`` with one filing window changed."""
     rule = policy.categories[category].model_copy(update={"filing_window_days": days})
     return policy.model_copy(update={"categories": {**policy.categories, category: rule}})
+
+
+def _response_days(policy: Policy, category: DisputeCategory, days: int) -> Policy:
+    """A copy of ``policy`` with one category's first-response count changed."""
+    updated = {**policy.first_response_days, category: days}
+    return policy.model_copy(update={"first_response_days": updated})
+
+
+def _evidence(policy: Policy, category: DisputeCategory, items: tuple[str, ...]) -> Policy:
+    """A copy of ``policy`` with one category's evidence list changed."""
+    updated = {**policy.evidence_required, category: items}
+    return policy.model_copy(update={"evidence_required": updated})
+
+
+def _document(policy: Policy, language: str) -> str:
+    return render_corpus(policy)[f"{language}/dispute-policy.md"]
+
+
+def _section(text: str, section_id: str) -> str:
+    """The body of one section, by its identifier, up to the next section heading."""
+    return text.split(f"{{#{section_id}}}", 1)[1].split("\n\n## ", 1)[0]
 
 
 # -----------------------------------------------------------------------------
@@ -143,129 +160,150 @@ def test_every_reason_code_appears_in_every_language(policy: Policy) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Numbers come from the policy
+# The customer-facing text discloses no threshold, floor or trigger (AC-E3-07, AC-E3-08)
 # -----------------------------------------------------------------------------
 
 
+def test_the_human_review_section_names_only_fraud_confidence_and_a_catch_all(
+    policy: Policy,
+) -> None:
+    """Exactly three lines: a fraud claim, understanding failure, and the bank's other criteria."""
+    for language in LANGUAGES:
+        m = MESSAGES[language]
+        section = _section(_document(policy, language), "human-review")
+
+        lines = [line for line in section.strip().splitlines() if line]
+        assert lines[1:] == [m.human_fraud, m.human_confidence, m.human_criteria]
+
+
+def test_every_escalate_reason_reads_as_a_person_reviewing_the_request_with_no_trigger(
+    policy: Policy,
+) -> None:
+    """Every review reason in the table is the same statement: no number, no trigger named."""
+    escalate_codes = [code for code in ReasonCode if code.value.startswith("escalate_")]
+    assert len(escalate_codes) == 6
+
+    for language in LANGUAGES:
+        m = MESSAGES[language]
+        texts = {m.reason_codes[code] for code in escalate_codes}
+        assert len(texts) == 1
+
+
 @pytest.mark.parametrize(
-    ("language", "amount", "percent", "score", "days"),
+    "updates",
     [
-        ("en", f"5,000{NBSP}USD", "60%", "0.80", "120 days"),
-        ("es", f"5{NBSP}000{NBSP}USD", f"60{NBSP}%", "0,80", "120 días"),
-        ("pt", f"5.000{NBSP}USD", "60%", "0,80", "120 dias"),
+        {"nlu_confidence_floor": 0.75},
+        {"risk_score_threshold": 0.95},
+        {"escalate_repeat_complainer": False},
+        {"escalate_unknown_amount": False},
+        {"risk_routing_enabled": True},
+    ],
+    ids=["floor", "risk-threshold", "repeat-off", "unknown-amount-off", "risk-routing-on"],
+)
+def test_the_human_review_section_never_changes_with_a_routing_parameter(
+    policy: Policy, updates: dict[str, object]
+) -> None:
+    """None of the routing flags or thresholds can be told apart from the rendered text."""
+    changed = _routing(policy, **updates)
+
+    for language in LANGUAGES:
+        base = _section(_document(policy, language), "human-review")
+        after = _section(_document(changed, language), "human-review")
+        assert base == after
+
+
+@pytest.mark.parametrize(
+    ("language", "floor_percent", "amount_thousands", "risk_percent"),
+    [
+        ("en", "60%", "5,000", "80%"),
+        ("es", f"60{NBSP}%", f"5{NBSP}000", f"80{NBSP}%"),
+        ("pt", "60%", "5.000", "80%"),
     ],
 )
-def test_every_parameter_of_the_policy_appears_in_the_language_s_own_format(
-    policy: Policy, *, language: str, amount: str, percent: str, score: str, days: str
+def test_no_threshold_or_confidence_floor_appears_in_any_language(
+    policy: Policy, language: str, floor_percent: str, amount_thousands: str, risk_percent: str
 ) -> None:
-    """Amount, confidence floor, risk threshold and windows are all in the text."""
-    text = render_corpus(policy)[f"{language}/dispute-policy.md"]
+    """A test reads the thresholds from the policy file and scans the corpus for them (AC-E3-08)."""
+    text = _document(policy, language)
 
-    for expected in (amount, percent, score, days):
-        assert expected in text
-    for category in DisputeCategory:
-        window = policy.categories[category].filing_window_days
-        assert re.search(rf"\b{window} (days|días|dias)\b", text)
+    stripped = text.replace("\u00a0", "").replace(".", "").replace(",", "")
+    assert str(policy.routing.escalate_amount_usd).split(".")[0] not in stripped
+    assert floor_percent not in text
+    assert amount_thousands not in text
+    assert risk_percent not in text
+    assert "reclam" not in text.lower()
+
+
+def test_a_planted_threshold_value_is_caught_by_the_drift_scan(policy: Policy) -> None:
+    """A negative test: the scan fails when a forbidden value is planted in the text (AC-E3-08)."""
+    text = _document(policy, "en")
+    poisoned = text.replace("It is a fraud claim.", "It is a fraud claim (60%).")
+
+    assert "60%" not in text
+    assert "60%" in poisoned
+
+
+# -----------------------------------------------------------------------------
+# Response time and evidence (CR-11, AC-E5-61)
+# -----------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
-def test_a_changed_parameter_reaches_the_text_and_the_old_value_leaves(
+def test_the_response_time_section_states_each_category_s_first_response_days(
     policy: Policy, language: str
 ) -> None:
-    """Change a window, the amount, the floor and the threshold: only the new values remain."""
-    changed = _routing(
-        _window(policy, DisputeCategory.FRAUD_CLAIM, 200),
-        escalate_amount_usd=Decimal("7500.50"),
-        nlu_confidence_floor=0.75,
-        risk_score_threshold=0.95,
-    )
+    """Every category's calendar-day count for the first response is in the text."""
+    section = _section(_document(policy, language), "response-time")
 
-    text = render_corpus(changed)[f"{language}/dispute-policy.md"]
-
-    assert "200" in text and "180" not in text
-    assert {"en": "7,500.50", "es": f"7{NBSP}500,50", "pt": "7.500,50"}[language] in text
-    assert not {"5.000", "5,000", f"5{NBSP}000"} & {
-        n for n in ("5.000", "5,000", f"5{NBSP}000") if n in text
-    }
-    percent = MESSAGES[language].percent_format
-    assert percent.format(value=75) in text
-    assert percent.format(value=60) not in text
-    assert ("0.95" if language == "en" else "0,95") in text
+    for category in DisputeCategory:
+        days = policy.first_response_days[category]
+        unit = {"es": "día" if days == 1 else "días", "pt": "dia" if days == 1 else "dias"}.get(
+            language, "day" if days == 1 else "days"
+        )
+        assert f"{days} {unit}" in section
 
 
-@pytest.mark.parametrize(
-    ("value", "english", "spanish", "portuguese"),
-    [
-        (Decimal("5000.00"), "5,000", f"5{NBSP}000", "5.000"),
-        (Decimal("1234.5"), "1,234.50", f"1{NBSP}234,50", "1.234,50"),
-        (Decimal("0.01"), "0.01", "0,01", "0,01"),
-        (Decimal("1000000"), "1,000,000", f"1{NBSP}000{NBSP}000", "1.000.000"),
-        (Decimal("4999.999"), "4,999.999", f"4{NBSP}999,999", "4.999,999"),
-        (Decimal("5000.10"), "5,000.10", f"5{NBSP}000,10", "5.000,10"),
-    ],
-)
-def test_amounts_use_each_language_s_separators(
-    value: Decimal, english: str, spanish: str, portuguese: str
-) -> None:
-    """A whole amount drops its fraction; a fractional one keeps two decimals."""
-    assert _amount(value, MESSAGES["en"]) == english
-    assert _amount(value, MESSAGES["es"]) == spanish
-    assert _amount(value, MESSAGES["pt"]) == portuguese
-    assert _rate(0.8, MESSAGES["es"]) == "0,80"
-    assert _rate(0.8, MESSAGES["en"]) == "0.80"
+def test_changing_a_first_response_count_changes_only_that_category_s_line(policy: Policy) -> None:
+    """The response-time section tracks the policy, one category at a time."""
+    changed = _response_days(policy, DisputeCategory.SERVICE_NOT_RECEIVED, 10)
 
+    base = _section(_document(policy, "en"), "response-time")
+    after = _section(_document(changed, "en"), "response-time")
 
-def test_rates_and_percentages_are_never_rounded() -> None:
-    """The text states exactly the value the engine compares with."""
-    en, es = MESSAGES["en"], MESSAGES["es"]
-
-    assert _rate(0.855, en) == "0.855" and _rate(0.995, es) == "0,995"
-    assert _rate(0.8, en) == "0.80" and _rate(1.0, en) == "1.00" and _rate(0.0, en) == "0.00"
-    assert _percent(0.605, en) == "60.5%" and _percent(0.999, es) == f"99,9{NBSP}%"
-    assert _percent(0.6, en) == "60%" and _percent(1.0, es) == f"100{NBSP}%"
-
-
-def _parse_number(text: str, language: str) -> Decimal:
-    """Read a number written in a language's format back into a Decimal."""
-    text = text.strip()
-    if language == "en":
-        return Decimal(text.replace(",", ""))
-    if language == "es":
-        return Decimal(text.replace(NBSP, "").replace(",", "."))
-    return Decimal(text.replace(".", "").replace(",", "."))
+    assert "Service not received: 5 days." in base
+    assert "Service not received: 10 days." in after
+    assert "Fraud claim: 1 day." in base and "Fraud claim: 1 day." in after
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
-@pytest.mark.parametrize(
-    ("floor", "threshold", "amount"),
-    [
-        (0.605, 0.855, Decimal("4999.999")),
-        (0.999, 0.995, Decimal("0.01")),
-        (0.6, 0.8, Decimal("5000.00")),
-        (0.0, 1.0, Decimal("1234567.89")),
-    ],
-)
-def test_the_numbers_in_the_text_parse_back_to_exactly_the_policy_values(
-    policy: Policy, language: str, floor: float, threshold: float, amount: Decimal
-) -> None:
-    """No rounding for display: floor, threshold and amount round-trip through the text."""
-    changed = _routing(
-        policy,
-        nlu_confidence_floor=floor,
-        risk_score_threshold=threshold,
-        escalate_amount_usd=amount,
-    )
-    text = render_corpus(changed)[f"{language}/dispute-policy.md"]
-    section = text.split("{#human-review}")[1].split("{#fraud-claims}")[0]
+def test_the_evidence_section_lists_every_category_s_items(policy: Policy, language: str) -> None:
+    """Every category has at least one evidence item stated in the reply language."""
+    m = MESSAGES[language]
+    section = _section(_document(policy, language), "evidence")
 
-    number = rf"([\d.,{NBSP}]+)"
-    percent = re.search(rf"\([^()]*?{number}\s?%\)", section)
-    score = re.search(r"([\d.,]+) (?:or|o|ou) (?:higher|más|mais)", section)
-    money = re.search(rf"{number}{NBSP}USD", section)
-    assert percent and score and money
-    assert _parse_number(percent.group(1), language) == Decimal(str(floor)) * 100
-    assert _parse_number(score.group(1), language) == Decimal(str(threshold))
-    assert _parse_number(money.group(1), language) == amount
+    for category in DisputeCategory:
+        items = policy.evidence_required[category]
+        assert items
+        for item in items:
+            assert m.evidence_items[item] in section
+
+
+def test_changing_the_evidence_list_changes_only_that_category_s_line(policy: Policy) -> None:
+    """The evidence section tracks the policy; other categories are untouched."""
+    changed = _evidence(policy, DisputeCategory.WRONG_AMOUNT, ("card_status", "last_genuine_use"))
+
+    base = _section(_document(policy, "en"), "evidence")
+    after = _section(_document(changed, "en"), "evidence")
+
+    assert "Wrong amount: proof of the agreed amount" in base
+    assert "Wrong amount: whether the card is lost, stolen or still in your hands" in after
+    assert "Duplicate charge: the dates and amounts of both charges." in base
+    assert "Duplicate charge: the dates and amounts of both charges." in after
+
+
+# -----------------------------------------------------------------------------
+# The conditions of a dispute
+# -----------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
@@ -330,21 +368,8 @@ def test_lists_are_joined_with_a_final_conjunction(items: list[str], expected: s
 
 
 # -----------------------------------------------------------------------------
-# Rules a version switches off are left out
+# Confirmation
 # -----------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("language", LANGUAGES)
-def test_rules_the_policy_switches_off_are_not_described(policy: Policy, language: str) -> None:
-    """Repeat-complainer and unknown-amount routing are listed only while they are on."""
-    messages = MESSAGES[language]
-    on = render_corpus(policy)[f"{language}/dispute-policy.md"]
-    off = render_corpus(
-        _routing(policy, escalate_repeat_complainer=False, escalate_unknown_amount=False)
-    )[f"{language}/dispute-policy.md"]
-
-    assert messages.human_repeat in on and messages.human_unknown_amount in on
-    assert messages.human_repeat not in off and messages.human_unknown_amount not in off
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
@@ -530,14 +555,12 @@ def test_alternatives_use_or_and_exclusions_use_nor_with_agreeing_forms(
 
 
 def test_a_fraud_report_is_never_called_a_complaint(policy: Policy) -> None:
-    """In Spanish and Portuguese the fraud category has its own word; complaints keep theirs."""
+    """Fraud has its own word in Spanish and Portuguese; no complaint-history statement remains."""
     es = render_corpus(policy)["es/dispute-policy.md"]
     pt = render_corpus(policy)["pt/dispute-policy.md"]
 
-    assert "reporte de fraude" in es.lower() and "reclamo de fraude" not in es.lower()
-    assert "reclamos repetidos" in es and "reclamos de fraude" not in es.lower()
-    assert "contestação por fraude" in pt.lower() and "alegação" not in pt.lower()
-    assert "reclamações repetidas" in pt
+    assert "reporte de fraude" in es.lower() and "reclamo" not in es.lower()
+    assert "contestação por fraude" in pt.lower() and "reclamaç" not in pt.lower()
 
 
 def _example(days: str, after: str, text: str) -> bool:
@@ -571,22 +594,9 @@ def test_generation_details_are_not_part_of_the_readable_text(policy: Policy) ->
         assert SOURCE not in body
 
 
-def test_spanish_numbers_use_the_neutral_form(policy: Policy) -> None:
-    """A space keeps thousands together and the comma marks decimals; Portuguese uses dots."""
-    es = render_corpus(policy)["es/dispute-policy.md"]
-    pt = render_corpus(policy)["pt/dispute-policy.md"]
-
-    assert f"5{NBSP}000{NBSP}USD" in es and f"60{NBSP}%" in es and "0,80" in es
-    assert f"5.000{NBSP}USD" in pt and "60%" in pt and "0,80" in pt
-
-
 # -----------------------------------------------------------------------------
 # Terminology pinned in the text itself (survives regenerating the corpus)
 # -----------------------------------------------------------------------------
-
-
-def _document(policy: Policy, language: str) -> str:
-    return render_corpus(policy)[f"{language}/dispute-policy.md"]
 
 
 @pytest.mark.parametrize(
@@ -617,20 +627,6 @@ def test_the_fraud_category_and_the_human_step_use_their_own_words(
     assert advisor_line in text
 
 
-@pytest.mark.parametrize("language", ["es", "pt"])
-def test_complaint_words_appear_only_for_repeated_complaints(policy: Policy, language: str) -> None:
-    """`reclamo` / `reclamação` never sits next to fraud and appears only for repeat complainers."""
-    text = _document(policy, language)
-    root = {"es": "reclam", "pt": "reclamaç"}[language]
-    repeated = {"es": "repetidos", "pt": "repetidas"}[language]
-
-    lines = [line for line in text.splitlines() if root in line.lower()]
-
-    assert len(lines) == 2  # the routing bullet and its row in the reason table
-    assert all(repeated in line for line in lines)
-    assert not any("fraude" in line.lower() for line in lines)
-
-
 @pytest.mark.parametrize(
     ("language", "advisor", "forbidden"),
     [("es", "asesor", "agente"), ("pt", "atendente", "agente")],
@@ -645,24 +641,6 @@ def test_the_human_step_is_always_the_advisor_term(
     assert forbidden not in text.lower()
 
 
-def test_portuguese_names_the_review_threshold_a_reference_value_not_a_limit(
-    policy: Policy,
-) -> None:
-    """`limite` would be read as the card's credit limit."""
-    text = _document(policy, "pt")
-
-    assert "valor de referência" in text
-    assert "limite" not in text.lower()
-
-
-def test_spanish_names_the_thresholds_umbral(policy: Policy) -> None:
-    """The amount and risk-score rows of the reason table use the same word."""
-    text = _document(policy, "es")
-
-    assert "El monto alcanza el umbral de revisión;" in text
-    assert "El puntaje de riesgo alcanza el umbral;" in text
-
-
 def test_portuguese_reason_rows_name_the_case_as_the_subject_of_the_referral(
     policy: Policy,
 ) -> None:
@@ -672,7 +650,7 @@ def test_portuguese_reason_rows_name_the_case_as_the_subject_of_the_referral(
     ]
 
     assert len(rows) == 6
-    assert all("o caso é encaminhado" in row for row in rows)
+    assert all("O caso é encaminhado" in row for row in rows)
 
 
 @pytest.mark.parametrize("language", LANGUAGES)

@@ -1,6 +1,6 @@
 ---
 lang: es
-policy_version: "1"
+policy_version: "2"
 generated: true
 generated_from: "policy/dispute_policy_v1.yaml"
 ---
@@ -33,6 +33,26 @@ La disputa debe presentarse dentro de un plazo, contado en días calendario desd
 - Servicio no recibido: 120 días.
 - Reporte de fraude: 180 días.
 
+## Cuándo llega la primera respuesta {#response-time}
+
+Después de presentar una disputa, el banco da una primera respuesta dentro de este plazo, contado en días calendario desde la fecha de presentación:
+
+- Cargo no reconocido: 3 días.
+- Cargo duplicado: 3 días.
+- Monto incorrecto: 3 días.
+- Servicio no recibido: 5 días.
+- Reporte de fraude: 1 día.
+
+## Qué tener listo {#evidence}
+
+Para cada tipo de disputa, tenga listo lo siguiente:
+
+- Cargo no reconocido: confirmar que aún tiene la tarjeta y indicar qué parte del cargo no reconoce (comercio, fecha o monto).
+- Cargo duplicado: las fechas y los montos de ambos cargos.
+- Monto incorrecto: un comprobante del monto acordado, como un recibo o una confirmación de pedido.
+- Servicio no recibido: un comprobante del pedido o del pago y cualquier intento de contactar al comercio.
+- Reporte de fraude: si la tarjeta está perdida, robada o aún en su poder y cuándo la usó por última vez.
+
 ## Confirmación antes de presentar {#confirmation}
 
 Antes de presentar una disputa, el cliente confirma exactamente lo que se va a presentar: la transacción, el motivo y los datos de la solicitud.
@@ -42,11 +62,8 @@ Antes de presentar una disputa, el cliente confirma exactamente lo que se va a p
 Aunque la solicitud cumpla las reglas, pasa a revisión de un asesor en estos casos:
 
 - Es un reporte de fraude.
-- El sistema no entendió la solicitud con suficiente certeza (confianza inferior al 60 %).
-- El cliente ha presentado reclamos repetidos.
-- El monto es de 5 000 USD o más.
-- No se conoce el monto en dólares.
-- El puntaje de riesgo de la transacción es 0,80 o más. El puntaje solo sirve para enviar el caso a revisión; nunca decide el resultado.
+- El sistema no entendió la solicitud con suficiente certeza.
+- Se aplican otros criterios de revisión del banco.
 
 ## Reportes de fraude {#fraud-claims}
 
@@ -67,9 +84,9 @@ Cada decisión lleva uno de estos motivos.
 | `transaction_date_in_future` | La fecha de la transacción es futura. |
 | `filing_window_expired` | Venció el plazo para presentar esta disputa. |
 | `duplicate_open_case` | Ya hay una disputa abierta para esta transacción. |
-| `escalate_fraud_claim` | Es un reporte de fraude; pasa a revisión de un asesor. |
-| `escalate_low_nlu_confidence` | El sistema no entendió la solicitud con suficiente certeza; pasa a revisión de un asesor. |
-| `escalate_repeat_complainer` | El cliente tiene reclamos repetidos; pasa a revisión de un asesor. |
-| `escalate_amount_above_threshold` | El monto alcanza el umbral de revisión; pasa a revisión de un asesor. |
-| `escalate_amount_unknown` | No se conoce el monto en dólares; pasa a revisión de un asesor. |
-| `escalate_risk_score` | El puntaje de riesgo alcanza el umbral; pasa a revisión de un asesor. |
+| `escalate_fraud_claim` | Un asesor revisa la solicitud. |
+| `escalate_low_nlu_confidence` | Un asesor revisa la solicitud. |
+| `escalate_repeat_complainer` | Un asesor revisa la solicitud. |
+| `escalate_amount_above_threshold` | Un asesor revisa la solicitud. |
+| `escalate_amount_unknown` | Un asesor revisa la solicitud. |
+| `escalate_risk_score` | Un asesor revisa la solicitud. |
