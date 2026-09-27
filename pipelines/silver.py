@@ -43,7 +43,11 @@ version: the older version stays in the cleaned table. Quarantined rows hold the
 delivered, with canonical spellings applied; rows quarantined for an orphan reference have
 already been typed and hold their values rendered as text (``false`` for ``False``, ``10.0000``
 for ``10.00``). The code version
-records the commit, suffixed ``-dirty`` when tracked files have uncommitted changes.
+records the commit; when tracked files have uncommitted changes it is suffixed
+``-dirty-<digest>``, the digest identifying those changes, and it is ``unknown`` outside a
+repository. The digest is taken over the output of ``git diff``, so it also depends on the
+machine's diff formatting configuration (``diff.noprefix``, ``diff.context``,
+``diff.algorithm``).
 """
 
 from __future__ import annotations
@@ -688,31 +692,43 @@ def run_silver(
 # -----------------------------------------------------------------------------
 
 
-def _git(*arguments: str) -> str | None:
-    """Output of a git command, or None when git is unavailable or the command fails."""
+def _git_bytes(*arguments: str) -> bytes | None:
+    """Raw output of a git command, or None when git is unavailable or the command fails."""
     try:
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
             ["git", *arguments],  # noqa: S607 - resolved through PATH by design
             capture_output=True,
-            text=True,
             timeout=10,
             check=True,
         )
     except (OSError, subprocess.SubprocessError):
         return None
-    return result.stdout.strip()
+    return result.stdout
+
+
+def _git(*arguments: str) -> str | None:
+    """Text output of a git command, or None when git is unavailable or the command fails."""
+    output = _git_bytes(*arguments)
+    return None if output is None else output.decode("utf-8", errors="replace").strip()
 
 
 def git_version() -> str:
-    """Short commit id of the working tree, suffixed ``-dirty`` when tracked files have changes.
+    """Short commit id of the working tree, suffixed with a digest of its changes when modified.
 
-    ``unknown`` outside a repository. Uncommitted changes are marked so outputs built from
-    modified code are never taken for outputs of the recorded commit.
+    A tree with uncommitted changes to tracked files is stamped ``<commit>-dirty-<digest>``,
+    the digest covering staged and unstaged changes: the same modified tree always yields the
+    same stamp and two different modified trees never share one. ``unknown`` outside a
+    repository or when the changes cannot be read, so a stamp never claims more than is known.
     """
     commit = _git("rev-parse", "--short", "HEAD")
     if not commit:
         return "unknown"
-    return f"{commit}-dirty" if _git("status", "--porcelain", "--untracked-files=no") else commit
+    changes = _git_bytes("diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv", "--no-color")
+    if changes is None:
+        return "unknown"
+    if not changes:
+        return commit
+    return f"{commit}-dirty-{hashlib.sha256(changes).hexdigest()[:8]}"
 
 
 def main(argv: Sequence[str] | None = None) -> int:

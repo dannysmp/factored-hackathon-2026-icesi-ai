@@ -16,6 +16,8 @@ from __future__ import annotations
 # Standard libraries
 import hashlib  # Compare artefacts byte for byte
 import json  # Read manifests
+import os  # Null device for the git configuration
+import subprocess  # Build a throwaway repository
 from datetime import date  # Partition days
 from pathlib import Path  # Temporary dataset locations
 from typing import Any  # Query results
@@ -1007,17 +1009,125 @@ def test_only_capitalised_booleans_are_accepted(clean: tuple[Path, Path]) -> Non
     assert manifest["quarantine_reasons"] == {"type:accepts_marketing": 1}
 
 
-def test_the_code_version_is_marked_when_the_working_tree_has_uncommitted_changes(
+def _repository(root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A throwaway repository with one committed file, entered for the duration of the test.
+
+    The machine's git configuration is ignored so the stamps do not depend on it.
+    """
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+    def git(*arguments: str) -> None:
+        subprocess.run(  # noqa: S603 - fixed argv, no shell
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *arguments],  # noqa: S607
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "--quiet")
+    tracked = root / "module.py"
+    tracked.write_text("value = 1\n", encoding="utf-8")
+    git("add", "module.py")
+    git("-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "initial")
+    monkeypatch.chdir(root)
+    return tracked
+
+
+def test_a_clean_working_tree_is_stamped_with_the_bare_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a tree identical to the commit carries the plain commit id."""
+    _repository(tmp_path, monkeypatch)
+    commit = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    assert silver_module.git_version() == commit
+
+
+def test_the_same_modified_tree_is_stamped_identically_every_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rebuild of unchanged, modified code is recognized as the same code."""
+    tracked = _repository(tmp_path, monkeypatch)
+    tracked.write_text("value = 2\n", encoding="utf-8")
+
+    first = silver_module.git_version()
+
+    assert "-dirty-" in first
+    assert silver_module.git_version() == first
+
+
+def test_two_different_modified_trees_are_stamped_differently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Outputs built from different modifications are never taken for one another."""
+    tracked = _repository(tmp_path, monkeypatch)
+    clean = silver_module.git_version()
+
+    tracked.write_text("value = 2\n", encoding="utf-8")
+    first = silver_module.git_version()
+    tracked.write_text("value = 3\n", encoding="utf-8")
+    second = silver_module.git_version()
+
+    assert len({clean, first, second}) == 3
+    assert first.split("-dirty-")[0] == second.split("-dirty-")[0] == clean
+
+
+def test_reverting_a_modification_restores_the_clean_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stamp follows the content of the tree, not the history of edits."""
+    tracked = _repository(tmp_path, monkeypatch)
+    clean = silver_module.git_version()
+
+    tracked.write_text("value = 2\n", encoding="utf-8")
+    tracked.write_text("value = 1\n", encoding="utf-8")
+
+    assert silver_module.git_version() == clean
+
+
+def test_a_staged_change_is_stamped_like_the_same_unstaged_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stamp describes the tree, whether or not its changes are staged."""
+    tracked = _repository(tmp_path, monkeypatch)
+    tracked.write_text("value = 2\n", encoding="utf-8")
+    unstaged = silver_module.git_version()
+
+    subprocess.run(["git", "add", "module.py"], cwd=tmp_path, check=True)  # noqa: S607
+
+    assert silver_module.git_version() == unstaged
+
+
+def test_a_modified_file_that_is_not_utf8_is_stamped_not_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Changes to files in other encodings are hashed as bytes, never decoded."""
+    tracked = _repository(tmp_path, monkeypatch)
+    tracked.write_bytes(b"a\nb\xff\xfe\n")
+    first = silver_module.git_version()
+    tracked.write_bytes(b"a\nb\xfe\xff\n")
+    second = silver_module.git_version()
+
+    assert "-dirty-" in first
+    assert silver_module.git_version() == second
+    assert first != second
+
+
+def test_a_change_that_cannot_be_read_yields_an_unknown_stamp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Outputs built from modified code are never taken for outputs of the recorded commit."""
-    answers = {"rev-parse": "abc1234", "status": " M pipelines/silver.py"}
-    monkeypatch.setattr(silver_module, "_git", lambda *args: answers[args[0]])
+    """A stamp never claims a commit it cannot tie to the tree's content."""
+    monkeypatch.setattr(silver_module, "_git", lambda *args: "abc1234")
+    monkeypatch.setattr(silver_module, "_git_bytes", lambda *args: None)
 
-    assert silver_module.git_version() == "abc1234-dirty"
-
-    answers["status"] = ""
-    assert silver_module.git_version() == "abc1234"
+    assert silver_module.git_version() == "unknown"
 
 
 def test_a_build_that_fails_midway_leaves_no_manifest_of_the_earlier_build(
