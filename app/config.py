@@ -134,6 +134,10 @@ class Settings(BaseSettings):
         Shared secret the sandbox login endpoint requires (at least 16 characters).
     database_url : SecretStr | None
         DSN of the serving store; optional until a feature that reads or writes it runs.
+    data_as_of_date : str | None
+        The domain date override (ADR-15): an ISO date, or the literal ``"system"`` for the real
+        date in the bank's own zone. Optional; when absent, the domain calendar reads the loaded
+        seed's own reference date instead.
     """
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)
@@ -150,6 +154,7 @@ class Settings(BaseSettings):
     test_identity_enabled: bool = False
     test_identity_key: SecretStr | None = None
     database_url: SecretStr | None = None
+    data_as_of_date: str | None = None
 
     @field_validator("nlu_model", "render_model")
     @classmethod
