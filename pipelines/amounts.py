@@ -4,8 +4,8 @@ Shared Amount Conversion
 
 Overview
 --------
-The one expression of "the transaction's amount in US dollars, and where it came from" (CR-1).
-It is a source's own figure when stated, a same-day conversion when a rate exists, and unknown
+The one expression of the transaction's amount in US dollars, and where it came from. It is a
+source's own figure when stated, a same-day conversion when a rate exists, and unknown
 only when neither is available. Every consumer that needs this figure — the risk-feature mart and
 the operational seed — builds it from this module, so the same transaction never gets two answers.
 
