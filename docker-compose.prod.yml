@@ -1,0 +1,58 @@
+# =============================================================================
+# docker-compose.prod.yml — the deployed stack, on top of the base compose
+# =============================================================================
+# Purpose:
+#   Adds the backend, the web build and Caddy to the base Postgres service
+#   (docker-compose.yml), rather than duplicating it (ADR-13: one compose
+#   file, local/prod parity). Metabase is a later slice's own service.
+# Design:
+#   Every image reference and every secret is an environment variable, never
+#   a literal in this file: `ECR_REGISTRY` (the account-specific registry
+#   host), `IMAGE_TAG`, `ANTHROPIC_API_KEY` and `SESSION_SIGNING_KEY` (read
+#   from SSM Parameter Store by the deploy step, never written to disk here)
+#   and `HOST_NAME` (the sslip.io address, or a real domain later).
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   (the deploy pipeline, a later slice, sets the environment variables above
+#   and runs this on the host; not run directly from a developer machine)
+# =============================================================================
+
+services:
+  backend:
+    image: ${ECR_REGISTRY}/dispute-intake-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      APP_ENV: prod
+      SERVICE_VERSION: ${IMAGE_TAG:-dev}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dispute_intake}:${POSTGRES_PASSWORD:-dispute_intake}@postgres:5432/${POSTGRES_DB:-dispute_intake}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      SESSION_SIGNING_KEY: ${SESSION_SIGNING_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    image: ${ECR_REGISTRY}/dispute-intake-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HOST_NAME: ${HOST_NAME}
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - backend
+      - web
+
+volumes:
+  caddy-data:
+  caddy-config:
