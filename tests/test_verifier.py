@@ -5,9 +5,9 @@ Output Verifier Tests
 Component: ``app.conversation.verifier``. Hermetic and pure: verification reads only the envelope,
 candidate and slot values passed in.
 
-Every failure mode is seeded directly, per the E7 acceptance criterion that the verifier blocks a
-seeded inconsistent response in tests — none of these needs a real model renderer (slice 2.5,
-which does not exist yet and ships disabled until this slice merges, per D76).
+Every failure mode is seeded directly against fixtures; none of these needs a real model renderer,
+since grounding is a property of the algorithm itself, checked the same way regardless of what
+produces the candidate text.
 """
 
 from __future__ import annotations

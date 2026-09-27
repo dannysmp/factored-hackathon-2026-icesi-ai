@@ -5,12 +5,11 @@ Output Verifier
 Overview
 --------
 Checks a model-rendered candidate reply against its envelope and substitutes the grounded values
-it names, or rejects it — the mechanism D76 assigned this slice: the model never writes a digit
-itself, the renderer (here, the substitution step) fills declared placeholders from grounded
-values only, and any digit the model wrote on its own is rejected before it ever reaches a
-customer. A template-mode reply never reaches this module: it is already fully grounded by
-construction (``app.conversation.renderer``), and a refusal cannot be model-rendered at all
-(``contracts.service_v1.envelope``'s own validator).
+it names, or rejects it: the model never writes a digit itself, the renderer (here, the
+substitution step) fills declared placeholders from grounded values only, and any digit the model
+wrote on its own is rejected before it ever reaches a customer. A template-mode reply never reaches
+this module: it is already fully grounded by construction (``app.conversation.renderer``), and a
+refusal cannot be model-rendered at all (``contracts.service_v1.envelope``'s own validator).
 
 Scope
 -----
@@ -25,10 +24,9 @@ Design Principles
   rejects the reply outright, before any placeholder is even parsed — checked with
   ``str.isnumeric()``, not ``str.isdigit()``, so a vulgar fraction, a circled digit or a
   single-character Roman numeral (``½``, ``⑩``, ``Ⅻ``) rejects exactly like an ASCII digit, not
-  only the narrower set ``isdigit()`` recognizes. This is the property D76 asked for after the
-  prior text-based numbers guard was found gameable — nothing here inspects the *finished*
-  sentence for a suspicious-looking number, because there is no numeral character left in it to
-  inspect by the time substitution runs.
+  only the narrower set ``isdigit()`` recognizes. A prior guard that inspected the *finished*
+  sentence for a suspicious-looking number was found gameable; nothing here inspects finished
+  text, because there is no numeral character left in it to inspect by the time substitution runs.
 - Cross-customer leak scan and decision consistency fall out of the same mechanism rather than a
   second detector: ``SlotValues`` is built from this envelope's own facts, decisions and sources
   (a caller's job, not verified here), so a value from another customer or a contradicted decision

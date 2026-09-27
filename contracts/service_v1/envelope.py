@@ -39,8 +39,8 @@ Design Principles
   fields for its intent (``GroundedField``, ``INTENT_ALLOWED_FIELDS``), and the output verifier
   substitutes the actual value and rejects any reply that writes a digit on its own instead of
   naming a field. Grounding is a property the verifier enforces structurally, not a pattern it
-  detects in finished text (D76) — a refusal is exempted by construction, since it always renders
-  from the fixed-wording template path.
+  detects in finished text — a refusal is exempted by construction, since it always renders from
+  the fixed-wording template path.
 
 Runtime Contract
 ----------------
@@ -511,9 +511,9 @@ class GroundedField(StrEnum):
 
     The model-rendered reply names a field (``{{amount}}``); the renderer substitutes the actual
     value from ``facts``, ``decisions`` or ``sources`` before the customer sees it, and the output
-    verifier rejects a reply that writes a digit itself instead of naming a field (D76). The model
-    never sees the substituted value, only the closed set of names it may reference for the
-    envelope's intent.
+    verifier rejects a reply that writes a digit itself instead of naming a field. The model never
+    sees the substituted value, only the closed set of names it may reference for the envelope's
+    intent.
     """
 
     AMOUNT = "amount"
