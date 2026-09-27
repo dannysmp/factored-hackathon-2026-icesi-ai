@@ -99,7 +99,7 @@
       "period": "test"
     }
   ],
-  "code_version": "b2c30e3",
+  "code_version": "c1472f2",
   "data_provenance": "The transaction and fraud labels are synthetic, generated for this project; they are not drawn from any real bank, customer or regulator (see plan/docs/data-plan.md).",
   "intended_use": "Routing only: the score can send an otherwise eligible dispute to a person for review. It never decides a dispute's outcome, and a missing or absent score is treated exactly like a routing rule that does not apply.",
   "leakage_review": "Every feature uses only information available at or before the transaction; the source's own fraud score, authorisation code and status are excluded; the full review is in reports/risk-features.md.",
@@ -121,5 +121,5 @@
   },
   "test_scoring": null,
   "threshold": null,
-  "timestamp": "2026-09-27T21:24:13.406577+00:00"
+  "timestamp": "2026-09-27T22:11:38.292627+00:00"
 }
