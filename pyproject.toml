@@ -27,6 +27,7 @@ dependencies = [
     "pydantic-settings>=2.4,<3",  # Typed, fail-fast configuration from the environment
     "pyjwt>=2.8,<3",  # Signs and verifies the short-lived session tokens
     "pyyaml>=6,<7",  # Loads the versioned dispute-policy files
+    "anthropic>=0.69,<1",  # Client for the language model API behind the LLM port
 ]
 
 [dependency-groups]
