@@ -561,6 +561,44 @@ def test_command_line_exits_with_one_when_a_table_could_not_be_processed(
     assert "| customers | InvalidHeader:" in report.read_text(encoding="utf-8")
 
 
+def test_a_crash_during_the_build_removes_a_stale_report(
+    clean: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reader of the report alone must never take an earlier run's result for this one's."""
+    raw, out = clean
+    report = out.parent / "quality.md"
+    report.write_text("stale report from an earlier run", encoding="utf-8")
+
+    def _crash(*args: object, **kwargs: object) -> None:
+        raise MemoryError("simulated crash")
+
+    monkeypatch.setattr(silver_module, "run_silver", _crash)
+
+    with pytest.raises(MemoryError):
+        main(["--raw", str(raw), "--out", str(out), "--report", str(report)])
+
+    assert not report.exists()
+
+
+def test_an_interrupted_build_removes_a_stale_report(
+    clean: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-C during the build is not an ``Exception``, but must still clear a stale report."""
+    raw, out = clean
+    report = out.parent / "quality.md"
+    report.write_text("stale report from an earlier run", encoding="utf-8")
+
+    def _interrupt(*args: object, **kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(silver_module, "run_silver", _interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        main(["--raw", str(raw), "--out", str(out), "--report", str(report)])
+
+    assert not report.exists()
+
+
 def test_report_lists_counts_and_reason_codes_but_never_data_values(
     clean: tuple[Path, Path],
 ) -> None:

@@ -751,10 +751,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr
     )
-    outcomes = run_silver(
-        args.raw, args.out, code_version=args.code_version or git_version(), force=args.force
-    )
-    args.report.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        outcomes = run_silver(
+            args.raw, args.out, code_version=args.code_version or git_version(), force=args.force
+        )
+    except (Exception, KeyboardInterrupt):
+        # A report from an earlier run must never be mistaken for this run's result, whether the
+        # build failed or was interrupted (Ctrl-C is not an Exception, so it is named explicitly).
+        args.report.unlink(missing_ok=True)
+        raise
     args.report.write_text(render_quality_report(outcomes), encoding="utf-8")
     logger.info("silver_report_written report=%s", args.report)
     return 1 if any(o.status is Status.SKIPPED for o in outcomes) else 0
