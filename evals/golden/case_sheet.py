@@ -33,8 +33,8 @@ when ``--check`` finds drift.
 
 Limitations
 -----------
-Only the human-required, normal and ambiguous categories exist as of this slice; the sheet holds
-80 of the golden set's 135 cases until the remaining category modules land.
+Only the human-required, normal, ambiguous and unsupported categories exist as of this slice;
+the sheet holds 93 of the golden set's 135 cases until the remaining category modules land.
 """
 
 from __future__ import annotations
@@ -52,6 +52,7 @@ from pathlib import Path
 from evals.golden.ambiguous import CASES as AMBIGUOUS_CASES  # Category group 3
 from evals.golden.human_required import CASES as HUMAN_REQUIRED_CASES  # Category group 1
 from evals.golden.normal import CASES as NORMAL_CASES  # Category group 2
+from evals.golden.unsupported import CASES as UNSUPPORTED_CASES  # Category group 4
 from evals.models import Case  # The record shape rendered as a row
 
 logger = logging.getLogger(__name__)
@@ -60,9 +61,11 @@ DEFAULT_DIRECTORY = Path(__file__).parent
 SHEET_FILENAME = "case_sheet.csv"
 
 #: Every authored case, in delivery order (each category group's own PR), not the mix table's
-#: row order (`plan/docs/evaluation-plan.md`) — human-required landed first, then normal,
-#: then ambiguous.
-ALL_CASES: tuple[Case, ...] = HUMAN_REQUIRED_CASES + NORMAL_CASES + AMBIGUOUS_CASES
+#: row order (`plan/docs/evaluation-plan.md`) — human-required landed first, then normal, then
+#: ambiguous, then unsupported.
+ALL_CASES: tuple[Case, ...] = (
+    HUMAN_REQUIRED_CASES + NORMAL_CASES + AMBIGUOUS_CASES + UNSUPPORTED_CASES
+)
 
 _COLUMNS = (
     "case_id",
