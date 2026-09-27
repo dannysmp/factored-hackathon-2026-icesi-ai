@@ -1039,7 +1039,7 @@ def test_a_clean_working_tree_is_stamped_with_the_bare_commit(
 ) -> None:
     """Only a tree identical to the commit carries the plain commit id."""
     _repository(tmp_path, monkeypatch)
-    commit = subprocess.run(  # noqa: S603 - fixed argv, no shell
+    commit = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
         cwd=tmp_path,
         check=True,
