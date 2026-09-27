@@ -41,13 +41,15 @@ from __future__ import annotations
 import argparse  # Command-line interface
 import hashlib  # Detects a migration file edited after it was applied
 import logging  # Progress events, never print
-import os  # Read DATABASE_URL when --dsn is not given
 import sys  # Log stream
 from collections.abc import Sequence  # Type of the parsed argv
 from pathlib import Path  # Locate migration files
 
 # Third-party libraries
 import psycopg  # Serving-store driver
+
+# Local modules
+from app.config import ConfigError, load_settings  # The one validated source of DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -126,9 +128,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr
     )
-    dsn = args.dsn or os.environ.get("DATABASE_URL")
-    if not dsn:
-        parser.error("no DSN given and DATABASE_URL is not set")
+    if args.dsn:
+        dsn = args.dsn
+    else:
+        try:
+            dsn = load_settings().require_database_url().get_secret_value()
+        except ConfigError as exc:
+            parser.error(str(exc))
     applied = apply_migrations(dsn)
     if applied:
         logger.info("migrations_applied versions=%s", ",".join(applied))
