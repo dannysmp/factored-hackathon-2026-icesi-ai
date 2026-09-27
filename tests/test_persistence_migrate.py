@@ -1,0 +1,132 @@
+"""
+Serving-Store Migration Tests
+===============================
+
+Component: ``app.persistence.migrate``. The checksum and command-line wiring are pure and
+hermetic. Applying a migration for real needs a Postgres database: those tests are marked
+``integration`` and read the DSN from ``DATABASE_URL``, skipped when it is not set.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import psycopg
+import pytest
+
+from app.persistence import migrate as migrate_module
+from app.persistence.migrate import MIGRATIONS_DIR, _checksum, apply_migrations, main
+
+
+def test_checksum_is_deterministic() -> None:
+    """The same file content always yields the same checksum."""
+    assert _checksum("create table x ();") == _checksum("create table x ();")
+
+
+def test_checksum_differs_for_different_content() -> None:
+    """Two different migration bodies never collide in the common case."""
+    assert _checksum("create table x ();") != _checksum("create table y ();")
+
+
+def test_main_requires_a_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no --dsn and no DATABASE_URL, the command refuses rather than guessing."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    with pytest.raises(SystemExit):
+        main([])
+
+
+def test_main_uses_the_dsn_argument_over_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit --dsn is used even when DATABASE_URL is also set."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://env-only")
+    seen: dict[str, str] = {}
+
+    def fake_apply(dsn: str, **_kwargs: object) -> tuple[str, ...]:
+        seen["dsn"] = dsn
+        return ()
+
+    monkeypatch.setattr(migrate_module, "apply_migrations", fake_apply)
+
+    exit_code = main(["--dsn", "postgresql://from-argument"])
+
+    assert exit_code == 0
+    assert seen["dsn"] == "postgresql://from-argument"
+
+
+def test_main_falls_back_to_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DATABASE_URL is used when --dsn is not given."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://env-only")
+    seen: dict[str, str] = {}
+
+    def fake_apply(dsn: str, **_kwargs: object) -> tuple[str, ...]:
+        seen["dsn"] = dsn
+        return ("0001_serving_store",)
+
+    monkeypatch.setattr(migrate_module, "apply_migrations", fake_apply)
+
+    exit_code = main([])
+
+    assert exit_code == 0
+    assert seen["dsn"] == "postgresql://env-only"
+
+
+def test_migration_0001_is_present_and_nonempty() -> None:
+    """The frozen first migration exists where the runner looks for it."""
+    path = MIGRATIONS_DIR / "0001_serving_store.sql"
+
+    assert path.is_file()
+    assert path.read_text(encoding="utf-8").strip()
+
+
+@pytest.mark.integration
+def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
+    """Every migration file applies without error against a real, empty Postgres."""
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL is not set")
+
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "DROP TABLE IF EXISTS cases, transactions, products, customers, "
+            "schema_migrations CASCADE"
+        )
+
+    applied = apply_migrations(dsn)
+    assert applied == ("0001_serving_store",)
+
+    again = apply_migrations(dsn)
+    assert again == ()
+
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' ORDER BY table_name"
+        )
+        tables = {row[0] for row in cur.fetchall()}
+    assert {"customers", "products", "transactions", "cases", "schema_migrations"} <= tables
+
+
+@pytest.mark.integration
+def test_a_changed_migration_file_is_refused(tmp_path: Path) -> None:
+    """A migration already applied is never silently re-applied under a changed file."""
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL is not set")
+
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("DROP TABLE IF EXISTS schema_migrations CASCADE")
+
+    directory = tmp_path / "migrations"
+    directory.mkdir()
+    (directory / "0001_test.sql").write_text(
+        "CREATE TABLE IF NOT EXISTS t (id INT)", encoding="utf-8"
+    )
+    apply_migrations(dsn, directory=directory)
+
+    (directory / "0001_test.sql").write_text(
+        "CREATE TABLE IF NOT EXISTS t (id BIGINT)", encoding="utf-8"
+    )
+
+    with pytest.raises(RuntimeError, match="has changed since it was applied"):
+        apply_migrations(dsn, directory=directory)
