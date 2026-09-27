@@ -30,6 +30,12 @@ describe('ChoiceSchema', () => {
     expect(() => ChoiceSchema.parse({ number: 1, label: 'a\x00b' })).toThrow()
   })
 
+  it('refuses a label holding a newline, unlike TurnRequest.text', () => {
+    // Choice.label is SafeText (envelope.py's _refuse_control_characters), which has no
+    // exception for `\n`; only TurnRequest.text's separate validator (api.py) allows it.
+    expect(() => ChoiceSchema.parse({ number: 1, label: 'a\nb' })).toThrow()
+  })
+
   it('refuses an unknown field (extra="forbid" on the Python side)', () => {
     expect(() => ChoiceSchema.parse({ number: 1, label: 'ok', risk_score: 0.9 })).toThrow()
   })

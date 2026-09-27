@@ -25,23 +25,36 @@ const IdentifierPattern = /^[A-Za-z0-9_-]{8,64}$/
 const TicketPattern = /^[A-Za-z0-9_-]{1,32}$/
 
 // Unicode category Cc ("control"), the same set `unicodedata.category(char) == "Cc"` names on
-// the Python side; `\n` is allowed there and here, everything else in the category is not.
+// the Python side.
 const CONTROL_CHARACTER = /\p{Cc}/u
 
-function hasDisallowedControlCharacter(value: string): boolean {
+function hasControlCharacter(value: string, { allowNewline }: { allowNewline: boolean }): boolean {
   for (const char of value) {
-    if (char !== '\n' && CONTROL_CHARACTER.test(char)) {
+    if (allowNewline && char === '\n') {
+      continue
+    }
+    if (CONTROL_CHARACTER.test(char)) {
       return true
     }
   }
   return false
 }
 
-/** `SafeText` (envelope.py): refuses a control character; blank text is a separate rule. */
+/** `SafeText` (envelope.py's `_refuse_control_characters`): no control character, not even `\n`. */
 function refuseControlCharacters<Schema extends z.ZodString>(schema: Schema) {
-  return schema.refine((value) => !hasDisallowedControlCharacter(value), {
+  return schema.refine((value) => !hasControlCharacter(value, { allowNewline: false }), {
     message: 'text must not contain a control character',
   })
+}
+
+/** `_refuse_blank_or_control` (api.py): blank (after trimming), or a control character other
+ * than `\n` — the one field this exception is for; `SafeText` above has no such exception. */
+function refuseBlankOrControl<Schema extends z.ZodString>(schema: Schema) {
+  return schema
+    .refine((value) => value.trim() !== '', { message: 'text must not be blank' })
+    .refine((value) => !hasControlCharacter(value, { allowNewline: true }), {
+      message: 'text must not contain a control character',
+    })
 }
 
 export const ChoiceSchema = z
@@ -55,11 +68,7 @@ export type Choice = z.infer<typeof ChoiceSchema>
 export const TurnRequestSchema = z
   .object({
     turn_id: z.string().regex(IdentifierPattern),
-    // `_refuse_blank_or_control` (api.py): blank (after trimming) or a control character.
-    text: refuseControlCharacters(z.string().min(1).max(2000)).refine(
-      (value) => value.trim() !== '',
-      { message: 'text must not be blank' },
-    ),
+    text: refuseBlankOrControl(z.string().min(1).max(2000)),
   })
   .strict()
 export type TurnRequest = z.infer<typeof TurnRequestSchema>
