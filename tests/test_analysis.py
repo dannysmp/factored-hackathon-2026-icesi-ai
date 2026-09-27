@@ -21,6 +21,7 @@ from typing import Any  # Mart rows
 import pytest  # Test runner and fixtures
 
 # Local modules
+from pipelines import analysis as analysis_module
 from pipelines.analysis import (
     DEFAULT_ASSUMPTIONS,
     Assumptions,
@@ -305,6 +306,43 @@ def test_the_command_fails_with_one_when_the_cleaned_layer_is_missing(
     assert code == 1
     assert "analysis_failed" in caplog.text
     assert not (tmp_path / "reports").exists()
+
+
+def test_a_handled_failure_removes_a_stale_report(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A reader of the report alone must never take an earlier run's result for this one's."""
+    arguments = _arguments(tmp_path, tmp_path / "missing")
+    report = tmp_path / "reports" / "analysis.md"
+    report.parent.mkdir(parents=True)
+    report.write_text("stale report from an earlier run", encoding="utf-8")
+
+    with caplog.at_level(logging.ERROR):
+        code = main(arguments)
+
+    assert code == 1
+    assert not report.exists()
+
+
+def test_an_interrupted_build_removes_a_stale_report(
+    tmp_path: Path, silver: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-C during the build is not caught by the handled-failure branch, but still clears
+    a stale report."""
+    arguments = _arguments(tmp_path, silver)
+    report = tmp_path / "reports" / "analysis.md"
+    report.parent.mkdir(parents=True)
+    report.write_text("stale report from an earlier run", encoding="utf-8")
+
+    def _interrupt(*args: object, **kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(analysis_module, "build_marts", _interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        main(arguments)
+
+    assert not report.exists()
 
 
 def test_the_command_fails_with_one_on_invalid_assumptions(tmp_path: Path, silver: Path) -> None:
