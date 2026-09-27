@@ -11,6 +11,7 @@ from __future__ import annotations
 
 # Standard libraries
 import logging  # Capture log records
+import os  # Patch the report's atomic rename in isolation
 import re  # Look for identifiers anywhere in the text
 import shutil  # Copy the assumptions file for edits
 from datetime import date  # Month of the handmade marts
@@ -342,6 +343,32 @@ def test_an_interrupted_build_removes_a_stale_report(
     with pytest.raises(KeyboardInterrupt):
         main(arguments)
 
+    assert not report.exists()
+
+
+def test_a_failed_report_write_removes_a_stale_report(
+    tmp_path: Path, silver: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A write-time failure, after a successful build, still clears a stale report."""
+    arguments = _arguments(tmp_path, silver)
+    report = tmp_path / "reports" / "analysis.md"
+    report.parent.mkdir(parents=True)
+    report.write_text("stale report from an earlier run", encoding="utf-8")
+
+    # build_marts also renames its Parquet outputs through os.replace; only the report's own
+    # rename (ending in the report's suffix) must fail, or the build itself never reaches here.
+    real_replace = os.replace
+
+    def _fail_replace(src: str | os.PathLike[str], dst: str | os.PathLike[str]) -> None:
+        if str(dst).endswith(report.suffix):
+            raise OSError("simulated disk failure")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", _fail_replace)
+
+    code = main(arguments)
+
+    assert code == 1
     assert not report.exists()
 
 
