@@ -11,6 +11,7 @@ policy reason, and no request here can express a foreign customer.
 from __future__ import annotations
 
 from datetime import date
+from typing import get_type_hints
 
 import pytest
 from pydantic import ValidationError
@@ -102,7 +103,7 @@ def test_transaction_filters_have_no_customer_field() -> None:
 
 def test_a_merchant_name_holding_a_control_character_is_refused() -> None:
     """System-held text still refuses a control character before it reaches a render or a log."""
-    with pytest.raises(ValidationError, match="control character"):
+    with pytest.raises(ValidationError, match="control or formatting character"):
         TransactionFact(
             ref="TX-1",
             occurred_on=date(2026, 1, 1),
@@ -111,6 +112,55 @@ def test_a_merchant_name_holding_a_control_character_is_refused() -> None:
             product=ProductLabel(name="Card", last4="1234"),
             status=TransactionStatus.APPROVED,
         )
+
+
+def test_a_merchant_name_holding_a_bidirectional_override_is_refused() -> None:
+    """A right-to-left override can make text render in an order that misleads a reader (M5).
+
+    Built through ``chr`` rather than a literal: the character itself is exactly what a linter's
+    own Trojan Source check refuses to see written directly into source.
+    """
+    right_to_left_override = chr(0x202E)
+    with pytest.raises(ValidationError, match="control or formatting character"):
+        TransactionFact(
+            ref="TX-1",
+            occurred_on=date(2026, 1, 1),
+            merchant=f"Shop{right_to_left_override}name",
+            amount=DisclosedAmount(money=None, provenance=AmountProvenance.UNKNOWN),
+            product=ProductLabel(name="Card", last4="1234"),
+            status=TransactionStatus.APPROVED,
+        )
+
+
+def test_a_transaction_fact_shows_the_description_when_the_merchant_is_absent() -> None:
+    """Most of the source data has no merchant; the description is a compatible fallback (M4)."""
+    transaction = TransactionFact(
+        ref="TX-1",
+        occurred_on=date(2026, 1, 1),
+        merchant=None,
+        description="Recurring subscription payment",
+        amount=DisclosedAmount(money=None, provenance=AmountProvenance.UNKNOWN),
+        product=ProductLabel(name="Card", last4="1234"),
+        status=TransactionStatus.APPROVED,
+    )
+
+    assert transaction.merchant is None
+    assert transaction.description == "Recurring subscription payment"
+
+
+def test_a_transaction_fact_may_carry_neither_merchant_nor_description() -> None:
+    """The contract does not assume one of the two is always present in the source data."""
+    transaction = TransactionFact(
+        ref="TX-1",
+        occurred_on=date(2026, 1, 1),
+        merchant=None,
+        amount=DisclosedAmount(money=None, provenance=AmountProvenance.UNKNOWN),
+        product=ProductLabel(name="Card", last4="1234"),
+        status=TransactionStatus.APPROVED,
+    )
+
+    assert transaction.merchant is None
+    assert transaction.description is None
 
 
 def test_a_transaction_page_total_count_covers_its_items() -> None:
@@ -238,3 +288,10 @@ def test_the_tool_port_declares_every_tool() -> None:
         "evaluate_dispute",
         "create_dispute_case",
     }
+
+
+def test_create_dispute_case_declares_a_store_failure_path() -> None:
+    """A store or audit-write failure fails the filing closed, never silently (AC-E4-19)."""
+    hints = get_type_hints(ToolPort.create_dispute_case)
+
+    assert hints["return"] == CreateDisputeCaseResult | ToolFailure

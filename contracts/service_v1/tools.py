@@ -145,11 +145,18 @@ class ProductLabel(ContractModel):
 
 
 class TransactionFact(ContractModel):
-    """One of the session customer's own transactions."""
+    """One of the session customer's own transactions.
+
+    The merchant name is absent for most of the source data; a customer render shows it when
+    present and falls back to ``description`` (the source's own transaction description)
+    otherwise (AC-E4-08). The tool implementation decides which one a page carries; this contract
+    only says that either, both or neither may be present, never inventing one from the other.
+    """
 
     ref: Annotated[str, Field(pattern=REF_PATTERN)]
     occurred_on: date
     merchant: Annotated[SafeText, Field(min_length=1, max_length=80)] | None
+    description: Annotated[SafeText, Field(min_length=1, max_length=200)] | None = None
     amount: DisclosedAmount
     product: ProductLabel
     status: TransactionStatus
@@ -272,5 +279,13 @@ class ToolPort(Protocol):
     def evaluate_dispute(self, request: EvaluateDisputeRequest) -> PolicyDecision | ToolFailure:
         """The policy decision for ``request``, computed fresh; no side effect."""
 
-    def create_dispute_case(self, request: CreateDisputeCaseRequest) -> CreateDisputeCaseResult:
-        """File a case, or refuse for a permission reason; never a policy reason (ADR-3)."""
+    def create_dispute_case(
+        self, request: CreateDisputeCaseRequest
+    ) -> CreateDisputeCaseResult | ToolFailure:
+        """File a case, or refuse for a permission reason; never a policy reason (ADR-3).
+
+        A ``ToolFailure`` covers what neither party to the decision controls: the store cannot be
+        reached, or the audit record for the filing cannot be written. Either fails the filing
+        closed — no case is created uncounted, and the customer is told it could not be
+        completed, never that it succeeded (AC-E4-19).
+        """
