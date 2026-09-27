@@ -15,6 +15,9 @@ from __future__ import annotations
 # Standard libraries
 from datetime import date  # Fixed reference and case dates
 
+# Third-party libraries
+import pytest  # Parametrized numeral cases
+
 # Local modules
 from app.conversation.verifier import verify
 from app.domain.policy.models import Outcome
@@ -119,6 +122,30 @@ def test_a_literal_digit_outside_any_slot_is_rejected() -> None:
 
     assert result.outcome == "rejected"
     assert RejectionReason.DIGIT_OUTSIDE_SLOT in result.reasons
+
+
+@pytest.mark.parametrize("numeral", ["Ⅻ", "½", "⑩"], ids=["roman_numeral", "fraction", "circled"])
+def test_a_non_ascii_numeral_character_is_rejected_like_a_digit(numeral: str) -> None:
+    """A vulgar fraction, a circled digit or a single-character Roman numeral is a numeral
+    character even though ``str.isdigit()`` does not recognize it; the check must catch it too."""
+    envelope = _envelope()
+    candidate = CandidateReply(raw_text=f"You owe about {numeral} of the claim.")
+
+    result = verify(envelope, candidate, _slots())
+
+    assert result.outcome == "rejected"
+    assert RejectionReason.DIGIT_OUTSIDE_SLOT in result.reasons
+
+
+def test_a_roman_numeral_spelled_in_plain_letters_is_a_known_limitation() -> None:
+    """A quantity spelled entirely in ordinary letters contains no character Unicode itself
+    classifies as numeric, so this check alone does not catch it (documented limitation)."""
+    envelope = _envelope()
+    candidate = CandidateReply(raw_text="You owe about MCMXCIV of the claim.")
+
+    result = verify(envelope, candidate, _slots())
+
+    assert RejectionReason.DIGIT_OUTSIDE_SLOT not in result.reasons
 
 
 def test_a_fabricated_amount_built_from_grounded_digit_fragments_is_rejected() -> None:

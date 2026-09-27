@@ -21,11 +21,14 @@ only checks what it is handed against what the envelope allows.
 
 Design Principles
 -----------------
-- Structural rejection, not detection: a literal digit anywhere in the model's raw text rejects the
-  reply outright, before any placeholder is even parsed. This is the property D76 asked for after
-  the prior text-based numbers guard was found gameable — nothing here inspects the *finished*
-  sentence for a suspicious-looking number, because there is no digit left in it to inspect by the
-  time substitution runs.
+- Structural rejection, not detection: any numeral character anywhere in the model's raw text
+  rejects the reply outright, before any placeholder is even parsed — checked with
+  ``str.isnumeric()``, not ``str.isdigit()``, so a vulgar fraction, a circled digit or a
+  single-character Roman numeral (``½``, ``⑩``, ``Ⅻ``) rejects exactly like an ASCII digit, not
+  only the narrower set ``isdigit()`` recognizes. This is the property D76 asked for after the
+  prior text-based numbers guard was found gameable — nothing here inspects the *finished*
+  sentence for a suspicious-looking number, because there is no numeral character left in it to
+  inspect by the time substitution runs.
 - Cross-customer leak scan and decision consistency fall out of the same mechanism rather than a
   second detector: ``SlotValues`` is built from this envelope's own facts, decisions and sources
   (a caller's job, not verified here), so a value from another customer or a contradicted decision
@@ -40,6 +43,15 @@ Design Principles
 Runtime Contract
 ----------------
 ``verify(envelope, candidate, slot_values) -> VerifierResult``.
+
+Limitations
+-----------
+The rejection scans for a *character* Unicode itself classifies as numeric; a quantity spelled
+entirely in ordinary letters (a Roman numeral spelled with plain Latin letters, or a number spelled
+out in words, in any language) contains no such character and is not caught. Closing that would
+mean checking the *meaning* of the text rather than its character classes, which is a different,
+open-ended problem this slice does not attempt — the same class of gap already disclosed for a
+non-numeric fact stated without going through a declared field at all.
 """
 
 from __future__ import annotations
@@ -94,7 +106,7 @@ def verify(
     text = candidate.raw_text
     reasons: set[RejectionReason] = set()
 
-    if any(char.isdigit() for char in text):
+    if any(char.isnumeric() for char in text):
         reasons.add(RejectionReason.DIGIT_OUTSIDE_SLOT)
 
     matches = list(_PLACEHOLDER.finditer(text))
