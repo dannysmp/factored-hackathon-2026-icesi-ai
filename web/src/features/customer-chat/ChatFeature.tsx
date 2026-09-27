@@ -37,6 +37,7 @@ export function ChatFeature({ client }: { client: ChatClient }): JSX.Element {
           demoNotice={latest.demo_notice}
         />
       )}
+      {latest === null && <p aria-live="polite">Starting the conversation…</p>}
       <MessageList messages={conversation.messages} />
       {conversation.status === 'error' && (
         <p role="alert">Your last message could not be sent. Please try again.</p>

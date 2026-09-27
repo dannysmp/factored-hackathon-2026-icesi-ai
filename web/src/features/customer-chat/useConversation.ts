@@ -51,10 +51,16 @@ export function useConversation(client: ChatClient): Conversation {
   // synchronous assignment. Every transition below writes both, in the same order, every time.
   const latestState = useRef(state)
 
-  function commit(next: ConversationState): void {
+  // Set once, in the unmount cleanup below. `commit` checks it before every write, so a `start`
+  // or `sendTurn` promise that settles after the component unmounted never calls `setState` on
+  // it — one guard for every write, instead of repeating the check at each call site.
+  const mounted = useRef(true)
+
+  const commit = useCallback((next: ConversationState): void => {
+    if (!mounted.current) return
     latestState.current = next
     setState(next)
-  }
+  }, [])
 
   // If a caller ever swaps `client` for a genuinely different one (the fixture client today;
   // the live client is the next slice's), this effect re-runs and starts a new conversation, but
@@ -62,14 +68,12 @@ export function useConversation(client: ChatClient): Conversation {
   // immediate reset should remount by changing this component's `key`, React's own tool for
   // that, rather than this hook resetting state itself from inside an effect.
   useEffect(() => {
-    let cancelled = false
+    mounted.current = true
     client.start().then(
       (turn) => {
-        if (cancelled) return
         commit({ status: 'ready', messages: [assistantMessage(turn)], latest: turn, error: null })
       },
       (error: unknown) => {
-        if (cancelled) return
         commit({
           status: 'error',
           messages: [],
@@ -79,9 +83,9 @@ export function useConversation(client: ChatClient): Conversation {
       },
     )
     return () => {
-      cancelled = true
+      mounted.current = false
     }
-  }, [client])
+  }, [client, commit])
 
   const send = useCallback(
     (text: string) => {
@@ -117,7 +121,7 @@ export function useConversation(client: ChatClient): Conversation {
         },
       )
     },
-    [client],
+    [client, commit],
   )
 
   return { ...state, send }
