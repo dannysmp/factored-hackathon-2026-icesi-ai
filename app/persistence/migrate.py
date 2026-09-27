@@ -33,6 +33,10 @@ Limitations
 -----------
 No down migrations: reverting a mistake ships as a new forward migration, matching the project's
 seed and evaluation data, which are also append-only by convention.
+A migration that creates a Postgres role (cluster-global, unlike every table or schema these
+migrations otherwise create) assumes one database per cluster, true of every environment this
+project runs today; restoring this database into an already-running cluster without first
+dropping that role is outside this runner's scope.
 """
 
 from __future__ import annotations
