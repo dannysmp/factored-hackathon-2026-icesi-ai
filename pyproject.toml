@@ -75,6 +75,8 @@ ignore = ["PLR0913"]
 "pipelines/gold.py" = ["S608"]
 "pipelines/risk_features.py" = ["S608"]
 "pipelines/silver.py" = ["S608"]
+# Same reason: the shared amount expressions are static, reviewed SQL text, not built from input.
+"tests/test_amounts.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.11"

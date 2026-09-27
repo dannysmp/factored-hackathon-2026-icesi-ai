@@ -21,7 +21,7 @@ The velocity, gap and distance features of a transaction use the same customer's
 | Feature | Meaning | Present |
 |---|---|---|
 | `amount_usd` | amount in US dollars, as stated or converted with the day's rate | 100.00 % |
-| `amount_usd_source` | reported, converted or unavailable | 100.00 % |
+| `amount_usd_source` | reported, converted or unknown | 100.00 % |
 | `currency` | currency of the transaction | 100.00 % |
 | `channel` | channel the transaction came through | 100.00 % |
 | `transaction_type` | purchase, withdrawal, transfer, payment, deposit or adjustment | 100.00 % |
@@ -63,9 +63,9 @@ Fraud prevalence for each value of a feature that could reflect the outcome of t
 
 | amount_usd_source | Transactions | Fraud | Prevalence | Train | Validation | Test |
 |---|---|---|---|---|---|---|
-| `converted` | 2,537,421 | 2,508 | 0.099 % | 0.101 % | 0.101 % | 0.091 % |
-| `reported` | 1,887,552 | 1,808 | 0.096 % | 0.099 % | 0.096 % | 0.087 % |
-| `unavailable` | 35 | 0 | 0.000 % | n/a | n/a | 0.000 % |
+| `converted` | 99,442 | 94 | 0.095 % | 0.083 % | 0.109 % | 0.113 % |
+| `reported` | 4,325,531 | 4,222 | 0.098 % | 0.101 % | 0.099 % | 0.089 % |
+| `unknown` | 35 | 0 | 0.000 % | n/a | n/a | 0.000 % |
 
 | merchant category stated | Transactions | Fraud | Prevalence | Train | Validation | Test |
 |---|---|---|---|---|---|---|
@@ -124,4 +124,4 @@ Fraud prevalence for each value of a feature that could reflect the outcome of t
 | daily_exchange_rates | c385e6d4f565 |
 | transactions | 3c7933a5f82e |
 
-Output digest `caf5b6112002`.
+Output digest `1dc73171d048`.

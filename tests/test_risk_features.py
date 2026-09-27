@@ -169,13 +169,13 @@ def _haversine(a: tuple[float, float], b: tuple[float, float]) -> float:
 # -----------------------------------------------------------------------------
 
 
-def test_the_amount_in_dollars_is_reported_converted_or_unavailable(built: Any) -> None:
-    """A stated amount is kept; otherwise the day's rate applies; without a rate it is empty."""
+def test_the_amount_in_dollars_is_reported_converted_or_unknown(built: Any) -> None:
+    """A stated amount is kept; otherwise the day's rate applies; without a rate it is unknown."""
     _, mart = built
 
     assert (mart["T2"]["amount_usd"], mart["T2"]["amount_usd_source"]) == (200.0, "reported")
     assert (mart["T1"]["amount_usd"], mart["T1"]["amount_usd_source"]) == (50.0, "converted")
-    assert (mart["T3"]["amount_usd"], mart["T3"]["amount_usd_source"]) == (None, "unavailable")
+    assert (mart["T3"]["amount_usd"], mart["T3"]["amount_usd_source"]) == (None, "unknown")
 
 
 def test_calendar_features_follow_the_transaction_time(built: Any) -> None:
@@ -445,7 +445,7 @@ def test_the_report_states_the_periods_the_exclusions_and_the_lineage(built: Any
             f"| {label} | Transactions | Fraud | Prevalence | Train | Validation | Test |" in text
         )
     assert "| `converted` | 1 | 0 | 0.000 % | 0.000 % | n/a | n/a |" in text
-    assert "| `unavailable` | 1 | 1 | 100.000 % | 100.000 % | n/a | n/a |" in text
+    assert "| `unknown` | 1 | 1 | 100.000 % | 100.000 % | n/a | n/a |" in text
 
 
 def test_the_command_writes_the_report_and_is_idempotent(tmp_path: Path) -> None:
@@ -518,7 +518,7 @@ def test_an_invalid_split_is_refused(tmp_path: Path, content: str, message: str)
 
 
 # -----------------------------------------------------------------------------
-# What the manifest says about the customer snapshot, the proxies and unavailable amounts
+# What the manifest says about the customer snapshot, the proxies and unknown amounts
 # -----------------------------------------------------------------------------
 
 
@@ -551,7 +551,7 @@ def test_the_manifest_gives_the_prevalence_inputs_of_every_proxy_check(built: An
         "test": [1, 0],
     }
     assert proxies["amount_usd_source"]["converted"] == {"train": [1, 0]}
-    assert proxies["amount_usd_source"]["unavailable"] == {"train": [1, 1]}
+    assert proxies["amount_usd_source"]["unknown"] == {"train": [1, 1]}
     assert proxies["coordinates present"]["yes"] == {"train": [2, 1]}
     assert proxies["merchant category stated"]["no"]["train"] == [1, 0]
     assert proxies["country_mismatch"] == {
@@ -585,7 +585,7 @@ def test_an_unconvertible_amount_counts_in_a_window_but_adds_nothing_to_its_tota
 
     mart = _mart(tmp_path / "g")
 
-    assert mart["U1"]["amount_usd_source"] == "unavailable"
+    assert mart["U1"]["amount_usd_source"] == "unknown"
     assert (mart["U2"]["tx_count_24h"], mart["U2"]["tx_sum_usd_24h"]) == (1, 0.0)
     assert (mart["U3"]["tx_count_24h"], mart["U3"]["tx_sum_usd_24h"]) == (2, 10.0)
 
