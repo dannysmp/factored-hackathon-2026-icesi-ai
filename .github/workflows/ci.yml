@@ -12,6 +12,8 @@
 #   secret-scan  Full-history secret scan and the scanner self-test.
 #   gate-scripts Executed fixture test of the review gate's glob translation
 #                (.github/scripts/glob-match.js), independent of the other jobs.
+#   web          The web/ package's own lint, test (with its coverage gate) and build,
+#                independent of the Python jobs.
 #
 # Security posture:
 #   The workflow token is read-only and no cloud credentials are configured. Third-party
@@ -125,3 +127,30 @@ jobs:
           node-version: "22"
       - name: Run the glob translation's fixture test
         run: node .github/scripts/glob-match.test.js
+
+  # ---------------------------------------------------------------------------
+  # Web
+  # ---------------------------------------------------------------------------
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install a pinned Node.js with npm dependency caching
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Lint and check formatting
+        run: npm run lint && npm run format
+      - name: Type-check and build
+        run: npm run build
+      - name: Run tests with the coverage gate
+        run: npm run test
