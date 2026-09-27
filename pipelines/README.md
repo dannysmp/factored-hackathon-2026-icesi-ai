@@ -14,6 +14,7 @@ Offline data tooling. Nothing here runs inside the service's request path.
 | `outcomes.py`, `quality.py` | Result objects of a cleaning run and the `reports/data-quality.md` renderer |
 | `gold.py` | The dispute demand marts: aggregates over the cleaned tables with a manifest of inputs and outputs |
 | `risk_features.py` | The risk feature mart: features known when a transaction happened, the fraud label and its training, validation or test period (`models/split.toml`); `python -m pipelines.risk_features` or `make features` |
+| `risk_signal.py` | Fraud prevalence per band of the amount, hour and velocity features in the training and validation periods (the test period is not read); `python -m pipelines.risk_signal` |
 | `analysis.py`, `analysis_assumptions.toml` | Renders `reports/workflow-analysis.md` from the marts; every figure that is not measured comes from the assumptions file; `python -m pipelines.analysis` or `make analyze` |
 
 Planned stages: the remaining analytical marts (risk features, evaluation seeds).
