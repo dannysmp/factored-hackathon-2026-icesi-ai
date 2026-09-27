@@ -99,9 +99,17 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         )
         # A table's own trigger drops with it, but the function it calls is a separate object.
         cur.execute("DROP FUNCTION IF EXISTS audit_log_forbid_mutation() CASCADE")
+        # The analytics schema's tables drop with it; the role does not and is cluster-global.
+        cur.execute("DROP SCHEMA IF EXISTS analytics CASCADE")
+        cur.execute("DROP ROLE IF EXISTS analytics_reader")
 
     applied = apply_migrations(dsn)
-    assert applied == ("0001_serving_store", "0002_ops_meta", "0003_audit")
+    assert applied == (
+        "0001_serving_store",
+        "0002_ops_meta",
+        "0003_audit",
+        "0004_analytics_schema",
+    )
 
     again = apply_migrations(dsn)
     assert again == ()

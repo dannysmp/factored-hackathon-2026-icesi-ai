@@ -16,5 +16,6 @@ Offline data tooling. Nothing here runs inside the service's request path.
 | `risk_features.py` | The risk feature mart: features known when a transaction happened, the fraud label and its training, validation or test period (`models/split.toml`); `python -m pipelines.risk_features` or `make features` |
 | `risk_signal.py` | Fraud prevalence per band of the amount, hour and velocity features in the training and validation periods (the test period is not read); `python -m pipelines.risk_signal` |
 | `analysis.py`, `analysis_assumptions.toml` | Renders `reports/workflow-analysis.md` from the marts; every figure that is not measured comes from the assumptions file; `python -m pipelines.analysis` or `make analyze` |
+| `analytics_load.py` | Loads `gold.py`'s dispute-demand marts into the Postgres `analytics` schema the BI dashboard reads (ADR-11), with a row-count and content-checksum parity check against the gold marts; `python -m pipelines.analytics_load` or `make load-analytics` |
 
-Planned stages: the remaining analytical marts (risk features, evaluation seeds).
+Planned stages: the remaining analytical marts (evaluation seeds).
