@@ -1,3 +1,7 @@
+/**
+ * Vitest setup, loaded once before every test file (`vite.config.ts`'s `setupFiles`): the
+ * jest-axe matcher and Testing Library's teardown between tests.
+ */
 import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { toHaveNoViolations } from 'jest-axe'

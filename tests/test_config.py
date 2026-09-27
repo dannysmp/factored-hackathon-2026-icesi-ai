@@ -38,6 +38,7 @@ _ENV_KEYS = (
     "TEST_IDENTITY_ENABLED",
     "TEST_IDENTITY_KEY",
     "DATABASE_URL",
+    "MODEL_RENDERER_ENABLED",
 )
 
 
@@ -324,3 +325,26 @@ def test_database_url_never_appears_in_repr_or_str(monkeypatch: pytest.MonkeyPat
         settings.require_database_url().get_secret_value()
         == "postgresql://user:not-a-real-password@localhost/db"
     )
+
+
+# -----------------------------------------------------------------------------
+# Model renderer disable gate
+# -----------------------------------------------------------------------------
+
+
+def test_model_renderer_defaults_to_disabled() -> None:
+    """A bare environment never has the model renderer on."""
+    assert load_settings(env_file=None).model_renderer_enabled is False
+
+
+@pytest.mark.parametrize("app_env", ["local", "dev", "prod"])
+def test_model_renderer_cannot_be_enabled_in_any_environment(
+    monkeypatch: pytest.MonkeyPatch, app_env: str
+) -> None:
+    """Nothing yet grounds a free-form model reply against the envelope's own facts; no
+    environment may turn the model renderer on before that grounding exists."""
+    monkeypatch.setenv("APP_ENV", app_env)
+    monkeypatch.setenv("MODEL_RENDERER_ENABLED", "true")
+
+    with pytest.raises(ConfigError, match="MODEL_RENDERER_ENABLED"):
+        load_settings(env_file=None)

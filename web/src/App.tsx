@@ -1,17 +1,21 @@
 import type { JSX } from 'react'
+import { ChatFeature } from './features/customer-chat/ChatFeature'
+import { FixtureChatClient } from './features/customer-chat/client'
+import { FILE_DISPUTE_EN } from './features/customer-chat/fixtures'
+
+// Built once, at module scope: a client is a resource, not something to recreate on every
+// render (frontend standard, section 3). The live client is the next slice's; this app has only
+// the fixture one until the demonstration sign-in broker and the conversation store exist.
+const client = new FixtureChatClient(FILE_DISPUTE_EN)
 
 /**
- * Placeholder app shell.
- *
- * The scaffold's only page for now: it proves the build, the lint, the test and the
- * accessibility tooling all work end to end. The customer chat and its accessibility checks
- * (live regions, the confirmation button, the demonstration banner) are the next slice's.
+ * The app shell: the customer chat, replayed against a scripted fixture conversation.
  */
 export function App(): JSX.Element {
   return (
     <main>
       <h1>Dispute intake</h1>
-      <p>The customer chat is not built yet.</p>
+      <ChatFeature client={client} />
     </main>
   )
 }
