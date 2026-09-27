@@ -19,6 +19,10 @@ Design Principles
   from the composition root.
 - Secrets are ``SecretStr`` and never appear in error messages or ``repr`` output.
 - Model identifiers are pinned to an allow-list so a typo or an unreviewed model cannot ship.
+- Free-form model rendering cannot be turned on by configuration in any environment until an
+  output verifier exists to ground it against the envelope's own facts: the setting exists for
+  the code that will read it, but validation refuses the value ``true`` outright, not just by
+  default.
 
 Runtime Contract
 ----------------
@@ -134,6 +138,10 @@ class Settings(BaseSettings):
         Shared secret the sandbox login endpoint requires (at least 16 characters).
     database_url : SecretStr | None
         DSN of the serving store; optional until a feature that reads or writes it runs.
+    model_renderer_enabled : bool
+        Whether free-form model rendering may run. Always ``False``: nothing yet grounds a
+        free-form model reply against the envelope's own facts, so no environment may turn this
+        on before that grounding exists and removes the restriction.
     data_as_of_date : str | None
         The domain date override (ADR-15): an ISO date, or the literal ``"system"`` for the real
         date in the bank's own zone. Optional; when absent, the domain calendar reads the loaded
@@ -154,6 +162,7 @@ class Settings(BaseSettings):
     test_identity_enabled: bool = False
     test_identity_key: SecretStr | None = None
     database_url: SecretStr | None = None
+    model_renderer_enabled: bool = False
     data_as_of_date: str | None = None
 
     @field_validator("nlu_model", "render_model")
@@ -198,6 +207,19 @@ class Settings(BaseSettings):
         """The sandbox login secret must not be trivially guessable either."""
         if value is not None and len(value.get_secret_value()) < MIN_TEST_KEY_LENGTH:
             raise ValueError(f"must be at least {MIN_TEST_KEY_LENGTH} characters")
+        return value
+
+    @field_validator("model_renderer_enabled")
+    @classmethod
+    def _model_renderer_stays_disabled(cls, value: bool) -> bool:
+        """Refuse to start with the model renderer on: nothing yet grounds a free-form model
+        reply against the envelope's own facts, so nothing may enable it in any environment
+        before that grounding exists."""
+        if value:
+            raise ValueError(
+                "model rendering has no output verifier yet and must stay disabled "
+                "(MODEL_RENDERER_ENABLED must be false until an output verifier grounds it)"
+            )
         return value
 
     @model_validator(mode="after")
