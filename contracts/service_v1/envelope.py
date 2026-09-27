@@ -35,19 +35,33 @@ Design Principles
   serializer), not a shape a contract field can enforce without either missing real numbers or
   flagging ordinary ones.
 - The models are immutable and reject unknown fields, so a misspelled key fails at the boundary.
+- A model-rendered reply never composes a grounded value itself: it names one of a closed set of
+  fields for its intent (``GroundedField``, ``INTENT_ALLOWED_FIELDS``), and the output verifier
+  substitutes the actual value and rejects any reply that writes a digit on its own instead of
+  naming a field. Grounding is a property the verifier enforces structurally, not a pattern it
+  detects in finished text (D76) — a refusal is exempted by construction, since it always renders
+  from the fixed-wording template path.
 
 Runtime Contract
 ----------------
 ``Envelope`` (``render_view()`` gives the ``RenderEnvelope``), ``SourceRef``, ``ToolUnavailable``,
 the enumerations ``Intent``, ``Slot``, ``TemplateId`` and ``CustomerReason``, the table
 ``TEMPLATE_INTENTS`` and the mapping ``CUSTOMER_REASON_OF`` from a reason code to its plain reason.
-``CONTRACT_VERSION`` is the string every envelope carries.
+``CONTRACT_VERSION`` is the string every envelope carries. ``GroundedField`` and the tables
+``INTENT_ALLOWED_FIELDS``/``INTENT_REQUIRED_FIELDS`` are the vocabulary a model-rendered reply may
+cite by name instead of composing itself; ``contracts.service_v1.verification`` is the output
+verifier's own request and result types built on that vocabulary.
 
 Limitations
 -----------
 Tuples and enumerations are immutable, but the contract cannot stop a caller from building an
 envelope whose facts are wrong: the controller owns that, and the output verifier checks the
 rendered text against what the envelope holds.
+``GroundedField`` closes the gap for every digit a reply can state, plus the other facts an intent
+names (a merchant, a case status, a policy value); a model-rendered reply can still misdescribe a
+fact in prose that names no field at all (for example, paraphrasing an outcome without using
+``OUTCOME_STATEMENT``) — the verifier's required-field check catches an omission, not a paraphrase
+that avoids every field name while still misstating something.
 """
 
 from __future__ import annotations
@@ -488,6 +502,91 @@ _ROUTED_HANDOFFS = frozenset({TemplateId.HANDOFF_REVIEW, TemplateId.HANDOFF_FRAU
 
 
 # -----------------------------------------------------------------------------
+# Grounded fields (model-rendered path)
+# -----------------------------------------------------------------------------
+
+
+class GroundedField(StrEnum):
+    """A value the model-rendered path may cite by name.
+
+    The model-rendered reply names a field (``{{amount}}``); the renderer substitutes the actual
+    value from ``facts``, ``decisions`` or ``sources`` before the customer sees it, and the output
+    verifier rejects a reply that writes a digit itself instead of naming a field (D76). The model
+    never sees the substituted value, only the closed set of names it may reference for the
+    envelope's intent.
+    """
+
+    AMOUNT = "amount"
+    OCCURRED_ON = "occurred_on"
+    MERCHANT = "merchant"
+    CASE_NUMBER = "case_number"
+    CASE_STATUS = "case_status"
+    FILED_ON = "filed_on"
+    EXPECTED_RESPONSE_ON = "expected_response_on"
+    TICKET_REF = "ticket_ref"
+    CONTACT_WITHIN_HOURS = "contact_within_hours"
+    CATEGORY = "category"
+    SOURCE_TITLE = "source_title"
+    POLICY_VALUE = "policy_value"
+    OUTCOME_STATEMENT = "outcome_statement"
+
+
+# The fields a model-rendered reply may name for each intent. Exhaustive over ``Intent``, checked
+# for completeness against the enumeration the same way ``TEMPLATE_INTENTS`` is. ``Intent.REFUSE``
+# carries an empty set: a refusal always renders from the fixed-wording template path (see
+# ``_wording_matches_the_mode`` below), so no model-rendered reply ever reaches this intent.
+INTENT_ALLOWED_FIELDS: Mapping[Intent, frozenset[GroundedField]] = {
+    Intent.CLARIFY: frozenset(),
+    Intent.PRESENT_TRANSACTIONS: frozenset(
+        {GroundedField.AMOUNT, GroundedField.OCCURRED_ON, GroundedField.MERCHANT}
+    ),
+    Intent.CONFIRM_FILING: frozenset(
+        {GroundedField.AMOUNT, GroundedField.OCCURRED_ON, GroundedField.CATEGORY}
+    ),
+    Intent.FILING_RESULT: frozenset(
+        {GroundedField.CASE_NUMBER, GroundedField.EXPECTED_RESPONSE_ON}
+    ),
+    Intent.INELIGIBLE: frozenset({GroundedField.OUTCOME_STATEMENT}),
+    Intent.DISPUTE_STATUS: frozenset(
+        {GroundedField.CASE_NUMBER, GroundedField.CASE_STATUS, GroundedField.FILED_ON}
+    ),
+    Intent.POLICY_ANSWER: frozenset({GroundedField.SOURCE_TITLE, GroundedField.POLICY_VALUE}),
+    Intent.ABSTAIN: frozenset(),
+    Intent.REFUSE: frozenset(),
+    Intent.HANDOFF: frozenset(
+        {
+            GroundedField.TICKET_REF,
+            GroundedField.CONTACT_WITHIN_HOURS,
+            GroundedField.OUTCOME_STATEMENT,
+        }
+    ),
+    Intent.FAREWELL: frozenset(),
+}
+
+# The fields a model-rendered reply for the intent must name at least once, so the model cannot
+# silently drop the grounded content the intent exists to state (decision consistency: an outcome
+# an intent commits to is never left unsaid). A subset of ``INTENT_ALLOWED_FIELDS`` for every
+# intent; the fields listed here are exactly the ones every envelope of that intent's own
+# validators (``_intent_has_what_it_states``, ``_handoff_states_what_happened``) guarantee are
+# always available, so requiring them can never fail for want of a value to substitute.
+INTENT_REQUIRED_FIELDS: Mapping[Intent, frozenset[GroundedField]] = {
+    Intent.CLARIFY: frozenset(),
+    Intent.PRESENT_TRANSACTIONS: frozenset(),
+    Intent.CONFIRM_FILING: frozenset(
+        {GroundedField.AMOUNT, GroundedField.OCCURRED_ON, GroundedField.CATEGORY}
+    ),
+    Intent.FILING_RESULT: frozenset({GroundedField.CASE_NUMBER}),
+    Intent.INELIGIBLE: frozenset({GroundedField.OUTCOME_STATEMENT}),
+    Intent.DISPUTE_STATUS: frozenset({GroundedField.CASE_NUMBER, GroundedField.FILED_ON}),
+    Intent.POLICY_ANSWER: frozenset({GroundedField.SOURCE_TITLE}),
+    Intent.ABSTAIN: frozenset(),
+    Intent.REFUSE: frozenset(),
+    Intent.HANDOFF: frozenset({GroundedField.TICKET_REF, GroundedField.OUTCOME_STATEMENT}),
+    Intent.FAREWELL: frozenset(),
+}
+
+
+# -----------------------------------------------------------------------------
 # Envelope
 # -----------------------------------------------------------------------------
 
@@ -514,6 +613,8 @@ class _EnvelopeBody(ContractModel):
         if self.render_mode == "model":
             if self.template_id is not None:
                 raise ValueError("model mode must not carry a template_id")
+            if self.intent is Intent.REFUSE:
+                raise ValueError("a refusal always renders from the fixed-wording template path")
         elif self.template_id is None:
             raise ValueError("template mode requires a template_id")
         elif self.intent not in TEMPLATE_INTENTS[self.template_id]:
