@@ -73,9 +73,7 @@ def test_check_reports_stale_when_content_differs(tmp_path: Path) -> None:
 def test_main_writes_the_sheet(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(case_sheet, "DEFAULT_DIRECTORY", tmp_path)
     assert main([]) == 0
-    assert (tmp_path / "case_sheet.csv").read_text(encoding="utf-8") == render_case_sheet(
-        ALL_CASES
-    )
+    assert (tmp_path / "case_sheet.csv").read_text(encoding="utf-8") == render_case_sheet(ALL_CASES)
     # A second run finds nothing to write, exercising the idempotent branch too.
     assert main([]) == 0
 

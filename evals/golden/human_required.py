@@ -272,8 +272,7 @@ _REPEAT_COMPLAINER_CASES = (
         expected_intent=Intent.HANDOFF,
         expected_reason_code=ReasonCode.ESCALATE_REPEAT_COMPLAINER,
         description=(
-            "Small withdrawal, well under threshold; escalates only on the"
-            " repeat-complainer flag."
+            "Small withdrawal, well under threshold; escalates only on the repeat-complainer flag."
         ),
     ),
     Case(
