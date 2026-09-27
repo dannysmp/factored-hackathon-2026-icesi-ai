@@ -3,8 +3,8 @@
 # =============================================================================
 # Purpose:
 #   The Postgres container behind the serving store, for local development and CI. The full
-#   deployed stack (backend, web, this same store, Caddy, Metabase) is composed by infra/ (E11),
-#   which extends this file rather than duplicating it.
+#   deployed stack (backend, web, this same store, Caddy, Metabase) is composed by infra/, which
+#   extends this file rather than duplicating it.
 #
 # Usage:
 #   docker compose up -d          # start Postgres
