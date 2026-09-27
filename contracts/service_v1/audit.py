@@ -49,7 +49,7 @@ from pydantic import Field  # Field bounds
 
 # Local modules
 from app.domain.policy.models import ReasonCode  # One vocabulary, not redefined
-from contracts.service_v1.cases import NUMBER_PATTERN, ContractModel, UtcDatetime
+from contracts.service_v1.cases import NUMBER_PATTERN, ContractModel, SafeText, UtcDatetime
 
 # -----------------------------------------------------------------------------
 # Record
@@ -78,8 +78,8 @@ class AuditRecord(ContractModel):
     """
 
     trace_id: Annotated[str, Field(pattern=NUMBER_PATTERN)]
-    customer_id: Annotated[str, Field(min_length=1, max_length=20)]
-    session_id: Annotated[str, Field(min_length=1, max_length=64)]
+    customer_id: Annotated[SafeText, Field(min_length=1, max_length=20)]
+    session_id: Annotated[SafeText, Field(min_length=1, max_length=64)]
     action: AuditAction
     reason_code: ReasonCode | None = None
     policy_version: Annotated[str, Field(min_length=1)] | None = None
