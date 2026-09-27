@@ -56,7 +56,7 @@ def test_empty_text_is_unusable_without_calling_the_model() -> None:
 
 
 def test_a_port_failure_becomes_unusable_understanding() -> None:
-    """AC-E5-11: a provider failure is never shown to the customer as an error."""
+    """A provider failure is never shown to the customer as an error."""
     llm = FakeLlm(responses=[LlmUnavailable("timed out")])
     nlu = LlmNlu(llm, model=_MODEL)
 

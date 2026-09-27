@@ -26,8 +26,8 @@ Design Principles
   mapping into ``NluResult`` is where the contract's own bounds and rules apply. A result that
   fails them once is repaired once (truncating an overlong free-text field, dropping a choice out
   of range, nulling an enum-like value the model spelled wrong) and validated again; a result that
-  still fails, or a call the port itself could not complete, becomes ``NluResult.unusable()``
-  (AC-E5-11): one question, then a person — the customer is never shown a model or provider error.
+  still fails, or a call the port itself could not complete, becomes ``NluResult.unusable()``: one
+  question, then a person — the customer is never shown a model or provider error.
 - The masking serializer is the only path text takes to leave the process: this class never builds
   the user message from anything but ``redact_pan(text).masked``.
 - Temperature 0: this is structured extraction, not open-ended writing.
@@ -250,8 +250,8 @@ class LlmNlu:
     def understand(self, text: str, *, language_hint: Lang | None) -> NluResult:
         """Understand ``text`` through the model, or return unusable understanding.
 
-        Empty text and a failed or invalid call are both treated as unusable (AC-E5-11): the
-        customer is never shown a model or provider error, only asked again.
+        Empty text and a failed or invalid call are both treated as unusable: the customer is
+        never shown a model or provider error, only asked again.
         """
         if not text.strip():
             return NluResult.unusable()

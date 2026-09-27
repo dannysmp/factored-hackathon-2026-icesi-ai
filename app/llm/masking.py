@@ -19,11 +19,10 @@ extends this module rather than duplicating the pattern elsewhere).
 
 Design Principles
 -----------------
-- This check moved here from the contract layer (thot-follow-up issue #80) because a contract
-  field can only accept or refuse a whole value; it cannot redact a card number sitting inside an
-  otherwise legitimate sentence. The masking serializer can, and it is the one place every
-  outbound request passes through, so the check cannot be bypassed by a path that skips a
-  particular contract.
+- This check lives here rather than in the contract layer because a contract field can only accept
+  or refuse a whole value; it cannot redact a card number sitting inside an otherwise legitimate
+  sentence. The masking serializer can, and it is the one place every outbound request passes
+  through, so the check cannot be bypassed by a path that skips a particular contract.
 - A digit run is card-shaped by two tests together, not one: its length falls in the range real
   PANs use (13 to 19 digits, inclusive, covering every major network) and it passes the Luhn
   checksum every issued card number satisfies. Length alone flags too much (a 16-digit order
@@ -33,10 +32,14 @@ Design Principles
   or without separators.
 - Detection reads a maximal run of digits and single separator characters (space, hyphen, comma,
   underscore, period — the shapes people actually type a card number with, plus no separator at
-  all) as one blob, then slides a window inside it rather than matching the whole blob as one
-  unit. This is what keeps two card-shaped runs typed back to back, with nothing but a single
-  space between them, each redacted on their own instead of the pair being read as one
-  wrong-length blob that the length test then waves through unredacted.
+  all) as one blob, rather than matching the whole blob as one unit. Every digit in the blob that
+  belongs to at least one Luhn-valid, PAN-length window starting anywhere in the blob is marked for
+  redaction, and marked digits that sit next to each other merge into one redacted span. This is
+  what keeps two full card numbers typed back to back, with nothing but a single separator between
+  them, both fully redacted even when a window straddling the boundary between the two also happens
+  to pass the checksum: taking only the first or only the longest valid window at each position can
+  leave part of a real card number outside the one window chosen; marking every digit that any
+  valid window covers cannot.
 - Redaction replaces only the matched digits and their internal separators; surrounding text,
   including any other digits in the same field, is untouched.
 
@@ -49,7 +52,9 @@ Limitations
 -----------
 The detector runs on plain text and cannot see a card number split across two separate messages,
 or one written entirely in words. Its adversarial robustness and false-positive rate are measured
-against the sets thot-follow-up issue #80 names, not proven exhaustively.
+against a fixed adversarial set (separator variants, adjacent non-digit characters, multiple
+card-like runs in one field) and a fixed false-positive set (order numbers, phone numbers,
+reference codes of card-like length), not proven exhaustively.
 """
 
 from __future__ import annotations
@@ -111,29 +116,37 @@ def _digit_positions(run: str, run_start: int) -> list[_DigitPosition]:
 def _card_shaped_spans(text: str) -> list[tuple[int, int]]:
     """Spans in ``text`` that are card-shaped: length in range and Luhn-valid.
 
-    Scans left to right inside each maximal digit-and-separator run, preferring the longest
-    valid window at each start position, so a full card number is redacted whole rather than a
-    shorter Luhn-valid prefix of it; a start with no valid window advances by one digit.
+    Inside each maximal digit-and-separator run, every start position is checked for a Luhn-valid
+    window of every length in range (not only the position right after the last window taken), so
+    a second real card number's own window is never missed because an earlier scan step already
+    consumed part of its digits. Each valid window becomes one text interval (from its first digit
+    to its last, carrying any separators between them); overlapping or touching intervals are then
+    merged into one span. Two card numbers with an ordinary separator between them stay two spans,
+    since their windows' text intervals do not touch; a window that happens to straddle the
+    boundary between two adjacent card numbers and is itself Luhn-valid pulls both into one merged
+    span, which is what keeps that boundary from leaving either number only partly redacted.
     """
-    spans: list[tuple[int, int]] = []
+    windows: list[tuple[int, int]] = []
     for match in _RUN.finditer(text):
         digits_only = "".join(char for char in match.group(0) if char.isdigit())
         positions = _digit_positions(match.group(0), match.start())
-        start_index = 0
-        while start_index < len(positions):
+        for start_index in range(len(positions)):
             remaining = len(positions) - start_index
-            found_at_start = False
-            for length in range(min(_MAX_PAN_DIGITS, remaining), _MIN_PAN_DIGITS - 1, -1):
-                candidate = digits_only[start_index : start_index + length]
-                if _luhn_valid(candidate):
-                    span_start = positions[start_index].start
-                    span_end = positions[start_index + length - 1].end
-                    spans.append((span_start, span_end))
-                    start_index += length
-                    found_at_start = True
-                    break
-            if not found_at_start:
-                start_index += 1
+            for length in range(_MIN_PAN_DIGITS, min(_MAX_PAN_DIGITS, remaining) + 1):
+                if _luhn_valid(digits_only[start_index : start_index + length]):
+                    windows.append(
+                        (positions[start_index].start, positions[start_index + length - 1].end)
+                    )
+    if not windows:
+        return []
+    windows.sort()
+    spans: list[tuple[int, int]] = [windows[0]]
+    for start, end in windows[1:]:
+        last_start, last_end = spans[-1]
+        if start <= last_end:
+            spans[-1] = (last_start, max(last_end, end))
+        else:
+            spans.append((start, end))
     return spans
 
 

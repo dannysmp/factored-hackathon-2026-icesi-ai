@@ -18,7 +18,13 @@ import pytest
 from pydantic import SecretStr
 
 from app.llm.anthropic_client import AnthropicLlmClient
-from app.llm.client import CompletionRequest, LlmOutputInvalid, LlmUnavailable, ToolSpec
+from app.llm.client import (
+    CompletionRequest,
+    LlmOutputInvalid,
+    LlmRequestRejected,
+    LlmUnavailable,
+    ToolSpec,
+)
 
 _TOOL = ToolSpec(
     name="record_understanding", description="Record it.", input_schema={"type": "object"}
@@ -158,11 +164,36 @@ def test_a_server_error_becomes_llm_unavailable() -> None:
         client.complete(_REQUEST)
 
 
-def test_a_non_retryable_status_error_still_surfaces_as_unavailable_this_slice() -> None:
-    """Bounded retries and circuit breaking are a later change (streams.md 2.8); today every
-    provider-side failure reaches the caller's single-failure fallback the same way."""
+@pytest.mark.parametrize(
+    ("error_type", "status_code"),
+    [
+        (anthropic.AuthenticationError, 401),
+        (anthropic.BadRequestError, 400),
+        (anthropic.PermissionDeniedError, 403),
+        (anthropic.NotFoundError, 404),
+        (anthropic.UnprocessableEntityError, 422),
+    ],
+    ids=["authentication", "bad_request", "permission_denied", "not_found", "unprocessable"],
+)
+def test_a_non_retryable_status_error_is_a_rejected_request_not_unavailable(
+    error_type: type[anthropic.APIStatusError], status_code: int
+) -> None:
+    """A credential, permission or request-shape problem is never mistaken for something a bounded
+    retry could fix: retrying the identical request would fail exactly the same way again."""
     stub = _StubAnthropic(
-        anthropic.APIStatusError("bad request", response=_http_response(400), body=None)
+        error_type("rejected", response=_http_response(status_code), body=None)
+    )
+    client = AnthropicLlmClient(SecretStr("test-key"), client=stub)  # type: ignore[arg-type]
+
+    with pytest.raises(LlmRequestRejected):
+        client.complete(_REQUEST)
+
+
+def test_an_unrecognized_status_error_still_falls_back_to_unavailable() -> None:
+    """A status the adapter does not name as a known rejection reason is treated conservatively,
+    as something a caller may still retry, rather than assumed to be permanent."""
+    stub = _StubAnthropic(
+        anthropic.ConflictError("conflict", response=_http_response(409), body=None)
     )
     client = AnthropicLlmClient(SecretStr("test-key"), client=stub)  # type: ignore[arg-type]
 

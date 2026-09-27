@@ -3,8 +3,8 @@ Deterministic Missing-Slot Guard Tests
 =========================================
 
 Component: ``app.conversation.guard``. Hermetic and pure: no store, no model call, no clock read
-internally. Covers AC-E5-58: a required element missing asks the customer whatever confidence the
-model reports, so every case here uses a high confidence to keep the point visible.
+internally. Covers the rule that a required element missing asks the customer whatever confidence
+the model reports, so every case here uses a high confidence to keep the point visible.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def test_a_filing_with_no_transaction_hint_and_none_selected_needs_the_transacti
 
 
 def test_high_confidence_does_not_excuse_a_missing_transaction() -> None:
-    """AC-E5-58: the guard asks whatever confidence the model reports."""
+    """The guard asks whatever confidence the model reports."""
     result = _result(NluIntent.FILE_DISPUTE, confidence=0.99, transaction=TransactionHint())
 
     assert required_slot(result, _state()) is Slot.TRANSACTION

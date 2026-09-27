@@ -6,9 +6,9 @@ Overview
 --------
 Decides whether a request to file a dispute is still missing an element it needs, from what this
 message's understanding carried and what the conversation already has — never from the model's own
-confidence. AC-E5-58: a required element missing asks the customer, whatever confidence the model
-reports; the NLU confidence floor is a separate, model-quality concern the policy engine checks on
-its own (``nlu_confidence_floor``), not this guard's job.
+confidence. A required element missing asks the customer, whatever confidence the model reports;
+the NLU confidence floor is a separate, model-quality concern the policy engine checks on its own
+(``nlu_confidence_floor``), not this guard's job.
 
 Scope
 -----

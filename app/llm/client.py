@@ -21,10 +21,13 @@ Design Principles
 - Structured output only: a caller always forces exactly one tool and reads back its arguments.
   Free-form text completion is not part of this port; nothing in the service renders free-form
   model text today (the renderer is template-only until an output verifier exists).
-- The error hierarchy separates what a caller may retry (``LlmUnavailable``: timeout, rate limit,
-  a 5xx) from what it must not (``LlmOutputInvalid``: the model did not call the tool, or its
-  arguments do not parse as JSON — retrying the exact same request would not help; the caller's
-  own repair-then-fallback path, not this port, decides whether to re-ask).
+- The error hierarchy separates three cases a caller needs to tell apart: ``LlmUnavailable``
+  (timeout, rate limit, a 5xx — safe to retry, the identical request may succeed later),
+  ``LlmRequestRejected`` (the provider rejected the request itself — bad credentials, a malformed
+  request, no access to the requested model — retrying the identical request fails the same way
+  again; a person has to fix the credential or configuration), and ``LlmOutputInvalid`` (the model
+  did not call the tool, or its arguments do not parse as JSON — the caller's own
+  repair-then-fallback path, not this port, decides whether to re-ask).
 - Accounting travels with every result (tokens, latency, the model and prompt version used) so the
   caller can log it without a second call.
 - ``FakeLlm`` is scripted, not clever: it returns exactly what the test queues, in order, so a test
@@ -34,7 +37,7 @@ Runtime Contract
 ----------------
 ``LlmClient`` (protocol): ``complete(request) -> CompletionResult``.
 ``CompletionRequest``, ``ToolSpec``, ``CompletionResult``.
-``LlmError``, ``LlmUnavailable``, ``LlmOutputInvalid``.
+``LlmError``, ``LlmUnavailable``, ``LlmRequestRejected``, ``LlmOutputInvalid``.
 ``FakeLlm``: a scripted implementation with no network access.
 """
 
@@ -54,6 +57,16 @@ class LlmUnavailable(LlmError):
     """The provider could not complete the call this time: a timeout, a rate limit, a 5xx.
 
     Safe to retry with bounded backoff; retrying the identical request may succeed.
+    """
+
+
+class LlmRequestRejected(LlmError):
+    """The provider rejected the request itself: bad credentials, a malformed request, an account
+    with no access to the requested model, or another account-level problem.
+
+    Not safe to retry: retrying the identical request fails the same way again. This needs a
+    person to fix the credential, permission or request shape — a bounded backoff would only
+    repeat the same failure.
     """
 
 
@@ -145,6 +158,8 @@ class LlmClient(Protocol):
         ------
         LlmUnavailable
             The provider could not complete the call this time; safe to retry.
+        LlmRequestRejected
+            The provider rejected the request itself; not safe to retry as-is.
         LlmOutputInvalid
             The model's output does not parse as a tool call with JSON arguments.
         """
