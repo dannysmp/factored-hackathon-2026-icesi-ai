@@ -377,6 +377,37 @@ def _bootstrap_precision_at_threshold(
     return BootstrapInterval(point, lower, upper)
 
 
+def _decide_routing(
+    test_precision: float,
+    precision_interval: BootstrapInterval,
+    test_prevalence: float,
+    *,
+    floor: float,
+) -> tuple[bool, str]:
+    """Whether the test-period result clears AC-E6-05's two-condition rule, and why.
+
+    Routing turns on only when the test-period precision meets `floor` and the bootstrap
+    interval's lower bound is above `test_prevalence`; either failing keeps it off, each with its
+    own rationale, so a rejection always names which of the two conditions did not hold.
+    """
+    if test_precision >= floor and precision_interval.lower > test_prevalence:
+        return True, (
+            f"the test-period precision at the chosen threshold ({test_precision:.4f}) meets the "
+            f"floor and its interval's lower bound ({precision_interval.lower:.4f}) is above the "
+            f"test prevalence ({test_prevalence:.4f})"
+        )
+    if test_precision < floor:
+        return False, (
+            f"the test-period precision at the chosen threshold ({test_precision:.4f}) falls "
+            f"below the floor ({floor:.4f}); the validation result did not hold on test"
+        )
+    return False, (
+        f"the interval's lower bound ({precision_interval.lower:.4f}) is not above the test "
+        f"prevalence ({test_prevalence:.4f}); the precision at the threshold is not "
+        "distinguishable from chance"
+    )
+
+
 def _load_test_with_customer(
     con: duckdb.DuckDBPyConnection, mart: str, silver_dir: Path, column_types: dict[str, str]
 ) -> tuple[PeriodArrays, np.ndarray]:
@@ -514,24 +545,9 @@ def run_calibration(
     )
 
     test_prevalence = test.positives / test.rows if test.rows else 0.0
-    routing_enabled = test_precision >= floor and precision_interval.lower > test_prevalence
-    if routing_enabled:
-        rationale = (
-            f"the test-period precision at the chosen threshold ({test_precision:.4f}) meets the "
-            f"floor and its interval's lower bound ({precision_interval.lower:.4f}) is above the "
-            f"test prevalence ({test_prevalence:.4f})"
-        )
-    elif test_precision < floor:
-        rationale = (
-            f"the test-period precision at the chosen threshold ({test_precision:.4f}) falls "
-            f"below the floor ({floor:.4f}); the validation result did not hold on test"
-        )
-    else:
-        rationale = (
-            f"the interval's lower bound ({precision_interval.lower:.4f}) is not above the test "
-            f"prevalence ({test_prevalence:.4f}); the precision at the threshold is not "
-            "distinguishable from chance"
-        )
+    routing_enabled, rationale = _decide_routing(
+        test_precision, precision_interval, test_prevalence, floor=floor
+    )
 
     return CalibrationResult(
         timestamp=now.isoformat(),

@@ -22,7 +22,9 @@ import numpy as np  # Score and label arrays
 import pytest  # Test runner and fixtures
 
 # Local modules
+from models.boosted import BootstrapInterval
 from models.calibration import (
+    _decide_routing,
     choose_threshold,
     latest_selected_model,
     main,
@@ -238,6 +240,44 @@ def test_choose_threshold_returns_none_when_nothing_clears_the_floor() -> None:
 
 def test_choose_threshold_returns_none_for_an_empty_period() -> None:
     assert choose_threshold(np.array([], dtype=bool), np.array([]), floor=0.01, cap=0.05) is None
+
+
+# -----------------------------------------------------------------------------
+# _decide_routing
+# -----------------------------------------------------------------------------
+
+
+def test_decide_routing_enables_when_precision_and_interval_both_clear() -> None:
+    interval = BootstrapInterval(point=0.05, lower=0.02, upper=0.08)
+    enabled, rationale = _decide_routing(0.05, interval, test_prevalence=0.01, floor=0.01)
+    assert enabled is True
+    assert "meets the" in rationale
+    assert "is above the" in rationale
+
+
+def test_decide_routing_disables_when_precision_misses_the_floor() -> None:
+    """AC-E6-05's first failure mode: the validation result does not hold on test."""
+    interval = BootstrapInterval(point=0.005, lower=0.001, upper=0.02)
+    enabled, rationale = _decide_routing(0.005, interval, test_prevalence=0.001, floor=0.01)
+    assert enabled is False
+    assert "falls below the floor" in rationale
+
+
+def test_decide_routing_disables_when_the_interval_does_not_clear_prevalence() -> None:
+    """AC-E6-05's other failure mode: precision meets the floor but the bootstrap interval does
+    not distinguish it from chance -- the branch a mart-and-silver fixture cannot cheaply force."""
+    interval = BootstrapInterval(point=0.02, lower=0.005, upper=0.05)
+    enabled, rationale = _decide_routing(0.02, interval, test_prevalence=0.01, floor=0.01)
+    assert enabled is False
+    assert "is not above the test" in rationale
+    assert "not distinguishable from chance" in rationale
+
+
+def test_decide_routing_treats_an_interval_equal_to_prevalence_as_not_clearing_it() -> None:
+    """The rule is a strict `>`, so a lower bound exactly at prevalence does not enable routing."""
+    interval = BootstrapInterval(point=0.02, lower=0.01, upper=0.05)
+    enabled, _ = _decide_routing(0.02, interval, test_prevalence=0.01, floor=0.01)
+    assert enabled is False
 
 
 # -----------------------------------------------------------------------------
