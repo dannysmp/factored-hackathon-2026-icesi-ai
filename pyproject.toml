@@ -86,7 +86,7 @@ ignore = ["PLR0913"]
 python_version = "3.11"
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["app", "contracts", "models", "pipelines", "tests"]
+files = ["app", "contracts", "evals", "models", "pipelines", "tests"]
 
 [[tool.mypy.overrides]]
 # scikit-learn ships no type stubs and no py.typed marker.
@@ -104,7 +104,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["app", "contracts", "models", "pipelines"]
+source = ["app", "contracts", "evals", "models", "pipelines"]
 
 [tool.coverage.report]
 # Combined line+branch floor; the standard asks for >=85% lines and >=80% branches.
