@@ -21,7 +21,6 @@ not the tool's proactive pre-checks, be what actually resolves the race.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import threading
 from datetime import UTC, date, datetime
@@ -41,6 +40,7 @@ from contracts.service_v1.cases import Lang
 from contracts.service_v1.tools import (
     CreateDisputeCaseRequest,
     CreateDisputeCaseResult,
+    Tool,
     ToolFailure,
 )
 
@@ -380,11 +380,16 @@ def test_a_genuine_concurrent_race_on_the_same_idempotency_key_is_resolved_by_th
     ``PostgresToolPort``'s own ``UniqueViolation``-handling branch in ``_insert_case``, not
     simulated by inserting a row out of band."""
     barrier = threading.Barrier(2)
+    waited = threading.local()
     original = PostgresToolPort._find_by_idempotency_key
 
     def _synced(self: PostgresToolPort, idempotency_key: str) -> object:
         result = original(self, idempotency_key)
-        with contextlib.suppress(threading.BrokenBarrierError):
+        # Only each thread's first call (the proactive pre-check) synchronizes; the loser's
+        # second call (the post-violation recheck) skips the wait — nothing else calls it in
+        # that same round, so waiting there would only stall until the timeout for no reason.
+        if not getattr(waited, "done", False):
+            waited.done = True
             barrier.wait(timeout=5)
         return result
 
@@ -437,6 +442,8 @@ def test_the_idempotency_race_recheck_finding_nothing_fails_closed(dsn: str) -> 
         result = port.create_dispute_case(request)
 
     assert isinstance(result, ToolFailure)
+    assert result.tool == Tool.CREATE_DISPUTE_CASE
+    assert result.cause == "error"
 
 
 @pytest.mark.integration
@@ -463,6 +470,8 @@ def test_the_open_case_lookup_failing_during_the_race_handler_fails_closed(dsn: 
         result = port.create_dispute_case(request)
 
     assert isinstance(result, ToolFailure)
+    assert result.tool == Tool.CREATE_DISPUTE_CASE
+    assert result.cause == "error"
 
 
 # -----------------------------------------------------------------------------
@@ -523,11 +532,16 @@ def test_a_genuine_concurrent_race_for_the_same_transaction_is_resolved_by_the_s
     (``cases_transaction_id_open_unique``, migration 0004) is what actually resolves the race,
     exercised through ``_insert_case``'s ``UniqueViolation`` handler for that constraint."""
     barrier = threading.Barrier(2)
+    waited = threading.local()
     original = PostgresToolPort._open_case_number_for
 
     def _synced(self: PostgresToolPort, transaction_ref: str) -> object:
         result = original(self, transaction_ref)
-        with contextlib.suppress(threading.BrokenBarrierError):
+        # Only each thread's first call (the proactive pre-check) synchronizes; the loser's
+        # second call (the post-violation lookup) skips the wait — nothing else calls it in
+        # that same round, so waiting there would only stall until the timeout for no reason.
+        if not getattr(waited, "done", False):
+            waited.done = True
             barrier.wait(timeout=5)
         return result
 

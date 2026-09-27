@@ -85,9 +85,10 @@ class AuditRecord(ContractModel):
     """One append-only entry: who did what, on what basis, and when.
 
     Written for every user-affecting decision. ``reason_code`` and ``policy_version`` are set
-    exactly for the actions a policy decision produced (``dispute_evaluated``, ``case_created``
-    and ``case_creation_refused`` for a decision the tool itself rejected); a plain read of the
-    customer's own data carries neither.
+    exactly for the actions a policy decision produced (``dispute_evaluated``, ``case_created``,
+    ``case_creation_refused`` for a decision the tool itself rejected, and
+    ``case_creation_replayed`` for the decision the original filing rested on); a plain read of
+    the customer's own data carries neither.
     """
 
     trace_id: Annotated[str, Field(pattern=NUMBER_PATTERN)]
