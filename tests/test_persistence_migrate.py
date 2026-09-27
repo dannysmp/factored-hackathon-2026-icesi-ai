@@ -95,11 +95,13 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
     with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(
             "DROP TABLE IF EXISTS cases, transactions, products, customers, "
-            "ops_meta, schema_migrations CASCADE"
+            "ops_meta, audit_log, schema_migrations CASCADE"
         )
+        # A table's own trigger drops with it, but the function it calls is a separate object.
+        cur.execute("DROP FUNCTION IF EXISTS audit_log_forbid_mutation() CASCADE")
 
     applied = apply_migrations(dsn)
-    assert applied == ("0001_serving_store", "0002_ops_meta")
+    assert applied == ("0001_serving_store", "0002_ops_meta", "0003_audit")
 
     again = apply_migrations(dsn)
     assert again == ()
@@ -116,6 +118,7 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         "transactions",
         "cases",
         "ops_meta",
+        "audit_log",
         "schema_migrations",
     } <= tables
 
