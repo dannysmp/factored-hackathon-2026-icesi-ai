@@ -160,7 +160,7 @@ def test_every_reason_code_appears_in_every_language(policy: Policy) -> None:
 
 
 # -----------------------------------------------------------------------------
-# The customer-facing text discloses no threshold, floor or trigger (AC-E3-07, AC-E3-08)
+# The customer-facing text discloses no threshold, floor or trigger
 # -----------------------------------------------------------------------------
 
 
@@ -223,7 +223,7 @@ def test_the_human_review_section_never_changes_with_a_routing_parameter(
 def test_no_threshold_or_confidence_floor_appears_in_any_language(
     policy: Policy, language: str, floor_percent: str, amount_thousands: str, risk_percent: str
 ) -> None:
-    """A test reads the thresholds from the policy file and scans the corpus for them (AC-E3-08)."""
+    """A test reads the thresholds from the policy file and scans the corpus for them."""
     text = _document(policy, language)
 
     stripped = text.replace("\u00a0", "").replace(".", "").replace(",", "")
@@ -235,7 +235,7 @@ def test_no_threshold_or_confidence_floor_appears_in_any_language(
 
 
 def test_a_planted_threshold_value_is_caught_by_the_drift_scan(policy: Policy) -> None:
-    """A negative test: the scan fails when a forbidden value is planted in the text (AC-E3-08)."""
+    """A negative test: the scan fails when a forbidden value is planted in the text."""
     text = _document(policy, "en")
     poisoned = text.replace("It is a fraud claim.", "It is a fraud claim (60%).")
 
@@ -244,7 +244,7 @@ def test_a_planted_threshold_value_is_caught_by_the_drift_scan(policy: Policy) -
 
 
 # -----------------------------------------------------------------------------
-# Response time and evidence (CR-11, AC-E5-61)
+# Response time and evidence
 # -----------------------------------------------------------------------------
 
 

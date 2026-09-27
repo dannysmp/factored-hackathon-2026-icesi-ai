@@ -482,7 +482,7 @@ def test_the_facts_of_an_escalation_omit_a_missing_risk_score(policy: Policy) ->
 
 
 # -----------------------------------------------------------------------------
-# Expected first response (CR-11)
+# Expected first response
 # -----------------------------------------------------------------------------
 
 
