@@ -20,6 +20,7 @@ from typing import Any  # Row dictionaries
 import duckdb  # Writing the handmade mart
 import numpy as np  # Building the direct-transform comparison
 import pytest  # Test runner and fixtures
+from sklearn.compose import ColumnTransformer  # Spied on to prove the training-only fit
 
 # Local modules
 from models.probe import (
@@ -27,7 +28,6 @@ from models.probe import (
     ProbeResult,
     _column_types,
     _fit_models,
-    _preprocessor,
     append_experiment,
     load_period,
     main,
@@ -194,12 +194,37 @@ def test_both_models_are_fitted_on_the_same_transformed_features(tmp_path: Path)
         validation = load_period(con, str(mart), column_types, "validation")
     finally:
         con.close()
-    preprocessor = _preprocessor(train.categorical.shape[1], train.numeric.shape[1])
-    x_train_direct = preprocessor.fit_transform(np.hstack([train.categorical, train.numeric]))
     models = _fit_models(train, validation, seed=1)
-    assert x_train_direct.shape[0] == train.rows
     assert isinstance(models, tuple)
     assert {m.name for m in models} == {"logistic", "boosted"}
+
+
+def test_the_shared_preprocessor_is_fitted_on_training_rows_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = _train_and_validation(40, separating=True)
+    mart = _write_mart(tmp_path / "m.parquet", rows)
+    con = duckdb.connect()
+    try:
+        column_types = _column_types(con, str(mart))
+        train = load_period(con, str(mart), column_types, "train")
+        validation = load_period(con, str(mart), column_types, "validation")
+    finally:
+        con.close()
+
+    fit_row_counts: list[int] = []
+    original_fit_transform = ColumnTransformer.fit_transform
+
+    def spy(self: ColumnTransformer, x: np.ndarray, *args: Any, **kwargs: Any) -> np.ndarray:
+        fit_row_counts.append(x.shape[0])
+        return original_fit_transform(self, x, *args, **kwargs)  # type: ignore[no-any-return]
+
+    monkeypatch.setattr(ColumnTransformer, "fit_transform", spy)
+    _fit_models(train, validation, seed=1)
+    # Fed exactly the training rows, never the training rows plus the validation ones: fitting on
+    # the combined periods would leak the validation distribution into the encoder and the
+    # imputer, and this assertion would then see train.rows + validation.rows instead.
+    assert fit_row_counts == [train.rows]
 
 
 def test_a_perfectly_separating_feature_gives_a_near_perfect_score(tmp_path: Path) -> None:
@@ -247,6 +272,24 @@ def test_an_unseen_validation_category_does_not_raise(tmp_path: Path) -> None:
         con.close()
     models = _fit_models(train, validation, seed=1)  # must not raise
     assert len(models) == 2
+
+
+def test_a_null_categorical_value_becomes_the_literal_string_missing(tmp_path: Path) -> None:
+    rows = _train_and_validation(30)
+    rows.append(_default_row("train", False, merchant_category=None))
+    mart = _write_mart(tmp_path / "m.parquet", rows)
+    con = duckdb.connect()
+    try:
+        column_types = _column_types(con, str(mart))
+        train = load_period(con, str(mart), column_types, "train")
+    finally:
+        con.close()
+    categorical_names = [name for name in FEATURES if column_types[name] == "VARCHAR"]
+    merchant_category_column = categorical_names.index("merchant_category")
+    values = set(train.categorical[:, merchant_category_column])
+    assert "missing" in values
+    assert "?" not in values
+    assert None not in values
 
 
 def test_the_result_is_deterministic_given_the_same_seed(tmp_path: Path) -> None:

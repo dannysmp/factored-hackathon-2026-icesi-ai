@@ -28,8 +28,8 @@ Design Principles
   used to transform both periods; both models are fitted on its output.
 - **A capped fit, not a wall-clock timeout.** The boosted model's complexity (`BOOST_MAX_ITER`,
   `BOOST_MAX_DEPTH`) is fixed low so the fit finishes quickly on any machine, deterministically,
-  rather than racing a clock (Arch C3 of CR-8: "the boosted fit still runs as the time-boxed
-  gate").
+  rather than racing a clock: the gate this probe decides must run every time, on every machine,
+  in bounded time.
 - **Deterministic.** A fixed seed (`SEED`) is used for both models; the same mart and split give
   the same metrics.
 - **The experiment log is append-only** (`models/experiments.jsonl`): each run adds one line and
@@ -155,9 +155,19 @@ def _column_types(con: duckdb.DuckDBPyConnection, mart: str) -> dict[str, str]:
 
 
 def _as_categorical(column: np.ndarray) -> np.ndarray:
-    """`column` as an object array of strings, `"missing"` where the value is empty."""
-    values = column.filled(None) if isinstance(column, np.ma.MaskedArray) else column
-    return np.array(["missing" if v is None else str(v) for v in values], dtype=object)
+    """`column` as an object array of strings, `"missing"` where the value is empty.
+
+    `MaskedArray.filled(None)` is not "fill with `None`": a `None` argument means "use the
+    default fill value", which for an object array is not `None` either. The mask is read
+    directly instead, so an empty value always becomes the literal string `"missing"`.
+    """
+    if isinstance(column, np.ma.MaskedArray):
+        mask = np.ma.getmaskarray(column)
+        return np.array(
+            ["missing" if empty else str(v) for empty, v in zip(mask, column.data, strict=True)],
+            dtype=object,
+        )
+    return np.array([str(v) for v in column], dtype=object)
 
 
 def _as_numeric(column: np.ndarray) -> np.ndarray:
