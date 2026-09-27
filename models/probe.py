@@ -61,6 +61,7 @@ from collections.abc import Sequence  # Argument type of main
 from dataclasses import dataclass  # Immutable result objects
 from datetime import UTC, datetime  # The run timestamp, supplied by the caller
 from pathlib import Path  # Locations
+from typing import Protocol  # The experiment-log entry contract other slices reuse
 
 # Third-party libraries
 import duckdb  # Reading the mart
@@ -176,20 +177,27 @@ def _as_numeric(column: np.ndarray) -> np.ndarray:
 
 
 def load_period(
-    con: duckdb.DuckDBPyConnection, mart: str, column_types: dict[str, str], period: str
+    con: duckdb.DuckDBPyConnection,
+    mart: str,
+    column_types: dict[str, str],
+    period: str,
+    feature_names: Sequence[str] = tuple(FEATURES),
 ) -> PeriodArrays:
     """Load one period's rows of `mart`; only `period` is read, never another one.
+
+    `feature_names` selects a subset of `FEATURES` (in `FEATURES`' own order), for an ablation
+    that trains without some of them; it defaults to every feature.
 
     Raises
     ------
     duckdb.Error
-        When `mart` does not have every column of `FEATURES`, the label or `split`.
+        When `mart` does not have every column of `feature_names`, the label or `split`.
     """
-    names = [*FEATURES, "is_fraud"]
+    names = [*feature_names, "is_fraud"]
     query = _PERIOD_QUERY.format(columns=", ".join(f'"{name}"' for name in names))
     found = con.execute(query, [mart, period]).fetchnumpy()
-    categorical_names = [name for name in FEATURES if column_types[name] == "VARCHAR"]
-    numeric_names = [name for name in FEATURES if column_types[name] != "VARCHAR"]
+    categorical_names = [name for name in feature_names if column_types[name] == "VARCHAR"]
+    numeric_names = [name for name in feature_names if column_types[name] != "VARCHAR"]
     rows = len(found["is_fraud"])
     categorical = (
         np.stack([_as_categorical(found[name]) for name in categorical_names], axis=1)
@@ -305,7 +313,13 @@ def run_probe(
     )
 
 
-def append_experiment(result: ProbeResult, log_path: Path) -> None:
+class ExperimentResult(Protocol):
+    """What any slice's result needs to append to an experiment log: JSON-serialisable data."""
+
+    def as_dict(self) -> dict[str, object]: ...
+
+
+def append_experiment(result: ExperimentResult, log_path: Path) -> None:
     """Append `result` as one line of `log_path`; earlier lines are never touched."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as handle:

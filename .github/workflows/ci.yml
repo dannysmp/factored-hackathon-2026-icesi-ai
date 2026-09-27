@@ -12,6 +12,8 @@
 #   secret-scan  Full-history secret scan and the scanner self-test.
 #   gate-scripts Executed fixture test of the review gate's glob translation
 #                (.github/scripts/glob-match.js), independent of the other jobs.
+#   test-postgres Migrations applied to a fresh service-container Postgres, then the tests
+#                marked integration run against it.
 #
 # Security posture:
 #   The workflow token is read-only and no cloud credentials are configured. Third-party
@@ -25,6 +27,7 @@
 #
 # Usage:
 #   Runs automatically. To reproduce locally: make lint test audit secrets
+#   For test-postgres: make db-up migrate test-integration (needs docker and DATABASE_URL set)
 # =============================================================================
 
 name: CI
@@ -125,3 +128,39 @@ jobs:
           node-version: "22"
       - name: Run the glob translation's fixture test
         run: node .github/scripts/glob-match.test.js
+
+  # ---------------------------------------------------------------------------
+  # Postgres integration tests
+  # ---------------------------------------------------------------------------
+  test-postgres:
+    name: test-postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dispute_intake
+          POSTGRES_PASSWORD: dispute_intake
+          POSTGRES_DB: dispute_intake
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dispute_intake"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://dispute_intake:dispute_intake@localhost:5432/dispute_intake
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install uv with dependency caching
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          enable-cache: true
+      - name: Install locked dependencies
+        run: make setup
+      - name: Apply pending migrations to the service container
+        run: make migrate
+      - name: Run the tests that need a real Postgres
+        run: make test-integration

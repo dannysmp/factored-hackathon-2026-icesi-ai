@@ -37,6 +37,7 @@ _ENV_KEYS = (
     "SESSION_TTL_SECONDS",
     "TEST_IDENTITY_ENABLED",
     "TEST_IDENTITY_KEY",
+    "DATABASE_URL",
 )
 
 
@@ -285,3 +286,41 @@ def test_a_signing_key_with_few_different_characters_is_rejected(
 
     with pytest.raises(ConfigError, match="different characters"):
         load_settings(env_file=None)
+
+
+# -----------------------------------------------------------------------------
+# Serving-store DSN
+# -----------------------------------------------------------------------------
+
+
+def test_database_url_defaults_to_absent() -> None:
+    """The service starts without a serving store configured."""
+    assert load_settings(env_file=None).database_url is None
+
+
+@pytest.mark.parametrize("blank", ["", "   "], ids=["empty", "whitespace"])
+def test_blank_database_url_counts_as_absent_and_require_fails(
+    monkeypatch: pytest.MonkeyPatch, blank: str
+) -> None:
+    """The template's empty DSN must not satisfy a feature that needs the store."""
+    monkeypatch.setenv("DATABASE_URL", blank)
+
+    settings = load_settings(env_file=None)
+
+    assert settings.database_url is None
+    with pytest.raises(ConfigError, match="DATABASE_URL"):
+        settings.require_database_url()
+
+
+def test_database_url_never_appears_in_repr_or_str(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The DSN is masked in every string form of the settings object."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:not-a-real-password@localhost/db")
+
+    settings = load_settings(env_file=None)
+
+    assert "not-a-real-password" not in repr(settings)
+    assert "not-a-real-password" not in str(settings)
+    assert (
+        settings.require_database_url().get_secret_value()
+        == "postgresql://user:not-a-real-password@localhost/db"
+    )

@@ -16,7 +16,8 @@ DATA_DIR ?= data/raw
 SILVER_DIR ?= data/silver
 
 .PHONY: help setup lint format test test-all secrets audit run clean \
-        profile pipeline analyze features corpus corpus-check train evaluate up
+        profile pipeline analyze features corpus corpus-check train evaluate up \
+        db-up db-down migrate test-integration
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -39,6 +40,18 @@ test: ## Fast hermetic tests (unit + contract) with the coverage gate
 
 test-all: ## All tests except live smoke (integration + recorded evals)
 	$(RUN) pytest -m "not smoke"
+
+db-up: ## Start the local Postgres serving store
+	docker compose up -d postgres
+
+db-down: ## Stop the local Postgres serving store and remove its volume
+	docker compose down -v
+
+migrate: ## Apply pending serving-store migrations (needs DATABASE_URL)
+	$(RUN) python -m app.persistence.migrate
+
+test-integration: ## Tests needing a real Postgres (DATABASE_URL must point at a migrated one)
+	$(RUN) pytest -m integration
 
 secrets: ## Scan history + staged changes (NOT unstaged/untracked files), then run the self-test
 	gitleaks git . --config .gitleaks.toml --no-banner --redact
