@@ -33,8 +33,8 @@ when ``--check`` finds drift.
 
 Limitations
 -----------
-Only the human-required category exists as of this slice; the sheet holds 22 of the golden set's
-135 cases until the remaining category modules land.
+Only the human-required and normal categories exist as of this slice; the sheet holds 63 of the
+golden set's 135 cases until the remaining category modules land.
 """
 
 from __future__ import annotations
@@ -49,17 +49,18 @@ from collections.abc import Sequence
 from pathlib import Path
 
 # Local modules
-from evals.golden.human_required import CASES as HUMAN_REQUIRED_CASES
-from evals.models import Case
+from evals.golden.human_required import CASES as HUMAN_REQUIRED_CASES  # Category group 1
+from evals.golden.normal import CASES as NORMAL_CASES  # Category group 2
+from evals.models import Case  # The record shape rendered as a row
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_DIRECTORY = Path(__file__).parent
 SHEET_FILENAME = "case_sheet.csv"
 
-#: Every authored case, in the golden set's mix-table category order
-#: (`plan/docs/evaluation-plan.md`).
-ALL_CASES: tuple[Case, ...] = HUMAN_REQUIRED_CASES
+#: Every authored case, in delivery order (each category group's own PR), not the mix table's
+#: row order (`plan/docs/evaluation-plan.md`) — human-required landed before normal.
+ALL_CASES: tuple[Case, ...] = HUMAN_REQUIRED_CASES + NORMAL_CASES
 
 _COLUMNS = (
     "case_id",
