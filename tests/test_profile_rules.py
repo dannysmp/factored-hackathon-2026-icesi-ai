@@ -25,7 +25,7 @@ from pipelines.inventory import scan_table
 from pipelines.profile import main, profile_data
 from pipelines.profile_models import DataProfile, DomainFacts, TableProfile
 from pipelines.profile_report import Verdict, assess_assumptions, render_markdown
-from pipelines.sources import Column, Layout, TableKind, TableSpec, table
+from pipelines.sources import Column, ForeignKey, Layout, TableKind, TableSpec, table
 from tests.data_fixture import (
     build_dispute_dataset,
     write_csv,
@@ -644,6 +644,55 @@ def test_identifier_named_columns_that_are_neither_key_nor_reference_are_not_lis
 
     assert columns["product_number"].top_values == ()
     assert [v.value for v in columns["product_type"].top_values] == ["Card"]
+
+
+def test_primary_key_columns_are_never_listed_even_without_an_identifier_suffix(
+    tmp_path: Path,
+) -> None:
+    """A key column named plainly (no ``_id``/``_number``) is still excluded, on its own."""
+    write_dimension(
+        tmp_path,
+        "daily_exchange_rates",
+        [
+            {
+                "date": "2025-01-0" + str(i),
+                "source_currency": "MXN",
+                "target_currency": "USD",
+                "exchange_rate": "20.5",
+            }
+            for i in range(1, 4)
+        ],
+    )
+
+    columns = {c.name: c for c in _table(profile_data(tmp_path), "daily_exchange_rates").columns}
+
+    assert columns["source_currency"].top_values == ()
+    assert columns["target_currency"].top_values == ()
+
+
+def test_foreign_key_columns_are_never_listed_even_without_an_identifier_suffix() -> None:
+    """A reference column named plainly (no ``_id``/``_number``) is still excluded, on its own."""
+    spec = TableSpec(
+        name="orders",
+        kind=TableKind.FACT,
+        layout=Layout.SINGLE_FILE,
+        expected_rows=3,
+        primary_key=("order_key",),
+        event_time_column=None,
+        columns=(
+            Column("order_key", "VARCHAR(20)", nullable=False),
+            Column("branch", "VARCHAR(20)", nullable=False),
+        ),
+        foreign_keys=(ForeignKey("branch", "branches", "branch_id"),),
+    )
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE orders AS SELECT 'O' || i AS order_key, 'B1' AS branch FROM range(3) t(i)"
+    )
+
+    profiles = profiler._column_profiles(con, spec, {"order_key", "branch"}, 3)
+
+    assert next(c for c in profiles if c.name == "branch").top_values == ()
 
 
 def test_a_table_without_a_header_row_turns_the_header_verdict_to_differs(tmp_path: Path) -> None:
