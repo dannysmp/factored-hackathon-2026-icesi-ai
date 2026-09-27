@@ -21,6 +21,10 @@
     "root_title": "Transaction Disputes — Project documentation",
     "pages": [
       {
+        "title": "Executive summary",
+        "source": "plan/delivery/executive-summary.md"
+      },
+      {
         "title": "Project plan",
         "source": "plan/PROJECT_PLAN.md"
       },
