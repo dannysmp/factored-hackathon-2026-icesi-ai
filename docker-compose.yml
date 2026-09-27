@@ -1,0 +1,34 @@
+# =============================================================================
+# docker-compose.yml — local serving store
+# =============================================================================
+# Purpose:
+#   The Postgres container behind the serving store, for local development and CI. The full
+#   deployed stack (backend, web, this same store, Caddy, Metabase) is composed by infra/ (E11),
+#   which extends this file rather than duplicating it.
+#
+# Usage:
+#   docker compose up -d          # start Postgres
+#   make migrate                  # apply pending migrations (needs DATABASE_URL in .env)
+#   docker compose down -v        # stop and remove the volume
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dispute_intake}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dispute_intake}
+      POSTGRES_DB: ${POSTGRES_DB:-dispute_intake}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dispute_intake}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
