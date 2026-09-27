@@ -10,6 +10,8 @@
 #   test         Hermetic tests with the coverage gate, and the policy-corpus drift check
 #                (runs after lint).
 #   secret-scan  Full-history secret scan and the scanner self-test.
+#   gate-scripts Executed fixture test of the review gate's glob translation
+#                (.github/scripts/glob-match.js), independent of the other jobs.
 #
 # Security posture:
 #   The workflow token is read-only and no cloud credentials are configured. Third-party
@@ -106,3 +108,15 @@ jobs:
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
       - name: Scan history and staged changes, then prove the scanner blocks a planted key
         run: make secrets
+
+  # ---------------------------------------------------------------------------
+  # Review gate helper scripts
+  # ---------------------------------------------------------------------------
+  gate-scripts:
+    name: gate-scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Run the glob translation's fixture test
+        run: node .github/scripts/glob-match.test.js
