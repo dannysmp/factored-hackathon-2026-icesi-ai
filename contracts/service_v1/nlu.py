@@ -107,6 +107,13 @@ class TransactionHint(ContractModel):
             for value in (self.merchant, self.amount, self.date_on, self.product_last4)
         )
 
+    @model_validator(mode="after")
+    def _date_source_pairs_with_a_date(self) -> TransactionHint:
+        """A date is read only together with how it was expressed, and never the other way."""
+        if (self.date_on is None) != (self.date_source is None):
+            raise ValueError("date_on and date_source must be given together or not at all")
+        return self
+
 
 class NluResult(ContractModel):
     """The understanding of one message."""
@@ -125,13 +132,13 @@ class NluResult(ContractModel):
 
     @model_validator(mode="after")
     def _slots_belong_to_their_intent(self) -> NluResult:
-        """A confirmation, a choice and a requested language come only with their own intent."""
-        if self.confirmation is not None and self.intent is not NluIntent.CONFIRMATION:
-            raise ValueError("confirmation is only read for the confirmation intent")
-        if self.choice is not None and self.intent is not NluIntent.CHOICE:
-            raise ValueError("choice is only read for the choice intent")
-        if self.requested_language is not None and self.intent is not NluIntent.SWITCH_LANGUAGE:
-            raise ValueError("requested_language is only read for the switch_language intent")
+        """A confirmation, a choice and a requested language exist exactly for their own intent."""
+        if (self.confirmation is not None) != (self.intent is NluIntent.CONFIRMATION):
+            raise ValueError("confirmation is read exactly for the confirmation intent")
+        if (self.choice is not None) != (self.intent is NluIntent.CHOICE):
+            raise ValueError("choice is read exactly for the choice intent")
+        if (self.requested_language is not None) != (self.intent is NluIntent.SWITCH_LANGUAGE):
+            raise ValueError("requested_language is read exactly for the switch_language intent")
         return self
 
     @classmethod

@@ -92,8 +92,24 @@ Rate = Annotated[float, Field(ge=0, le=1)]
 REF_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 NUMBER_PATTERN = r"^[A-Za-z0-9_-]{1,32}$"
 
-# Thirteen to nineteen digits, optionally separated by spaces or hyphens: a card number's length.
-_DIGIT_RUN = re.compile(r"(?:\d[ -]?){12,18}\d")
+# A span of digits and the separators a card number is written with (space, hyphen, dot, slash);
+# at least 13 characters, so a shorter numeric mention is never inspected.
+_CARD_LIKE_SPAN = re.compile(r"[\d \-./]{13,}")
+
+# The leading digits and length of a card number under each major network's numbering scheme
+# (its issuer identification number range). Checking a substring against its network's shape
+# before running Luhn on it is what keeps an ordinary long number (a date range, an order
+# number) from being flagged merely because some window of its digits happens to pass Luhn: Luhn
+# alone passes about one in ten arbitrary digit strings, so a shape check is required first.
+_CARD_SHAPES: tuple[tuple[re.Pattern[str], int], ...] = (
+    (re.compile(r"^4"), 13),  # Visa
+    (re.compile(r"^4"), 16),  # Visa
+    (re.compile(r"^4"), 19),  # Visa
+    (re.compile(r"^5[1-5]"), 16),  # Mastercard
+    (re.compile(r"^3[47]"), 15),  # American Express
+    (re.compile(r"^(?:30[0-5]|36|38)"), 14),  # Diners Club
+    (re.compile(r"^(?:6011|65)"), 16),  # Discover
+)
 
 
 def _luhn_valid(digits: str) -> bool:
@@ -116,11 +132,21 @@ def _refuse_control_characters(value: str) -> str:
 
 
 def _refuse_card_like_text(value: str) -> str:
-    """Refuse control characters and any run of digits that is a valid card number."""
+    """Refuse control characters and any digit substring that has the shape of a card number.
+
+    Every offset within a card-like span is tried against every network shape, not only the span
+    taken as one whole number: a stray digit before or after the real number, or a separator the
+    span was not split on, would otherwise let it hide inside a longer or differently punctuated
+    run.
+    """
     _refuse_control_characters(value)
-    for match in _DIGIT_RUN.finditer(value):
-        if _luhn_valid(re.sub(r"\D", "", match.group())):
-            raise ValueError("text must not contain a card number")
+    for span in _CARD_LIKE_SPAN.finditer(value):
+        digits = re.sub(r"\D", "", span.group())
+        for pattern, length in _CARD_SHAPES:
+            for start in range(len(digits) - length + 1):
+                candidate = digits[start : start + length]
+                if pattern.match(candidate) and _luhn_valid(candidate):
+                    raise ValueError("text must not contain a card number")
     return value
 
 

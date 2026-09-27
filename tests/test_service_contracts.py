@@ -897,9 +897,26 @@ _CARD_NUMBER = "4111111111111111"
 _NOT_A_CARD_NUMBER = "4111111111111112"
 
 
-@pytest.mark.parametrize("text", [_CARD_NUMBER, "4111 1111 1111 1111", "4111-1111-1111-1111"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        _CARD_NUMBER,
+        "4111 1111 1111 1111",
+        "4111-1111-1111-1111",
+        "4111.1111.1111.1111",
+        "4111/1111/1111/1111",
+        f"1{_CARD_NUMBER}",
+        f"{_CARD_NUMBER}1",
+        f"{_CARD_NUMBER} 1",
+    ],
+)
 def test_free_text_fields_refuse_card_like_digit_runs(text: str) -> None:
-    """A card number cannot be stored in any bounded free-text field of a contract."""
+    """A card number cannot be stored in any bounded free-text field of a contract.
+
+    The digits are checked at every offset against every network's prefix-and-length shape, not
+    only as one whole number, so a stray adjacent digit or a punctuation mark the run was not
+    split on cannot hide one.
+    """
     with pytest.raises(ValidationError, match="card number"):
         _transaction(merchant=f"Tienda {text}")
     with pytest.raises(ValidationError, match="card number"):
@@ -1054,18 +1071,18 @@ def test_an_evidence_list_for_a_category_fits_a_policy_value() -> None:
 # -----------------------------------------------------------------------------
 
 
-def test_a_slot_comes_only_with_its_intent() -> None:
+def test_a_slot_comes_only_with_its_own_intent() -> None:
     """A confirmation, a choice and a requested language are read only for their own intent."""
     assert NluResult(
         intent=NluIntent.CONFIRMATION, confidence=0.9, confirmation=ConfirmationAnswer.YES
     )
-    with pytest.raises(ValidationError, match="confirmation is only read"):
+    with pytest.raises(ValidationError, match="confirmation is read exactly"):
         NluResult(
             intent=NluIntent.FILE_DISPUTE, confidence=0.9, confirmation=ConfirmationAnswer.YES
         )
-    with pytest.raises(ValidationError, match="choice is only read"):
+    with pytest.raises(ValidationError, match="choice is read exactly"):
         NluResult(intent=NluIntent.FILE_DISPUTE, confidence=0.9, choice=2)
-    with pytest.raises(ValidationError, match="requested_language is only read"):
+    with pytest.raises(ValidationError, match="requested_language is read exactly"):
         NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, requested_language="pt")
 
 
@@ -1195,3 +1212,38 @@ _FROZEN_VALUES: dict[type[StrEnum], set[str]] = {
 def test_a_closed_set_keeps_every_value_it_was_frozen_with(enumeration: type[StrEnum]) -> None:
     """A rename or a removal in a frozen closed set fails; an addition does not."""
     assert _FROZEN_VALUES[enumeration] <= {member.value for member in enumeration}
+
+
+def test_ordinary_long_digit_spans_are_not_flagged() -> None:
+    """A date range or an order number does not trip the card check merely by being numeric."""
+    assert _transaction(merchant="Pedido 20260618-20260620").merchant
+    assert NluResult(
+        intent=NluIntent.POLICY_QUESTION, confidence=0.9, policy_query="01/02/2026 - 03/04/2026"
+    )
+
+
+# -----------------------------------------------------------------------------
+# Understanding: a slot exists exactly for its own intent
+# -----------------------------------------------------------------------------
+
+
+def test_confirmation_choice_and_requested_language_are_required_by_their_own_intent() -> None:
+    """The confirmation, choice and switch_language intents do not arrive without their slot."""
+    with pytest.raises(ValidationError, match="confirmation is read exactly"):
+        NluResult(intent=NluIntent.CONFIRMATION, confidence=0.9)
+    with pytest.raises(ValidationError, match="choice is read exactly"):
+        NluResult(intent=NluIntent.CHOICE, confidence=0.9)
+    with pytest.raises(ValidationError, match="requested_language is read exactly"):
+        NluResult(intent=NluIntent.SWITCH_LANGUAGE, confidence=0.9)
+
+    assert NluResult(intent=NluIntent.CHOICE, confidence=0.9, choice=2)
+
+
+def test_a_transaction_hint_date_and_its_source_are_given_together() -> None:
+    """A resolved date without how it was expressed, or the reverse, is refused."""
+    with pytest.raises(ValidationError, match="given together"):
+        TransactionHint(date_on=date(2026, 6, 17))
+    with pytest.raises(ValidationError, match="given together"):
+        TransactionHint(date_source=DateSource.RELATIVE)
+
+    assert TransactionHint(date_on=date(2026, 6, 17), date_source=DateSource.RELATIVE)
