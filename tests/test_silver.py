@@ -16,6 +16,7 @@ from __future__ import annotations
 # Standard libraries
 import hashlib  # Compare artefacts byte for byte
 import json  # Read manifests
+import os  # Null device for the git configuration
 import subprocess  # Build a throwaway repository
 from datetime import date  # Partition days
 from pathlib import Path  # Temporary dataset locations
@@ -1009,7 +1010,12 @@ def test_only_capitalised_booleans_are_accepted(clean: tuple[Path, Path]) -> Non
 
 
 def _repository(root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A throwaway repository with one committed file, entered for the duration of the test."""
+    """A throwaway repository with one committed file, entered for the duration of the test.
+
+    The machine's git configuration is ignored so the stamps do not depend on it.
+    """
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
     def git(*arguments: str) -> None:
         subprocess.run(  # noqa: S603 - fixed argv, no shell
@@ -1033,11 +1039,15 @@ def test_a_clean_working_tree_is_stamped_with_the_bare_commit(
 ) -> None:
     """Only a tree identical to the commit carries the plain commit id."""
     _repository(tmp_path, monkeypatch)
+    commit = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
 
-    stamp = silver_module.git_version()
-
-    assert "-dirty" not in stamp
-    assert stamp != "unknown"
+    assert silver_module.git_version() == commit
 
 
 def test_the_same_modified_tree_is_stamped_identically_every_time(
