@@ -1,0 +1,498 @@
+{
+  "file_dispute": [
+    {
+      "contract_version": "1",
+      "session_id": "session-demo",
+      "lang": "es",
+      "domain_date": "2026-06-18",
+      "intent": "clarify",
+      "next_expected": "transaction",
+      "end_session": false,
+      "facts": {
+        "transactions": [],
+        "candidate_count": 0,
+        "selected_ref": null,
+        "category": null,
+        "cases": [],
+        "window": null,
+        "policy_values": [],
+        "expected_response_on": null,
+        "search_terms": [],
+        "date_to_confirm": null,
+        "pending_disputes": 0,
+        "contact_within_hours": null,
+        "ticket_ref": null
+      },
+      "decisions": [],
+      "sources": [],
+      "render_mode": "template",
+      "template_id": "clarify_transaction",
+      "agent_only": null
+    },
+    {
+      "contract_version": "1",
+      "session_id": "session-demo",
+      "lang": "es",
+      "domain_date": "2026-06-18",
+      "intent": "present_transactions",
+      "next_expected": "transaction_choice",
+      "end_session": false,
+      "facts": {
+        "transactions": [
+          {
+            "ref": "tx-1001",
+            "occurred_on": "2026-06-12",
+            "merchant": "Tienda Sol",
+            "amount": {
+              "amount": "250.00",
+              "currency": "MXN"
+            },
+            "product": {
+              "name": "Visa Classic",
+              "last4": "4321"
+            },
+            "status": "Approved"
+          }
+        ],
+        "candidate_count": 1,
+        "selected_ref": null,
+        "category": null,
+        "cases": [],
+        "window": null,
+        "policy_values": [],
+        "expected_response_on": null,
+        "search_terms": [],
+        "date_to_confirm": null,
+        "pending_disputes": 0,
+        "contact_within_hours": null,
+        "ticket_ref": null
+      },
+      "decisions": [],
+      "sources": [],
+      "render_mode": "template",
+      "template_id": "present_one",
+      "agent_only": null
+    },
+    {
+      "contract_version": "1",
+      "session_id": "session-demo",
+      "lang": "es",
+      "domain_date": "2026-06-18",
+      "intent": "clarify",
+      "next_expected": "reason",
+      "end_session": false,
+      "facts": {
+        "transactions": [
+          {
+            "ref": "tx-1001",
+            "occurred_on": "2026-06-12",
+            "merchant": "Tienda Sol",
+            "amount": {
+              "amount": "250.00",
+              "currency": "MXN"
+            },
+            "product": {
+              "name": "Visa Classic",
+              "last4": "4321"
+            },
+            "status": "Approved"
+          }
+        ],
+        "candidate_count": 1,
+        "selected_ref": null,
+        "category": null,
+        "cases": [],
+        "window": null,
+        "policy_values": [],
+        "expected_response_on": null,
+        "search_terms": [],
+        "date_to_confirm": null,
+        "pending_disputes": 0,
+        "contact_within_hours": null,
+        "ticket_ref": null
+      },
+      "decisions": [],
+      "sources": [],
+      "render_mode": "template",
+      "template_id": "clarify_reason",
+      "agent_only": null
+    },
+    {
+      "contract_version": "1",
+      "session_id": "session-demo",
+      "lang": "es",
+      "domain_date": "2026-06-18",
+      "intent": "confirm_filing",
+      "next_expected": "confirmation",
+      "end_session": false,
+      "facts": {
+        "transactions": [
+          {
+            "ref": "tx-1001",
+            "occurred_on": "2026-06-12",
+            "merchant": "Tienda Sol",
+            "amount": {
+              "amount": "250.00",
+              "currency": "MXN"
+            },
+            "product": {
+              "name": "Visa Classic",
+              "last4": "4321"
+            },
+            "status": "Approved"
+          }
+        ],
+        "candidate_count": 1,
+        "selected_ref": "tx-1001",
+        "category": "unrecognized_charge",
+        "cases": [],
+        "window": null,
+        "policy_values": [],
+        "expected_response_on": null,
+        "search_terms": [],
+        "date_to_confirm": null,
+        "pending_disputes": 0,
+        "contact_within_hours": null,
+        "ticket_ref": null
+      },
+      "decisions": [
+        {
+          "outcome": "eligible",
+          "customer_reason": "eligible",
+          "policy_version": "2",
+          "requires_confirmation": true
+        }
+      ],
+      "sources": [],
+      "render_mode": "template",
+      "template_id": "confirm_filing",
+      "agent_only": null
+    },
+    {
+      "contract_version": "1",
+      "session_id": "session-demo",
+      "lang": "es",
+      "domain_date": "2026-06-18",
+      "intent": "filing_result",
+      "next_expected": null,
+      "end_session": false,
+      "facts": {
+        "transactions": [],
+        "candidate_count": 0,
+        "selected_ref": null,
+        "category": null,
+        "cases": [
+          {
+            "case_number": "D-2001",
+            "status": "Open",
+            "filed_on": "2026-06-18",
+            "transaction_ref": "tx-1001",
+            "expected_response_on": "2026-06-25"
+          }
+        ],
+        "window": null,
+        "policy_values": [],
+        "expected_response_on": "2026-06-25",
+        "search_terms": [],
+        "date_to_confirm": null,
+        "pending_disputes": 0,
+        "contact_within_hours": null,
+        "ticket_ref": null
+      },
+      "decisions": [
+        {
+          "outcome": "eligible",
+          "customer_reason": "eligible",
+          "policy_version": "2",
+          "requires_confirmation": true
+        }
+      ],
+      "sources": [],
+      "render_mode": "template",
+      "template_id": "filing_result",
+      "agent_only": null
+    },
+    {
+      "contract_version": "1",
+      "session_id": "session-demo",
+      "lang": "es",
+      "domain_date": "2026-06-18",
+      "intent": "farewell",
+      "next_expected": null,
+      "end_session": true,
+      "facts": {
+        "transactions": [],
+        "candidate_count": 0,
+        "selected_ref": null,
+        "category": null,
+        "cases": [],
+        "window": null,
+        "policy_values": [],
+        "expected_response_on": null,
+        "search_terms": [],
+        "date_to_confirm": null,
+        "pending_disputes": 0,
+        "contact_within_hours": null,
+        "ticket_ref": null
+      },
+      "decisions": [],
+      "sources": [],
+      "render_mode": "template",
+      "template_id": "farewell",
+      "agent_only": null
+    }
+  ],
+  "policy_answer": [
+    {
+      "contract_version": "1",
+      "session_id": "session-demo",
+      "lang": "es",
+      "domain_date": "2026-06-18",
+      "intent": "policy_answer",
+      "next_expected": null,
+      "end_session": false,
+      "facts": {
+        "transactions": [],
+        "candidate_count": 0,
+        "selected_ref": null,
+        "category": null,
+        "cases": [],
+        "window": null,
+        "policy_values": [
+          {
+            "name": "filing_window_days",
+            "value": "60"
+          }
+        ],
+        "expected_response_on": null,
+        "search_terms": [],
+        "date_to_confirm": null,
+        "pending_disputes": 0,
+        "contact_within_hours": null,
+        "ticket_ref": null
+      },
+      "decisions": [],
+      "sources": [
+        {
+          "section_id": "filing-windows",
+          "titles": [
+            {
+              "lang": "es",
+              "text": "Plazos para disputar"
+            },
+            {
+              "lang": "pt",
+              "text": "Prazos para contestar"
+            },
+            {
+              "lang": "en",
+              "text": "Filing windows"
+            }
+          ],
+          "corpus_version": "2"
+        }
+      ],
+      "render_mode": "template",
+      "template_id": "policy_answer",
+      "agent_only": null
+    }
+  ],
+  "abstain": [
+    {
+      "contract_version": "1",
+      "session_id": "session-demo",
+      "lang": "es",
+      "domain_date": "2026-06-18",
+      "intent": "abstain",
+      "next_expected": null,
+      "end_session": false,
+      "facts": {
+        "transactions": [],
+        "candidate_count": 0,
+        "selected_ref": null,
+        "category": null,
+        "cases": [],
+        "window": null,
+        "policy_values": [],
+        "expected_response_on": null,
+        "search_terms": [],
+        "date_to_confirm": null,
+        "pending_disputes": 0,
+        "contact_within_hours": null,
+        "ticket_ref": null
+      },
+      "decisions": [],
+      "sources": [],
+      "render_mode": "template",
+      "template_id": "abstain_policy",
+      "agent_only": null
+    }
+  ],
+  "ineligible_window": [
+    {
+      "contract_version": "1",
+      "session_id": "session-demo",
+      "lang": "es",
+      "domain_date": "2026-06-18",
+      "intent": "ineligible",
+      "next_expected": null,
+      "end_session": false,
+      "facts": {
+        "transactions": [
+          {
+            "ref": "tx-1001",
+            "occurred_on": "2026-02-01",
+            "merchant": "Tienda Sol",
+            "amount": {
+              "amount": "250.00",
+              "currency": "MXN"
+            },
+            "product": {
+              "name": "Visa Classic",
+              "last4": "4321"
+            },
+            "status": "Approved"
+          }
+        ],
+        "candidate_count": 1,
+        "selected_ref": "tx-1001",
+        "category": "unrecognized_charge",
+        "cases": [],
+        "window": {
+          "days_allowed": 60,
+          "age_days": 137,
+          "deadline": "2026-04-02"
+        },
+        "policy_values": [],
+        "expected_response_on": null,
+        "search_terms": [],
+        "date_to_confirm": null,
+        "pending_disputes": 0,
+        "contact_within_hours": null,
+        "ticket_ref": null
+      },
+      "decisions": [
+        {
+          "outcome": "ineligible",
+          "customer_reason": "window_expired",
+          "policy_version": "2",
+          "requires_confirmation": false
+        }
+      ],
+      "sources": [
+        {
+          "section_id": "filing-windows",
+          "titles": [
+            {
+              "lang": "es",
+              "text": "Plazos para disputar"
+            },
+            {
+              "lang": "pt",
+              "text": "Prazos para contestar"
+            },
+            {
+              "lang": "en",
+              "text": "Filing windows"
+            }
+          ],
+          "corpus_version": "2"
+        }
+      ],
+      "render_mode": "template",
+      "template_id": "ineligible",
+      "agent_only": {
+        "decisions": [
+          {
+            "reason_code": "filing_window_expired",
+            "triggers": [],
+            "inputs": []
+          }
+        ],
+        "nlu_confidence": null,
+        "risk": null
+      }
+    }
+  ],
+  "refusal": [
+    {
+      "contract_version": "1",
+      "session_id": "session-demo",
+      "lang": "es",
+      "domain_date": "2026-06-18",
+      "intent": "refuse",
+      "next_expected": null,
+      "end_session": false,
+      "facts": {
+        "transactions": [],
+        "candidate_count": 0,
+        "selected_ref": null,
+        "category": null,
+        "cases": [],
+        "window": null,
+        "policy_values": [],
+        "expected_response_on": null,
+        "search_terms": [],
+        "date_to_confirm": null,
+        "pending_disputes": 0,
+        "contact_within_hours": null,
+        "ticket_ref": null
+      },
+      "decisions": [],
+      "sources": [],
+      "render_mode": "template",
+      "template_id": "refuse_unsupported",
+      "agent_only": null
+    }
+  ],
+  "fraud_handoff": [
+    {
+      "contract_version": "1",
+      "session_id": "session-demo",
+      "lang": "es",
+      "domain_date": "2026-06-18",
+      "intent": "handoff",
+      "next_expected": null,
+      "end_session": true,
+      "facts": {
+        "transactions": [],
+        "candidate_count": 0,
+        "selected_ref": null,
+        "category": null,
+        "cases": [],
+        "window": null,
+        "policy_values": [],
+        "expected_response_on": null,
+        "search_terms": [],
+        "date_to_confirm": null,
+        "pending_disputes": 0,
+        "contact_within_hours": 24,
+        "ticket_ref": "T-100"
+      },
+      "decisions": [
+        {
+          "outcome": "escalate",
+          "customer_reason": "needs_review",
+          "policy_version": "2",
+          "requires_confirmation": false
+        }
+      ],
+      "sources": [],
+      "render_mode": "template",
+      "template_id": "handoff_fraud",
+      "agent_only": {
+        "decisions": [
+          {
+            "reason_code": "escalate_fraud_claim",
+            "triggers": [
+              "escalate_fraud_claim"
+            ],
+            "inputs": []
+          }
+        ],
+        "nlu_confidence": 0.95,
+        "risk": null
+      }
+    }
+  ]
+}

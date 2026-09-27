@@ -41,6 +41,18 @@
         "source": "plan/OPERATIONS.md"
       },
       {
+        "title": "Delivery status",
+        "source": "plan/delivery/status.md"
+      },
+      {
+        "title": "RAID log",
+        "source": "plan/delivery/raid-log.md"
+      },
+      {
+        "title": "Decision log",
+        "source": "plan/delivery/decision-log.md"
+      },
+      {
         "title": "README",
         "source": "README.md"
       }
