@@ -43,8 +43,14 @@ CREATE TABLE transactions (
     amount NUMERIC(15, 2) NOT NULL,
     currency CHAR(3) NOT NULL,
     amount_usd NUMERIC(15, 2),
+    amount_usd_provenance VARCHAR(10) NOT NULL
+        CHECK (amount_usd_provenance IN ('reported', 'converted', 'unknown')),
     transaction_status VARCHAR(20) NOT NULL
-        CHECK (transaction_status IN ('Approved', 'Declined', 'Pending', 'Reversed'))
+        CHECK (transaction_status IN ('Approved', 'Declined', 'Pending', 'Reversed')),
+    CONSTRAINT transactions_amount_usd_matches_provenance CHECK (
+        (amount_usd_provenance = 'unknown' AND amount_usd IS NULL)
+        OR (amount_usd_provenance != 'unknown' AND amount_usd IS NOT NULL)
+    )
 );
 
 CREATE INDEX transactions_customer_id_idx ON transactions (customer_id);
