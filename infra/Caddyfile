@@ -1,0 +1,27 @@
+# =============================================================================
+# Caddyfile — reverse proxy and automatic TLS
+# =============================================================================
+# Purpose:
+#   Terminates TLS for the whole stack on one host (ADR-13) and routes to the
+#   backend and the web build. Caddy issues and renews the certificate
+#   automatically from the host name alone; no certificate is ever committed.
+# Design:
+#   The host name is read from the environment (`HOST_NAME`), never
+#   hardcoded: today it is `<elastic-ip-with-dashes>.sslip.io`, so no domain
+#   purchase or DNS setup is needed; a real domain replaces it later by
+#   changing this one value.
+# Usage:
+#   Copied to the host by the deploy pipeline (a later slice) alongside
+#   docker-compose.prod.yml; not run directly from this repository.
+# =============================================================================
+
+{$HOST_NAME} {
+	# The web build's static files, served by the web container.
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+}
