@@ -16,6 +16,7 @@ from datetime import date  # Partition day
 from pathlib import Path  # Temporary dataset locations
 
 # Third-party libraries
+import duckdb  # In-memory table for the distinct-count measurement
 import pytest  # Test runner and fixtures
 
 # Local modules
@@ -24,7 +25,7 @@ from pipelines.inventory import scan_table
 from pipelines.profile import main, profile_data
 from pipelines.profile_models import DataProfile, DomainFacts, TableProfile
 from pipelines.profile_report import Verdict, assess_assumptions, render_markdown
-from pipelines.sources import table
+from pipelines.sources import Column, Layout, TableKind, TableSpec, table
 from tests.data_fixture import (
     build_dispute_dataset,
     write_csv,
@@ -653,3 +654,39 @@ def test_a_table_without_a_header_row_turns_the_header_verdict_to_differs(tmp_pa
 
     header_rule = "Files are UTF-8 CSV whose header equals the dictionary's column list"
     assert verdicts[header_rule] is Verdict.DIFFERS
+
+
+# -----------------------------------------------------------------------------
+# Distinct counts
+# -----------------------------------------------------------------------------
+
+
+def test_distinct_count_is_exact_and_never_exceeds_the_rows_present() -> None:
+    """A unique column reports as many distinct values as it has rows, however large."""
+    rows = 200_000
+    spec = TableSpec(
+        name="wide",
+        kind=TableKind.DIMENSION,
+        layout=Layout.SINGLE_FILE,
+        expected_rows=rows,
+        primary_key=("wide_id",),
+        event_time_column=None,
+        columns=(
+            Column("wide_id", "VARCHAR(20)", nullable=False),
+            Column("bucket", "VARCHAR(20)", nullable=True),
+        ),
+        foreign_keys=(),
+    )
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE wide AS SELECT 'id' || i AS wide_id, "
+        "CASE WHEN i % 4 = 0 THEN NULL ELSE 'b' || (i % 3) END AS bucket "
+        "FROM range(?) t(i)",
+        [rows],
+    )
+
+    columns = {c.name: c for c in profiler._column_profiles(con, spec, {"wide_id", "bucket"}, rows)}
+
+    assert columns["wide_id"].distinct_count == rows
+    assert columns["bucket"].distinct_count == 3
+    assert columns["bucket"].nulls == rows // 4

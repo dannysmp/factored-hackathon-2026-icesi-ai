@@ -611,7 +611,7 @@ def _not_profiled_section(profile: DataProfile) -> str:
 def _appendix(tables: tuple[TableProfile, ...]) -> str:
     """Column-level detail for every table."""
     blocks = []
-    headers = ["Column", "Type", "Nullable", "Missing", "Unparseable", "Distinct (estimate)"]
+    headers = ["Column", "Type", "Nullable", "Missing", "Unparseable", "Distinct"]
     for profile in tables:
         rows = [
             [
@@ -620,7 +620,7 @@ def _appendix(tables: tuple[TableProfile, ...]) -> str:
                 "yes" if c.declared_nullable else "no",
                 _percent(c.nulls, c.rows),
                 _count(c.unparseable),
-                _count(c.distinct_estimate),
+                _count(c.distinct_count),
                 _values(c.top_values, APPENDIX_VALUES) if c.top_values else "",
             ]
             for c in profile.columns

@@ -35,9 +35,9 @@ Limitations
 -----------
 A table whose files cannot be parsed (for example a row with more fields than the header) is
 listed as unloadable, with the error class only, and the other tables are still profiled.
-Distinct counts use DuckDB's approximate estimator; values shown for low-cardinality columns
-are exact. The text-encoding check catches the common UTF-8-read-as-Latin-1 pattern and the
-replacement character, not every possible corruption.
+Distinct counts and the values shown for low-cardinality columns are exact. The text-encoding
+check catches the common UTF-8-read-as-Latin-1 pattern and the replacement character, not every
+possible corruption.
 """
 
 from __future__ import annotations
@@ -106,9 +106,6 @@ logger = logging.getLogger(__name__)
 
 # Values are listed for a column only when it has at most this many distinct values.
 MAX_CATEGORICAL_VALUES = 25
-# The distinct-value estimator can be off by about 20 %; the exact listing is attempted whenever
-# the estimate stays within this margin of the limit above.
-ESTIMATE_LIMIT = 3 * MAX_CATEGORICAL_VALUES
 # Columns declared at least this long hold free text, where encoding damage is likely.
 FREE_TEXT_MIN_LENGTH = 30
 # Rows returned for a distribution of reasons or categories.
@@ -253,7 +250,7 @@ def _column_aggregates(column: Column, index: int) -> list[str]:
         f"{unparseable} AS unparseable_{index}",
         f"{written_as_decimals} AS decimals_{index}",
         f"{encoding_damage} AS damaged_{index}",
-        f"approx_count_distinct({name}) AS distinct_{index}",
+        f"count(DISTINCT {name}) AS distinct_{index}",
     ]
 
 
@@ -277,7 +274,7 @@ def _column_profiles(
             and not column.name.endswith(IDENTIFIER_SUFFIXES)
         )
         top_values: tuple[ValueCount, ...] = ()
-        if listable and distinct <= ESTIMATE_LIMIT:
+        if listable and distinct <= MAX_CATEGORICAL_VALUES:
             values = _value_counts(
                 con,
                 _distribution_sql(table, _quote_identifier(column.name)),
@@ -295,7 +292,7 @@ def _column_profiles(
                 unparseable=unparseable,
                 integers_written_as_decimals=decimals,
                 text_encoding_suspects=damaged,
-                distinct_estimate=distinct,
+                distinct_count=distinct,
                 top_values=top_values,
             )
         )
