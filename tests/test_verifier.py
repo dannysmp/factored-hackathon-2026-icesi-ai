@@ -122,9 +122,9 @@ def test_a_literal_digit_outside_any_slot_is_rejected() -> None:
 
 
 def test_a_fabricated_amount_built_from_grounded_digit_fragments_is_rejected() -> None:
-    """The concatenation attack that beat the old text-based guard (PR #83, round 3) cannot even
-    reach a pattern check here: any digit the model writes rejects the reply outright, so there
-    is no finished sentence left to inspect for a suspicious-looking number."""
+    """A number built by concatenating pieces of two otherwise-grounded values cannot even reach
+    a pattern check here: any digit the model writes rejects the reply outright, so there is no
+    finished sentence left to inspect for a suspicious-looking number."""
     envelope = _envelope()
     candidate = CandidateReply(
         raw_text="Good news: you are getting a refund of 19,234.56 USD today."
