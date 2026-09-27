@@ -7,7 +7,7 @@ Overview
 Turns a ``RenderEnvelope`` into the reply text, the persistent reference-date line and, for a
 demonstration session, its notice — the fixed-wording path the architecture calls the template
 renderer. It reads only the envelope: every number, date and name it states comes from ``facts``,
-``decisions`` or ``sources``, never invented, and the numbers guard proves it.
+``decisions`` or ``sources``, never invented, and the numbers guard checks it.
 
 Scope
 -----
@@ -664,12 +664,19 @@ def render(envelope: RenderEnvelope) -> RenderedReply:
 
 _DIGITS = re.compile(r"\d+")
 
-# A maximal run of digits and the separators a formatted number carries (thousands grouping, a
-# decimal comma or point, the Spanish non-breaking space). Checked as one whole span in the
-# reply, never as independent digit runs: two unrelated grounded numbers glued together with no
-# word between them (a case number's digits next to an amount's) must not slip past merely
-# because each fragment, checked on its own, happens to belong to some other fact.
-_NUMBER_SPAN = re.compile(r"\d+(?:[.," + chr(0xA0) + r"]\d+)*")
+# A maximal run of digit groups joined by a single character from this set: a formatted number's
+# own separators (thousands grouping, a decimal comma or point, the Spanish non-breaking space),
+# plus the punctuation and the bare space a fabricated reply might use to glue two grounded
+# fragments together instead. What tells two genuinely separate numbers apart in every reply this
+# module writes is a word between them ("del 18 de junio de 2026", never "18 2026"); a joiner is
+# only absorbed into the span when a digit follows it directly, so a sentence-ending period after
+# a year is never swept into the number. Checked as one whole span, never as independent digit
+# runs, so two grounded fragments glued by one of these characters and no word cannot each pass on
+# their own. This is a defense against exactly the joiners listed, not a claim that no character
+# could ever join two fragments unnoticed (a letter between two digit runs is not covered, and
+# would need a different check); the fixed set of hand-written templates in this module never
+# produces that shape, and it is a known, deliberate limit of this guard, not an assumed one.
+_NUMBER_SPAN = re.compile(r"\d+(?:[ \-:/_.," + chr(0xA0) + r"]\d+)*")
 
 
 def _date_numbers(value: date) -> set[str]:
@@ -725,7 +732,9 @@ def numbers_guard(reply: str, envelope: RenderEnvelope) -> None:
 
     Every contiguous span of digits and formatting separators in the reply is checked as one
     whole token against the envelope's own facts (see ``_NUMBER_SPAN``), so a fabricated value
-    assembled from two grounded fragments is caught even when each fragment alone is legitimate.
+    assembled from two grounded fragments glued by a space or a common punctuation mark is
+    caught even when each fragment alone is legitimate. See ``_NUMBER_SPAN`` for exactly which
+    joiners this defends against, and the limit that is deliberate, not assumed.
 
     Raises
     ------

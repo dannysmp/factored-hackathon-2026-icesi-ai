@@ -8,11 +8,15 @@ passed in, never a clock, a file or a network call.
 
 from __future__ import annotations
 
-from datetime import date
-from decimal import Decimal
+# Standard libraries
+import re  # Escaping a fabricated joiner in a match pattern
+from datetime import date  # Fixed reference and transaction dates
+from decimal import Decimal  # Money in the tests
 
-import pytest
+# Third-party libraries
+import pytest  # Test runner and parametrisation
 
+# Local modules
 from app.conversation.renderer import (
     demo_notice,
     format_date,
@@ -455,16 +459,12 @@ def test_numbers_guard_grounds_a_date_awaiting_confirmation() -> None:
     numbers_guard(f"¿Se refiere al {format_date(date(2026, 6, 17), 'es')}?", envelope)
 
 
-def test_numbers_guard_rejects_a_fabricated_amount_built_from_grounded_digit_fragments() -> None:
-    """A number assembled from two unrelated grounded fragments is not itself grounded.
-
-    A case number's digits ("19") and an amount's digits ("234.56") each pass on their own; the
-    guard must still refuse a reply that glues them into one number neither fact ever stated.
-    """
+def _envelope_with_a_case_and_an_amount() -> RenderEnvelope:
+    """An envelope grounding a case number's digits ("19") and an amount's ("234.56")."""
     case = CaseFact(
         case_number="D-19", status="Open", filed_on=_DOMAIN_DATE, transaction_ref="tx-1001"
     )
-    envelope = _envelope(
+    return _envelope(
         intent=Intent.DISPUTE_STATUS,
         template_id=TemplateId.DISPUTE_STATUS,
         lang="en",
@@ -475,5 +475,27 @@ def test_numbers_guard_rejects_a_fabricated_amount_built_from_grounded_digit_fra
         ),
     )
 
-    with pytest.raises(ValueError, match=r"19,234\.56"):
-        numbers_guard("Your total is 19,234.56 USD.", envelope)
+
+@pytest.mark.parametrize("joiner", [",", "-", ":", "/", " ", "_"])
+def test_numbers_guard_rejects_fabricated_numbers_joined_by_any_separator(joiner: str) -> None:
+    """A number assembled from two unrelated grounded fragments is not itself grounded.
+
+    A case number's digits ("19") and an amount's digits ("234.56") each pass on their own; the
+    guard must still refuse a reply that glues them into one number neither fact ever stated,
+    whichever of the joining characters it recognizes is used to glue them.
+    """
+    envelope = _envelope_with_a_case_and_an_amount()
+
+    with pytest.raises(ValueError, match=re.escape(f"19{joiner}234.56")):
+        numbers_guard(f"Your total is 19{joiner}234.56 USD.", envelope)
+
+
+def test_numbers_guard_does_not_claim_to_catch_every_conceivable_joiner() -> None:
+    """A documented, deliberate limit: a letter between two fragments is not this guard's job.
+
+    No hand-written template in this module ever places two grounded numbers back to back with
+    only a letter between them, so this is a stated limit, not a silently assumed one.
+    """
+    envelope = _envelope_with_a_case_and_an_amount()
+
+    numbers_guard("Your total is 19a234.56 USD.", envelope)
