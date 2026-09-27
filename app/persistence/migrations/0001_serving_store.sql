@@ -9,6 +9,12 @@
 -- no document number, birth date, address, full email or full phone. A masked email and phone
 -- are kept for what a rendered reply may reference; the seed populates them already masked.
 --
+-- Closed-set CHECK constraints copy the frozen source values from contracts/v1.py's
+-- AllowedValues (customer_status, product_status, transaction_type, transaction_status), never a
+-- guessed or narrowed subset, plus the closed sets contracts/service_v1 and app.domain.policy
+-- already freeze for the service's own vocabulary (case status, dispute category, amount
+-- provenance, language).
+--
 -- Sessions, turns and the audit log belong to a later, separate migration (0002, slice 2.4);
 -- this one holds only the four tables above.
 -- =============================================================================
@@ -21,15 +27,16 @@ CREATE TABLE customers (
     masked_phone VARCHAR(20),
     country VARCHAR(50) NOT NULL,
     customer_status VARCHAR(20) NOT NULL
-        CHECK (customer_status IN ('Active', 'Suspended', 'Closed'))
+        CHECK (customer_status IN ('Active', 'Inactive', 'Suspended', 'Closed'))
 );
 
 CREATE TABLE products (
     product_id VARCHAR(20) PRIMARY KEY,
     customer_id VARCHAR(20) NOT NULL REFERENCES customers (customer_id),
     product_type VARCHAR(50),
-    last4 CHAR(4) NOT NULL,
+    last4 CHAR(4) NOT NULL CHECK (last4 ~ '^[0-9]{4}$'),
     product_status VARCHAR(20) NOT NULL
+        CHECK (product_status IN ('Active', 'Closed', 'Blocked', 'Suspended'))
 );
 
 CREATE INDEX products_customer_id_idx ON products (customer_id);
@@ -39,6 +46,12 @@ CREATE TABLE transactions (
     customer_id VARCHAR(20) NOT NULL REFERENCES customers (customer_id),
     product_id VARCHAR(20) NOT NULL REFERENCES products (product_id),
     transaction_date TIMESTAMP NOT NULL,
+    transaction_type VARCHAR(50)
+        CHECK (
+            transaction_type IN (
+                'Purchase', 'Withdrawal', 'Transfer', 'Payment', 'Deposit', 'Adjustment'
+            )
+        ),
     merchant_name VARCHAR(150),
     amount NUMERIC(15, 2) NOT NULL,
     currency CHAR(3) NOT NULL,
