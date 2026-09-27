@@ -71,7 +71,7 @@ _BAND_QUERIES: dict[str, str] = {
         "WHERE split IN ('train', 'validation') GROUP BY 1, 2"
     ),
     "hour": (
-        "SELECT split, CASE WHEN hour IS NULL THEN -1 "
+        "SELECT split, CASE WHEN hour IS NULL OR hour NOT BETWEEN 0 AND 23 THEN -1 "
         "ELSE len(list_filter(?, e -> e <= hour)) END AS band, "
         "count(*), sum(is_fraud::INTEGER) FROM read_parquet(?) "
         "WHERE split IN ('train', 'validation') GROUP BY 1, 2"
@@ -192,7 +192,7 @@ def tabulate_signal(mart: Path) -> SignalTabulation:
     try:
         row = con.execute(_AMOUNT_EDGES, [location]).fetchone()
         deciles = row[0] if row and row[0] else []
-        amount_edges = tuple(sorted({float(edge) for edge in deciles}))
+        amount_edges = tuple(sorted({round(float(edge), 2) for edge in deciles}))
         edges = {"amount_usd": amount_edges, **_FIXED_EDGES}
         tables = tuple(_tabulate(con, location, name, edges[name]) for name in _BAND_QUERIES)
     finally:

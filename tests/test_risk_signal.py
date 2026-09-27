@@ -16,7 +16,13 @@ from typing import Any  # Rows as tuples
 import duckdb  # Writing the handmade mart
 
 # Local modules
-from pipelines.risk_signal import main, render_report, tabulate_signal
+from pipelines.risk_signal import (
+    _AMOUNT_EDGES,
+    _BAND_QUERIES,
+    main,
+    render_report,
+    tabulate_signal,
+)
 
 # split, is_fraud, amount_usd, hour, tx_count_24h, tx_count_7d, seconds_since_previous
 Row = tuple[str, bool, float | None, int, int, int, int | None]
@@ -160,3 +166,62 @@ def test_a_mart_without_the_columns_stops_the_command(tmp_path: Path) -> None:
     report = tmp_path / "signal.md"
     assert main(["--mart", str(broken), "--report", str(report)]) == 1
     assert not report.exists()
+
+
+def test_every_query_reads_only_the_training_and_validation_periods() -> None:
+    assert "split = 'train'" in _AMOUNT_EDGES
+    for feature, query in _BAND_QUERIES.items():
+        assert "split IN ('train', 'validation')" in query, feature
+
+
+def test_the_amount_bands_are_the_nine_training_deciles(tmp_path: Path) -> None:
+    mart = _write_mart(tmp_path / "m.parquet", TRAIN)
+    table = next(t for t in tabulate_signal(mart).tables if t.feature == "amount_usd")
+    assert [band.label for band in table.bands] == [
+        "below 14",
+        "14 to below 18",
+        "18 to below 22",
+        "22 to below 26",
+        "26 to below 30",
+        "30 to below 34",
+        "34 to below 38",
+        "38 to below 42",
+        "42 to below 46",
+        "46 or more",
+    ]
+
+
+def test_an_amount_equal_to_an_edge_falls_in_the_upper_band(tmp_path: Path) -> None:
+    rows = [*TRAIN, ("validation", True, 14.0, 0, 0, 0, None)]
+    amounts = _bands(_write_mart(tmp_path / "m.parquet", rows), "amount_usd")
+    assert amounts["14 to below 18"]["validation"] == (1, 1)
+    assert amounts["below 14"]["validation"] == (0, 0)
+
+
+def test_tied_training_amounts_collapse_to_distinct_bands(tmp_path: Path) -> None:
+    rows: list[Row] = [("train", False, 5.0, 0, 0, 0, None)] * 3
+    table = next(
+        t
+        for t in tabulate_signal(_write_mart(tmp_path / "m.parquet", rows)).tables
+        if t.feature == "amount_usd"
+    )
+    assert [band.label for band in table.bands] == ["below 5", "5 or more"]
+    assert table.bands[1].counts["train"] == (3, 0)
+
+
+def test_edges_that_round_to_the_same_cent_make_one_band(tmp_path: Path) -> None:
+    rows: list[Row] = [("train", False, 10.0 + i * 0.0001, 0, 0, 0, None) for i in range(10)]
+    table = next(
+        t
+        for t in tabulate_signal(_write_mart(tmp_path / "m.parquet", rows)).tables
+        if t.feature == "amount_usd"
+    )
+    labels = [band.label for band in table.bands]
+    assert len(labels) == len(set(labels))
+
+
+def test_an_hour_outside_the_day_is_unknown_not_the_last_hour(tmp_path: Path) -> None:
+    rows: list[Row] = [*TRAIN, ("train", True, 12.0, 25, 0, 0, None)]
+    hours = _bands(_write_mart(tmp_path / "m.parquet", rows), "hour")
+    assert hours["23"]["train"] == (2, 0)
+    assert hours["unknown"]["train"] == (1, 1)
