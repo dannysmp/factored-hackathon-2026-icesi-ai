@@ -10,7 +10,10 @@
 #   parameter name to add one.
 # Design:
 #   The value is read from stdin, never a command-line argument (arguments
-#   can end up in shell history and process listings); it is never echoed.
+#   can end up in shell history and process listings); it is never echoed
+#   and never passed to aws inline — it goes through a mode-600 temporary
+#   file that put-parameter reads via its own file:// convention, and the
+#   file is removed on exit, success or failure.
 #   The name is confined to this project's own path prefix, so a typo cannot
 #   silently write over an unrelated parameter elsewhere in the account.
 # Usage:
@@ -45,13 +48,24 @@ fi
 
 parameter_name="${SSM_PATH_PREFIX}/${secret_name}"
 
+# The value never reaches the aws process as a command-line argument (visible to any other
+# process on the host via `ps` or /proc/<pid>/cmdline for as long as put-parameter runs): it is
+# written to a private temporary file instead, and put-parameter reads it back through its own
+# file:// convention. mktemp already creates the file at mode 600 regardless of the process's
+# umask; the explicit chmod is belt-and-braces against a nonstandard mktemp. The trap removes the
+# file on any exit path.
+secret_file="$(mktemp)"
+trap 'rm -f "${secret_file}"' EXIT
+chmod 600 "${secret_file}"
+printf '%s' "${secret_value}" >"${secret_file}"
+
 # `put-parameter --overwrite` refuses `--tags` in the same call (SSM's own rule: tag an existing
 # parameter through a separate operation); tagging is done as its own step so this script works
 # unchanged whether the parameter is new or already exists.
 aws ssm put-parameter \
   --name "${parameter_name}" \
   --type "SecureString" \
-  --value "${secret_value}" \
+  --value "file://${secret_file}" \
   --overwrite \
   >/dev/null
 

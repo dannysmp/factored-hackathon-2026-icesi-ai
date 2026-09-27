@@ -14,7 +14,11 @@
 #   Idempotent by the project tag: re-running with an instance already
 #   tagged for this project leaves it alone rather than launching a second
 #   one, but the two scheduled clean-account runs start from an empty
-#   account, so in practice this creates fresh each time.
+#   account, so in practice this creates fresh each time. The Elastic IP is
+#   reconciled the same way on both the fresh-launch and the already-exists
+#   path, so a run that allocated one but failed before associating it (or
+#   before the instance existed at all) is picked up and attached on the
+#   next run instead of leaking a second, unassociated address.
 # Usage:
 #   infra/scripts/04-launch-instance.sh
 # =============================================================================
@@ -31,11 +35,44 @@ readonly SECURITY_GROUP_NAME="dispute-intake-host"
 readonly INSTANCE_PROFILE_NAME="dispute-intake-instance"
 readonly AMI_PARAMETER="/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 
+# Finds this project's tagged Elastic IP if one was already allocated (whether or not it is
+# associated yet — a prior run can have allocated one and failed before associating it), attaches
+# it to the given instance if it is not attached already, allocating a new one only if none exists,
+# then prints the derived sslip.io host name. Idempotent: safe to call on every path that ends
+# with a running instance, not only the one that just launched it.
+ensure_elastic_ip() {
+  local instance_id="$1"
+  local allocation_id public_ip associated_instance
+
+  allocation_id="$(aws ec2 describe-addresses \
+    --filters "Name=tag:${INFRA_TAG_KEY},Values=${INFRA_TAG_VALUE}" \
+    --query "Addresses[0].AllocationId" --output text)"
+
+  if [[ "${allocation_id}" == "None" ]]; then
+    log "allocating an Elastic IP"
+    allocation_id="$(aws ec2 allocate-address --domain vpc \
+      --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=${INFRA_TAG_KEY},Value=${INFRA_TAG_VALUE}}]" \
+      --query "AllocationId" --output text)"
+  fi
+
+  associated_instance="$(aws ec2 describe-addresses --allocation-ids "${allocation_id}" \
+    --query "Addresses[0].InstanceId" --output text)"
+  if [[ "${associated_instance}" != "${instance_id}" ]]; then
+    log "associating the Elastic IP with the instance"
+    aws ec2 associate-address --instance-id "${instance_id}" --allocation-id "${allocation_id}" >/dev/null
+  fi
+
+  public_ip="$(aws ec2 describe-addresses --allocation-ids "${allocation_id}" --query "Addresses[0].PublicIp" --output text)"
+  echo "${public_ip//./-}.sslip.io"
+}
+
 existing_instance="$(aws ec2 describe-instances \
   --filters "Name=tag:${INFRA_TAG_KEY},Values=${INFRA_TAG_VALUE}" "Name=instance-state-name,Values=pending,running" \
   --query "Reservations[].Instances[].InstanceId" --output text)"
 if [[ -n "${existing_instance}" ]]; then
   log "an instance already exists for this project (${existing_instance}), leaving it as is"
+  host_name="$(ensure_elastic_ip "${existing_instance}")"
+  log "host name (a configuration value, never hardcoded elsewhere): ${host_name}"
   exit 0
 fi
 
@@ -94,14 +131,7 @@ instance_id="$(aws ec2 run-instances \
 log "waiting for the instance to be running"
 aws ec2 wait instance-running --instance-ids "${instance_id}"
 
-log "allocating and associating an Elastic IP"
-allocation_id="$(aws ec2 allocate-address --domain vpc \
-  --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=${INFRA_TAG_KEY},Value=${INFRA_TAG_VALUE}}]" \
-  --query "AllocationId" --output text)"
-aws ec2 associate-address --instance-id "${instance_id}" --allocation-id "${allocation_id}" >/dev/null
-
-public_ip="$(aws ec2 describe-addresses --allocation-ids "${allocation_id}" --query "Addresses[0].PublicIp" --output text)"
-host_name="${public_ip//./-}.sslip.io"
+host_name="$(ensure_elastic_ip "${instance_id}")"
 
 log "ready: instance ${instance_id}"
 log "host name (a configuration value, never hardcoded elsewhere): ${host_name}"

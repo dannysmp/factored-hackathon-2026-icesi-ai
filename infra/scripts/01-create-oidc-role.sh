@@ -5,8 +5,9 @@
 # Purpose:
 #   The one role CI assumes to push images and trigger a deploy: no static AWS
 #   keys in the repository or in CI (ADR-13). Trust is scoped to this
-#   repository's own workflows; permissions are scoped to ECR push and to
-#   SSM commands against instances tagged for this project, not "*".
+#   repository's own default branch, not any branch or pull request;
+#   permissions are scoped to ECR push and to SSM commands against instances
+#   tagged for this project, not "*".
 # Design:
 #   Idempotent: an existing provider or role with the same name is left as is,
 #   its policy document reconciled to match this script rather than
@@ -25,6 +26,10 @@ require_profile
 require_live_credentials
 
 readonly GITHUB_REPO="dannysmp/factored-hackathon-2026-icesi-ai"
+# The role is only ever assumable from a workflow run on this branch (deploy is CI-triggered off
+# it), not from any branch or pull request in the repository — a later slice that adds
+# environment-gated releases can widen this to a GitHub Environment condition instead.
+readonly GITHUB_DEFAULT_BRANCH="main"
 readonly OIDC_PROVIDER_URL="https://token.actions.githubusercontent.com"
 ## AWS validates a public-CA OIDC provider like GitHub's against its real certificate chain and
 ## no longer uses this value for that check; the API still requires one well-formed entry. Kept
@@ -57,8 +62,10 @@ trust_policy=$(cat <<JSON
       "Principal": { "Federated": "${provider_arn}" },
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
-        "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
-        "StringLike": { "token.actions.githubusercontent.com:sub": "repo:${GITHUB_REPO}:*" }
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:${GITHUB_REPO}:ref:refs/heads/${GITHUB_DEFAULT_BRANCH}"
+        }
       }
     }
   ]

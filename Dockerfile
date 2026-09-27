@@ -10,7 +10,7 @@
 #   Multi-stage: uv resolves and installs into a virtual environment in the
 #   builder stage; the final stage copies only that environment and the
 #   application source, and runs as a non-root user. The model API key is
-#   never built into the image (CR-10): it reaches the container only as an
+#   never built into the image: it reaches the container only as an
 #   environment variable the deploy step sets from SSM Parameter Store.
 # Usage:
 #   docker build -t dispute-intake-backend .
