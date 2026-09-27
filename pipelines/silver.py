@@ -688,19 +688,24 @@ def run_silver(
 # -----------------------------------------------------------------------------
 
 
-def _git(*arguments: str) -> str | None:
-    """Output of a git command, or None when git is unavailable or the command fails."""
+def _git_bytes(*arguments: str) -> bytes | None:
+    """Raw output of a git command, or None when git is unavailable or the command fails."""
     try:
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
             ["git", *arguments],  # noqa: S607 - resolved through PATH by design
             capture_output=True,
-            text=True,
             timeout=10,
             check=True,
         )
     except (OSError, subprocess.SubprocessError):
         return None
-    return result.stdout.strip()
+    return result.stdout
+
+
+def _git(*arguments: str) -> str | None:
+    """Text output of a git command, or None when git is unavailable or the command fails."""
+    output = _git_bytes(*arguments)
+    return None if output is None else output.decode("utf-8", errors="replace").strip()
 
 
 def git_version() -> str:
@@ -714,12 +719,12 @@ def git_version() -> str:
     commit = _git("rev-parse", "--short", "HEAD")
     if not commit:
         return "unknown"
-    changes = _git("diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv", "--no-color")
+    changes = _git_bytes("diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv", "--no-color")
     if changes is None:
         return "unknown"
     if not changes:
         return commit
-    return f"{commit}-dirty-{hashlib.sha256(changes.encode()).hexdigest()[:8]}"
+    return f"{commit}-dirty-{hashlib.sha256(changes).hexdigest()[:8]}"
 
 
 def main(argv: Sequence[str] | None = None) -> int:

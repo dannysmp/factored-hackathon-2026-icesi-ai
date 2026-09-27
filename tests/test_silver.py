@@ -1095,12 +1095,27 @@ def test_a_staged_change_is_stamped_like_the_same_unstaged_change(
     assert silver_module.git_version() == unstaged
 
 
+def test_a_modified_file_that_is_not_utf8_is_stamped_not_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Changes to files in other encodings are hashed as bytes, never decoded."""
+    tracked = _repository(tmp_path, monkeypatch)
+    tracked.write_bytes(b"a\nb\xff\xfe\n")
+    first = silver_module.git_version()
+    tracked.write_bytes(b"a\nb\xfe\xff\n")
+    second = silver_module.git_version()
+
+    assert "-dirty-" in first
+    assert silver_module.git_version() == second
+    assert first != second
+
+
 def test_a_change_that_cannot_be_read_yields_an_unknown_stamp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A stamp never claims a commit it cannot tie to the tree's content."""
-    answers = {"rev-parse": "abc1234", "diff": None}
-    monkeypatch.setattr(silver_module, "_git", lambda *args: answers[args[0]])
+    monkeypatch.setattr(silver_module, "_git", lambda *args: "abc1234")
+    monkeypatch.setattr(silver_module, "_git_bytes", lambda *args: None)
 
     assert silver_module.git_version() == "unknown"
 
