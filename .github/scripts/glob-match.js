@@ -20,9 +20,10 @@
  *
  * Design Principles
  * -----------------
- * - `**/` matches zero or more whole path segments, so it also matches a root-level file with
- *   nothing before the match; `**` matches any path, directory separators included; `*` matches
- *   within one path segment only; every other character, including `?`, is literal.
+ * - A leading double star immediately followed by a slash matches zero or more whole path
+ *   segments, so it also matches a root-level file with nothing before the match; a double star
+ *   alone matches any path, directory separators included; a single star matches within one path
+ *   segment only; every other character, including a literal question mark, is escaped.
  *
  * Runtime Contract
  * -----------------
