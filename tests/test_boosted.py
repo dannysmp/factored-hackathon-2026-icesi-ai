@@ -17,7 +17,9 @@ from typing import Any  # Row dictionaries
 
 # Third-party libraries
 import duckdb  # Writing the handmade mart and the handmade cleaned transactions table
+import numpy as np  # Typing the fit_transform spy
 import pytest  # Test runner and fixtures
+from sklearn.compose import ColumnTransformer  # Spied on to prove the training-only fit
 
 # Local modules
 from models.boosted import (
@@ -188,6 +190,34 @@ def test_the_ablation_reports_both_feature_sets_and_both_models(tmp_path: Path) 
     assert set(SNAPSHOT_FEATURES).issubset(full.features)
 
 
+def test_the_ablation_fits_the_preprocessor_on_training_rows_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows, _ = _dataset(separating=True)
+    train_rows = sum(1 for row in rows if row["split"] == "train")
+    mart = _write_mart(tmp_path / "m.parquet", rows)
+
+    fit_row_counts: list[int] = []
+    original_fit_transform = ColumnTransformer.fit_transform
+
+    def spy(self: ColumnTransformer, x: np.ndarray, *args: Any, **kwargs: Any) -> np.ndarray:
+        fit_row_counts.append(x.shape[0])
+        return original_fit_transform(self, x, *args, **kwargs)  # type: ignore[no-any-return]
+
+    monkeypatch.setattr(ColumnTransformer, "fit_transform", spy)
+    con = duckdb.connect()
+    try:
+        column_types = _column_types(con, str(mart))
+        run_ablation(con, str(mart), column_types, seed=1)
+    finally:
+        con.close()
+    # One call per feature set (full, without_snapshot), each fed exactly the training rows, never
+    # the training rows plus the validation ones: a fit on the combined periods would leak the
+    # validation distribution into the encoder and the imputer, and this would then see
+    # train_rows + validation_rows for at least one call instead.
+    assert fit_row_counts == [train_rows, train_rows]
+
+
 def test_the_bootstrap_selects_boosted_when_a_feature_clearly_separates_the_label(
     tmp_path: Path,
 ) -> None:
@@ -246,6 +276,34 @@ def test_the_bootstrap_never_reads_the_validation_period(tmp_path: Path) -> None
     finally:
         con.close()
     assert baseline == changed
+
+
+def test_the_bootstrap_fits_the_preprocessor_on_training_rows_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows, customer_of = _dataset(separating=False)
+    train_rows = sum(1 for row in rows if row["split"] == "train")
+    mart = _write_mart(tmp_path / "m.parquet", rows)
+    silver = _write_silver(tmp_path / "silver", customer_of)
+
+    fit_row_counts: list[int] = []
+    original_fit_transform = ColumnTransformer.fit_transform
+
+    def spy(self: ColumnTransformer, x: np.ndarray, *args: Any, **kwargs: Any) -> np.ndarray:
+        fit_row_counts.append(x.shape[0])
+        return original_fit_transform(self, x, *args, **kwargs)  # type: ignore[no-any-return]
+
+    monkeypatch.setattr(ColumnTransformer, "fit_transform", spy)
+    con = duckdb.connect()
+    try:
+        column_types = _column_types(con, str(mart))
+        bootstrap_test(con, str(mart), silver, column_types, seed=1, resamples=5)
+    finally:
+        con.close()
+    # Fed exactly the training rows, never the training rows plus the test ones: a fit on the
+    # combined periods would leak the held-out test distribution into the encoder and the
+    # imputer, and this assertion would then see train_rows + test_rows instead.
+    assert fit_row_counts == [train_rows]
 
 
 def test_the_customer_identifier_never_reaches_the_logged_result(tmp_path: Path) -> None:
