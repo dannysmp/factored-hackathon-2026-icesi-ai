@@ -1,12 +1,33 @@
 "use strict";
 
-// Translates one glob pattern from `.claude/ownership.json` into a `RegExp` that matches a full
-// repository-relative path. The review gate's own script requires this module, and
-// `glob-match.test.js` exercises it directly, so the gate and its test never drift apart.
-//
-// Grammar: `**/` matches zero or more whole path segments, so it also matches a root-level file
-// with nothing before the match; `**` matches any path, directory separators included; `*`
-// matches within one path segment only; every other character, including `?`, is literal.
+/**
+ * Glob Translation
+ * ================
+ *
+ * Overview
+ * --------
+ * Translates one glob pattern from `.claude/ownership.json` into a `RegExp` that matches a full
+ * repository-relative path. `.github/scripts/glob-match.test.js` exercises this module directly
+ * with an executed fixture test.
+ *
+ * Scope
+ * -----
+ * In: the pattern-to-regex translation, kept correct against fixtures.
+ * Out: deciding which patterns are governed (`.claude/ownership.json`, maintainer-edited) and
+ * acting on a match (`.github/workflows/review-gate.yml`, which currently carries its own
+ * separate inline copy of this same logic rather than requiring this module — a change to one
+ * does not yet reach the other; see the module's own docstring in that workflow for its copy).
+ *
+ * Design Principles
+ * -----------------
+ * - `**/` matches zero or more whole path segments, so it also matches a root-level file with
+ *   nothing before the match; `**` matches any path, directory separators included; `*` matches
+ *   within one path segment only; every other character, including `?`, is literal.
+ *
+ * Runtime Contract
+ * -----------------
+ * `globToRegex(glob) -> RegExp`; `escapeLiteral(text) -> string`.
+ */
 
 function escapeLiteral(text) {
   return text.replace(/[.+^${}()|[\]\\?]/g, "\\$&");

@@ -1,9 +1,27 @@
 "use strict";
 
-// Executed evidence for the glob translation: every fixture below is asserted against the actual
-// function the review gate requires, and the process exits non-zero on the first failure, so a
-// broken translation fails loudly instead of merging quietly.
-// Run with: node .github/scripts/glob-match.test.js
+/**
+ * Glob Translation Fixture Test
+ * =============================
+ *
+ * Overview
+ * --------
+ * Executed evidence for `glob-match.js`'s translation: every fixture below is asserted against
+ * the module directly, and the process exits non-zero on the first failure, so a broken
+ * translation fails loudly instead of merging quietly.
+ *
+ * Scope
+ * -----
+ * In: fixture coverage of the translation (match, non-match, a rename's old and new path, a root
+ * file matched by a doubled-star prefix, a literal `?`).
+ * Out: the deployed review gate's own separate inline copy of the same logic, which this test
+ * does not exercise (see `glob-match.js`'s Scope section).
+ *
+ * Runtime Contract
+ * -----------------
+ * `node .github/scripts/glob-match.test.js`; prints one line and exits 0 on success, throws and
+ * exits non-zero on the first failed assertion. Wired into CI as the `gate-scripts` job.
+ */
 
 const assert = require("node:assert/strict");
 const { globToRegex } = require("./glob-match.js");
