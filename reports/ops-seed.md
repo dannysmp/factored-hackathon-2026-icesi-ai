@@ -6,7 +6,7 @@ Reference date `2026-06-18` (the newest transaction instant in the seed, read by
 
 500 customers selected, all `Active` (AC-E4-48). 1,368 products, 15,230 transactions.
 
-## 1. Coverage of the selection rule (AC-E4-44)
+## 1. Coverage of the selection rule
 
 How many selected customers carry each stratum; the rule guarantees at least 5 wherever the source has that many.
 
@@ -80,4 +80,4 @@ No document number, birth date, address, full email or full phone (AC-E4-46): th
 | products.parquet | 1,368 | 3914855448e5 |
 | transactions.parquet | 15,230 | f61b7200b88f |
 
-Built by `3bc8308-dirty-d2383978`.
+Built by `c9c6e2a-dirty-1005527c`.

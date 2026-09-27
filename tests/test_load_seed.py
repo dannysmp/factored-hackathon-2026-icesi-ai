@@ -10,6 +10,7 @@ when it is not set.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,10 +19,16 @@ import duckdb
 import psycopg
 import pytest
 
-from app.persistence.load_seed import LoadResult, _read_reference_date, _read_table, load_seed
+from app.persistence.load_seed import (
+    LoadResult,
+    _read_reference_date,
+    _read_table,
+    _verify_output_digests,
+    load_seed,
+)
 from app.persistence.migrate import apply_migrations
 from pipelines import ops_seed
-from pipelines.ops_seed import CUSTOMERS_NAME, MANIFEST_NAME
+from pipelines.ops_seed import CUSTOMERS_NAME, MANIFEST_NAME, PRODUCTS_NAME, TRANSACTIONS_NAME
 
 
 def test_read_table_raises_when_the_seed_has_not_been_built(tmp_path: Path) -> None:
@@ -45,6 +52,52 @@ def test_read_reference_date_reads_the_manifest(tmp_path: Path) -> None:
         json.dumps({"reference_date": "2026-06-18"}), encoding="utf-8"
     )
     assert _read_reference_date(tmp_path) == "2026-06-18"
+
+
+def _write_tiny_seed_output(gold_dir: Path) -> None:
+    """A gold directory with the three outputs and a manifest whose digests genuinely match."""
+    gold_dir.mkdir(parents=True, exist_ok=True)
+    digests: dict[str, str] = {}
+    for name in (CUSTOMERS_NAME, PRODUCTS_NAME, TRANSACTIONS_NAME):
+        path = gold_dir / name
+        path.write_bytes(f"content of {name}".encode())
+        digests[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    (gold_dir / MANIFEST_NAME).write_text(
+        json.dumps({"reference_date": "2026-06-18", "output_sha256": digests}), encoding="utf-8"
+    )
+
+
+def test_verify_output_digests_passes_when_every_output_matches_its_manifest(
+    tmp_path: Path,
+) -> None:
+    _write_tiny_seed_output(tmp_path)
+    _verify_output_digests(tmp_path)  # does not raise
+
+
+def test_verify_output_digests_raises_when_an_output_no_longer_matches_its_manifest(
+    tmp_path: Path,
+) -> None:
+    _write_tiny_seed_output(tmp_path)
+    (tmp_path / CUSTOMERS_NAME).write_bytes(b"tampered content")
+    with pytest.raises(ValueError, match="does not match its manifest digest"):
+        _verify_output_digests(tmp_path)
+
+
+def test_verify_output_digests_raises_when_the_manifest_carries_no_digests(tmp_path: Path) -> None:
+    (tmp_path / MANIFEST_NAME).write_text(
+        json.dumps({"reference_date": "2026-06-18"}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="carries no output_sha256"):
+        _verify_output_digests(tmp_path)
+
+
+def test_load_seed_refuses_a_tampered_output_before_ever_connecting(tmp_path: Path) -> None:
+    """The digest check runs before any database connection: an unreachable DSN still surfaces
+    the ValueError, not a connection error, proving the check happens first."""
+    _write_tiny_seed_output(tmp_path)
+    (tmp_path / TRANSACTIONS_NAME).write_bytes(b"tampered content")
+    with pytest.raises(ValueError, match="does not match its manifest digest"):
+        load_seed("postgresql://unreachable.invalid/nowhere", tmp_path)
 
 
 def _write_tiny_silver(root: Path) -> Path:

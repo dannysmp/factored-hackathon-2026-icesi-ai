@@ -28,6 +28,9 @@ Design Principles
   of them do, so a failed load never leaves the store half-seeded.
 - The reference date loaded into ``ops_meta`` is the manifest's own, not re-derived: the seed
   that was built is the seed that gets loaded, with no second chance to disagree with itself.
+- Verifies every output's SHA-256 against its manifest entry before loading anything: a gold
+  directory whose Parquet files changed since the manifest was written (a partial rebuild, a hand
+  edit, a stale copy) is refused rather than silently loaded as if it still matched.
 
 Runtime Contract
 -----------------
@@ -44,12 +47,14 @@ from __future__ import annotations
 
 # Standard libraries
 import argparse  # Command line
+import hashlib  # Verifies each output against its manifest digest before loading
 import json  # Reading the seed's manifest
 import logging  # Progress events, never print
 import sys  # Log stream
 from collections.abc import Sequence  # Type of the parsed argv
 from dataclasses import dataclass  # Immutable result object
 from pathlib import Path  # Locations of the seed's output
+from typing import Any  # The parsed manifest
 
 # Third-party libraries
 import duckdb  # Reads the seed's own Parquet files
@@ -98,6 +103,31 @@ def _read_table(gold_dir: Path, name: str) -> tuple[tuple[str, ...], list[tuple[
         con.close()
 
 
+def _sha256(path: Path) -> str:
+    """SHA-256 of a file, read in one pass."""
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def _read_manifest(gold_dir: Path) -> dict[str, Any]:
+    """The seed's manifest, parsed.
+
+    Raises
+    ------
+    FileNotFoundError
+        When the seed has not been built.
+    ValueError
+        When the manifest is not a JSON object.
+    """
+    path = gold_dir / MANIFEST_NAME
+    if not path.is_file():
+        raise FileNotFoundError(f"seed manifest {MANIFEST_NAME} not found; build the seed first")
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError(f"{path} is not a JSON object")
+    return manifest
+
+
 def _read_reference_date(gold_dir: Path) -> str:
     """The seed's own reference date, from its manifest.
 
@@ -108,14 +138,42 @@ def _read_reference_date(gold_dir: Path) -> str:
     ValueError
         When the manifest carries no reference date.
     """
-    path = gold_dir / MANIFEST_NAME
-    if not path.is_file():
-        raise FileNotFoundError(f"seed manifest {MANIFEST_NAME} not found; build the seed first")
-    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest = _read_manifest(gold_dir)
     reference_date = manifest.get("reference_date")
     if not isinstance(reference_date, str) or not reference_date:
-        raise ValueError(f"{path} carries no reference_date")
+        raise ValueError(f"{gold_dir / MANIFEST_NAME} carries no reference_date")
     return reference_date
+
+
+def _verify_output_digests(gold_dir: Path) -> None:
+    """Refuse to load an output whose content no longer matches what its manifest recorded.
+
+    Raises
+    ------
+    FileNotFoundError
+        When the manifest or an output it describes is missing.
+    ValueError
+        When an output's digest disagrees with its manifest entry, or the manifest carries none:
+        the gold directory changed since the seed was built, and this load would not be loading
+        what the manifest describes.
+    """
+    manifest = _read_manifest(gold_dir)
+    recorded = manifest.get("output_sha256")
+    if not isinstance(recorded, dict):
+        raise ValueError(f"{gold_dir / MANIFEST_NAME} carries no output_sha256")
+    for name in _TABLES_IN_LOAD_ORDER:
+        path = gold_dir / name
+        if not path.is_file():
+            raise FileNotFoundError(f"seed output {name} not found; build the seed first")
+        expected = recorded.get(name)
+        if not isinstance(expected, str) or not expected:
+            raise ValueError(f"{gold_dir / MANIFEST_NAME} carries no digest for {name}")
+        actual = _sha256(path)
+        if actual != expected:
+            raise ValueError(
+                f"{name} does not match its manifest digest "
+                f"(expected {expected[:12]}, found {actual[:12]}); rebuild the seed"
+            )
 
 
 def load_seed(dsn: str, gold_dir: Path) -> LoadResult:
@@ -126,10 +184,11 @@ def load_seed(dsn: str, gold_dir: Path) -> LoadResult:
     FileNotFoundError
         When the seed's Parquet output or manifest is missing.
     ValueError
-        When the manifest is malformed.
+        When the manifest is malformed, or an output no longer matches its manifest digest.
     psycopg.Error
         When the load itself fails; nothing already written commits.
     """
+    _verify_output_digests(gold_dir)
     tables = [(name, *_read_table(gold_dir, name)) for name in _TABLES_IN_LOAD_ORDER]
     reference_date = _read_reference_date(gold_dir)
 

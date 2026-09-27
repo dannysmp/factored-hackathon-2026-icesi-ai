@@ -22,14 +22,19 @@ Design Principles
 ------------------
 - **Written before the seed, deterministic.** Selection ranks every Active customer by a stable
   hash of their identifier (fixed seed, never ``random()``), then takes the lowest-ranked
-  customers that satisfy each stratum before padding to the target with the next-ranked
+  customers that satisfy each stratum before padding up to the target with the next-ranked
   customers; the same cleaned layer and this same rule always choose the same customers.
+  ``TARGET_CUSTOMERS`` is a floor the padding step brings the selection up to, not a ceiling: the
+  stratum and segment-country guarantees run first and are never trimmed back down to fit it, so
+  the final count can exceed it when coverage demands more customers than the target alone would
+  hold (about 500 in practice, per AC-E4-44's own wording; coverage is what AC-E4-44 requires,
+  not an exact count).
 - **One amount rule.** ``amount_usd`` and its provenance are computed with
   ``pipelines.amounts``, the same module the risk-feature mart uses, so a transaction shared by
-  both never gets two answers (``CR-1`` Prog C2).
-- **Repeat complainer is a point-in-time fact** (ADR-15, ``CR-1`` PM C1): a customer carries the
-  flag only when their latest complaint filed on or before the reference date carries it; a later
-  complaint is never consulted.
+  both never gets two answers.
+- **Repeat complainer is a point-in-time fact** (ADR-15): a customer carries the flag only when
+  their latest complaint filed on or before the reference date carries it; a later complaint is
+  never consulted.
 - **No PII beyond what the store is allowed to hold.** Document number, birth date, address and
   full email or phone are never read into the seed; email and phone are masked before they reach
   a Parquet file, not after (``AC-E4-46``).
@@ -245,8 +250,10 @@ def _select_customers(
 
     Ranks every Active customer by a stable hash of their identifier, then takes the
     lowest-ranked customers that satisfy each stratum (at least ``MIN_PER_STRATUM``, or every
-    one there is when fewer exist) and each segment-country pair, before padding to
-    ``TARGET_CUSTOMERS`` with the next-ranked customers overall.
+    one there is when fewer exist) and each segment-country pair, before padding up to
+    ``TARGET_CUSTOMERS`` with the next-ranked customers overall. The stratum and segment-country
+    guarantees are never trimmed back to fit the target: it is a floor the padding step reaches,
+    not a ceiling the guarantees are capped by, so the final count can exceed it.
 
     Returns
     -------
@@ -646,7 +653,7 @@ def render_report(manifest: SeedManifest) -> str:
         f"{manifest.rows.get(PRODUCTS_NAME, 0):,} products, "
         f"{manifest.rows.get(TRANSACTIONS_NAME, 0):,} transactions.",
         "",
-        "## 1. Coverage of the selection rule (AC-E4-44)",
+        "## 1. Coverage of the selection rule",
         "",
         "How many selected customers carry each stratum; the rule guarantees at least "
         f"{MIN_PER_STRATUM} wherever the source has that many.",

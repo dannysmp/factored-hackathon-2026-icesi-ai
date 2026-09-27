@@ -273,7 +273,7 @@ def test_every_stratum_customer_is_selected_and_counted_in_coverage(tmp_path: Pa
 def test_repeat_complainer_uses_the_latest_complaint_on_or_before_the_reference_date(
     tmp_path: Path,
 ) -> None:
-    """CR-1 PM C1 (ADR-15): a later complaint's flag is never consulted."""
+    """The point-in-time rule (ADR-15): a later complaint's flag is never consulted."""
     silver = _write_silver(tmp_path / "base")
     con = duckdb.connect()
     try:
@@ -293,9 +293,12 @@ def test_repeat_complainer_uses_the_latest_complaint_on_or_before_the_reference_
     assert flags["LATE-COMPLAINT"]["is_repeat_complainer"] is False
 
 
-def test_active_only_holds_even_for_a_customer_that_would_otherwise_cover_every_stratum(
+def test_active_only_holds_even_for_a_customer_carrying_several_stratum_flags(
     tmp_path: Path,
 ) -> None:
+    """Each excluded customer carries several strata at once (open case, repeat complainer,
+    a near-5,000 transfer, declined, merchant- and category-null) — enough that a rule filtering
+    Active status only after selection would very likely still pick one of them."""
     silver = _write_silver(tmp_path / "base")
     build_seed(silver, tmp_path / "gold", code_version="test")
     seed_customers = {
@@ -313,6 +316,20 @@ def test_every_segment_and_country_is_represented(tmp_path: Path) -> None:
     for segment in SEGMENTS:
         for country in COUNTRIES:
             assert manifest.coverage[f"segment={segment},country={country}"] >= 1
+
+
+def test_coverage_requirements_can_exceed_the_target_customer_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TARGET_CUSTOMERS is a floor the padding step reaches, never a ceiling the stratum and
+    segment-country guarantees are trimmed back to fit; the fixture alone needs more than one
+    customer to cover every stratum and every segment-country pair."""
+    monkeypatch.setattr(ops_seed, "TARGET_CUSTOMERS", 1)
+    silver = _write_silver(tmp_path / "base")
+    manifest = build_seed(silver, tmp_path / "gold", code_version="test")
+    assert manifest.selected_customers > 1
+    for flag in STRATUM_FLAGS:
+        assert manifest.coverage[flag] >= 1
 
 
 def test_no_full_email_or_phone_appears_in_the_seed(tmp_path: Path) -> None:
@@ -349,7 +366,7 @@ def test_last4_is_always_exactly_four_digits(tmp_path: Path) -> None:
 
 
 def test_amount_usd_and_provenance_match_pipelines_amounts(tmp_path: Path) -> None:
-    """The seed's transactions use the same rule as risk_features (CR-1 Prog C2)."""
+    """The seed's transactions use the same rule as risk_features, imported not re-derived."""
     silver = _write_silver(tmp_path / "base")
     build_seed(silver, tmp_path / "gold", code_version="test")
     rows = {
@@ -391,6 +408,27 @@ def test_a_missing_cleaned_table_stops_the_build(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         build_seed(tmp_path / "none", tmp_path / "gold", code_version="test")
     assert not (tmp_path / "gold").exists()
+
+
+def test_an_empty_transactions_table_refuses_for_lack_of_a_reference_date(tmp_path: Path) -> None:
+    """Every cleaned table is present (so the file-existence check passes) but ``transactions``
+    holds no rows, so there is no newest transaction instant to read a reference date from."""
+    silver = _write_silver(tmp_path / "base")
+    target = silver / "silver" / "transactions.parquet"
+    temporary = target.with_suffix(".parquet.tmp")
+    con = duckdb.connect()
+    try:
+        con.execute(
+            f"COPY (SELECT * FROM read_parquet('{target}') WHERE false) "  # noqa: S608
+            f"TO '{temporary}' (FORMAT PARQUET)"
+        )
+    finally:
+        con.close()
+    temporary.replace(target)
+
+    with pytest.raises(ValueError, match="no reference date"):
+        build_seed(silver, tmp_path / "gold", code_version="test")
+    assert not (tmp_path / "gold" / CUSTOMERS_NAME).exists()
 
 
 def test_the_report_states_the_seed_is_curated_and_shows_seed_and_source_rates(
