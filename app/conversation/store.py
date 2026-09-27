@@ -31,11 +31,13 @@ Runtime Contract
 
 from __future__ import annotations
 
-from datetime import datetime
-from threading import Lock
-from typing import Protocol
+# Standard libraries
+from datetime import datetime  # The instant a save is recorded at, passed in by the caller
+from threading import Lock  # Guards the in-memory map against concurrent turns
+from typing import Protocol  # The store's port
 
-from app.conversation.state import DialogueState
+# Local modules
+from app.conversation.state import DialogueState  # What is stored
 
 
 class Conflict(Exception):

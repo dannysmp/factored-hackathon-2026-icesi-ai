@@ -32,9 +32,11 @@ LanguageResolution``. ``LanguageResolution`` has ``lang``, ``streak`` and ``ambi
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+# Standard libraries
+from dataclasses import dataclass  # Immutable result of resolving the language
 
-from contracts.service_v1.envelope import Lang
+# Local modules
+from contracts.service_v1.envelope import Lang  # Closed set of languages
 
 # The language assumed for a first message the detector cannot place at all.
 _DEFAULT_LANG: Lang = "es"

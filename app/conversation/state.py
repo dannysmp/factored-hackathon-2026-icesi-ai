@@ -44,13 +44,16 @@ the service layer provides, added when that dependency lands.
 
 from __future__ import annotations
 
-from enum import StrEnum
-from typing import Annotated
+# Standard libraries
+from enum import StrEnum  # Closed set of conversation phases
+from typing import Annotated  # Bounded fields
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+# Third-party libraries
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field  # Validated immutable models
 
-from app.domain.policy.models import DisputeCategory
-from contracts.service_v1.envelope import Lang, Slot
+# Local modules
+from app.domain.policy.models import DisputeCategory  # The category a dispute falls under
+from contracts.service_v1.envelope import Lang, Slot  # Shared vocabulary
 
 
 class ConversationPhase(StrEnum):

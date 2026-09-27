@@ -453,3 +453,27 @@ def test_numbers_guard_grounds_a_date_awaiting_confirmation() -> None:
     )
 
     numbers_guard(f"¿Se refiere al {format_date(date(2026, 6, 17), 'es')}?", envelope)
+
+
+def test_numbers_guard_rejects_a_fabricated_amount_built_from_grounded_digit_fragments() -> None:
+    """A number assembled from two unrelated grounded fragments is not itself grounded.
+
+    A case number's digits ("19") and an amount's digits ("234.56") each pass on their own; the
+    guard must still refuse a reply that glues them into one number neither fact ever stated.
+    """
+    case = CaseFact(
+        case_number="D-19", status="Open", filed_on=_DOMAIN_DATE, transaction_ref="tx-1001"
+    )
+    envelope = _envelope(
+        intent=Intent.DISPUTE_STATUS,
+        template_id=TemplateId.DISPUTE_STATUS,
+        lang="en",
+        facts=DisputeFacts(
+            cases=(case,),
+            transactions=(_transaction(amount=Money(amount=Decimal("234.56"), currency="USD")),),
+            candidate_count=1,
+        ),
+    )
+
+    with pytest.raises(ValueError, match=r"19,234\.56"):
+        numbers_guard("Your total is 19,234.56 USD.", envelope)

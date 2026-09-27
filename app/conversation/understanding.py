@@ -31,12 +31,19 @@ Runtime Contract
 
 from __future__ import annotations
 
-import re
-from collections.abc import Callable
-from typing import Protocol
+# Standard libraries
+import re  # Keyword and pattern matching
+from collections.abc import Callable  # Type of a rule's match test and result builder
+from typing import Protocol  # The understanding port
 
-from contracts.service_v1.envelope import Lang
-from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult, TransactionHint
+# Local modules
+from contracts.service_v1.envelope import Lang  # Closed set of languages
+from contracts.service_v1.nlu import (  # The typed result and its vocabulary
+    ConfirmationAnswer,
+    NluIntent,
+    NluResult,
+    TransactionHint,
+)
 
 
 class Understanding(Protocol):

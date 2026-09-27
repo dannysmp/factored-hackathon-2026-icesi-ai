@@ -46,13 +46,15 @@ module renders the offer as its own text.
 
 from __future__ import annotations
 
-import re
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import date
+# Standard libraries
+import re  # The numbers guard's digit and number-span matching
+from collections.abc import Callable  # Type of one template's renderer function
+from dataclasses import dataclass  # Immutable result of one render
+from datetime import date  # Absolute dates, always formatted in words
 
-from app.domain.policy.models import DisputeCategory, Outcome
-from contracts.service_v1.envelope import (
+# Local modules
+from app.domain.policy.models import DisputeCategory, Outcome  # Shared vocabulary
+from contracts.service_v1.envelope import (  # The envelope and its typed facts
     CustomerReason,
     Lang,
     Money,
@@ -121,12 +123,17 @@ def format_date(value: date, lang: Lang) -> str:
     return f"{value.day} de {month} de {value.year}"
 
 
-def format_money(money: Money, lang: Lang) -> str:
-    """An amount with its currency code, in the reply language's separators."""
+def _format_amount(money: Money, lang: Lang) -> str:
+    """The digits and separators of ``money``, in ``lang``'s convention, with no currency code."""
     whole, _, fraction = format(money.amount, "f").partition(".")
     fraction = (fraction or "00").ljust(2, "0")[:2]
     grouped = f"{int(whole):,}".replace(",", _THOUSANDS_SEPARATOR[lang])
-    return f"{grouped}{_DECIMAL_SEPARATOR[lang]}{fraction} {money.currency}"
+    return f"{grouped}{_DECIMAL_SEPARATOR[lang]}{fraction}"
+
+
+def format_money(money: Money, lang: Lang) -> str:
+    """An amount with its currency code, in the reply language's separators."""
+    return f"{_format_amount(money, lang)} {money.currency}"
 
 
 def reference_date_line(domain_date: date, lang: Lang) -> str:
@@ -657,32 +664,48 @@ def render(envelope: RenderEnvelope) -> RenderedReply:
 
 _DIGITS = re.compile(r"\d+")
 
+# A maximal run of digits and the separators a formatted number carries (thousands grouping, a
+# decimal comma or point, the Spanish non-breaking space). Checked as one whole span in the
+# reply, never as independent digit runs: two unrelated grounded numbers glued together with no
+# word between them (a case number's digits next to an amount's) must not slip past merely
+# because each fragment, checked on its own, happens to belong to some other fact.
+_NUMBER_SPAN = re.compile(r"\d+(?:[.," + chr(0xA0) + r"]\d+)*")
+
 
 def _date_numbers(value: date) -> set[str]:
     return {str(value.day), str(value.year)}
 
 
+def _bare_digits(text: str) -> set[str]:
+    """Every maximal digit run inside ``text``; an identifier may mix letters and digits."""
+    return set(_DIGITS.findall(text))
+
+
 def _allowed_numbers(envelope: RenderEnvelope) -> set[str]:
-    """Every digit run the envelope's own facts, decisions and sources could ground."""
+    """Every complete number token the envelope's own facts, decisions and sources could state.
+
+    A formatted amount is kept as one whole token (with its own separators), never split into
+    fragments, so a reply can only state it back exactly as this module would format it.
+    """
     numbers: set[str] = set()
     facts = envelope.facts
     for transaction in facts.transactions:
         numbers |= _date_numbers(transaction.occurred_on)
-        numbers |= set(_DIGITS.findall(format_money(transaction.amount, envelope.lang)))
-        numbers |= set(_DIGITS.findall(transaction.product.last4))
-        numbers |= set(_DIGITS.findall(transaction.ref))
+        numbers.add(_format_amount(transaction.amount, envelope.lang))
+        numbers |= _bare_digits(transaction.product.last4)
+        numbers |= _bare_digits(transaction.ref)
     for case in facts.cases:
         numbers |= _date_numbers(case.filed_on)
         if case.expected_response_on is not None:
             numbers |= _date_numbers(case.expected_response_on)
-        numbers |= set(_DIGITS.findall(case.case_number))
-        numbers |= set(_DIGITS.findall(case.transaction_ref))
+        numbers |= _bare_digits(case.case_number)
+        numbers |= _bare_digits(case.transaction_ref)
     if facts.window is not None:
         numbers.add(str(facts.window.days_allowed))
         numbers.add(str(facts.window.age_days))
         numbers |= _date_numbers(facts.window.deadline)
     for value in facts.policy_values:
-        numbers |= set(_DIGITS.findall(value.value))
+        numbers |= _bare_digits(value.value)
     if facts.expected_response_on is not None:
         numbers |= _date_numbers(facts.expected_response_on)
     if facts.date_to_confirm is not None:
@@ -690,22 +713,27 @@ def _allowed_numbers(envelope: RenderEnvelope) -> set[str]:
     if facts.contact_within_hours is not None:
         numbers.add(str(facts.contact_within_hours))
     if facts.ticket_ref is not None:
-        numbers |= set(_DIGITS.findall(facts.ticket_ref))
+        numbers |= _bare_digits(facts.ticket_ref)
     numbers |= _date_numbers(envelope.domain_date)
     for decision in envelope.decisions:
-        numbers |= set(_DIGITS.findall(decision.policy_version))
+        numbers |= _bare_digits(decision.policy_version)
     return numbers
 
 
 def numbers_guard(reply: str, envelope: RenderEnvelope) -> None:
     """Refuse a reply that states a number the envelope does not hold (AC-E5-43).
 
+    Every contiguous span of digits and formatting separators in the reply is checked as one
+    whole token against the envelope's own facts (see ``_NUMBER_SPAN``), so a fabricated value
+    assembled from two grounded fragments is caught even when each fragment alone is legitimate.
+
     Raises
     ------
     ValueError
-        Naming the first ungrounded digit run found.
+        Naming the first ungrounded number found.
     """
     allowed = _allowed_numbers(envelope)
-    for match in _DIGITS.finditer(reply):
-        if match.group() not in allowed:
-            raise ValueError(f"reply states a number not grounded in the envelope: {match.group()}")
+    for match in _NUMBER_SPAN.finditer(reply):
+        span = match.group()
+        if any(char.isdigit() for char in span) and span not in allowed:
+            raise ValueError(f"reply states a number not grounded in the envelope: {span}")
