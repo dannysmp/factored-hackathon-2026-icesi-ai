@@ -5,9 +5,11 @@ Scripted Envelope Flows
 Overview
 --------
 Recorded envelopes for the conversations the system is built and evaluated against: filing a
-dispute, a policy answer, an abstention and a fraud handoff, each in Spanish, Portuguese and
-English. Code that consumes envelopes (the chat client, the evaluation harness) reads the JSON
-files written from these builders instead of building envelopes by hand.
+dispute, an ineligible request, a policy answer, an abstention, a refusal and a fraud handoff,
+each in Spanish, Portuguese and English. Code that consumes envelopes (the renderer tests, the
+evaluation harness) reads the JSON files written from these builders instead of building
+envelopes by hand. The files hold full envelopes, agent-only detail included; a client reads
+replies, not envelopes.
 
 Scope
 -----
@@ -60,6 +62,7 @@ from contracts.service_v1.envelope import (
     SourceRef,
     TemplateId,
     TransactionFact,
+    WindowFact,
 )
 
 DOMAIN_DATE = date(2026, 6, 18)
@@ -179,6 +182,39 @@ def _abstain(lang: Lang) -> list[Envelope]:
     return [_envelope(lang, intent=Intent.ABSTAIN, template_id=TemplateId.ABSTAIN_POLICY)]
 
 
+def _ineligible_window(lang: Lang) -> list[Envelope]:
+    transaction = _transaction().model_copy(update={"occurred_on": date(2026, 2, 1)})
+    return [
+        _envelope(
+            lang,
+            intent=Intent.INELIGIBLE,
+            template_id=TemplateId.INELIGIBLE,
+            facts=DisputeFacts(
+                transactions=(transaction,),
+                candidate_count=1,
+                selected_ref=transaction.ref,
+                category=DisputeCategory.UNRECOGNIZED_CHARGE,
+                window=WindowFact(days_allowed=60, age_days=137, deadline=date(2026, 4, 2)),
+            ),
+            decisions=(
+                Decision(
+                    outcome=Outcome.INELIGIBLE,
+                    customer_reason=CustomerReason.WINDOW_EXPIRED,
+                    policy_version="2",
+                ),
+            ),
+            sources=(_source(),),
+            agent_only=AgentOnly(
+                decisions=(AgentDecision(reason_code=ReasonCode.FILING_WINDOW_EXPIRED),)
+            ),
+        )
+    ]
+
+
+def _refusal(lang: Lang) -> list[Envelope]:
+    return [_envelope(lang, intent=Intent.REFUSE, template_id=TemplateId.REFUSE_UNSUPPORTED)]
+
+
 def _fraud_handoff(lang: Lang) -> list[Envelope]:
     return [
         _envelope(
@@ -213,6 +249,8 @@ def flows(lang: Lang) -> dict[str, list[dict[str, Any]]]:
         "file_dispute": _file_dispute(lang),
         "policy_answer": _policy_answer(lang),
         "abstain": _abstain(lang),
+        "ineligible_window": _ineligible_window(lang),
+        "refusal": _refusal(lang),
         "fraud_handoff": _fraud_handoff(lang),
     }
     return {

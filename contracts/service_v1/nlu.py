@@ -20,7 +20,10 @@ Design Principles
 - Confirmation is a closed set that separates an explicit yes from everything else. Only ``YES``
   can lead to a filing; a yes with a change, a bare "ok" and a doubt are different answers.
 - Free text is bounded and stays a value: a merchant, a detail and a policy question are data,
-  never instructions to anything downstream.
+  never instructions to anything downstream, and none may hold a control character or a card
+  number.
+- A slot belongs to its intent: a confirmation, a choice and a requested language are read only
+  for the intent that asks for them.
 - Dates arrive already resolved against the reference date the caller supplied, with the way they
   were expressed, so the controller can ask the customer to confirm a resolved date in words.
 
@@ -43,11 +46,17 @@ from enum import StrEnum  # Closed sets of the contract
 from typing import Annotated  # Bounded fields
 
 # Third-party libraries
-from pydantic import Field  # Field bounds
+from pydantic import Field, model_validator  # Field bounds and cross-field rules
 
 # Local modules
 from app.domain.policy.models import DisputeCategory  # The categories a dispute can have
-from contracts.service_v1.envelope import ContractModel, Lang, Rate  # Shared base and types
+from contracts.service_v1.envelope import (  # Shared base, types and vocabulary
+    ContractModel,
+    DateSource,
+    Lang,
+    Rate,
+    SafeText,
+)
 
 
 class NluIntent(StrEnum):
@@ -80,19 +89,10 @@ class ConfirmationAnswer(StrEnum):
     NO = "no"
 
 
-class DateSource(StrEnum):
-    """How the customer expressed a date, which decides whether it is confirmed in words."""
-
-    ABSOLUTE = "absolute"
-    RELATIVE = "relative"
-    PARTIAL = "partial"
-    NUMERIC = "numeric"
-
-
 class TransactionHint(ContractModel):
     """What the customer said about the transaction, in the fields the system searches by."""
 
-    merchant: Annotated[str, Field(min_length=1, max_length=80)] | None = None
+    merchant: Annotated[SafeText, Field(min_length=1, max_length=80)] | None = None
     amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)] | None = None
     currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")] | None = None
     date_on: date | None = None
@@ -116,12 +116,23 @@ class NluResult(ContractModel):
     language: Lang | None = None
     transaction: TransactionHint = TransactionHint()
     category: DisputeCategory | None = None
-    detail: Annotated[str, Field(min_length=1, max_length=500)] | None = None
+    detail: Annotated[SafeText, Field(min_length=1, max_length=500)] | None = None
     confirmation: ConfirmationAnswer | None = None
     choice: Annotated[int, Field(ge=1, le=5)] | None = None
     requested_language: Lang | None = None
-    policy_query: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+    policy_query: Annotated[SafeText, Field(min_length=1, max_length=200)] | None = None
     mentions_second_dispute: bool = False
+
+    @model_validator(mode="after")
+    def _slots_belong_to_their_intent(self) -> NluResult:
+        """A confirmation, a choice and a requested language come only with their own intent."""
+        if self.confirmation is not None and self.intent is not NluIntent.CONFIRMATION:
+            raise ValueError("confirmation is only read for the confirmation intent")
+        if self.choice is not None and self.intent is not NluIntent.CHOICE:
+            raise ValueError("choice is only read for the choice intent")
+        if self.requested_language is not None and self.intent is not NluIntent.SWITCH_LANGUAGE:
+            raise ValueError("requested_language is only read for the switch_language intent")
+        return self
 
     @classmethod
     def unusable(cls) -> NluResult:

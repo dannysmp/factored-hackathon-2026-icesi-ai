@@ -16,8 +16,10 @@ Out: building it (the handoff builder), storing it (the outbox) and showing it (
 
 Design Principles
 -----------------
-- Complete by construction: the request, the verified facts, the actions, the evidence and the
-  open questions are required parts, so an incomplete packet cannot be built.
+- Complete where it can be: the ticket, the trigger, the customer, the language, both clocks, the
+  request summary and the evidence (with its policy version) are required. The verified facts,
+  the actions, the open questions, the reason codes and the sources may be empty, because a
+  customer's own request for a person, or a tool failure, has none of them.
 - No raw material. There is no field for a transcript, a message text, a document number or a
   full card number; the customer appears as a first name and a masked identifier, and the free
   text is a bounded description in the system's words.
@@ -43,17 +45,20 @@ from enum import StrEnum  # Closed sets of the contract
 from typing import Annotated  # Bounded fields
 
 # Third-party libraries
-from pydantic import AwareDatetime, Field, model_validator  # Field bounds and time-zone-aware time
+from pydantic import Field, model_validator  # Field bounds and cross-field rules
 
 # Local modules
 from app.domain.policy.models import DisputeCategory, ReasonCode  # Shared vocabulary
 from contracts.service_v1.envelope import (  # Shared base and typed parts
+    NUMBER_PATTERN,
     ContractModel,
     Lang,
     RiskEvidence,
+    SafeText,
     Slot,
     SourceRef,
     TransactionFact,
+    UtcDatetime,
 )
 
 
@@ -75,8 +80,8 @@ class HandoffTrigger(StrEnum):
 class ActionRecord(ContractModel):
     """One action the system took or refused, in its own words."""
 
-    action: Annotated[str, Field(min_length=1, max_length=64)]
-    result: Annotated[str, Field(min_length=1, max_length=64)]
+    action: Annotated[SafeText, Field(min_length=1, max_length=64)]
+    result: Annotated[SafeText, Field(min_length=1, max_length=64)]
 
 
 class Evidence(ContractModel):
@@ -98,26 +103,26 @@ class OpenQuestion(ContractModel):
 class CustomerLabel(ContractModel):
     """The customer as an agent may see them: a first name and a masked identifier."""
 
-    first_name: Annotated[str, Field(min_length=1, max_length=40)]
+    first_name: Annotated[SafeText, Field(min_length=1, max_length=40)]
     masked_id: Annotated[str, Field(pattern=r"^\*{4}[A-Za-z0-9]{2,4}$")]
 
 
 class HandoffPacket(ContractModel):
     """The packet of one handoff."""
 
-    ticket_ref: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,32}$")]
+    ticket_ref: Annotated[str, Field(pattern=NUMBER_PATTERN)]
     reference_date: date
-    created_at: AwareDatetime
+    created_at: UtcDatetime
     language: Lang
     needs_language_routing: bool
     trigger: HandoffTrigger
     customer: CustomerLabel
     category: DisputeCategory | None = None
-    request_summary: Annotated[str, Field(min_length=1, max_length=300)]
+    request_summary: Annotated[SafeText, Field(min_length=1, max_length=300)]
     verified_facts: tuple[TransactionFact, ...] = ()
     actions: tuple[ActionRecord, ...] = ()
     attempted_action: ActionRecord | None = None
-    existing_case_number: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,32}$")] | None = None
+    existing_case_number: Annotated[str, Field(pattern=NUMBER_PATTERN)] | None = None
     evidence: Evidence
     open_questions: tuple[OpenQuestion, ...] = ()
 
@@ -126,12 +131,4 @@ class HandoffPacket(ContractModel):
         """Portuguese and English flag the packet so the console can route it."""
         if self.needs_language_routing != (self.language != "es"):
             raise ValueError("needs_language_routing must be true exactly when language is not es")
-        return self
-
-    @model_validator(mode="after")
-    def _created_at_is_utc(self) -> HandoffPacket:
-        """The real instant is stored in UTC, as every timestamp of record is."""
-        offset = self.created_at.utcoffset()
-        if offset is None or offset.total_seconds() != 0:
-            raise ValueError("created_at must be in UTC")
         return self

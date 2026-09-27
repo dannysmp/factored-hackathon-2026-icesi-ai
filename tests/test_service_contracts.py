@@ -16,6 +16,7 @@ import json  # Fixture files and schema inspection
 from collections.abc import Iterator  # Walk of a JSON schema
 from datetime import UTC, date, datetime, timedelta, timezone  # Dates and instants
 from decimal import Decimal  # Money
+from enum import StrEnum  # Closed sets pinned by value
 from pathlib import Path  # Fixture location
 from typing import Any  # Loosely typed JSON
 
@@ -23,17 +24,17 @@ from typing import Any  # Loosely typed JSON
 import pytest  # Test runner and fixtures
 from pydantic import ValidationError  # Boundary failures
 
+# Local modules
 from app.domain.policy.models import (
     DisputeCategory,
     Outcome,
     ReasonCode,
     TransactionStatus,
 )
-
-# Local modules
 from contracts import service_v1
 from contracts.service_v1.api import (
     MAX_TEXT_LENGTH,
+    Choice,
     ReadinessPayload,
     ReferenceDateOrigin,
     TurnRequest,
@@ -47,10 +48,14 @@ from contracts.service_v1.console import (
     is_priority,
 )
 from contracts.service_v1.envelope import (
+    CUSTOMER_REASON_OF,
+    TEMPLATE_INTENTS,
     AgentDecision,
     AgentOnly,
     CaseFact,
     CustomerReason,
+    DateSource,
+    DateToConfirm,
     Decision,
     DisputeFacts,
     Envelope,
@@ -58,6 +63,7 @@ from contracts.service_v1.envelope import (
     Lang,
     LocalizedTitle,
     Money,
+    PolicyValue,
     ProductLabel,
     RenderEnvelope,
     RiskEvidence,
@@ -66,6 +72,8 @@ from contracts.service_v1.envelope import (
     TemplateId,
     ToolUnavailable,
     TransactionFact,
+    WindowFact,
+    outcome_of,
 )
 from contracts.service_v1.handoff import (
     ActionRecord,
@@ -75,7 +83,12 @@ from contracts.service_v1.handoff import (
     HandoffTrigger,
     OpenQuestion,
 )
-from contracts.service_v1.nlu import NluIntent, NluResult, TransactionHint
+from contracts.service_v1.nlu import (
+    ConfirmationAnswer,
+    NluIntent,
+    NluResult,
+    TransactionHint,
+)
 from tests.fixtures import scripted_flows
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -92,6 +105,7 @@ _RAW_MATERIAL_NAMES = {"transcript", "message", "document_number", "card_number"
 
 
 def _transaction(**changes: Any) -> TransactionFact:
+    """One synthetic transaction, with any field replaced by ``changes``."""
     values: dict[str, Any] = {
         "ref": "tx-1001",
         "occurred_on": date(2026, 6, 12),
@@ -104,6 +118,7 @@ def _transaction(**changes: Any) -> TransactionFact:
 
 
 def _titles() -> tuple[LocalizedTitle, ...]:
+    """The three titles of the sample policy section."""
     return (
         LocalizedTitle(lang="es", text="Plazos para disputar"),
         LocalizedTitle(lang="pt", text="Prazos para contestar"),
@@ -112,10 +127,12 @@ def _titles() -> tuple[LocalizedTitle, ...]:
 
 
 def _source() -> SourceRef:
+    """A policy section with a title in every language."""
     return SourceRef(section_id="filing-windows", titles=_titles(), corpus_version="2")
 
 
 def _eligible_decision() -> Decision:
+    """An eligible decision that needs the customer's confirmation."""
     return Decision(
         outcome=Outcome.ELIGIBLE,
         customer_reason=CustomerReason.ELIGIBLE,
@@ -125,6 +142,7 @@ def _eligible_decision() -> Decision:
 
 
 def _envelope(**changes: Any) -> Envelope:
+    """A valid clarification envelope, with any field replaced by ``changes``."""
     values: dict[str, Any] = {
         "session_id": "s-1",
         "lang": "es",
@@ -137,6 +155,7 @@ def _envelope(**changes: Any) -> Envelope:
 
 
 def _packet(**changes: Any) -> HandoffPacket:
+    """A valid fraud handoff packet in Portuguese, with any field replaced by ``changes``."""
     values: dict[str, Any] = {
         "ticket_ref": "T-100",
         "reference_date": _DOMAIN_DATE,
@@ -153,6 +172,7 @@ def _packet(**changes: Any) -> HandoffPacket:
 
 
 def _queue_item(**changes: Any) -> QueueItem:
+    """A queue row that describes ``_packet``, with any field replaced by ``changes``."""
     values: dict[str, Any] = {
         "ticket_ref": "T-100",
         "trigger": HandoffTrigger.FRAUD_REPORT,
@@ -214,7 +234,7 @@ def test_an_envelope_is_immutable() -> None:
     envelope = _envelope()
 
     with pytest.raises(ValidationError):
-        envelope.lang = "en"  # type: ignore[misc]
+        envelope.lang = "en"  # type: ignore[misc]  # assignment to a frozen model is the point
 
 
 def test_a_language_outside_the_three_is_rejected() -> None:
@@ -298,11 +318,13 @@ def test_policy_answer_needs_a_source_and_abstention_carries_none() -> None:
         _envelope(sources=(_source(),), **abstain)
 
 
-def test_only_farewell_and_handoff_end_a_session() -> None:
-    """A conversation is not ended by a clarification."""
+def test_exactly_farewell_and_handoff_end_a_session() -> None:
+    """A clarification never ends a conversation, and a farewell always does."""
     assert _envelope(intent=Intent.FAREWELL, template_id=TemplateId.FAREWELL, end_session=True)
-    with pytest.raises(ValidationError, match="only farewell and handoff"):
+    with pytest.raises(ValidationError, match="exactly farewell and handoff"):
         _envelope(end_session=True)
+    with pytest.raises(ValidationError, match="exactly farewell and handoff"):
+        _envelope(intent=Intent.FAREWELL, template_id=TemplateId.FAREWELL)
 
 
 def test_facts_bound_their_lists_and_keep_the_count_honest() -> None:
@@ -375,6 +397,7 @@ def _routed_envelope() -> Envelope:
         end_session=True,
         template_id=TemplateId.HANDOFF_REVIEW,
         next_expected=None,
+        facts=DisputeFacts(ticket_ref="T-100"),
         decisions=(
             Decision(
                 outcome=Outcome.ESCALATE,
@@ -410,15 +433,15 @@ def test_the_renderer_view_drops_the_agent_only_detail() -> None:
     assert envelope.agent_only is not None
 
 
-def test_every_routing_reason_reaches_the_customer_as_the_same_reason() -> None:
-    """The customer side of a decision is one closed value for every trigger."""
-    customer_side = {
-        CustomerReason.NEEDS_REVIEW.value,
-    }
-    dumped = _routed_envelope().render_view().model_dump(mode="json")["decisions"][0]
+def test_every_reason_code_has_a_plain_reason_and_every_escalation_shares_one() -> None:
+    """No decision reaches a customer unexplained, and no trigger can be told from another."""
+    assert set(CUSTOMER_REASON_OF) == set(ReasonCode)
+    escalations = {code for code in ReasonCode if code.value.startswith("escalate_")}
 
-    assert dumped["customer_reason"] in customer_side
-    assert set(dumped) == {"outcome", "customer_reason", "policy_version", "requires_confirmation"}
+    assert {CUSTOMER_REASON_OF[code] for code in escalations} == {CustomerReason.NEEDS_REVIEW}
+    assert all(outcome_of(code) is Outcome.ESCALATE for code in escalations)
+    assert outcome_of(ReasonCode.ELIGIBLE) is Outcome.ELIGIBLE
+    assert outcome_of(ReasonCode.FILING_WINDOW_EXPIRED) is Outcome.INELIGIBLE
 
 
 def test_the_renderer_schema_names_no_agent_only_or_raw_field() -> None:
@@ -562,6 +585,8 @@ def test_readiness_reports_the_reference_date_and_its_origin() -> None:
         environment="prod",
         reference_date=_DOMAIN_DATE,
         reference_date_origin=ReferenceDateOrigin.SETTING,
+        policy_version="2",
+        policy_digest="a" * 64,
     )
 
     assert payload.model_dump(mode="json")["reference_date_origin"] == "setting"
@@ -617,7 +642,14 @@ def test_every_scripted_envelope_fixture_validates_in_its_language(lang: str) ->
     """The recorded envelopes other code is built against agree with the contract."""
     flows = json.loads((_FIXTURES / f"scripted_flows.{lang}.json").read_text())
 
-    assert {"file_dispute", "policy_answer", "abstain", "fraud_handoff"} == set(flows)
+    assert set(flows) == {
+        "file_dispute",
+        "policy_answer",
+        "abstain",
+        "ineligible_window",
+        "refusal",
+        "fraud_handoff",
+    }
     for steps in flows.values():
         for step in steps:
             envelope = Envelope.model_validate(step)
@@ -629,3 +661,537 @@ def test_every_scripted_envelope_fixture_validates_in_its_language(lang: str) ->
 def test_the_committed_fixture_files_match_their_builders(lang: Lang) -> None:
     """A fixture cannot drift from the contract: the files are what the builders produce."""
     assert scripted_flows.path_for(lang).read_text() == scripted_flows.render(lang)
+
+
+# -----------------------------------------------------------------------------
+# Separation of the two views
+# -----------------------------------------------------------------------------
+
+
+def test_a_full_envelope_is_never_accepted_as_the_renderer_view() -> None:
+    """The renderer's type is not a supertype of the full envelope, at runtime or in a check."""
+    envelope = _routed_envelope()
+
+    assert not isinstance(envelope, RenderEnvelope)
+    with pytest.raises(ValidationError):
+        RenderEnvelope.model_validate(envelope)
+    with pytest.raises(ValidationError):
+        RenderEnvelope.model_validate(envelope.model_dump())
+
+
+# -----------------------------------------------------------------------------
+# Decisions agree with themselves
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "outcome, reason",
+    [
+        (Outcome.ESCALATE, CustomerReason.DECLINED),
+        (Outcome.ESCALATE, CustomerReason.ELIGIBLE),
+        (Outcome.ELIGIBLE, CustomerReason.NEEDS_REVIEW),
+        (Outcome.INELIGIBLE, CustomerReason.ELIGIBLE),
+        (Outcome.INELIGIBLE, CustomerReason.NEEDS_REVIEW),
+    ],
+)
+def test_an_outcome_and_its_plain_reason_must_agree(
+    outcome: Outcome, reason: CustomerReason
+) -> None:
+    """A decision cannot escalate for a declined transaction or refuse for review."""
+    with pytest.raises(ValidationError, match="does not agree"):
+        Decision(outcome=outcome, customer_reason=reason, policy_version="2")
+
+
+@pytest.mark.parametrize("outcome", [Outcome.INELIGIBLE, Outcome.ESCALATE])
+def test_only_an_eligible_decision_can_require_confirmation(outcome: Outcome) -> None:
+    """A confirmation prompt exists only for something that can be filed."""
+    reason = (
+        CustomerReason.DECLINED if outcome is Outcome.INELIGIBLE else CustomerReason.NEEDS_REVIEW
+    )
+
+    with pytest.raises(ValidationError, match="only an eligible decision"):
+        Decision(
+            outcome=outcome, customer_reason=reason, policy_version="2", requires_confirmation=True
+        )
+
+
+def test_every_ineligible_reason_is_accepted_for_an_ineligible_outcome() -> None:
+    """The six refusal reasons all pair with the ineligible outcome."""
+    reasons = set(CustomerReason) - {CustomerReason.ELIGIBLE, CustomerReason.NEEDS_REVIEW}
+
+    assert len(reasons) == 6
+    for reason in reasons:
+        assert Decision(outcome=Outcome.INELIGIBLE, customer_reason=reason, policy_version="2")
+
+
+def _routed_with_agent_reasons(*codes: ReasonCode) -> Envelope:
+    """The routed envelope with agent decisions for ``codes``, in order."""
+    routed = _routed_envelope()
+    fields = {name: getattr(routed, name) for name in type(routed).model_fields}
+    agent = AgentOnly(decisions=tuple(AgentDecision(reason_code=code) for code in codes))
+    return Envelope(**{**fields, "agent_only": agent})
+
+
+def test_agent_detail_pairs_with_the_decisions_by_index() -> None:
+    """The agent's reason code gives the plain reason of the decision at its position."""
+    assert _routed_with_agent_reasons(ReasonCode.ESCALATE_FRAUD_CLAIM)
+    with pytest.raises(ValidationError, match="pair one to one"):
+        _routed_with_agent_reasons(ReasonCode.ESCALATE_FRAUD_CLAIM, ReasonCode.ESCALATE_RISK_SCORE)
+    with pytest.raises(ValidationError, match="does not match its decision"):
+        _routed_with_agent_reasons(ReasonCode.FILING_WINDOW_EXPIRED)
+
+
+# -----------------------------------------------------------------------------
+# Fixed texts belong to their intents
+# -----------------------------------------------------------------------------
+
+
+def test_every_fixed_text_names_the_intents_that_may_carry_it() -> None:
+    """A text added without an entry fails here, and each entry names a real intent."""
+    assert set(TEMPLATE_INTENTS) == set(TemplateId)
+    assert all(intents and intents <= set(Intent) for intents in TEMPLATE_INTENTS.values())
+
+
+def test_a_fixed_text_is_refused_under_an_intent_it_does_not_belong_to() -> None:
+    """A farewell text cannot carry a clarification, nor a refusal text a handoff."""
+    with pytest.raises(ValidationError, match="does not belong to the intent"):
+        _envelope(template_id=TemplateId.FAREWELL)
+    with pytest.raises(ValidationError, match="does not belong to the intent"):
+        _envelope(intent=Intent.REFUSE, template_id=TemplateId.HANDOFF_FRAUD)
+
+
+def test_an_ineligible_reply_and_a_refusal_have_an_intent_of_their_own() -> None:
+    """The expired-window path and an unsupported request are expressible."""
+    ineligible = Decision(
+        outcome=Outcome.INELIGIBLE,
+        customer_reason=CustomerReason.WINDOW_EXPIRED,
+        policy_version="2",
+    )
+    window = WindowFact(days_allowed=60, age_days=137, deadline=date(2026, 4, 2))
+
+    assert _envelope(
+        intent=Intent.INELIGIBLE,
+        template_id=TemplateId.INELIGIBLE,
+        facts=DisputeFacts(window=window),
+        decisions=(ineligible,),
+    )
+    assert _envelope(intent=Intent.REFUSE, template_id=TemplateId.REFUSE_UNSUPPORTED)
+    with pytest.raises(ValidationError, match="ineligible requires only ineligible"):
+        _envelope(intent=Intent.INELIGIBLE, template_id=TemplateId.INELIGIBLE)
+    with pytest.raises(ValidationError, match="ineligible requires only ineligible"):
+        _envelope(
+            intent=Intent.INELIGIBLE,
+            template_id=TemplateId.INELIGIBLE,
+            decisions=(ineligible, _eligible_decision()),
+        )
+
+
+def test_confirm_filing_needs_its_selection_among_the_listed_transactions() -> None:
+    """A confirmation names a transaction the customer was shown, and files nothing else."""
+    facts = DisputeFacts(
+        transactions=(_transaction(),),
+        candidate_count=1,
+        selected_ref="tx-9999",
+        category=DisputeCategory.UNRECOGNIZED_CHARGE,
+    )
+    escalate = Decision(
+        outcome=Outcome.ESCALATE, customer_reason=CustomerReason.NEEDS_REVIEW, policy_version="2"
+    )
+    common: dict[str, Any] = {
+        "intent": Intent.CONFIRM_FILING,
+        "template_id": TemplateId.CONFIRM_FILING,
+        "next_expected": Slot.CONFIRMATION,
+    }
+
+    with pytest.raises(ValidationError, match="among those listed"):
+        _envelope(facts=facts, decisions=(_eligible_decision(),), **common)
+    listed = facts.model_copy(update={"selected_ref": "tx-1001"})
+    with pytest.raises(ValidationError, match="only eligible decisions"):
+        _envelope(facts=listed, decisions=(_eligible_decision(), escalate), **common)
+
+
+def test_dispute_status_needs_cases_unless_it_says_there_are_none() -> None:
+    """Listing cases needs cases; the no-case text is the one reply without them."""
+    case = CaseFact(
+        case_number="D-1", status="Open", filed_on=_DOMAIN_DATE, transaction_ref="tx-1001"
+    )
+
+    assert _envelope(
+        intent=Intent.DISPUTE_STATUS,
+        template_id=TemplateId.NO_CASE_FOUND,
+    )
+    assert _envelope(
+        intent=Intent.DISPUTE_STATUS,
+        template_id=TemplateId.DISPUTE_STATUS,
+        facts=DisputeFacts(cases=(case,)),
+    )
+    with pytest.raises(ValidationError, match="dispute_status requires cases"):
+        _envelope(intent=Intent.DISPUTE_STATUS, template_id=TemplateId.DISPUTE_STATUS)
+
+
+def test_a_case_is_not_expected_to_answer_before_it_was_filed() -> None:
+    """The expected response date is on or after the filing date."""
+    with pytest.raises(ValidationError, match="before filed_on"):
+        CaseFact(
+            case_number="D-1",
+            status="Open",
+            filed_on=_DOMAIN_DATE,
+            transaction_ref="tx-1001",
+            expected_response_on=_DOMAIN_DATE - timedelta(days=1),
+        )
+
+
+# -----------------------------------------------------------------------------
+# A handoff states what happened
+# -----------------------------------------------------------------------------
+
+
+def _handoff(**changes: Any) -> Envelope:
+    """A valid routed handoff envelope, with any field replaced by ``changes``."""
+    values: dict[str, Any] = {
+        "intent": Intent.HANDOFF,
+        "end_session": True,
+        "template_id": TemplateId.HANDOFF_REVIEW,
+        "next_expected": None,
+        "facts": DisputeFacts(ticket_ref="T-100"),
+        "decisions": _routed_envelope().decisions,
+    }
+    return _envelope(**{**values, **changes})
+
+
+def test_a_handoff_ends_the_session_and_names_its_ticket() -> None:
+    """A handoff without ticket, or one that leaves the session open, does not build."""
+    assert _handoff()
+    with pytest.raises(ValidationError, match="exactly farewell and handoff"):
+        _handoff(end_session=False)
+    with pytest.raises(ValidationError, match="names its ticket exactly when"):
+        _handoff(facts=DisputeFacts())
+
+
+def test_a_handoff_that_was_not_registered_names_no_ticket() -> None:
+    """The fallback statement never quotes a ticket that does not exist."""
+    unregistered = _handoff(
+        template_id=TemplateId.HANDOFF_NOT_REGISTERED, facts=DisputeFacts(), decisions=()
+    )
+
+    assert unregistered.facts.ticket_ref is None
+    with pytest.raises(ValidationError, match="names its ticket exactly when"):
+        _handoff(template_id=TemplateId.HANDOFF_NOT_REGISTERED)
+
+
+def test_a_routed_handoff_needs_an_escalate_decision_and_no_handoff_reads_as_eligible() -> None:
+    """The review and fraud texts rest on a decision to escalate; nothing hands over as eligible."""
+    with pytest.raises(ValidationError, match="requires an escalate decision"):
+        _handoff(decisions=())
+    with pytest.raises(ValidationError, match="no eligible decision"):
+        _handoff(decisions=(_eligible_decision(),))
+    assert _handoff(template_id=TemplateId.HANDOFF_REQUESTED, decisions=())
+
+
+# -----------------------------------------------------------------------------
+# Free text
+# -----------------------------------------------------------------------------
+
+# A valid card number of the kind test suites use, and a run of the same length that fails Luhn.
+_CARD_NUMBER = "4111111111111111"
+_NOT_A_CARD_NUMBER = "4111111111111112"
+
+
+@pytest.mark.parametrize("text", [_CARD_NUMBER, "4111 1111 1111 1111", "4111-1111-1111-1111"])
+def test_free_text_fields_refuse_card_like_digit_runs(text: str) -> None:
+    """A card number cannot be stored in any bounded free-text field of a contract."""
+    with pytest.raises(ValidationError, match="card number"):
+        _transaction(merchant=f"Tienda {text}")
+    with pytest.raises(ValidationError, match="card number"):
+        NluResult(intent=NluIntent.FILE_DISPUTE, confidence=0.9, detail=f"cargo con {text}")
+    with pytest.raises(ValidationError, match="card number"):
+        NluResult(intent=NluIntent.POLICY_QUESTION, confidence=0.9, policy_query=text)
+    with pytest.raises(ValidationError, match="card number"):
+        TransactionHint(merchant=text)
+    with pytest.raises(ValidationError, match="card number"):
+        DisputeFacts(search_terms=(text,))
+    with pytest.raises(ValidationError, match="card number"):
+        _packet(request_summary=f"Card {text} was used")
+    with pytest.raises(ValidationError, match="card number"):
+        ActionRecord(action=text, result="none")
+    with pytest.raises(ValidationError, match="card number"):
+        Choice(number=1, label=text)
+
+
+def test_free_text_keeps_ordinary_digits_and_refuses_control_characters() -> None:
+    """Order numbers that fail the card check stay legal; a NUL or an escape does not."""
+    assert _transaction(merchant=f"Pedido {_NOT_A_CARD_NUMBER}").merchant
+    assert _transaction(merchant="Pedido 1234567").merchant
+    for text in ("Tienda\x00Sol", "Tienda\x1bSol", "Tienda\nSol"):
+        with pytest.raises(ValidationError, match="control characters"):
+            _transaction(merchant=text)
+
+
+def test_a_message_may_not_be_blank_or_hold_a_control_character() -> None:
+    """Whitespace-only text and NUL are refused; a line break and a typed card number are not."""
+    for text in ("   ", "\n\t ", "hola\x00", "hola\x1b[31m"):
+        with pytest.raises(ValidationError):
+            TurnRequest(turn_id="turn-0001", text=text)
+
+    assert TurnRequest(turn_id="turn-0001", text="línea uno\nlínea dos")
+    assert TurnRequest(turn_id="turn-0001", text=f"mi tarjeta es {_CARD_NUMBER}")
+
+
+# -----------------------------------------------------------------------------
+# Console consistency
+# -----------------------------------------------------------------------------
+
+
+def test_the_priority_flag_follows_the_trigger() -> None:
+    """A fraud item cannot be shown as ordinary, nor an ordinary item as priority."""
+    with pytest.raises(ValidationError, match="priority must be true exactly"):
+        _queue_item(priority=False)
+    with pytest.raises(ValidationError, match="priority must be true exactly"):
+        _queue_item(trigger=HandoffTrigger.AMOUNT_REVIEW, priority=True)
+
+    assert _queue_item(trigger=HandoffTrigger.AMOUNT_REVIEW, priority=False)
+
+
+def test_instants_of_record_are_utc_everywhere() -> None:
+    """The queue row and the timeline hold UTC like the packet does."""
+    bogota = timezone(timedelta(hours=-5))
+
+    with pytest.raises(ValidationError, match="in UTC"):
+        _queue_item(created_at=datetime(2026, 9, 26, 10, 0, tzinfo=bogota))
+    with pytest.raises(ValidationError, match="in UTC"):
+        TimelineEntry(
+            occurred_at=datetime(2026, 9, 26, 10, 0, tzinfo=bogota),
+            trace_id="trace-1",
+            intent=Intent.HANDOFF,
+            state_before="a",
+            state_after="b",
+            render_mode="template",
+        )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"ticket_ref": "T-999"},
+        {"trigger": HandoffTrigger.CARD_LOSS},
+        {"language": "es"},
+        {"category": DisputeCategory.WRONG_AMOUNT},
+        {"reference_date": date(2026, 6, 17)},
+        {"created_at": datetime(2026, 9, 26, 16, 0, tzinfo=UTC)},
+    ],
+)
+def test_a_ticket_row_must_describe_its_packet(changes: dict[str, Any]) -> None:
+    """Each field the row and the packet both state must agree."""
+    with pytest.raises(ValidationError, match="does not describe the packet"):
+        TicketDetail(item=_queue_item(**changes), packet=_packet(), timeline=())
+
+    assert TicketDetail(item=_queue_item(), packet=_packet(), timeline=())
+
+
+# -----------------------------------------------------------------------------
+# Handoff packet completeness
+# -----------------------------------------------------------------------------
+
+
+def test_a_customer_request_for_a_person_needs_no_facts_actions_or_reason_codes() -> None:
+    """The parts that may be empty are the ones a request for a person does not have."""
+    packet = _packet(
+        trigger=HandoffTrigger.CUSTOMER_REQUEST,
+        category=None,
+        evidence=Evidence(reason_codes=(), policy_version="2"),
+    )
+
+    assert not packet.verified_facts
+    assert not packet.actions
+    assert not packet.open_questions
+    assert not packet.evidence.reason_codes
+    with pytest.raises(ValidationError):
+        _packet(evidence=Evidence(reason_codes=(), policy_version=""))
+
+
+# -----------------------------------------------------------------------------
+# States the conversation must be able to express
+# -----------------------------------------------------------------------------
+
+
+def test_a_second_dispute_and_a_date_awaiting_confirmation_can_be_stated() -> None:
+    """A remembered second dispute and a resolved date shown for confirmation are expressible."""
+    facts = DisputeFacts(
+        transactions=(_transaction(),),
+        candidate_count=1,
+        pending_disputes=1,
+        date_to_confirm=DateToConfirm(resolved_on=date(2026, 6, 17), source=DateSource.RELATIVE),
+    )
+    envelope = _envelope(
+        intent=Intent.PRESENT_TRANSACTIONS,
+        template_id=TemplateId.PRESENT_ONE,
+        next_expected=Slot.TRANSACTION_CHOICE,
+        facts=facts,
+    )
+
+    assert envelope.facts.pending_disputes == 1
+    assert envelope.facts.date_to_confirm is not None
+    assert envelope.facts.date_to_confirm.source is DateSource.RELATIVE
+    with pytest.raises(ValidationError):
+        DisputeFacts(pending_disputes=6)
+
+
+def test_an_evidence_list_for_a_category_fits_a_policy_value() -> None:
+    """The evidence identifiers of a category, joined, fit the value and the entry limits."""
+    evidence = ",".join(f"evidence_item_{n:02d}" for n in range(8))
+    facts = DisputeFacts(policy_values=(PolicyValue(name="evidence_required", value=evidence),))
+
+    assert len(evidence) <= 200
+    assert facts.policy_values[0].value == evidence
+    assert (
+        len(DisputeFacts(policy_values=(PolicyValue(name="x", value="y"),) * 16).policy_values)
+        == 16
+    )
+
+
+# -----------------------------------------------------------------------------
+# Understanding, API and readiness
+# -----------------------------------------------------------------------------
+
+
+def test_a_slot_comes_only_with_its_intent() -> None:
+    """A confirmation, a choice and a requested language are read only for their own intent."""
+    assert NluResult(
+        intent=NluIntent.CONFIRMATION, confidence=0.9, confirmation=ConfirmationAnswer.YES
+    )
+    with pytest.raises(ValidationError, match="confirmation is only read"):
+        NluResult(
+            intent=NluIntent.FILE_DISPUTE, confidence=0.9, confirmation=ConfirmationAnswer.YES
+        )
+    with pytest.raises(ValidationError, match="choice is only read"):
+        NluResult(intent=NluIntent.FILE_DISPUTE, confidence=0.9, choice=2)
+    with pytest.raises(ValidationError, match="requested_language is only read"):
+        NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, requested_language="pt")
+
+
+def test_the_response_version_choices_and_readiness_are_closed() -> None:
+    """Only version 1 exists, choices number from one, and readiness reports the policy loaded."""
+    base: dict[str, Any] = {
+        "turn_id": "turn-0001",
+        "conversation_id": "c-1",
+        "state_version": 1,
+        "lang": "es",
+        "reply": "Hola",
+        "reference_date_line": "Fecha de referencia de los datos: 18 de junio de 2026",
+    }
+
+    assert TurnResponse(**base)
+    with pytest.raises(ValidationError):
+        TurnResponse(**base, contract_version="99")
+    with pytest.raises(ValidationError, match="numbered from 1"):
+        TurnResponse(**base, choices=(Choice(number=2, label="a"), Choice(number=2, label="b")))
+    with pytest.raises(ValidationError):
+        ReadinessPayload(
+            status="ready",
+            service_version="0.1.0",
+            environment="prod",
+            reference_date=_DOMAIN_DATE,
+            reference_date_origin=ReferenceDateOrigin.SEED,
+            policy_version="2",
+            policy_digest="not-a-digest",
+        )
+
+
+# -----------------------------------------------------------------------------
+# Closed sets only grow
+# -----------------------------------------------------------------------------
+
+# Every value a closed set held when the contract was frozen. A later version may add values to a
+# set, never rename or remove one: these pins fail on any rename or removal.
+_FROZEN_VALUES: dict[type[StrEnum], set[str]] = {
+    Intent: {
+        "clarify",
+        "present_transactions",
+        "confirm_filing",
+        "filing_result",
+        "ineligible",
+        "dispute_status",
+        "policy_answer",
+        "abstain",
+        "refuse",
+        "handoff",
+        "farewell",
+    },
+    Slot: {"transaction", "transaction_choice", "reason", "confirmation"},
+    CustomerReason: {
+        "eligible",
+        "window_expired",
+        "pending",
+        "declined",
+        "reversed",
+        "duplicate_case",
+        "not_disputable",
+        "needs_review",
+    },
+    DateSource: {"absolute", "relative", "partial", "numeric"},
+    NluIntent: {
+        "file_dispute",
+        "list_transactions",
+        "dispute_status",
+        "policy_question",
+        "confirmation",
+        "choice",
+        "correction",
+        "report_fraud",
+        "report_card_loss",
+        "request_person",
+        "request_reversal",
+        "unsupported_action",
+        "switch_language",
+        "small_talk",
+        "farewell",
+        "unclear",
+    },
+    ConfirmationAnswer: {"yes", "yes_with_change", "ambiguous", "no"},
+    HandoffTrigger: {
+        "fraud_report",
+        "card_loss",
+        "customer_request",
+        "amount_review",
+        "repeat_complainer",
+        "risk_score",
+        "amount_unknown",
+        "low_understanding",
+        "tool_failure",
+        "filing_unverified",
+    },
+    TicketStatus: {"open", "in_review", "resolved", "rejected"},
+    # Values of the policy vocabulary the contracts depend on.
+    Outcome: {"eligible", "ineligible", "escalate"},
+    DisputeCategory: {
+        "unrecognized_charge",
+        "duplicate_charge",
+        "wrong_amount",
+        "service_not_received",
+        "fraud_claim",
+    },
+    TransactionStatus: {"Approved", "Declined", "Pending", "Reversed"},
+    ReasonCode: {
+        "eligible",
+        "product_out_of_scope",
+        "transaction_type_not_disputable",
+        "transaction_declined",
+        "transaction_pending",
+        "transaction_reversed",
+        "transaction_date_in_future",
+        "filing_window_expired",
+        "duplicate_open_case",
+        "escalate_fraud_claim",
+        "escalate_low_nlu_confidence",
+        "escalate_repeat_complainer",
+        "escalate_amount_above_threshold",
+        "escalate_amount_unknown",
+        "escalate_risk_score",
+    },
+}
+
+
+@pytest.mark.parametrize("enumeration", list(_FROZEN_VALUES), ids=lambda e: e.__name__)
+def test_a_closed_set_keeps_every_value_it_was_frozen_with(enumeration: type[StrEnum]) -> None:
+    """A rename or a removal in a frozen closed set fails; an addition does not."""
+    assert _FROZEN_VALUES[enumeration] <= {member.value for member in enumeration}

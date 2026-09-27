@@ -37,37 +37,63 @@ endpoint.
 from __future__ import annotations
 
 # Standard libraries
+import unicodedata  # Control characters in a message
 from datetime import date  # The reference date of the data
 from enum import StrEnum  # Closed set of reference-date origins
-from typing import Annotated  # Bounded fields
+from typing import Annotated, Literal  # Bounded fields and closed values
 
 # Third-party libraries
-from pydantic import Field  # Field bounds
+from pydantic import AfterValidator, Field, model_validator  # Field bounds and cross-field rules
 
 # Local modules
-from contracts.service_v1.envelope import CONTRACT_VERSION, ContractModel, Lang, Slot
+from contracts.service_v1.envelope import (  # Shared base and types
+    CONTRACT_VERSION,
+    NUMBER_PATTERN,
+    ContractModel,
+    Lang,
+    SafeText,
+    Slot,
+)
 
 MAX_TEXT_LENGTH = 2000
 
 
+def _refuse_blank_or_control(value: str) -> str:
+    """Refuse a message that is only whitespace or holds a control character such as NUL."""
+    if not value.strip():
+        raise ValueError("text must not be blank")
+    if any(unicodedata.category(char) == "Cc" and char != "\n" for char in value):
+        raise ValueError("text must not contain control characters")
+    return value
+
+
 class TurnRequest(ContractModel):
-    """One customer message."""
+    """One customer message.
+
+    The text may hold a line break but no other control character. It is not screened for card
+    numbers here: it is transient and masked before it leaves the service, and a customer who
+    types one is answered, not refused with a schema error.
+    """
 
     turn_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{8,64}$")]
-    text: Annotated[str, Field(min_length=1, max_length=MAX_TEXT_LENGTH)]
+    text: Annotated[
+        str,
+        Field(min_length=1, max_length=MAX_TEXT_LENGTH),
+        AfterValidator(_refuse_blank_or_control),
+    ]
 
 
 class Choice(ContractModel):
     """One numbered option the customer can pick, with the text to show for it."""
 
     number: Annotated[int, Field(ge=1, le=5)]
-    label: Annotated[str, Field(min_length=1, max_length=200)]
+    label: Annotated[SafeText, Field(min_length=1, max_length=200)]
 
 
 class TurnResponse(ContractModel):
     """The reply to one turn."""
 
-    contract_version: Annotated[str, Field(pattern=r"^\d+$")] = CONTRACT_VERSION
+    contract_version: Literal["1"] = CONTRACT_VERSION
     turn_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{8,64}$")]
     conversation_id: Annotated[str, Field(min_length=1, max_length=64)]
     state_version: Annotated[int, Field(ge=1)]
@@ -78,7 +104,14 @@ class TurnResponse(ContractModel):
     choices: Annotated[tuple[Choice, ...], Field(max_length=5)] = ()
     next_expected: Slot | None = None
     end_session: bool = False
-    handoff_ticket: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,32}$")] | None = None
+    handoff_ticket: Annotated[str, Field(pattern=NUMBER_PATTERN)] | None = None
+
+    @model_validator(mode="after")
+    def _choices_are_numbered_from_one(self) -> TurnResponse:
+        """Choices are numbered 1, 2, ... in order, so a number picks exactly one."""
+        if [choice.number for choice in self.choices] != list(range(1, len(self.choices) + 1)):
+            raise ValueError("choices must be numbered from 1 without gaps or repeats")
+        return self
 
 
 class ReferenceDateOrigin(StrEnum):
@@ -90,10 +123,17 @@ class ReferenceDateOrigin(StrEnum):
 
 
 class ReadinessPayload(ContractModel):
-    """What the readiness endpoint reports, including the reference date and its origin."""
+    """What the readiness endpoint reports.
 
-    status: Annotated[str, Field(pattern=r"^ready$")]
+    Besides the versions it reports the reference date and its origin, and the version and digest
+    of the policy file the service loaded, so a deployment on an explicit past date or on another
+    policy cannot be mistaken for the expected one.
+    """
+
+    status: Literal["ready"]
     service_version: Annotated[str, Field(min_length=1, max_length=64)]
     environment: Annotated[str, Field(min_length=1, max_length=16)]
     reference_date: date
     reference_date_origin: ReferenceDateOrigin
+    policy_version: Annotated[str, Field(min_length=1, max_length=32)]
+    policy_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
