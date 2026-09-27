@@ -341,8 +341,8 @@ def test_model_renderer_defaults_to_disabled() -> None:
 def test_model_renderer_cannot_be_enabled_in_any_environment(
     monkeypatch: pytest.MonkeyPatch, app_env: str
 ) -> None:
-    """The model renderer has no output verifier yet (E7 slice 2.6); no environment may turn it
-    on before that slice ships and relaxes this gate."""
+    """Nothing yet grounds a free-form model reply against the envelope's own facts; no
+    environment may turn the model renderer on before that grounding exists."""
     monkeypatch.setenv("APP_ENV", app_env)
     monkeypatch.setenv("MODEL_RENDERER_ENABLED", "true")
 

@@ -15,8 +15,8 @@ Scope
 -----
 In: the fixed-wording texts per language, the date and amount formatting rules, ``render()``.
 Out: the model renderer (a later change, for wording ``render_mode="model"`` does not cover) and
-its grounding check, which belongs to the output verifier (E7); the dialogue controller, which
-decides which template applies.
+its grounding check, which belongs to the output verifier that grounds free-form model output;
+the dialogue controller, which decides which template applies.
 
 Design Principles
 -----------------
