@@ -1,3 +1,5 @@
+/* Base styles: light/dark support and a system font stack. No design system yet — the chat
+   feature that needs one is a later slice. */
 :root {
   color-scheme: light dark;
 }

@@ -1,7 +1,8 @@
 # web/
 
-React chat UI and human-agent console (ADR-10). This slice is the scaffold only: a placeholder
-page proving the toolchain works end to end. The customer chat is the next slice's.
+React chat UI and human-agent console (ADR-10). The customer chat is replayed against a scripted
+fixture conversation for now; the live endpoint is a later slice, gated on the demonstration
+sign-in broker and the conversation store.
 
 ## Stack
 
@@ -13,12 +14,26 @@ page proving the toolchain works end to end. The customer chat is the next slice
 | [jest-axe](https://github.com/nickcolley/jest-axe)                                  | Automated accessibility checks (WCAG 2.2 AA target) in every component test |
 | ESLint (`typescript-eslint`, `react-hooks`, `react-refresh`, `jsx-a11y`) + Prettier | Lint and format                                                             |
 
-No state library, HTTP client or design system yet: the chat feature that needs them is the next
-slice.
+[Zod](https://zod.dev) validates every turn against the same shape as `contracts/service_v1/api.py`'s
+`TurnRequest`/`TurnResponse`. No design system yet.
 
-**Known gap:** ESLint is pinned to `^9` rather than the current `^10`, because
-`eslint-plugin-jsx-a11y@6.10.2` does not yet declare `10` in its peer range. Move both together
-once a jsx-a11y release supports it.
+**Known gaps:**
+
+- ESLint is pinned to `^9` rather than the current `^10`, because `eslint-plugin-jsx-a11y@6.10.2`
+  does not yet declare `10` in its peer range. Move both together once a jsx-a11y release
+  supports it.
+- The `web` CI job has no dependency-vulnerability scan yet (the architect's note on this slice);
+  add one once a real HTTP client adds supply-chain surface beyond `react`/`react-dom`/`zod`.
+
+## Customer chat
+
+`src/features/customer-chat/` is a self-contained feature (frontend standard, section 2):
+`contracts.ts` (the Zod schemas), `client.ts` (the `ChatClient` seam and its only implementation,
+`FixtureChatClient`, which replays `fixtures.ts`'s scripted English conversation), `useConversation.ts`
+(the turn-by-turn state) and `components/` (the reference-date banner, the message list with a
+polite live region, numbered choice buttons, the confirmation button, the text form). The live
+`ChatClient` implementation, against the real turn endpoint, is a later slice: this one only
+defines the seam it will fill.
 
 ## Commands
 
