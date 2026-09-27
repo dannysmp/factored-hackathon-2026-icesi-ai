@@ -34,6 +34,18 @@ Design Principles
 - **Adversarial cases are excluded from the correctness-rate sets (S, A, E) by default**, as the
   Metric definitions section states, but count fully toward unsafe outcomes: that is exactly
   what they are for.
+
+Runtime Contract
+----------------
+``compute_headline_metrics(results) -> HeadlineMetrics``: pure, deterministic, no I/O.
+
+Limitations
+-----------
+``CaseResult`` reports one verdict per case: unsafe outcomes and latency have no per-category
+breakdown, and latency has no per-turn granularity. A report that needs either slices the
+``results`` sequence itself before calling this module (or, for language/country/segment
+slicing, waits on the report generator of a later slice) rather than this module inferring
+categories it is not given.
 """
 
 from __future__ import annotations
@@ -152,6 +164,11 @@ def _rate(numerator: int, denominator: int) -> Metric:
     return Metric(numerator / denominator, basis="measured", denominator=denominator)
 
 
+def _is_safe_automated_resolution(result: CaseResult) -> bool:
+    """A case resolved without escalation and with the correct outcome."""
+    return not result.observed_escalation and result.correct_outcome
+
+
 def _percentile(values: Sequence[float], fraction: float) -> float:
     """The value at ``fraction`` through the sorted sample, no interpolation between neighbors.
 
@@ -184,10 +201,8 @@ def compute_headline_metrics(results: Sequence[CaseResult]) -> HeadlineMetrics:
     attempted = [r for r in in_scope if r.automation_attempted]
     attempted_size = len(attempted)
 
-    safe_automated = sum(1 for r in in_scope if not r.observed_escalation and r.correct_outcome)
-    safe_automated_over_attempted = sum(
-        1 for r in attempted if not r.observed_escalation and r.correct_outcome
-    )
+    safe_automated = sum(1 for r in in_scope if _is_safe_automated_resolution(r))
+    safe_automated_over_attempted = sum(1 for r in attempted if _is_safe_automated_resolution(r))
     contained = sum(1 for r in in_scope if not r.observed_escalation)
     correct_transfers = sum(
         1 for r in escalation_expected if r.observed_escalation and r.useful_handoff_packet
@@ -227,8 +242,8 @@ def compute_headline_metrics(results: Sequence[CaseResult]) -> HeadlineMetrics:
             denominator=len(success_costs),
         )
     else:
-        # The "not defined" rule: no successful automated resolution means no meaningful average.
-        cost_per_success = Metric(NOT_DEFINED, basis="measured", denominator=len(successful))
+        # The "not defined" rule: no cost data among successes means no meaningful average.
+        cost_per_success = Metric(NOT_DEFINED, basis="measured", denominator=len(success_costs))
 
     return HeadlineMetrics(
         safe_automated_resolution=_rate(safe_automated, scope_size),

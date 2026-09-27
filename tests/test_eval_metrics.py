@@ -92,6 +92,19 @@ def test_cost_per_success_is_defined_and_exact_with_at_least_one_success() -> No
     assert metrics.cost.per_successful_automated_resolution.denominator == 2
 
 
+def test_cost_per_success_is_not_defined_when_successes_report_no_cost() -> None:
+    """Successes exist but none reported a cost: still not defined, denominator still 0."""
+    results = [
+        _result(case_id="C1", automated_success=True, cost_usd=None),
+        _result(case_id="C2", automated_success=True, cost_usd=None),
+    ]
+
+    metrics = compute_headline_metrics(results)
+
+    assert metrics.cost.per_successful_automated_resolution.value == NOT_DEFINED
+    assert metrics.cost.per_successful_automated_resolution.denominator == 0
+
+
 def test_cost_per_attempted_case_ignores_cases_with_no_reported_cost() -> None:
     """A case that reports no cost is excluded from the average, not treated as free."""
     results = [
