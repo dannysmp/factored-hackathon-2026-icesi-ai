@@ -19,10 +19,10 @@ Design Principles
   from the composition root.
 - Secrets are ``SecretStr`` and never appear in error messages or ``repr`` output.
 - Model identifiers are pinned to an allow-list so a typo or an unreviewed model cannot ship.
-- Free-form model rendering cannot be turned on by configuration in any environment until an
-  output verifier exists to ground it against the envelope's own facts: the setting exists for
-  the code that will read it, but validation refuses the value ``true`` outright, not just by
-  default.
+- Free-form model rendering may be turned on by configuration now that an output verifier exists
+  to ground it against the envelope's own facts (``app.conversation.verifier``); the setting still
+  defaults to off, and nothing reads it in a request path yet, so turning it on has no effect until
+  a later change wires a caller to it.
 
 Runtime Contract
 ----------------
