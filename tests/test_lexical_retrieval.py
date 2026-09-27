@@ -101,6 +101,25 @@ def test_an_unrelated_banking_question_abstains_in_every_language(
     assert retriever.search("I need help resetting my password", "en") == ()
 
 
+def test_a_common_ser_estar_haber_conjugation_does_not_leak_relevance(
+    retriever: LexicalRetriever,
+) -> None:
+    """An unrelated sentence sharing only a "to be"/"to have" auxiliary still abstains."""
+    assert retriever.search("mi hermano ha sido muy amable conmigo hoy", "es") == ()
+    assert retriever.search("acho que seria bom sair mais cedo do trabalho", "pt") == ()
+
+
+def test_a_synonym_folds_across_its_verb_conjugations_without_corrupting_other_words(
+    retriever: LexicalRetriever,
+) -> None:
+    """AC-E5-53: a conjugated form of the synonym still finds its section; a word that merely
+    contains a synonym as a substring is never corrupted by the fold."""
+    hits = retriever.search("¿cuándo vencen mis disputas?", "es")
+
+    assert "filing-windows" in {hit.chunk.section_id for hit in hits[:3]}
+    assert "convencer" in tokenize("quiero convencer al asesor de mi caso", "es")
+
+
 def test_search_never_returns_a_hit_from_another_language(retriever: LexicalRetriever) -> None:
     """AC-E5-54: search runs only within the query's own language."""
     for lang in ("es", "pt", "en"):

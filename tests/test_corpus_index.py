@@ -34,11 +34,25 @@ _MINIMAL = (
 )
 
 
+_EXPECTED_SECTION_IDS = (
+    "overview",
+    "who-can-dispute",
+    "filing-windows",
+    "response-time",
+    "evidence",
+    "confirmation",
+    "human-review",
+    "fraud-claims",
+    "decision-codes",
+)
+
+
 def test_the_committed_corpus_loads_in_every_language() -> None:
-    """A real-data sanity check: the shipped corpus parses in all three languages."""
+    """A real-data sanity check: the shipped corpus parses into its known 9 sections, in the
+    same order and under the same identifiers, in all three languages."""
     for lang in ("es", "pt", "en"):
         chunks = load_chunks(lang, root=DEFAULT_CORPUS_ROOT)
-        assert len(chunks) >= 1
+        assert tuple(chunk.section_id for chunk in chunks) == _EXPECTED_SECTION_IDS
         assert all(chunk.corpus_version for chunk in chunks)
         assert all(chunk.title and chunk.body for chunk in chunks)
 
