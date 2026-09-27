@@ -172,17 +172,23 @@ def test_a_server_error_becomes_llm_unavailable() -> None:
         (anthropic.PermissionDeniedError, 403),
         (anthropic.NotFoundError, 404),
         (anthropic.UnprocessableEntityError, 422),
+        (anthropic.RequestTooLargeError, 413),
     ],
-    ids=["authentication", "bad_request", "permission_denied", "not_found", "unprocessable"],
+    ids=[
+        "authentication",
+        "bad_request",
+        "permission_denied",
+        "not_found",
+        "unprocessable",
+        "request_too_large",
+    ],
 )
 def test_a_non_retryable_status_error_is_a_rejected_request_not_unavailable(
     error_type: type[anthropic.APIStatusError], status_code: int
 ) -> None:
     """A credential, permission or request-shape problem is never mistaken for something a bounded
     retry could fix: retrying the identical request would fail exactly the same way again."""
-    stub = _StubAnthropic(
-        error_type("rejected", response=_http_response(status_code), body=None)
-    )
+    stub = _StubAnthropic(error_type("rejected", response=_http_response(status_code), body=None))
     client = AnthropicLlmClient(SecretStr("test-key"), client=stub)  # type: ignore[arg-type]
 
     with pytest.raises(LlmRequestRejected):

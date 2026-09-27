@@ -72,6 +72,7 @@ _NON_RETRYABLE_STATUS_ERRORS = (
     anthropic.PermissionDeniedError,
     anthropic.NotFoundError,
     anthropic.UnprocessableEntityError,
+    anthropic.RequestTooLargeError,
 )
 
 
