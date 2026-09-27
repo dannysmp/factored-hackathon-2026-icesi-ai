@@ -85,6 +85,7 @@ from app.domain.policy.models import (  # Vocabulary shared with the policy engi
 from app.domain.policy.models import (
     TransactionStatus as PolicyTransactionStatus,
 )
+from app.security.middleware import current_request_id  # Correlates a failure log to its request
 from contracts.service_v1.audit import AuditAction, AuditRecord, AuditSink  # Where every call goes
 from contracts.service_v1.cases import AmountProvenance as ContractAmountProvenance
 from contracts.service_v1.cases import (  # Shared record shapes
@@ -212,6 +213,11 @@ class PostgresToolPort:
             )
         )
 
+    def _log_failure(self, event: str) -> None:
+        """A store-failure log line, correlated to its conversation trace and its HTTP request
+        (SECURITY.md: every operational log line carries both)."""
+        logger.warning("%s trace_id=%s request_id=%s", event, self._trace_id, current_request_id())
+
     # -------------------------------------------------------------------------------------
     # Transactions
     # -------------------------------------------------------------------------------------
@@ -259,7 +265,7 @@ class PostgresToolPort:
                 )
                 rows = cur.fetchall()
         except psycopg.Error:
-            logger.warning("list_transactions_failed")
+            self._log_failure("list_transactions_failed")
             return ToolFailure(tool=ToolName.LIST_TRANSACTIONS, cause="error")
 
         total_count = rows[0][10] if rows else 0
@@ -326,7 +332,7 @@ class PostgresToolPort:
         try:
             resolved = self._resolve_transaction(ref)
         except psycopg.Error:
-            logger.warning("get_transaction_failed")
+            self._log_failure("get_transaction_failed")
             return ToolFailure(tool=ToolName.GET_TRANSACTION, cause="error")
         if resolved is None:
             self._write_audit(AuditAction.TRANSACTION_VIEWED, None)
@@ -375,7 +381,7 @@ class PostgresToolPort:
                 )
                 rows = cur.fetchall()
         except psycopg.Error:
-            logger.warning("list_dispute_cases_failed")
+            self._log_failure("list_dispute_cases_failed")
             return ToolFailure(tool=ToolName.LIST_DISPUTE_CASES, cause="error")
 
         cases = tuple(
@@ -444,7 +450,7 @@ class PostgresToolPort:
         try:
             resolved = self._resolve_case(case_number)
         except psycopg.Error:
-            logger.warning("get_case_failed")
+            self._log_failure("get_case_failed")
             return ToolFailure(tool=ToolName.GET_CASE, cause="error")
         if resolved is None:
             self._write_audit(AuditAction.CASE_VIEWED, None)
@@ -481,19 +487,26 @@ class PostgresToolPort:
         """
         try:
             resolved = self._resolve_transaction(request.transaction_ref)
-            has_open_case = (
-                self._has_open_case_for(request.transaction_ref) if resolved is not None else False
-            )
         except psycopg.Error:
-            logger.warning("evaluate_dispute_failed")
+            self._log_failure("evaluate_dispute_failed")
             return ToolFailure(tool=ToolName.EVALUATE_DISPUTE, cause="error")
 
+        # Resolved but not owned by this session's customer, and resolved to nothing at all,
+        # must cost the same number of store round-trips: a query run only for an owned
+        # transaction is a timing side-channel that tells a caller a foreign reference exists,
+        # even though the response body is identical either way (AC-E4-06, issue #73).
         if resolved is None:
             self._write_audit(AuditAction.TRANSACTION_VIEWED, None)
             return ToolFailure(tool=ToolName.EVALUATE_DISPUTE, cause="error", retryable=False)
         if not resolved.owned:
             self._write_audit(AuditAction.TRANSACTION_PROBED, None)
             return ToolFailure(tool=ToolName.EVALUATE_DISPUTE, cause="error", retryable=False)
+
+        try:
+            has_open_case = self._has_open_case_for(request.transaction_ref)
+        except psycopg.Error:
+            self._log_failure("evaluate_dispute_failed")
+            return ToolFailure(tool=ToolName.EVALUATE_DISPUTE, cause="error")
 
         amount_usd = (
             None

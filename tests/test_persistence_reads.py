@@ -72,8 +72,14 @@ def dsn() -> str:
     if not value:
         pytest.skip("DATABASE_URL is not set")
     apply_migrations(value)
-    with psycopg.connect(value, autocommit=True) as conn, conn.cursor() as cur:
+    # TRUNCATE on audit_log is refused at the store (migration 0003), including for this reset:
+    # the session's own replication role is switched off for it, since a trigger created without
+    # ENABLE REPLICA or ENABLE ALWAYS does not fire under 'replica'.
+    with psycopg.connect(value) as conn, conn.cursor() as cur:
+        cur.execute("SET LOCAL session_replication_role = replica")
         cur.execute("TRUNCATE TABLE cases, transactions, products, customers, audit_log CASCADE")
+        conn.commit()
+    with psycopg.connect(value, autocommit=True) as conn, conn.cursor() as cur:
         cur.executemany(
             "INSERT INTO customers (customer_id, first_name, last_name, country, "
             "customer_status) VALUES (%s, 'First', 'Last', 'México', 'Active')",
@@ -151,13 +157,24 @@ def test_list_dispute_cases_returns_only_the_session_customers_own_rows(dsn: str
 
 
 @pytest.mark.parametrize(
-    "ref",
-    ["TRX-B1", "trx-b1", "Trx-B1", "  TRX-B1  "],
+    # The exact-case reference is a real row belonging to customer B, so it exercises the
+    # foreign-ownership branch (audited "probed"); the lookup itself is exact-match, so a
+    # different case or surrounding spaces never matches any row and exercises the plain
+    # not-found branch instead (audited "viewed") — both branches answer None either way
+    # (AC-E4-06), which is what every variant here asserts; the audited action, asserted per
+    # variant, is what tells the two branches apart.
+    ("ref", "audited_as"),
+    [
+        ("TRX-B1", "transaction_probed"),
+        ("trx-b1", "transaction_viewed"),
+        ("Trx-B1", "transaction_viewed"),
+        ("  TRX-B1  ", "transaction_viewed"),
+    ],
     ids=["as-given", "lower", "mixed", "spaces"],
 )
 @pytest.mark.integration
 def test_get_transaction_answers_the_same_for_a_foreign_and_a_nonexistent_reference(
-    dsn: str, ref: str
+    dsn: str, ref: str, audited_as: str
 ) -> None:
     sink = _RecordingSink(dsn)
     port = _port(dsn, sink, customer_id="CLI-A")
@@ -167,6 +184,8 @@ def test_get_transaction_answers_the_same_for_a_foreign_and_a_nonexistent_refere
 
     assert foreign is None
     assert missing is None
+    assert sink.records[0].action.value == audited_as
+    assert sink.records[1].action.value == "transaction_viewed"
 
 
 @pytest.mark.integration

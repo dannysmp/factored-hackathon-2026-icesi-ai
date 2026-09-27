@@ -37,6 +37,9 @@ import logging  # Progress events, never print
 # Third-party libraries
 import psycopg  # Serving-store driver
 
+# Local modules
+from app.security.middleware import current_request_id  # Correlates a failure log to its request
+
 logger = logging.getLogger(__name__)
 
 _CONNECT_TIMEOUT_SECONDS = 5
@@ -55,6 +58,6 @@ def customer_status(dsn: str, customer_id: str) -> str | None:
             )
             row = cur.fetchone()
     except psycopg.Error:
-        logger.warning("customer_lookup_failed")
+        logger.warning("customer_lookup_failed request_id=%s", current_request_id())
         return None
     return None if row is None else str(row[0])

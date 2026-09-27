@@ -2,9 +2,11 @@
 -- app.persistence.audit against contracts/service_v1/audit.py's AuditRecord. Frozen once shipped:
 -- a later change is a new, separate migration file, never an edit to this one.
 --
--- Append-only, enforced here, not only in code: a trigger refuses UPDATE and DELETE on this
--- table regardless of which role holds the connection, so the guarantee does not depend on a
--- hand-maintained GRANT/REVOKE list matching whatever role a deployment happens to connect as.
+-- Append-only, enforced here, not only in code: a trigger refuses UPDATE, DELETE and TRUNCATE on
+-- this table regardless of which role holds the connection, so the guarantee does not depend on
+-- a hand-maintained GRANT/REVOKE list matching whatever role a deployment happens to connect as —
+-- this project has no role separation, so the application's own runtime role can TRUNCATE unless
+-- something at the store itself refuses it.
 --
 -- The closed set of actions copies contracts/service_v1/audit.py's AuditAction, frozen there;
 -- a member is added, never renamed, and this file is never edited to add one — a new value needs
@@ -39,3 +41,10 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER audit_log_append_only
     BEFORE UPDATE OR DELETE ON audit_log
     FOR EACH ROW EXECUTE FUNCTION audit_log_forbid_mutation();
+
+-- TRUNCATE never visits individual rows, so the row-level trigger above cannot see it; a
+-- statement-level trigger is the only form Postgres fires for it, and it blocks TRUNCATE even
+-- for the table's owner.
+CREATE TRIGGER audit_log_forbid_truncate
+    BEFORE TRUNCATE ON audit_log
+    FOR EACH STATEMENT EXECUTE FUNCTION audit_log_forbid_mutation();

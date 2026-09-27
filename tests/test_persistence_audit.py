@@ -46,8 +46,13 @@ def dsn() -> str:
     if not value:
         pytest.skip("DATABASE_URL is not set")
     apply_migrations(value)
-    with psycopg.connect(value, autocommit=True) as conn, conn.cursor() as cur:
+    # TRUNCATE is refused at the store (migration 0003), including for this reset: the session's
+    # own replication role is switched off for it, since a trigger created without ENABLE REPLICA
+    # or ENABLE ALWAYS does not fire under 'replica'.
+    with psycopg.connect(value) as conn, conn.cursor() as cur:
+        cur.execute("SET LOCAL session_replication_role = replica")
         cur.execute("TRUNCATE TABLE audit_log")
+        conn.commit()
     return value
 
 
@@ -105,6 +110,21 @@ def test_the_audit_log_refuses_a_delete_at_the_store(dsn: str) -> None:
         pytest.raises(psycopg.errors.RaiseException, match="append-only"),
     ):
         cur.execute("DELETE FROM audit_log")
+
+
+@pytest.mark.integration
+def test_the_audit_log_refuses_a_truncate_at_the_store_even_for_the_table_owner(dsn: str) -> None:
+    """AC-E4-21: TRUNCATE fires no row-level trigger, so it needs (and has) its own; this
+    project has no role separation, so the connecting role is also the table's owner, and
+    Postgres normally lets an owner TRUNCATE regardless of any row-level rule."""
+    PostgresAuditSink(dsn).record(_record())
+
+    with (
+        psycopg.connect(dsn, autocommit=True) as conn,
+        conn.cursor() as cur,
+        pytest.raises(psycopg.errors.RaiseException, match="append-only"),
+    ):
+        cur.execute("TRUNCATE TABLE audit_log")
 
 
 def test_a_write_that_cannot_complete_raises_rather_than_dropping_the_entry() -> None:
