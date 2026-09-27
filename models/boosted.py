@@ -4,17 +4,17 @@ Boosted Risk Model and Ablation
 
 Overview
 --------
-E6 slice 2: the full boosted-model comparison against the logistic baseline (AC-E6-01, AC-E6-02),
-and the with/without ablation of the two latest-snapshot features (`customer_country`,
+The full boosted-model comparison against the logistic baseline (AC-E6-01, AC-E6-02), and the
+with/without ablation of the two latest-snapshot features (`customer_country`,
 `country_mismatch`) that `models/README.md` promised. The comparison that selects between the two
 models is a customer-resampled paired bootstrap on the test period, read exactly once.
 
 Scope
 -----
-In: an uncapped boosted fit (unlike slice 3.1's time-boxed gate probe), the ablation report, the
-test-period bootstrap and the resulting selection, appended to the experiment log.
-Out: the precision floor, the threshold and the model card. Those are the calibration slice's
-(E6 slice 3): this slice only says which model — boosted or logistic — the threshold is chosen on.
+In: an uncapped boosted fit (unlike the signal probe's own, time-boxed gate fit), the ablation
+report, the test-period bootstrap and the resulting selection, appended to the experiment log.
+Out: the precision floor, the threshold and the model card. Those belong to the calibration work
+that follows: this module only says which model — boosted or logistic — the threshold is chosen on.
 
 Design Principles
 -----------------
@@ -24,10 +24,9 @@ Design Principles
   3.1's DuckDB tabulation found every feature's fraud prevalence flat, and its capped boosted fit
   already landed within noise of the logistic baseline and the base rate. Adding a native
   dependency for a benefit with no evidence behind it is not warranted; scikit-learn's own
-  implementation stays in the existing `ml` group, so no new dependency conformance note is
-  needed for this slice.
-- **The same preprocessing rule as slice 3.1** (AC-E6-01): one `ColumnTransformer` per feature set,
-  fitted on training rows only, shared by both models.
+  implementation stays in the existing `ml` group, so no new dependency conformance is needed.
+- **The same preprocessing rule as the signal probe** (AC-E6-01): one `ColumnTransformer` per
+  feature set, fitted on training rows only, shared by both models.
 - **The ablation is diagnostic, not a gate.** Both feature sets are reported on validation; only
   the full feature set goes on to the test-period bootstrap and the selection.
 - **The test period is read exactly once, for scoring only.** Every model is fitted on the training
@@ -39,15 +38,13 @@ Design Principles
   leaves `_bootstrap_test`, so it cannot appear in the experiment log.
 - **Deterministic and runtime-capped.** A fixed seed and a fixed resample count
   (`BOOTSTRAP_RESAMPLES`) make the bootstrap reproducible and bound its running time regardless of
-  the mart's size; it is a command, not a test (CR-8's own rule for this bootstrap).
+  the mart's size; it is a command, not a test, run on demand rather than on every change.
 
 Runtime Contract
 ----------------
-``fit_and_score(train, validation) -> tuple[ModelResult, ...]`` (reused from `models.probe`)
-``run_ablation(con, mart, column_types, seed) -> AblationResult``
-``bootstrap_test(con, mart, silver_dir, column_types, model_params, seed) -> BootstrapResult``
+``run_ablation(con, mart, column_types, *, seed) -> tuple[AblationTable, ...]``
+``bootstrap_test(con, mart, silver_dir, column_types, *, seed, resamples) -> BootstrapResult``
 ``run_boosted(mart, manifest, silver_dir, *, split, seed, now) -> BoostedResult``
-``append_experiment(result, log_path) -> None`` (reused from `models.probe`)
 
 Limitations
 -----------
@@ -103,7 +100,6 @@ REDUCED_FEATURES = tuple(name for name in FEATURES if name not in SNAPSHOT_FEATU
 # Fixed for every run, so the interval is reproducible and bounded in running time regardless of
 # the mart's size.
 BOOTSTRAP_RESAMPLES = 300
-BOOTSTRAP_SEED = SEED
 
 _TEST_WITH_CUSTOMER_QUERY = """
 SELECT {columns}
@@ -147,7 +143,7 @@ class BootstrapResult:
 
 @dataclass(frozen=True, slots=True)
 class BoostedResult:
-    """The full outcome of one slice-3.3 run."""
+    """The full outcome of one boosted-model run: the ablation and the bootstrap selection."""
 
     timestamp: str
     code_version: str
