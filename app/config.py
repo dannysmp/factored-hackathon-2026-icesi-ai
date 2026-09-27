@@ -55,13 +55,13 @@ from pydantic_settings import (
 # Constants and contracts
 # -----------------------------------------------------------------------------
 
-# Pinned model ids accepted by the service; anything else is rejected at startup.
+# Pinned model ids accepted by the service; anything else is rejected at startup. The list is
+# deliberately short: the workload is structured extraction and short grounded replies, so larger
+# tiers are not needed and would multiply the cost per case. Adding an id is a reviewed change.
 ALLOWED_MODELS: frozenset[str] = frozenset(
     {
         "claude-haiku-4-5-20251001",
         "claude-sonnet-5",
-        "claude-opus-5-5",
-        "claude-fable-5-1",
     }
 )
 
