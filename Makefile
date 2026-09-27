@@ -92,10 +92,12 @@ corpus: ## Regenerate the multilingual policy corpus in policy/corpus from the p
 corpus-check: ## Fail when policy/corpus differs from what the policy generates
 	$(RUN) python -m pipelines.policy_corpus --check
 
-# ---- Not yet implemented (fail loudly until they are) --------------------------
+train: ## Run the risk signal probe, the boosted-model comparison and calibration; write the model card
+	$(RUN) python -m models.probe
+	$(RUN) python -m models.boosted
+	$(RUN) python -m models.calibration
 
-train: ## Train and log the risk model
-	@echo "make train is not implemented yet" >&2; exit 2
+# ---- Not yet implemented (fail loudly until they are) --------------------------
 
 evaluate: ## Run the evaluation harness: make evaluate SYSTEM={P|B0|B1}
 	@echo "make evaluate is not implemented yet" >&2; exit 2
