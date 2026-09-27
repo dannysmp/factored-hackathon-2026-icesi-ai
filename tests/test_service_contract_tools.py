@@ -115,7 +115,7 @@ def test_a_merchant_name_holding_a_control_character_is_refused() -> None:
 
 
 def test_a_merchant_name_holding_a_bidirectional_override_is_refused() -> None:
-    """A right-to-left override can make text render in an order that misleads a reader (M5).
+    """A right-to-left override can make text render in an order that misleads a reader.
 
     Built through ``chr`` rather than a literal: the character itself is exactly what a linter's
     own Trojan Source check refuses to see written directly into source.
@@ -133,7 +133,7 @@ def test_a_merchant_name_holding_a_bidirectional_override_is_refused() -> None:
 
 
 def test_a_transaction_fact_shows_the_description_when_the_merchant_is_absent() -> None:
-    """Most of the source data has no merchant; the description is a compatible fallback (M4)."""
+    """Most of the source data has no merchant; the description is a compatible fallback."""
     transaction = TransactionFact(
         ref="TX-1",
         occurred_on=date(2026, 1, 1),
