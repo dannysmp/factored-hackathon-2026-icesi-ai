@@ -29,9 +29,15 @@ def test_checksum_differs_for_different_content() -> None:
     assert _checksum("create table x ();") != _checksum("create table y ();")
 
 
-def test_main_requires_a_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
-    """With no --dsn and no DATABASE_URL, the command refuses rather than guessing."""
+def test_main_requires_a_dsn(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """With no --dsn and no DATABASE_URL, the command refuses rather than guessing.
+
+    Run from an empty directory: ``main`` loads settings with the default ``.env`` path, so a
+    real ``.env`` in the working directory (exactly what a developer has after following this
+    project's own setup) must not supply a DSN this test means to be absent.
+    """
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.chdir(tmp_path)
 
     with pytest.raises(SystemExit):
         main([])
