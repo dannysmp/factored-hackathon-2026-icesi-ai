@@ -1,6 +1,6 @@
 ---
 lang: pt
-policy_version: "1"
+policy_version: "2"
 generated: true
 generated_from: "policy/dispute_policy_v1.yaml"
 ---
@@ -33,6 +33,26 @@ A contestação deve ser apresentada dentro de um prazo, contado em dias corrido
 - Serviço não recebido: 120 dias.
 - Contestação por fraude: 180 dias.
 
+## Quando chega a primeira resposta {#response-time}
+
+Depois de apresentar uma contestação, o banco dá uma primeira resposta dentro deste prazo, contado em dias corridos a partir da data de apresentação:
+
+- Cobrança não reconhecida: 3 dias.
+- Cobrança em duplicidade: 3 dias.
+- Valor incorreto: 3 dias.
+- Serviço não recebido: 5 dias.
+- Contestação por fraude: 1 dia.
+
+## O que ter em mãos {#evidence}
+
+Para cada tipo de contestação, tenha isto pronto:
+
+- Cobrança não reconhecida: confirmar que ainda está com o cartão e dizer qual parte da cobrança não reconhece (comerciante, data ou valor).
+- Cobrança em duplicidade: as datas e os valores das duas cobranças.
+- Valor incorreto: um comprovante do valor combinado, como um recibo ou uma confirmação de pedido.
+- Serviço não recebido: um comprovante do pedido ou do pagamento e qualquer tentativa de contato com o comerciante.
+- Contestação por fraude: se o cartão está perdido, roubado ou ainda em seu poder e quando você mesmo o usou pela última vez.
+
 ## Confirmação antes de apresentar {#confirmation}
 
 Antes de apresentar uma contestação, o cliente confirma exatamente o que será apresentado: a transação, o motivo e os dados do pedido.
@@ -42,11 +62,8 @@ Antes de apresentar uma contestação, o cliente confirma exatamente o que será
 Mesmo que o pedido cumpra as regras, ele é encaminhado para análise de um atendente nestes casos:
 
 - É uma contestação por fraude.
-- O sistema não entendeu o pedido com segurança suficiente (confiança abaixo de 60%).
-- O cliente apresentou reclamações repetidas.
-- O valor é de 5.000 USD ou mais.
-- O valor em dólares não é conhecido.
-- A pontuação de risco da transação é 0,80 ou mais. A pontuação serve apenas para encaminhar o caso para análise; nunca decide o resultado.
+- O sistema não entendeu o pedido com segurança suficiente.
+- Aplicam-se outros critérios de revisão do banco.
 
 ## Contestações por fraude {#fraud-claims}
 
@@ -67,9 +84,9 @@ Cada decisão traz um destes motivos.
 | `transaction_date_in_future` | A data da transação está no futuro. |
 | `filing_window_expired` | O prazo para apresentar esta contestação expirou. |
 | `duplicate_open_case` | Já existe uma contestação aberta para esta transação. |
-| `escalate_fraud_claim` | É uma contestação por fraude; o caso é encaminhado para análise de um atendente. |
-| `escalate_low_nlu_confidence` | O sistema não entendeu o pedido com segurança suficiente; o caso é encaminhado para análise de um atendente. |
-| `escalate_repeat_complainer` | O cliente tem reclamações repetidas; o caso é encaminhado para análise de um atendente. |
-| `escalate_amount_above_threshold` | O valor da transação alcança o valor de referência para análise; o caso é encaminhado para análise de um atendente. |
-| `escalate_amount_unknown` | O valor em dólares não é conhecido; o caso é encaminhado para análise de um atendente. |
-| `escalate_risk_score` | A pontuação de risco atinge o valor de referência; o caso é encaminhado para análise de um atendente. |
+| `escalate_fraud_claim` | O caso é encaminhado para análise de um atendente. |
+| `escalate_low_nlu_confidence` | O caso é encaminhado para análise de um atendente. |
+| `escalate_repeat_complainer` | O caso é encaminhado para análise de um atendente. |
+| `escalate_amount_above_threshold` | O caso é encaminhado para análise de um atendente. |
+| `escalate_amount_unknown` | O caso é encaminhado para análise de um atendente. |
+| `escalate_risk_score` | O caso é encaminhado para análise de um atendente. |

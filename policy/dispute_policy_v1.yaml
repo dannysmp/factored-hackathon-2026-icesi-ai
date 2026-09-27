@@ -1,17 +1,20 @@
 # =============================================================================
-# Dispute policy, version 1
+# Dispute policy, version 2
 # =============================================================================
-# Purpose:  The parameters of the dispute policy: what can be disputed, for how long, and
-#           when a request goes to a person. The engine (app/domain/policy) applies them;
-#           the policy corpus that explains them is generated from this file.
-# Design:   Parameters are data, rules are code. A change here is a new policy version.
+# Purpose:  The parameters of the dispute policy: what can be disputed, for how long, when a
+#           request goes to a person, how soon the bank first responds and what evidence a
+#           customer is told to have ready. The engine (app/domain/policy) applies them; the
+#           policy corpus that explains them is generated from this file.
+# Design:   Parameters are data, rules are code. This file is edited in place at each version:
+#           no deployed system and no audit record carries version 1, so the prior version stays
+#           only in git history.
 # Usage:    Loaded once at start-up by app.domain.policy.loader.load_policy.
 # Notes:    Synthetic planning values for a Latin American retail bank, inspired by common
 #           chargeback and complaint-handling practice; they are not those of any bank or
-#           regulator.
+#           regulator. The first-response counts and the evidence lists are team-generated.
 # =============================================================================
 
-version: "1"
+version: "2"
 provenance: "Synthetic policy written for this project; not a statement of any bank's or regulator's rules."
 
 # Products whose transactions can be disputed here. Loans, investments and insurance have
@@ -62,3 +65,35 @@ routing:
   escalate_repeat_complainer: true
   # The amount in US dollars is not always known; when it is not, a person decides.
   escalate_unknown_amount: true
+  # Off until a risk model clears its pre-registered precision floor: fraud claims still
+  # escalate by category regardless, so no fraud claim goes unreviewed while this is off.
+  risk_routing_enabled: false
+  # Consecutive clarification attempts allowed on the same missing element before the request
+  # is routed to a person with `escalate_low_nlu_confidence`.
+  clarification_budget: 2
+
+# Calendar days from the filing date within which the bank gives its first response.
+first_response_days:
+  unrecognized_charge: 3
+  duplicate_charge: 3
+  wrong_amount: 3
+  service_not_received: 5
+  fraud_claim: 1
+
+# The evidence a customer is told to have ready for each category, as stable identifiers; the
+# corpus generates the wording per language from these, so the reply, the corpus and the
+# handoff packet always name the same items.
+evidence_required:
+  unrecognized_charge:
+    - "card_in_possession"
+    - "merchant_not_recognized"
+  duplicate_charge:
+    - "both_charge_dates_amounts"
+  wrong_amount:
+    - "agreed_amount_proof"
+  service_not_received:
+    - "order_proof"
+    - "merchant_contact_attempt"
+  fraud_claim:
+    - "card_status"
+    - "last_genuine_use"

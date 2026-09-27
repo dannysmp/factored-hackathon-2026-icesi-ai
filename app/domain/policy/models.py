@@ -168,6 +168,12 @@ class RoutingRules(_Frozen):
     risk_score_threshold: Rate
     escalate_repeat_complainer: StrictBool
     escalate_unknown_amount: StrictBool
+    # Off while no risk model has cleared its pre-registered precision floor; fraud claims
+    # escalate by category regardless of this flag.
+    risk_routing_enabled: StrictBool
+    # Consecutive clarification attempts on the same missing element before the request
+    # escalates with `escalate_low_nlu_confidence`; the conversation state carries the count.
+    clarification_budget: Annotated[int, Field(ge=1, le=10)]
 
     @field_validator("escalate_amount_usd", mode="before")
     @classmethod
@@ -176,6 +182,11 @@ class RoutingRules(_Frozen):
         if isinstance(value, float):
             raise ValueError('write the amount as text, for example "5000.00"')
         return value
+
+
+# A stable evidence identifier: the corpus, a reply and a handoff packet all name the same item
+# by this key, so it is lower case with no spaces, never free text.
+EvidenceId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=64)]
 
 
 class Policy(_Frozen):
@@ -187,6 +198,10 @@ class Policy(_Frozen):
     disputable_transaction_types: frozenset[str]
     categories: dict[DisputeCategory, CategoryRule]
     routing: RoutingRules
+    # Calendar days from the filing date within which the bank gives its first response.
+    first_response_days: dict[DisputeCategory, Annotated[int, Field(ge=1, le=365)]]
+    # The evidence identifiers a customer is told to have ready, per category.
+    evidence_required: dict[DisputeCategory, tuple[EvidenceId, ...]]
 
     @field_validator("categories", mode="after")
     @classmethod
@@ -196,10 +211,40 @@ class Policy(_Frozen):
         """Expose the rules through a read-only mapping so a loaded policy cannot be edited."""
         return ReadOnlyMap(value)  # type: ignore[return-value]
 
+    @field_validator("first_response_days", mode="after")
+    @classmethod
+    def _first_response_days_are_read_only(
+        cls, value: dict[DisputeCategory, int]
+    ) -> dict[DisputeCategory, int]:
+        """Expose the counts through a read-only mapping so a loaded policy cannot be edited."""
+        return ReadOnlyMap(value)  # type: ignore[return-value]
+
+    @field_validator("evidence_required", mode="after")
+    @classmethod
+    def _evidence_required_is_read_only(
+        cls, value: dict[DisputeCategory, tuple[str, ...]]
+    ) -> dict[DisputeCategory, tuple[str, ...]]:
+        """Expose the lists through a read-only mapping so a loaded policy cannot be edited."""
+        return ReadOnlyMap(value)  # type: ignore[return-value]
+
     @field_serializer("categories")
     def _serialize_categories(
         self, value: Mapping[DisputeCategory, CategoryRule]
     ) -> dict[DisputeCategory, CategoryRule]:
+        """Write the read-only mapping as a plain dictionary."""
+        return dict(value)
+
+    @field_serializer("first_response_days")
+    def _serialize_first_response_days(
+        self, value: Mapping[DisputeCategory, int]
+    ) -> dict[DisputeCategory, int]:
+        """Write the read-only mapping as a plain dictionary."""
+        return dict(value)
+
+    @field_serializer("evidence_required")
+    def _serialize_evidence_required(
+        self, value: Mapping[DisputeCategory, tuple[str, ...]]
+    ) -> dict[DisputeCategory, tuple[str, ...]]:
         """Write the read-only mapping as a plain dictionary."""
         return dict(value)
 
@@ -210,6 +255,24 @@ class Policy(_Frozen):
         if missing:
             names = ", ".join(sorted(category.value for category in missing))
             raise ValueError(f"policy has no rule for: {names}")
+        return self
+
+    @model_validator(mode="after")
+    def _every_category_has_a_response_time(self) -> Policy:
+        """A category without a first-response count could never tell the customer one."""
+        missing = set(DisputeCategory) - set(self.first_response_days)
+        if missing:
+            names = ", ".join(sorted(category.value for category in missing))
+            raise ValueError(f"policy has no first_response_days for: {names}")
+        return self
+
+    @model_validator(mode="after")
+    def _every_category_has_evidence(self) -> Policy:
+        """A category with no evidence listed would leave the customer nothing to prepare."""
+        missing = {c for c in DisputeCategory if not self.evidence_required.get(c)}
+        if missing:
+            names = ", ".join(sorted(category.value for category in missing))
+            raise ValueError(f"policy has no evidence_required for: {names}")
         return self
 
     @model_validator(mode="after")

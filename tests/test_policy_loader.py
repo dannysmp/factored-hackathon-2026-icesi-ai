@@ -37,7 +37,7 @@ def test_the_shipped_policy_loads_and_has_the_documented_parameters() -> None:
     """The file that ships with the repository is valid and says what the documentation says."""
     policy = load_policy()
 
-    assert policy.version == "1"
+    assert policy.version == "2"
     assert {c: r.filing_window_days for c, r in policy.categories.items()} == {
         DisputeCategory.UNRECOGNIZED_CHARGE: 120,
         DisputeCategory.DUPLICATE_CHARGE: 60,
@@ -46,6 +46,16 @@ def test_the_shipped_policy_loads_and_has_the_documented_parameters() -> None:
         DisputeCategory.FRAUD_CLAIM: 180,
     }
     assert policy.routing.escalate_amount_usd == Decimal("5000.00")
+    assert policy.routing.clarification_budget == 2
+    assert policy.routing.risk_routing_enabled is False
+    assert dict(policy.first_response_days) == {
+        DisputeCategory.UNRECOGNIZED_CHARGE: 3,
+        DisputeCategory.DUPLICATE_CHARGE: 3,
+        DisputeCategory.WRONG_AMOUNT: 3,
+        DisputeCategory.SERVICE_NOT_RECEIVED: 5,
+        DisputeCategory.FRAUD_CLAIM: 1,
+    }
+    assert all(policy.evidence_required[c] for c in DisputeCategory)
     assert "synthetic" in policy.provenance.lower()
 
 
@@ -97,6 +107,19 @@ def _without_category(name: str) -> dict[str, object]:
     return {**document, "categories": categories}
 
 
+def _without_first_response(name: str) -> dict[str, object]:
+    document = _shipped()
+    counts = {k: v for k, v in document["first_response_days"].items() if k != name}  # type: ignore[attr-defined]
+    return {**document, "first_response_days": counts}
+
+
+def _with_evidence(name: str, items: object) -> dict[str, object]:
+    document = _shipped()
+    evidence = dict(document["evidence_required"])  # type: ignore[call-overload]
+    evidence[name] = items
+    return {**document, "evidence_required": evidence}
+
+
 @pytest.mark.parametrize(
     ("document", "field"),
     [
@@ -115,6 +138,16 @@ def _without_category(name: str) -> dict[str, object]:
             {**_shipped(), "routing": {**_shipped()["routing"], "escalate_amount_usd": "0"}},  # type: ignore[dict-item]
             "routing.escalate_amount_usd",
         ),
+        (
+            _without_first_response("fraud_claim"),
+            "no first_response_days for: fraud_claim",
+        ),
+        (_with_evidence("wrong_amount", []), "no evidence_required for: wrong_amount"),
+        (_with_evidence("wrong_amount", "not-a-list"), "evidence_required.wrong_amount"),
+        (
+            {**_shipped(), "routing": {**_shipped()["routing"], "clarification_budget": 0}},  # type: ignore[dict-item]
+            "routing.clarification_budget",
+        ),
     ],
     ids=[
         "unknown-key",
@@ -126,6 +159,10 @@ def _without_category(name: str) -> dict[str, object]:
         "missing-category",
         "confidence-above-one",
         "zero-threshold",
+        "missing-first-response",
+        "empty-evidence",
+        "evidence-not-a-list",
+        "zero-clarification-budget",
     ],
 )
 def test_an_invalid_policy_is_refused_and_the_fields_at_fault_are_named(
