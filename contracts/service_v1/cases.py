@@ -15,8 +15,8 @@ Scope
 In: the case record, its closed set of statuses, and the primitives shared across this stream's
 contracts.
 Out: creating a case (``tools.create_dispute_case``), the mock case-service implementation and
-its lifecycle advancement (slice 1.4), and the policy decision a case rests on
-(``app.domain.policy``, reused here, not redefined).
+its lifecycle advancement, and the policy decision a case rests on (``app.domain.policy``, reused
+here, not redefined).
 
 Design Principles
 -----------------

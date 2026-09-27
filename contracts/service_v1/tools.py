@@ -6,8 +6,8 @@ Overview
 --------
 The customer tools: what each takes, what it returns, and the permission invariant it enforces
 itself, beyond the session scoping every tool has. The port (``ToolPort``) is the interface the
-dialogue controller codes against; slice 1.3 and 1.4 supply the implementation that reads and
-writes the serving store.
+dialogue controller codes against; a later implementation reads and writes the serving store
+behind it.
 
 Scope
 -----
