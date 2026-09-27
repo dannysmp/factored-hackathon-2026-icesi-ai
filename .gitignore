@@ -16,6 +16,7 @@ __pycache__/
 .ruff_cache/
 .hypothesis/
 .coverage
+.coverage.*
 htmlcov/
 
 # Generated reports are rebuilt by make targets; only the README and the five reports are tracked
