@@ -41,6 +41,7 @@ the request identifier.
 from __future__ import annotations
 
 # Standard libraries
+import functools  # Binds the DSN into the default customer lookup
 import logging  # Structured events
 import secrets  # Throw-away signing key for local runs
 
@@ -52,7 +53,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException  # Rout
 from starlette.responses import Response  # Handler return type
 
 # Local modules
-from app.api.auth import TEST_SESSIONS_PATH, build_auth_router  # Authentication routes
+from app.api.auth import TEST_SESSIONS_PATH, CustomerLookup, build_auth_router  # Auth routes
 from app.config import (
     AppEnvironment,  # Environments with different key rules
     ConfigError,  # Missing signing key outside local
@@ -64,6 +65,7 @@ from app.domain.calendar import (  # Domain date
     DomainCalendarError,
     resolve_domain_calendar,
 )
+from app.persistence.customers import customer_status  # The sandbox login's existence check
 from app.persistence.ops_meta import read_data_as_of  # The seed's own reference date
 from app.security.errors import ErrorCode, ProblemError, problem_response  # Failure format
 from app.security.limits import AttemptLimiter  # Failed-login limit
@@ -114,6 +116,18 @@ def _domain_calendar(settings: Settings, *, clock: Clock) -> DomainCalendar:
         return resolve_domain_calendar(settings.data_as_of_date, seed_date, now=clock)
     except DomainCalendarError as exc:
         raise ConfigError(str(exc)) from exc
+
+
+def _default_customer_lookup(settings: Settings) -> CustomerLookup:
+    """The sandbox login's real, store-backed customer check (AC-E4-47).
+
+    Raises
+    ------
+    ConfigError
+        ``DATABASE_URL`` is not configured; the sandbox login cannot check anyone without it.
+    """
+    dsn = settings.require_database_url().get_secret_value()
+    return functools.partial(customer_status, dsn)
 
 
 def _request_id(request: Request) -> str:
@@ -179,7 +193,12 @@ def _register_error_handlers(app: FastAPI) -> None:
 # -----------------------------------------------------------------------------
 
 
-def create_app(settings: Settings | None = None, *, clock: Clock = utc_now) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    clock: Clock = utc_now,
+    customer_lookup: CustomerLookup | None = None,
+) -> FastAPI:
     """Build the FastAPI application.
 
     Parameters
@@ -188,6 +207,9 @@ def create_app(settings: Settings | None = None, *, clock: Clock = utc_now) -> F
         Configuration to use; loaded from the environment when omitted.
     clock : Clock
         Source of the current time for sessions and the login limiter; tests inject their own.
+    customer_lookup : CustomerLookup | None
+        The sandbox login's existence check (AC-E4-47); tests inject a fake one. When omitted and
+        the sandbox login is enabled, the real, store-backed one is built from ``DATABASE_URL``.
 
     Returns
     -------
@@ -199,7 +221,8 @@ def create_app(settings: Settings | None = None, *, clock: Clock = utc_now) -> F
     ------
     ConfigError
         When no settings are given and the environment is invalid, when a signing key is required
-        and missing, or when no domain date resolves (ADR-15).
+        and missing, when no domain date resolves (ADR-15), or when the sandbox login is enabled,
+        no ``customer_lookup`` was injected, and ``DATABASE_URL`` is not configured.
     """
     # Resolve configuration once, failing fast before any route is registered
     resolved = settings if settings is not None else load_settings()
@@ -211,6 +234,9 @@ def create_app(settings: Settings | None = None, *, clock: Clock = utc_now) -> F
     # The sandbox login is public only while it exists; otherwise its path is protected too
     test_key = resolved.test_identity_key if resolved.test_identity_enabled else None
     public_paths = (TEST_SESSIONS_PATH,) if test_key is not None else ()
+    lookup = customer_lookup
+    if test_key is not None and lookup is None:
+        lookup = _default_customer_lookup(resolved)
 
     # Middleware: the last one added is the outermost, so the request context wraps the rest
     app.add_middleware(SessionAuthMiddleware, sessions=sessions, public_paths=public_paths)
@@ -235,7 +261,12 @@ def create_app(settings: Settings | None = None, *, clock: Clock = utc_now) -> F
 
     # The sandbox login is registered only when it is enabled (never in production)
     app.include_router(
-        build_auth_router(sessions=sessions, test_login_key=test_key, limiter=limiter)
+        build_auth_router(
+            sessions=sessions,
+            test_login_key=test_key,
+            limiter=limiter,
+            customer_lookup=lookup if lookup is not None else (lambda customer_id: None),
+        )
     )
 
     return app

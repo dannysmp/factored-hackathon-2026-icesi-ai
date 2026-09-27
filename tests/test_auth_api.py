@@ -40,6 +40,14 @@ SIGNING_KEY = "s" * 40
 LOGIN = "/v1/auth/test-sessions"
 
 
+def _always_active(customer_id: str) -> str | None:
+    """A customer lookup fake that says every identifier belongs to an Active customer.
+
+    The default for tests unrelated to AC-E4-47/AC-E4-48; those get their own fakes below.
+    """
+    return "Active"
+
+
 class Clock:
     """A clock that only moves when the test says so."""
 
@@ -68,7 +76,7 @@ def clock() -> Clock:
 
 @pytest.fixture
 def app(clock: Clock) -> FastAPI:
-    application = create_app(_settings(), clock=clock)
+    application = create_app(_settings(), clock=clock, customer_lookup=_always_active)
 
     @application.get("/v1/probe")
     def probe(request: Request) -> dict[str, str]:
@@ -154,6 +162,42 @@ def test_the_login_requires_the_shared_secret(client: TestClient, key: str | Non
 
     body = _assert_problem(response, 401, "test_login_rejected", reauth=True)
     assert "access_token" not in body
+
+
+def test_a_customer_the_store_does_not_know_gets_the_same_refusal_as_a_wrong_secret(
+    clock: Clock,
+) -> None:
+    """AC-E4-47: refused, indistinguishably from a wrong shared secret, never a server error."""
+    app = create_app(_settings(), clock=clock, customer_lookup=lambda customer_id: None)
+    unknown = TestClient(app)
+
+    response = unknown.post(
+        LOGIN, json={"customer_id": "NOBODY"}, headers={"X-Test-Login-Key": LOGIN_KEY}
+    )
+    wrong_secret = unknown.post(
+        LOGIN, json={"customer_id": "NOBODY"}, headers={"X-Test-Login-Key": "wrong"}
+    )
+
+    body = _assert_problem(response, 401, "test_login_rejected", reauth=True)
+    other = _assert_problem(wrong_secret, 401, "test_login_rejected", reauth=True)
+    # Identical except the request identifier, which differs across any two requests regardless.
+    assert {k: v for k, v in body.items() if k != "request_id"} == {
+        k: v for k, v in other.items() if k != "request_id"
+    }
+    assert "access_token" not in body
+
+
+def test_a_suspended_customer_still_gets_a_session(clock: Clock) -> None:
+    """AC-E4-48: no status gate, here or in the policy — a session is a defined result."""
+    app = create_app(_settings(), clock=clock, customer_lookup=lambda customer_id: "Suspended")
+    suspended = TestClient(app)
+
+    response = suspended.post(
+        LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": LOGIN_KEY}
+    )
+
+    assert response.status_code == 201
+    assert "access_token" in response.json()
 
 
 @pytest.mark.parametrize(
@@ -358,7 +402,13 @@ def test_logout_ends_the_session_immediately_and_only_that_session(client: TestC
 
 def test_a_token_from_another_deployment_is_invalid(client: TestClient, clock: Clock) -> None:
     """Sessions signed with another key are refused."""
-    other = TestClient(create_app(_settings(session_signing_key=SecretStr("z" * 40)), clock=clock))
+    other = TestClient(
+        create_app(
+            _settings(session_signing_key=SecretStr("z" * 40)),
+            clock=clock,
+            customer_lookup=_always_active,
+        )
+    )
     token = _login(other)["access_token"]
 
     _assert_problem(
@@ -471,10 +521,14 @@ def test_without_a_signing_key_local_runs_with_a_throw_away_key_and_others_refus
 ) -> None:
     """Local convenience never becomes a production default."""
     local = create_app(
-        _settings(session_signing_key=None, app_env=AppEnvironment.LOCAL), clock=clock
+        _settings(session_signing_key=None, app_env=AppEnvironment.LOCAL),
+        clock=clock,
+        customer_lookup=_always_active,
     )
     other = create_app(
-        _settings(session_signing_key=None, app_env=AppEnvironment.LOCAL), clock=clock
+        _settings(session_signing_key=None, app_env=AppEnvironment.LOCAL),
+        clock=clock,
+        customer_lookup=_always_active,
     )
     token = _login(TestClient(local))["access_token"]
 
@@ -487,6 +541,14 @@ def test_without_a_signing_key_local_runs_with_a_throw_away_key_and_others_refus
                 ),
                 clock=clock,
             )
+
+
+def test_the_sandbox_login_refuses_to_start_without_a_customer_lookup_or_a_database(
+    clock: Clock,
+) -> None:
+    """AC-E4-47 cannot be enforced with nothing to check against; this fails fast, not silently."""
+    with pytest.raises(ConfigError, match="DATABASE_URL"):
+        create_app(_settings(), clock=clock)
 
 
 # -----------------------------------------------------------------------------

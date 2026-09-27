@@ -24,6 +24,10 @@ stands in for that provider:
   checked (and the attempt counted) before the body is looked at;
 - the body carries only ``customer_id``. A document number, a name or any other field is
   rejected: **an identifier the customer types is never proof of identity**;
+- a ``customer_id`` the store does not know gets the same refusal as a wrong shared secret
+  (AC-E4-47): the two are indistinguishable by response code, message or shape;
+- a customer the store does know always gets a session, whatever their status — the policy
+  applies no status gate (AC-E4-48), and the login boundary does not invent one either;
 - failed attempts are limited per client address.
 
 Runtime Contract
@@ -34,8 +38,7 @@ Runtime Contract
 
 Limitations
 -----------
-The sandbox login does not check that the customer exists; the data layer that knows the
-customers is a later change. Sessions are not refreshed: an expired session needs a new login.
+Sessions are not refreshed: an expired session needs a new login.
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ from __future__ import annotations
 # Standard libraries
 import hmac  # Constant-time comparison of the shared secret
 import logging  # Structured events about sessions
+from collections.abc import Callable  # Type of the injected customer lookup
 from datetime import datetime  # Expiry in responses
 from typing import Annotated  # Header parameter declaration
 
@@ -59,6 +63,10 @@ from app.security.sessions import CUSTOMER_ID_PATTERN, Principal, SessionService
 logger = logging.getLogger(__name__)
 
 TEST_SESSIONS_PATH = "/v1/auth/test-sessions"
+
+# The customer's status as the store records it, or None when there is no match (AC-E4-47); the
+# sandbox login checks existence only, never status (AC-E4-48).
+CustomerLookup = Callable[[str], str | None]
 
 # The model's pattern is a search, not a full match, so it is anchored explicitly.
 ANCHORED_CUSTOMER_ID = f"^{CUSTOMER_ID_PATTERN.pattern}$"
@@ -116,6 +124,7 @@ def build_auth_router(
     sessions: SessionService,
     test_login_key: SecretStr | None,
     limiter: AttemptLimiter,
+    customer_lookup: CustomerLookup = lambda customer_id: None,
 ) -> APIRouter:
     """Build the authentication routes.
 
@@ -127,6 +136,10 @@ def build_auth_router(
         Shared secret of the sandbox login; when None the sandbox login is not registered.
     limiter : AttemptLimiter
         Limits failed sandbox logins per client address.
+    customer_lookup : CustomerLookup
+        Answers whether a customer exists (AC-E4-47); ignored when the sandbox login is not
+        registered. Defaults to "nobody exists" so a caller that forgets to inject one for an
+        enabled sandbox login fails closed rather than accepting every identifier.
     """
     router = APIRouter()
 
@@ -169,7 +182,20 @@ def build_auth_router(
             TEST_SESSIONS_PATH, status_code=201, dependencies=[Depends(authorize_test_client)]
         )
         def create_test_session(body: TestLoginRequest) -> SessionResponse:
-            """Issue a session for a trusted test client (sandbox only)."""
+            """Issue a session for a trusted test client (sandbox only).
+
+            AC-E4-47: a customer the store does not know gets the same refusal as a wrong shared
+            secret; a customer it does know always gets a session, whatever their status
+            (AC-E4-48 — no status gate, here or in the policy).
+            """
+            if customer_lookup(body.customer_id) is None:
+                logger.warning("test_login_unknown_customer request_id=%s", current_request_id())
+                raise ProblemError(
+                    ErrorCode.TEST_LOGIN_REJECTED,
+                    401,
+                    "Sign-in was refused",
+                    reauth_required=True,
+                )
             issued = sessions.issue(body.customer_id)
             logger.info(
                 "session_issued session_id=%s request_id=%s",

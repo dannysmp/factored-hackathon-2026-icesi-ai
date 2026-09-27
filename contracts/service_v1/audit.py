@@ -57,12 +57,21 @@ from contracts.service_v1.cases import NUMBER_PATTERN, ContractModel, SafeText, 
 
 
 class AuditAction(StrEnum):
-    """What happened. One entry per tool call that decides, acts, or is asked to and cannot."""
+    """What happened. One entry per tool call that decides, acts, or is asked to and cannot.
+
+    ``TRANSACTION_PROBED`` and ``CASE_PROBED`` are a compatible addition after this contract
+    froze: a reference call whose reference exists but belongs to another customer answers the
+    session's customer exactly as a genuine not-found would (same code, message and shape), but
+    is audited distinguishably from one, so enumeration is visible in the trail even though it is
+    invisible to the caller.
+    """
 
     TRANSACTIONS_LISTED = "transactions_listed"
     TRANSACTION_VIEWED = "transaction_viewed"
+    TRANSACTION_PROBED = "transaction_probed"
     CASES_LISTED = "cases_listed"
     CASE_VIEWED = "case_viewed"
+    CASE_PROBED = "case_probed"
     DISPUTE_EVALUATED = "dispute_evaluated"
     CASE_CREATED = "case_created"
     CASE_CREATION_REFUSED = "case_creation_refused"
