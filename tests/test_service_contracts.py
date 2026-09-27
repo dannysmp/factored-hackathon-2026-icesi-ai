@@ -892,52 +892,32 @@ def test_a_routed_handoff_needs_an_escalate_decision_and_no_handoff_reads_as_eli
 # Free text
 # -----------------------------------------------------------------------------
 
-# A valid card number of the kind test suites use, and a run of the same length that fails Luhn.
+# A card-shaped digit run. Free text is not screened for it: that redaction control lives at the
+# masking serializer (the egress boundary), not in these field validators (issue #80); a contract
+# field only ever refuses a control character.
 _CARD_NUMBER = "4111111111111111"
-_NOT_A_CARD_NUMBER = "4111111111111112"
 
 
 @pytest.mark.parametrize(
     "text",
     [
-        _CARD_NUMBER,
-        "4111 1111 1111 1111",
-        "4111-1111-1111-1111",
-        "4111.1111.1111.1111",
-        "4111/1111/1111/1111",
-        f"1{_CARD_NUMBER}",
-        f"{_CARD_NUMBER}1",
-        f"{_CARD_NUMBER} 1",
+        f"Tienda {_CARD_NUMBER}",
+        f"cargo con {_CARD_NUMBER}",
+        f"Card {_CARD_NUMBER} was used",
     ],
 )
-def test_free_text_fields_refuse_card_like_digit_runs(text: str) -> None:
-    """A card number cannot be stored in any bounded free-text field of a contract.
-
-    The digits are checked at every offset against every network's prefix-and-length shape, not
-    only as one whole number, so a stray adjacent digit or a punctuation mark the run was not
-    split on cannot hide one.
-    """
-    with pytest.raises(ValidationError, match="card number"):
-        _transaction(merchant=f"Tienda {text}")
-    with pytest.raises(ValidationError, match="card number"):
-        NluResult(intent=NluIntent.FILE_DISPUTE, confidence=0.9, detail=f"cargo con {text}")
-    with pytest.raises(ValidationError, match="card number"):
-        NluResult(intent=NluIntent.POLICY_QUESTION, confidence=0.9, policy_query=text)
-    with pytest.raises(ValidationError, match="card number"):
-        TransactionHint(merchant=text)
-    with pytest.raises(ValidationError, match="card number"):
-        DisputeFacts(search_terms=(text,))
-    with pytest.raises(ValidationError, match="card number"):
-        _packet(request_summary=f"Card {text} was used")
-    with pytest.raises(ValidationError, match="card number"):
-        ActionRecord(action=text, result="none")
-    with pytest.raises(ValidationError, match="card number"):
-        Choice(number=1, label=text)
+def test_free_text_fields_stay_a_contract_shape_check_only(text: str) -> None:
+    """A bounded free-text field refuses a control character and nothing about its content."""
+    assert _transaction(merchant=text).merchant
+    assert NluResult(intent=NluIntent.FILE_DISPUTE, confidence=0.9, detail=text)
+    assert TransactionHint(merchant=text)
+    assert _packet(request_summary=text)
+    assert ActionRecord(action=text, result="none")
+    assert Choice(number=1, label=text)
 
 
-def test_free_text_keeps_ordinary_digits_and_refuses_control_characters() -> None:
-    """Order numbers that fail the card check stay legal; a NUL or an escape does not."""
-    assert _transaction(merchant=f"Pedido {_NOT_A_CARD_NUMBER}").merchant
+def test_free_text_refuses_control_characters() -> None:
+    """A NUL or an escape sequence is refused; ordinary text, digits included, is not."""
     assert _transaction(merchant="Pedido 1234567").merchant
     for text in ("Tienda\x00Sol", "Tienda\x1bSol", "Tienda\nSol"):
         with pytest.raises(ValidationError, match="control characters"):
@@ -1212,14 +1192,6 @@ _FROZEN_VALUES: dict[type[StrEnum], set[str]] = {
 def test_a_closed_set_keeps_every_value_it_was_frozen_with(enumeration: type[StrEnum]) -> None:
     """A rename or a removal in a frozen closed set fails; an addition does not."""
     assert _FROZEN_VALUES[enumeration] <= {member.value for member in enumeration}
-
-
-def test_ordinary_long_digit_spans_are_not_flagged() -> None:
-    """A date range or an order number does not trip the card check merely by being numeric."""
-    assert _transaction(merchant="Pedido 20260618-20260620").merchant
-    assert NluResult(
-        intent=NluIntent.POLICY_QUESTION, confidence=0.9, policy_query="01/02/2026 - 03/04/2026"
-    )
 
 
 # -----------------------------------------------------------------------------

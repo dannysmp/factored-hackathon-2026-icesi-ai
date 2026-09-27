@@ -30,7 +30,10 @@ Design Principles
   other change is a new contract package.
 - An envelope that contradicts itself does not build: an outcome and its plain reason agree, a
   fixed text belongs to the intent that carries it, and the agent detail pairs with the decisions.
-- Free text is bounded and refuses control characters and card-like digit runs.
+- Free text is bounded and refuses control characters. Detecting and redacting a card number in
+  free text is a masking concern, tested and measured at the egress boundary (the masking
+  serializer), not a shape a contract field can enforce without either missing real numbers or
+  flagging ordinary ones.
 - The models are immutable and reject unknown fields, so a misspelled key fails at the boundary.
 
 Runtime Contract
@@ -50,7 +53,6 @@ rendered text against what the envelope holds.
 from __future__ import annotations
 
 # Standard libraries
-import re  # Card-like digit runs in free text
 import unicodedata  # Control characters in free text
 from collections.abc import Mapping  # Type of the template table
 from datetime import date, datetime  # Absolute dates of facts and instants that must be UTC
@@ -92,61 +94,17 @@ Rate = Annotated[float, Field(ge=0, le=1)]
 REF_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 NUMBER_PATTERN = r"^[A-Za-z0-9_-]{1,32}$"
 
-# A span of digits and the separators a card number is written with (space, hyphen, dot, slash);
-# at least 13 characters, so a shorter numeric mention is never inspected.
-_CARD_LIKE_SPAN = re.compile(r"[\d \-./]{13,}")
-
-# The leading digits and length of a card number under each major network's numbering scheme
-# (its issuer identification number range). Checking a substring against its network's shape
-# before running Luhn on it is what keeps an ordinary long number (a date range, an order
-# number) from being flagged merely because some window of its digits happens to pass Luhn: Luhn
-# alone passes about one in ten arbitrary digit strings, so a shape check is required first.
-_CARD_SHAPES: tuple[tuple[re.Pattern[str], int], ...] = (
-    (re.compile(r"^4"), 13),  # Visa
-    (re.compile(r"^4"), 16),  # Visa
-    (re.compile(r"^4"), 19),  # Visa
-    (re.compile(r"^5[1-5]"), 16),  # Mastercard
-    (re.compile(r"^3[47]"), 15),  # American Express
-    (re.compile(r"^(?:30[0-5]|36|38)"), 14),  # Diners Club
-    (re.compile(r"^(?:6011|65)"), 16),  # Discover
-)
-
-
-def _luhn_valid(digits: str) -> bool:
-    """Whether ``digits`` passes the Luhn check that every card number satisfies."""
-    total = 0
-    for position, char in enumerate(reversed(digits)):
-        value = int(char)
-        if position % 2 == 1:
-            tens, ones = divmod(value * 2, 10)
-            value = tens + ones
-        total += value
-    return total % 10 == 0
-
 
 def _refuse_control_characters(value: str) -> str:
-    """Refuse text holding a control character, which no customer-visible field needs."""
+    """Refuse text holding a control character, which no customer-visible field needs.
+
+    Detecting a card number hiding in free text is a redaction concern, not a contract shape:
+    it belongs to the masking serializer, the egress boundary the PII-minimization invariant
+    names, where it can be tested adversarially and measured for its false-positive rate in one
+    place instead of duplicated across every free-text field here.
+    """
     if any(unicodedata.category(char) == "Cc" for char in value):
         raise ValueError("text must not contain control characters")
-    return value
-
-
-def _refuse_card_like_text(value: str) -> str:
-    """Refuse control characters and any digit substring that has the shape of a card number.
-
-    Every offset within a card-like span is tried against every network shape, not only the span
-    taken as one whole number: a stray digit before or after the real number, or a separator the
-    span was not split on, would otherwise let it hide inside a longer or differently punctuated
-    run.
-    """
-    _refuse_control_characters(value)
-    for span in _CARD_LIKE_SPAN.finditer(value):
-        digits = re.sub(r"\D", "", span.group())
-        for pattern, length in _CARD_SHAPES:
-            for start in range(len(digits) - length + 1):
-                candidate = digits[start : start + length]
-                if pattern.match(candidate) and _luhn_valid(candidate):
-                    raise ValueError("text must not contain a card number")
     return value
 
 
@@ -159,7 +117,7 @@ def _require_utc(value: datetime) -> datetime:
 
 
 # Free text a system field may hold: no control characters and no card number.
-SafeText = Annotated[str, AfterValidator(_refuse_card_like_text)]
+SafeText = Annotated[str, AfterValidator(_refuse_control_characters)]
 
 # An instant of record, always UTC.
 UtcDatetime = Annotated[AwareDatetime, AfterValidator(_require_utc)]

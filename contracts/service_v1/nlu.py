@@ -20,8 +20,9 @@ Design Principles
 - Confirmation is a closed set that separates an explicit yes from everything else. Only ``YES``
   can lead to a filing; a yes with a change, a bare "ok" and a doubt are different answers.
 - Free text is bounded and stays a value: a merchant, a detail and a policy question are data,
-  never instructions to anything downstream, and none may hold a control character or a card
-  number.
+  never instructions to anything downstream, and none may hold a control character. Redacting a
+  card number in free text is the masking serializer's job at the egress boundary, not this
+  contract's.
 - A slot belongs to its intent: a confirmation, a choice and a requested language are read only
   for the intent that asks for them.
 - Dates arrive already resolved against the reference date the caller supplied, with the way they
