@@ -15,7 +15,13 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from app.domain.policy.models import DisputeCategory, Outcome, PolicyDecision, ReasonCode
+from app.domain.policy.models import (
+    DisputeCategory,
+    Outcome,
+    PolicyDecision,
+    ReasonCode,
+    TransactionStatus,
+)
 from contracts.service_v1.cases import AmountProvenance, DisclosedAmount
 from contracts.service_v1.tools import (
     PERMISSIONS,
@@ -31,7 +37,6 @@ from contracts.service_v1.tools import (
     TransactionFact,
     TransactionFilters,
     TransactionPage,
-    TransactionStatus,
 )
 
 

@@ -64,6 +64,7 @@ from pydantic import Field, model_validator  # Field bounds and cross-field rule
 from app.domain.policy.models import (
     DisputeCategory,
     PolicyDecision,
+    TransactionStatus,
 )  # One vocabulary, not redefined
 from contracts.service_v1.cases import (  # The base this contract builds on
     NUMBER_PATTERN,
@@ -141,15 +142,6 @@ class ProductLabel(ContractModel):
 
     name: Annotated[SafeText, Field(min_length=1, max_length=60)]
     last4: Annotated[str, Field(pattern=r"^\d{4}$")]
-
-
-class TransactionStatus(StrEnum):
-    """Status of the transaction as the source records it."""
-
-    APPROVED = "Approved"
-    DECLINED = "Declined"
-    PENDING = "Pending"
-    REVERSED = "Reversed"
 
 
 class TransactionFact(ContractModel):
