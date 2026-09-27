@@ -43,10 +43,16 @@ dev = [
 data = [
     "duckdb>=1.1,<2",  # Columnar SQL engine for profiling and pipelines over CSV/Parquet
 ]
+ml = [
+    "numpy>=2.1,<3",  # Arrays for the model matrices and the customer bootstrap
+    "scikit-learn>=1.5,<2",  # Logistic regression, gradient boosting and precision-recall metrics
+]
 
 [tool.uv]
-# Data tooling ships with the default environment so `make setup` covers pipelines too.
-default-groups = ["dev", "data"]
+# Data and model tooling ship with the default environment so `make setup` covers the pipelines
+# and the risk model too. The `ml` group stays out of the runtime image (ADR-6): risk scores are
+# computed in batch, offline, so the deployed service never imports it.
+default-groups = ["dev", "data", "ml"]
 
 [tool.ruff]
 line-length = 100
