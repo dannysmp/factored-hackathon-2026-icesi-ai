@@ -1,19 +1,18 @@
--- Two additions for the case-service write path (slice 1.4), both on the already-shipped
--- ``cases`` table (0001, frozen); neither is an edit to that file.
+-- Two additions for the case-service write path, both on the already-shipped ``cases`` table
+-- (0001, frozen); neither is an edit to that file.
 --
--- 1. Closes a gap flagged in review of the audit-sink slice (PR #101, finding M1): 0001 left
---    ``reason_code`` without a CHECK constraint, unlike every other closed-set column in that
---    table. The closed set copies app.domain.policy.models.ReasonCode in full, not a narrowed
---    subset of "eligible" reason codes: 0001's own stated principle is that a closed-set CHECK
---    constraint copies the frozen source values, "never a guessed or narrowed subset".
+-- 1. 0001 left ``reason_code`` without a CHECK constraint, unlike every other closed-set column
+--    in that table. The closed set copies app.domain.policy.models.ReasonCode in full, not a
+--    narrowed subset of "eligible" reason codes: 0001's own stated principle is that a closed-set
+--    CHECK constraint copies the frozen source values, "never a guessed or narrowed subset".
 --    Eligibility itself is enforced only by the controller and checked only by the independent
 --    oracle (AC-E4-39, ADR-3); narrowing this constraint to eligible-only reason codes would
 --    plant a second, driftable copy of that rule at the schema layer.
 --
--- 2. A unique open case per transaction (stream-brief 1.4, ADR-3's "duplicate open case"
---    permission invariant), enforced at the store, not only by the create tool's own
---    check-before-insert: a partial unique index over the two open statuses is the DB-level
---    safety net for the race the tool's own proactive check cannot fully close.
+-- 2. A unique open case per transaction (ADR-3's "duplicate open case" permission invariant),
+--    enforced at the store, not only by the create tool's own check-before-insert: a partial
+--    unique index over the two open statuses is the DB-level safety net for the race the tool's
+--    own proactive check cannot fully close.
 --
 -- Both validate existing rows (no NOT VALID): nothing writes cases yet, so no data can fail them.
 

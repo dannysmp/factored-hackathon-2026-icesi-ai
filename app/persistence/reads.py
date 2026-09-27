@@ -12,7 +12,7 @@ cannot ask for anyone else's data by passing a different identifier.
 Scope
 -----
 In: all six methods of ``ToolPort``, the cross-customer probe distinction issue #73 asks for,
-auditing every call, the create tool's own permission invariants (ADR-3, CR-14 option B).
+auditing every call, the create tool's own permission invariants (ADR-3).
 Out: loading the policy file (``app.domain.policy.loader``, supplied already loaded), evaluating
 policy inside the create tool (the controller's job, never this module's, per ADR-3), deciding
 what a tool call means (the dialogue controller, stream 2).
@@ -40,7 +40,7 @@ Design Principles
   the same response either way (AC-E4-06 again), distinguished only in the audit record. This is
   a genuine design choice the contract's shape forces, not a `ToolFailure` in the usual
   store-failed sense; flagged for the architect's conformance note.
-- **The create tool enforces permission invariants only, never policy** (ADR-3, CR-14 option B):
+- **The create tool enforces permission invariants only, never policy** (ADR-3):
   ``confirmation_required``, ``confirmation_mismatch``, ``idempotency_conflict``,
   ``duplicate_open_case`` and ``session_cap_reached`` are all this tool can verify itself; a
   request the policy would refuse is fail-closed instead on ``decision_missing`` (no decision was
@@ -87,9 +87,9 @@ write are two separate store connections, not one atomic transaction (matching
 window after the audit write commits but before the case insert's own connection commits could
 leave an audit record for a case that does not exist; there is no cross-connection two-phase
 commit in this codebase to close that window. ``AC-E4-16``'s "the existing case number" on a
-``duplicate_open_case`` refusal is not carried on the result: ``CreateDisputeCaseResult`` (frozen,
-shipped in PR #71) requires ``case_number`` to be absent exactly when ``created`` is ``False``;
-flagged for the architect's conformance note rather than widened here.
+``duplicate_open_case`` refusal is not carried on the result: ``CreateDisputeCaseResult`` (frozen)
+requires ``case_number`` to be absent exactly when ``created`` is ``False``; flagged for the
+architect's conformance note rather than widened here.
 """
 
 from __future__ import annotations
@@ -610,7 +610,7 @@ class PostgresToolPort:
         return decision
 
     # -------------------------------------------------------------------------------------
-    # Case creation (ADR-3, CR-14 option B): permission invariants only, never policy.
+    # Case creation (ADR-3): permission invariants only, never policy.
     # -------------------------------------------------------------------------------------
 
     def _refuse(
