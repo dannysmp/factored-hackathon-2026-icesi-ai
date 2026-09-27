@@ -4,17 +4,18 @@ Scoped Reads
 
 Overview
 --------
-The Postgres-backed ``ToolPort``: the session customer's own transactions and cases, and a fresh
-policy evaluation, with every call audited. The customer identifier is bound once, at
-construction, exactly as ``ToolPort`` requires; no method here takes one, so a caller cannot ask
-for anyone else's data by passing a different identifier.
+The Postgres-backed ``ToolPort``: the session customer's own transactions and cases, a fresh
+policy evaluation, and filing a case, with every call audited. The customer identifier is bound
+once, at construction, exactly as ``ToolPort`` requires; no method here takes one, so a caller
+cannot ask for anyone else's data by passing a different identifier.
 
 Scope
 -----
-In: the five read/evaluate methods of ``ToolPort``, the cross-customer probe distinction issue
-#73 asks for, auditing every call.
-Out: ``create_dispute_case`` (slice 1.4), loading the policy file (``app.domain.policy.loader``,
-supplied already loaded), deciding what a tool call means (the dialogue controller, stream 2).
+In: all six methods of ``ToolPort``, the cross-customer probe distinction issue #73 asks for,
+auditing every call, the create tool's own permission invariants (ADR-3, CR-14 option B).
+Out: loading the policy file (``app.domain.policy.loader``, supplied already loaded), evaluating
+policy inside the create tool (the controller's job, never this module's, per ADR-3), deciding
+what a tool call means (the dialogue controller, stream 2).
 
 Design Principles
 -----------------
@@ -24,25 +25,49 @@ Design Principles
   hint that the reference exists at all. The two cases are still told apart in the audit record
   (``transaction_probed``/``case_probed`` vs. ``transaction_viewed``/``case_viewed``, issue #73),
   since the trail is not the same audience as the response.
-- **Fail closed on the audit write.** Every successful read is audited before it is returned;
-  ``AuditSink.record`` raising propagates instead of being swallowed, so a customer never receives
-  data whose access was not recorded (extending AC-E4-25's console rule to every read here). A
-  read that itself fails at the store (``AC-E4-11``) is not audited: there was no completed action
-  to record, only an infrastructure failure the caller already sees as a ``ToolFailure``.
+- **Fail closed on the audit write.** Every successful read or write is audited before it is
+  returned; ``AuditSink.record`` raising propagates instead of being swallowed, so a customer
+  never receives data, or an outcome, whose access or filing was not recorded (extending
+  AC-E4-25's console rule to every call here). A call that itself fails at the store
+  (``AC-E4-11``) is not audited: there was no completed action to record, only an infrastructure
+  failure the caller already sees as a ``ToolFailure``.
 - **No customer parameter anywhere** (AC-E4-07): every SQL statement here is written to be
-  incapable of returning another customer's row by construction, not merely by a value a caller
-  happens to pass correctly.
+  incapable of returning or changing another customer's row by construction, not merely by a
+  value a caller happens to pass correctly.
 - **``evaluate_dispute`` has no not-found return.** Unlike the ``get_*`` methods, its contract
   offers only ``PolicyDecision | ToolFailure``; a transaction reference that does not exist or
   belongs to another customer is reported as ``ToolFailure(cause="error", retryable=False)`` —
   the same response either way (AC-E4-06 again), distinguished only in the audit record. This is
   a genuine design choice the contract's shape forces, not a `ToolFailure` in the usual
   store-failed sense; flagged for the architect's conformance note.
+- **The create tool enforces permission invariants only, never policy** (ADR-3, CR-14 option B):
+  ``confirmation_required``, ``confirmation_mismatch``, ``idempotency_conflict``,
+  ``duplicate_open_case`` and ``session_cap_reached`` are all this tool can verify itself; a
+  request the policy would refuse is fail-closed instead on ``decision_missing`` (no decision was
+  passed at all), never re-evaluated. ``PolicyDecision`` carries ``transaction_ref`` and
+  ``category`` (added in this slice) precisely so ``confirmation_mismatch`` (AC-E4-14) can compare
+  a filing call against what was actually decided, without trusting the caller and without
+  re-running the policy.
+- **Idempotency: a proactive check for the ordinary sequential replay, the unique constraint for
+  the true race** (AC-E4-15). A lookup by ``(customer_id, idempotency_key)`` before the insert
+  handles a call repeated in sequence, including the case where an earlier call's own case is now
+  the "open case" a naive duplicate-open-case check would otherwise wrongly refuse; the insert
+  itself still relies on ``cases_customer_idempotency_key_unique`` (migration 0001) and
+  ``cases_transaction_id_open_unique`` (migration 0004) to resolve two calls arriving at the same
+  moment, exactly as a check-then-insert without that fallback could not.
+- **Never trusts caller-stated fields** (AC-E4-13): the transaction is re-resolved from the store
+  inside ``create_dispute_case`` itself, exactly as ``evaluate_dispute`` does, and the amount,
+  currency and provenance stored on the case row come from that fresh read, never from
+  ``request`` or from the (possibly stale) ``decision`` object.
 
 Runtime Contract
 -----------------
-``PostgresToolPort(dsn, audit, policy, *, customer_id, session_id, trace_id, domain_date, now)``
-implements ``contracts.service_v1.tools.ToolPort``.
+``PostgresToolPort(dsn, audit, policy, *, customer_id, session_id, trace_id, domain_date, now,
+language, case_create_session_cap)`` implements ``contracts.service_v1.tools.ToolPort``.
+``language`` and ``case_create_session_cap`` are bound at construction like every other
+session-scoped fact this class holds: ``CreateDisputeCaseRequest`` (``contracts.service_v1.tools``)
+has no field for either, since a case's language is a fact of the session filing it, not of one
+call, and the cap is a permission invariant this tool enforces itself, not caller-supplied data.
 
 Limitations
 -----------
@@ -56,7 +81,15 @@ through this port cannot yet reflect the fact. ``risk_score`` is always ``None``
 switched off in the shipped policy, and wiring the real risk-features lookup is out of scope
 here. Both are flagged in the pull request for a decision on whether they need their own slice.
 ``description`` on every ``TransactionFact`` is always ``None``: the serving store carries no
-separate description column, only ``merchant_name``.
+separate description column, only ``merchant_name``. The case-insert transaction and the audit
+write are two separate store connections, not one atomic transaction (matching
+``app.persistence.audit``'s own one-connection-per-call design): a process crash in the narrow
+window after the audit write commits but before the case insert's own connection commits could
+leave an audit record for a case that does not exist; there is no cross-connection two-phase
+commit in this codebase to close that window. ``AC-E4-16``'s "the existing case number" on a
+``duplicate_open_case`` refusal is not carried on the result: ``CreateDisputeCaseResult`` (frozen,
+shipped in PR #71) requires ``case_number`` to be absent exactly when ``created`` is ``False``;
+flagged for the architect's conformance note rather than widened here.
 """
 
 from __future__ import annotations
@@ -65,6 +98,7 @@ from __future__ import annotations
 import hashlib  # The audit record's tool-result hash
 import json  # Canonical form of a result before hashing
 import logging  # Progress events, never print
+import secrets  # Unguessable suffix of a generated case number
 from collections.abc import Callable  # Type of the injected clock
 from dataclasses import dataclass  # Immutable resolved-reference result
 from datetime import date, datetime  # Domain date and the real instant of an audit record
@@ -72,9 +106,11 @@ from decimal import Decimal  # Money is never a float
 
 # Third-party libraries
 import psycopg  # Serving-store driver
+import psycopg.errors  # Distinguishing a unique-constraint race from any other store failure
 
 # Local modules
 from app.domain.policy.engine import evaluate_dispute as _evaluate  # The one policy rule
+from app.domain.policy.engine import expected_first_response  # Case's own first-response date
 from app.domain.policy.models import (  # Vocabulary shared with the policy engine
     DisputeCategory,
     DisputeRequest,
@@ -92,12 +128,16 @@ from contracts.service_v1.cases import (  # Shared record shapes
     CaseRecord,
     CaseStatus,
     DisclosedAmount,
+    Lang,
     Money,
 )
 from contracts.service_v1.tools import (  # The port this module implements
+    CreateDisputeCaseRequest,
+    CreateDisputeCaseResult,
     EvaluateDisputeRequest,
     ProductLabel,
     ToolFailure,
+    ToolRefusalCode,
     TransactionFact,
     TransactionFilters,
     TransactionPage,
@@ -111,6 +151,16 @@ Clock = Callable[[], datetime]
 
 # Open-case statuses per CaseStatus (cases.py); a resolved or rejected case is not "open".
 _OPEN_CASE_STATUSES = (CaseStatus.OPEN.value, CaseStatus.IN_REVIEW.value)
+
+# Named at the store (migration 0004); read here to tell a lost idempotency race from a lost
+# duplicate-open-case race without guessing at a generic unique-violation's own message text.
+_IDEMPOTENCY_CONSTRAINT = "cases_customer_idempotency_key_unique"
+_OPEN_CASE_CONSTRAINT = "cases_transaction_id_open_unique"
+
+
+def _new_case_number(domain_date: date) -> str:
+    """A short, readable case number: what a customer quotes on the phone (E4-F3)."""
+    return f"CASE-{domain_date:%Y%m%d}-{secrets.token_hex(4).upper()}"
 
 
 def _hash(payload: object) -> str:
@@ -162,8 +212,17 @@ class _ResolvedCase:
     language: str
 
 
+@dataclass(frozen=True, slots=True)
+class _ExistingCase:
+    """The case already on file for a customer's idempotency key, if any."""
+
+    case_number: str
+    transaction_id: str
+    category: str
+
+
 class PostgresToolPort:
-    """The session customer's own reads and dispute evaluation, backed by the serving store."""
+    """The session customer's own reads, dispute evaluation and filing, backed by the store."""
 
     def __init__(
         self,
@@ -176,6 +235,8 @@ class PostgresToolPort:
         trace_id: str,
         domain_date: date,
         now: Clock,
+        language: Lang,
+        case_create_session_cap: int,
     ) -> None:
         self._dsn = dsn
         self._audit = audit
@@ -185,6 +246,8 @@ class PostgresToolPort:
         self._trace_id = trace_id
         self._domain_date = domain_date
         self._now = now
+        self._language = language
+        self._case_create_session_cap = case_create_session_cap
 
     # -------------------------------------------------------------------------------------
     # Audit
@@ -217,6 +280,17 @@ class PostgresToolPort:
         """A store-failure log line, correlated to its conversation trace and its HTTP request
         (SECURITY.md: every operational log line carries both)."""
         logger.warning("%s trace_id=%s request_id=%s", event, self._trace_id, current_request_id())
+
+    def _log_replay(self, case_number: str, idempotency_key: str) -> None:
+        """A replayed filing call (AC-E4-15): no second audit record, but observable in the logs."""
+        logger.info(
+            "case_replay trace_id=%s request_id=%s session_id=%s case_number=%s idempotency_key=%s",
+            self._trace_id,
+            current_request_id(),
+            self._session_id,
+            case_number,
+            idempotency_key,
+        )
 
     # -------------------------------------------------------------------------------------
     # Transactions
@@ -514,6 +588,7 @@ class PostgresToolPort:
             else resolved.amount_usd
         )
         dispute_request = DisputeRequest(
+            transaction_ref=request.transaction_ref,
             category=request.category,
             transaction_date=resolved.transaction_date.date(),
             transaction_status=PolicyTransactionStatus(resolved.transaction_status),
@@ -533,3 +608,265 @@ class PostgresToolPort:
             policy_version=decision.policy_version,
         )
         return decision
+
+    # -------------------------------------------------------------------------------------
+    # Case creation (ADR-3, CR-14 option B): permission invariants only, never policy.
+    # -------------------------------------------------------------------------------------
+
+    def _refuse(
+        self, refusal: ToolRefusalCode, decision: PolicyDecision
+    ) -> CreateDisputeCaseResult:
+        """Audit and return a permission refusal; ``AuditSink.record`` raising still propagates."""
+        result = CreateDisputeCaseResult(created=False, refusal=refusal)
+        self._write_audit(
+            AuditAction.CASE_CREATION_REFUSED,
+            result.model_dump(mode="json"),
+            reason_code=decision.reason_code,
+            policy_version=decision.policy_version,
+        )
+        return result
+
+    def _find_by_idempotency_key(self, idempotency_key: str) -> _ExistingCase | None:
+        """The case already on file for this customer's ``idempotency_key``, if any."""
+        with (
+            psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
+            conn.cursor() as cur,
+        ):
+            cur.execute(
+                "SELECT case_number, transaction_id, category FROM cases "
+                "WHERE customer_id = %s AND idempotency_key = %s",
+                (self._customer_id, idempotency_key),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return _ExistingCase(case_number=row[0], transaction_id=row[1], category=row[2])
+
+    def _replay_or_conflict(
+        self,
+        existing: _ExistingCase,
+        request: CreateDisputeCaseRequest,
+        decision: PolicyDecision,
+    ) -> CreateDisputeCaseResult:
+        """The same key with the same payload replays; a different payload is a real conflict."""
+        if (
+            existing.transaction_id == request.transaction_ref
+            and existing.category == request.category.value
+        ):
+            self._log_replay(existing.case_number, request.idempotency_key)
+            return CreateDisputeCaseResult(created=True, case_number=existing.case_number)
+        return self._refuse(ToolRefusalCode.IDEMPOTENCY_CONFLICT, decision)
+
+    def _session_case_count(self) -> int:
+        """How many cases this session has already filed, of any status."""
+        with (
+            psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
+            conn.cursor() as cur,
+        ):
+            cur.execute(
+                "SELECT count(*) FROM cases WHERE customer_id = %s AND session_id = %s",
+                (self._customer_id, self._session_id),
+            )
+            (count,) = cur.fetchone() or (0,)
+        return int(count)
+
+    def create_dispute_case(
+        self, request: CreateDisputeCaseRequest
+    ) -> CreateDisputeCaseResult | ToolFailure:
+        """File a case, or refuse for a permission reason; never a policy reason (ADR-3).
+
+        A ``ToolFailure`` covers what neither party to the decision controls: the store cannot be
+        reached, or the audit record for the filing cannot be written. Either fails the filing
+        closed — no case is created uncounted, and the customer is told it could not be
+        completed, never that it succeeded (AC-E4-19).
+        """
+        validated = self._validate_permission(request)
+        if isinstance(validated, CreateDisputeCaseResult):
+            return validated
+        decision = validated
+
+        try:
+            existing = self._find_by_idempotency_key(request.idempotency_key)
+        except psycopg.Error:
+            self._log_failure("create_dispute_case_failed")
+            return ToolFailure(tool=ToolName.CREATE_DISPUTE_CASE, cause="error")
+        if existing is not None:
+            return self._replay_or_conflict(existing, request, decision)
+
+        resolved = self._resolve_owned_transaction_or_failure(request.transaction_ref)
+        if isinstance(resolved, ToolFailure):
+            return resolved
+
+        limit_refusal = self._creation_limit_refusal(request.transaction_ref, decision)
+        if limit_refusal is not None:
+            return limit_refusal
+
+        return self._insert_case(request, resolved, decision)
+
+    def _validate_permission(
+        self, request: CreateDisputeCaseRequest
+    ) -> PolicyDecision | CreateDisputeCaseResult:
+        """The request's own decision, once confirmed and matching; otherwise the refusal itself.
+
+        No store access: every check here reads only the request and the decision it carries.
+        """
+        decision = request.decision
+        if decision is None:
+            result = CreateDisputeCaseResult(
+                created=False, refusal=ToolRefusalCode.DECISION_MISSING
+            )
+            self._write_audit(AuditAction.CASE_CREATION_REFUSED, result.model_dump(mode="json"))
+            return result
+
+        if not request.confirmed:
+            return self._refuse(ToolRefusalCode.CONFIRMATION_REQUIRED, decision)
+
+        if (
+            decision.transaction_ref != request.transaction_ref
+            or decision.category != request.category
+        ):
+            return self._refuse(ToolRefusalCode.CONFIRMATION_MISMATCH, decision)
+
+        return decision
+
+    def _resolve_owned_transaction_or_failure(
+        self, transaction_ref: str
+    ) -> _ResolvedTransaction | ToolFailure:
+        """The owned, resolved transaction for a filing call, or a fail-closed ``ToolFailure``.
+
+        Defensive only: unreachable while every caller evaluates the dispute (which already
+        requires an owned, resolved transaction) immediately before filing it, in the same
+        request. Audited the same way ``evaluate_dispute`` audits it, on the chance this ever
+        changes.
+        """
+        try:
+            resolved = self._resolve_transaction(transaction_ref)
+        except psycopg.Error:
+            self._log_failure("create_dispute_case_failed")
+            return ToolFailure(tool=ToolName.CREATE_DISPUTE_CASE, cause="error")
+        if resolved is None:
+            self._write_audit(AuditAction.TRANSACTION_VIEWED, None)
+            return ToolFailure(tool=ToolName.CREATE_DISPUTE_CASE, cause="error", retryable=False)
+        if not resolved.owned:
+            self._write_audit(AuditAction.TRANSACTION_PROBED, None)
+            return ToolFailure(tool=ToolName.CREATE_DISPUTE_CASE, cause="error", retryable=False)
+        return resolved
+
+    def _creation_limit_refusal(
+        self, transaction_ref: str, decision: PolicyDecision
+    ) -> CreateDisputeCaseResult | ToolFailure | None:
+        """A refusal for the duplicate-open-case or session-cap invariant; ``None`` to proceed."""
+        try:
+            has_open_case = self._has_open_case_for(transaction_ref)
+        except psycopg.Error:
+            self._log_failure("create_dispute_case_failed")
+            return ToolFailure(tool=ToolName.CREATE_DISPUTE_CASE, cause="error")
+        if has_open_case:
+            return self._refuse(ToolRefusalCode.DUPLICATE_OPEN_CASE, decision)
+
+        try:
+            session_case_count = self._session_case_count()
+        except psycopg.Error:
+            self._log_failure("create_dispute_case_failed")
+            return ToolFailure(tool=ToolName.CREATE_DISPUTE_CASE, cause="error")
+        if session_case_count >= self._case_create_session_cap:
+            return self._refuse(ToolRefusalCode.SESSION_CAP_REACHED, decision)
+
+        return None
+
+    def _insert_case(
+        self,
+        request: CreateDisputeCaseRequest,
+        resolved: _ResolvedTransaction,
+        decision: PolicyDecision,
+    ) -> CreateDisputeCaseResult | ToolFailure:
+        """Insert the case row and its creation audit record (AC-E4-19's fail-closed insert)."""
+        case_number = _new_case_number(self._domain_date)
+        unknown = ContractAmountProvenance.UNKNOWN.value
+        amount_usd = None if resolved.amount_usd_provenance == unknown else resolved.amount_usd
+        currency = None if amount_usd is None else "USD"
+        expected_date = expected_first_response(self._policy, request.category, self._domain_date)
+        created_at = self._now()
+
+        try:
+            with (
+                psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
+                conn.cursor() as cur,
+            ):
+                cur.execute(
+                    """
+                    INSERT INTO cases (
+                        case_number, customer_id, transaction_id, session_id, idempotency_key,
+                        status, category, amount, currency, amount_provenance, domain_date,
+                        expected_first_response_date, created_at_utc, policy_version,
+                        reason_code, language
+                    ) VALUES (
+                        %(case_number)s, %(customer_id)s, %(transaction_id)s, %(session_id)s,
+                        %(idempotency_key)s, 'Open', %(category)s, %(amount)s, %(currency)s,
+                        %(amount_provenance)s, %(domain_date)s, %(expected_first_response_date)s,
+                        %(created_at_utc)s, %(policy_version)s, %(reason_code)s, %(language)s
+                    )
+                    """,
+                    {
+                        "case_number": case_number,
+                        "customer_id": self._customer_id,
+                        "transaction_id": resolved.transaction_id,
+                        "session_id": self._session_id,
+                        "idempotency_key": request.idempotency_key,
+                        "category": request.category.value,
+                        "amount": amount_usd,
+                        "currency": currency,
+                        "amount_provenance": resolved.amount_usd_provenance,
+                        "domain_date": self._domain_date,
+                        "expected_first_response_date": expected_date,
+                        "created_at_utc": created_at,
+                        "policy_version": decision.policy_version,
+                        "reason_code": decision.reason_code.value,
+                        "language": self._language,
+                    },
+                )
+                # Written on the same (still uncommitted) connection as the insert above: a
+                # failure here propagates, and exiting this ``with`` block on an exception rolls
+                # the case insert back too, so a filing whose audit record cannot be written
+                # creates no case (AC-E4-19). The audit sink itself still commits on its own,
+                # separate connection (app.persistence.audit); see the module's Limitations for
+                # the narrow window that leaves open.
+                record = self._case_record(
+                    _ResolvedCase(
+                        owned=True,
+                        case_number=case_number,
+                        status=CaseStatus.OPEN.value,
+                        transaction_id=resolved.transaction_id,
+                        category=request.category.value,
+                        amount=amount_usd,
+                        currency=currency,
+                        amount_provenance=resolved.amount_usd_provenance,
+                        domain_date=self._domain_date,
+                        expected_first_response_date=expected_date,
+                        created_at_utc=created_at,
+                        policy_version=decision.policy_version,
+                        reason_code=decision.reason_code.value,
+                        language=self._language,
+                    )
+                )
+                self._write_audit(
+                    AuditAction.CASE_CREATED,
+                    record.model_dump(mode="json"),
+                    reason_code=decision.reason_code,
+                    policy_version=decision.policy_version,
+                )
+        except psycopg.errors.UniqueViolation as exc:
+            constraint = exc.diag.constraint_name
+            if constraint == _IDEMPOTENCY_CONSTRAINT:
+                raced = self._find_by_idempotency_key(request.idempotency_key)
+                if raced is not None:
+                    return self._replay_or_conflict(raced, request, decision)
+            elif constraint == _OPEN_CASE_CONSTRAINT:
+                return self._refuse(ToolRefusalCode.DUPLICATE_OPEN_CASE, decision)
+            self._log_failure("create_dispute_case_failed")
+            return ToolFailure(tool=ToolName.CREATE_DISPUTE_CASE, cause="error")
+        except psycopg.Error:
+            self._log_failure("create_dispute_case_failed")
+            return ToolFailure(tool=ToolName.CREATE_DISPUTE_CASE, cause="error")
+
+        return CreateDisputeCaseResult(created=True, case_number=case_number)

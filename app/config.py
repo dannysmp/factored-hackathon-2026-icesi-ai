@@ -146,6 +146,10 @@ class Settings(BaseSettings):
         The domain date override (ADR-15): an ISO date, or the literal ``"system"`` for the real
         date in the bank's own zone. Optional; when absent, the domain calendar reads the loaded
         seed's own reference date instead.
+    case_create_session_cap : int
+        Permission-class invariant the create tool enforces itself (ADR-3), not a policy value:
+        an anti-abuse bound on how many cases one session may file, never a limit on how many
+        distinct disputes a customer legitimately has. Between 1 and 50.
     """
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)
@@ -164,6 +168,7 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
     model_renderer_enabled: bool = False
     data_as_of_date: str | None = None
+    case_create_session_cap: int = Field(default=3, ge=1, le=50)
 
     @field_validator("nlu_model", "render_model")
     @classmethod

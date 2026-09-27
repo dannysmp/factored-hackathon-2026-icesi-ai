@@ -206,6 +206,8 @@ def _decision(**overrides: object) -> PolicyDecision:
         "policy_version": "1",
         "requires_confirmation": True,
         "facts": (),
+        "transaction_ref": "TRX-1",
+        "category": DisputeCategory.UNRECOGNIZED_CHARGE,
     }
     fields.update(overrides)
     return PolicyDecision(**fields)

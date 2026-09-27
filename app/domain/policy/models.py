@@ -291,6 +291,7 @@ class Policy(_Frozen):
 class DisputeRequest(_Frozen):
     """The facts a decision needs, gathered by the service layer from trusted records."""
 
+    transaction_ref: Annotated[str, Field(min_length=1, max_length=64)]
     category: DisputeCategory
     transaction_date: date
     transaction_status: TransactionStatus
@@ -311,7 +312,13 @@ class Fact(_Frozen):
 
 
 class PolicyDecision(_Frozen):
-    """The outcome of the policy for one request, with everything needed to explain it."""
+    """The outcome of the policy for one request, with everything needed to explain it.
+
+    ``transaction_ref`` and ``category`` identify the request the decision was made for. They
+    carry no rule of their own; they exist so the case-creation tool can refuse
+    ``confirmation_mismatch`` (AC-E4-14) by comparing them against a later filing call, without
+    trusting the caller and without re-running the policy itself (ADR-3).
+    """
 
     outcome: Outcome
     reason_code: ReasonCode
@@ -319,3 +326,5 @@ class PolicyDecision(_Frozen):
     requires_confirmation: bool
     facts: tuple[Fact, ...]
     triggers: tuple[ReasonCode, ...] = ()
+    transaction_ref: Annotated[str, Field(min_length=1, max_length=64)]
+    category: DisputeCategory

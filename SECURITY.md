@@ -55,7 +55,7 @@ medium ≤ 30 days**; exceptions are documented with the compensating controls.
 | Structured logging with correlation identifiers and redaction filter | Planned |
 | Append-only audit records | Implemented |
 | Masking and redaction before model calls | Planned |
-| Confirmation, idempotency and read-back for state-changing operations | Planned |
+| Confirmation, idempotency and read-back for state-changing operations | Implemented (the create tool: explicit confirmation matched against the decision, an idempotency key enforced at the store, and an audit record for every filing and refusal; the controller's read-back call before reporting success is stream 2's) |
 | Retention and purge procedure | Planned |
 
 This table is updated in the same change that implements a control.

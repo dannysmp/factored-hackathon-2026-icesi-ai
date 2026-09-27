@@ -39,6 +39,7 @@ _ENV_KEYS = (
     "TEST_IDENTITY_KEY",
     "DATABASE_URL",
     "MODEL_RENDERER_ENABLED",
+    "CASE_CREATE_SESSION_CAP",
 )
 
 
@@ -245,6 +246,32 @@ def test_the_lifetime_bounds_are_inclusive(monkeypatch: pytest.MonkeyPatch, ttl:
     monkeypatch.setenv("SESSION_TTL_SECONDS", ttl)
 
     assert load_settings(env_file=None).session_ttl_seconds == int(ttl)
+
+
+def test_the_case_create_session_cap_defaults_to_three() -> None:
+    """A bare environment yields the documented default."""
+    assert load_settings(env_file=None).case_create_session_cap == 3
+
+
+@pytest.mark.parametrize("cap", ["0", "51", "-1", "many"])
+def test_a_case_create_session_cap_outside_one_to_fifty_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, cap: str
+) -> None:
+    """The cap is a small, positive, bounded integer."""
+    monkeypatch.setenv("CASE_CREATE_SESSION_CAP", cap)
+
+    with pytest.raises(ConfigError, match="CASE_CREATE_SESSION_CAP"):
+        load_settings(env_file=None)
+
+
+@pytest.mark.parametrize("cap", ["1", "50"])
+def test_the_case_create_session_cap_bounds_are_inclusive(
+    monkeypatch: pytest.MonkeyPatch, cap: str
+) -> None:
+    """One and fifty are valid."""
+    monkeypatch.setenv("CASE_CREATE_SESSION_CAP", cap)
+
+    assert load_settings(env_file=None).case_create_session_cap == int(cap)
 
 
 def test_the_sandbox_login_needs_its_secret(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -57,6 +57,7 @@ def _routing(policy: Policy, **updates: Any) -> Policy:
 def make_request(**overrides: Any) -> DisputeRequest:
     """An eligible request; a test overrides only the fact it is about."""
     values: dict[str, Any] = {
+        "transaction_ref": "TRX-TEST",
         "category": DisputeCategory.UNRECOGNIZED_CHARGE,
         "transaction_date": TODAY - timedelta(days=10),
         "transaction_status": TransactionStatus.APPROVED,

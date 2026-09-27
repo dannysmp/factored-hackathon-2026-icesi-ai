@@ -101,7 +101,12 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         cur.execute("DROP FUNCTION IF EXISTS audit_log_forbid_mutation() CASCADE")
 
     applied = apply_migrations(dsn)
-    assert applied == ("0001_serving_store", "0002_ops_meta", "0003_audit")
+    assert applied == (
+        "0001_serving_store",
+        "0002_ops_meta",
+        "0003_audit",
+        "0004_case_write_constraints",
+    )
 
     again = apply_migrations(dsn)
     assert again == ()
