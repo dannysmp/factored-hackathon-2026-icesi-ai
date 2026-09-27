@@ -59,6 +59,26 @@ def test_defaults_are_valid_and_pinned() -> None:
     assert settings.anthropic_api_key is None
 
 
+def test_allow_list_holds_exactly_the_two_pinned_models() -> None:
+    """The allow-list is the two pinned ids; a larger tier needs a reviewed change to it."""
+    assert sorted(ALLOWED_MODELS) == ["claude-haiku-4-5-20251001", "claude-sonnet-5"]
+
+
+@pytest.mark.parametrize("key", ["NLU_MODEL", "RENDER_MODEL"])
+@pytest.mark.parametrize("model", ["claude-opus-5-5", "claude-fable-5-1"])
+def test_larger_model_tiers_are_refused(
+    monkeypatch: pytest.MonkeyPatch, key: str, model: str
+) -> None:
+    """Models left out of the allow-list are refused at startup for both model settings."""
+    monkeypatch.setenv(key, model)
+
+    with pytest.raises(ConfigError) as excinfo:
+        load_settings(env_file=None)
+
+    assert key in str(excinfo.value)
+    assert model not in str(excinfo.value)
+
+
 def test_environment_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """Environment variables take effect and are parsed into enums."""
     monkeypatch.setenv("APP_ENV", "prod")
