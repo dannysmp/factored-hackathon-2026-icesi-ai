@@ -21,11 +21,15 @@ Design Principles
   identifier; stack traces and request data never reach the client.
 - The service starts only with a signing key. In ``local`` a throw-away key is generated (sessions
   end when the process restarts); in ``dev`` and ``prod`` a missing key is a start-up error.
+- The service starts only with a resolved domain date (ADR-15): an explicit setting, the real date
+  in the bank zone, or the loaded seed's own reference date; none of the three is a start-up error.
 
 Runtime Contract
 ----------------
 ``GET /health/live``  -> ``{"status": "live"}``
-``GET /health/ready`` -> ``{"status": "ready", "service_version": str, "environment": str}``
+``GET /health/ready`` -> ``{"status": "ready", "service_version": str, "environment": str,
+"domain_date": str, "domain_date_origin": str}`` (ADR-15: ``domain_date_origin`` is one of
+``setting``, ``seed``, ``system``).
 Authentication routes: see ``app.api.auth``.
 
 Limitations
@@ -55,6 +59,12 @@ from app.config import (
     Settings,  # Validated configuration injected into the app
     load_settings,  # Loads configuration when none is injected
 )
+from app.domain.calendar import (  # Domain date
+    DomainCalendar,
+    DomainCalendarError,
+    resolve_domain_calendar,
+)
+from app.persistence.ops_meta import read_data_as_of  # The seed's own reference date
 from app.security.errors import ErrorCode, ProblemError, problem_response  # Failure format
 from app.security.limits import AttemptLimiter  # Failed-login limit
 from app.security.middleware import (  # Cross-cutting request handling
@@ -84,6 +94,26 @@ def _signing_key(settings: Settings) -> SecretStr:
         logger.warning("session_key_ephemeral sessions end when the process restarts")
         return SecretStr(secrets.token_urlsafe(48))
     raise ConfigError("SESSION_SIGNING_KEY is required when APP_ENV is dev or prod")
+
+
+def _domain_calendar(settings: Settings, *, clock: Clock) -> DomainCalendar:
+    """Resolve the domain date once, at start-up (ADR-15).
+
+    The seed is read only when ``DATA_AS_OF_DATE`` does not already settle the question, so a
+    deployment that overrides it never needs the database up at start-up.
+
+    Raises
+    ------
+    ConfigError
+        No source resolves a domain date: neither the setting nor a loaded seed.
+    """
+    seed_date = None
+    if not (settings.data_as_of_date or "").strip() and settings.database_url is not None:
+        seed_date = read_data_as_of(settings.database_url.get_secret_value())
+    try:
+        return resolve_domain_calendar(settings.data_as_of_date, seed_date, now=clock)
+    except DomainCalendarError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def _request_id(request: Request) -> str:
@@ -168,13 +198,14 @@ def create_app(settings: Settings | None = None, *, clock: Clock = utc_now) -> F
     Raises
     ------
     ConfigError
-        When no settings are given and the environment is invalid, or when a signing key is
-        required and missing.
+        When no settings are given and the environment is invalid, when a signing key is required
+        and missing, or when no domain date resolves (ADR-15).
     """
     # Resolve configuration once, failing fast before any route is registered
     resolved = settings if settings is not None else load_settings()
     sessions = SessionService(_signing_key(resolved), resolved.session_ttl_seconds, clock=clock)
     limiter = AttemptLimiter(clock=clock)
+    calendar = _domain_calendar(resolved, clock=clock)
     app = FastAPI(title="Dispute Intake API", version=resolved.service_version)
 
     # The sandbox login is public only while it exists; otherwise its path is protected too
@@ -193,11 +224,13 @@ def create_app(settings: Settings | None = None, *, clock: Clock = utc_now) -> F
 
     @app.get("/health/ready")
     def ready() -> dict[str, str]:
-        """Report readiness together with version information."""
+        """Report readiness, version information and the resolved domain date (ADR-15)."""
         return {
             "status": "ready",
             "service_version": resolved.service_version,
             "environment": resolved.app_env.value,
+            "domain_date": calendar.reference_date.isoformat(),
+            "domain_date_origin": calendar.origin.value,
         }
 
     # The sandbox login is registered only when it is enabled (never in production)

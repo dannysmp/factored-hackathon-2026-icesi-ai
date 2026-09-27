@@ -56,6 +56,7 @@ def _settings(**updates: Any) -> Settings:
         "test_identity_enabled": True,
         "test_identity_key": SecretStr(LOGIN_KEY),
         "service_version": "test-sha",
+        "data_as_of_date": "2026-06-18",
     }
     return load_settings(env_file=None).model_copy(update={**values, **updates})
 

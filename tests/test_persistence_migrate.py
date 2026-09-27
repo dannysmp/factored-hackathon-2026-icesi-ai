@@ -95,11 +95,11 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
     with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(
             "DROP TABLE IF EXISTS cases, transactions, products, customers, "
-            "schema_migrations CASCADE"
+            "ops_meta, schema_migrations CASCADE"
         )
 
     applied = apply_migrations(dsn)
-    assert applied == ("0001_serving_store",)
+    assert applied == ("0001_serving_store", "0002_ops_meta")
 
     again = apply_migrations(dsn)
     assert again == ()
@@ -110,7 +110,14 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
             "WHERE table_schema = 'public' ORDER BY table_name"
         )
         tables = {row[0] for row in cur.fetchall()}
-    assert {"customers", "products", "transactions", "cases", "schema_migrations"} <= tables
+    assert {
+        "customers",
+        "products",
+        "transactions",
+        "cases",
+        "ops_meta",
+        "schema_migrations",
+    } <= tables
 
 
 @pytest.mark.integration
