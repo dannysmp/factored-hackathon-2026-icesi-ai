@@ -109,23 +109,35 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
 
 @pytest.mark.integration
 def test_a_changed_migration_file_is_refused(tmp_path: Path) -> None:
-    """A migration already applied is never silently re-applied under a changed file."""
+    """A migration already applied is never silently re-applied under a changed file.
+
+    Scoped to its own version and table: the shared ``schema_migrations`` table (and the real
+    ``0001_serving_store`` row and tables it tracks) is left untouched, so this test can run
+    against the same database another test or ``make migrate`` has already applied to.
+    """
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
         pytest.skip("DATABASE_URL is not set")
 
+    version = "9999_isolation_test"
     with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
-        cur.execute("DROP TABLE IF EXISTS schema_migrations CASCADE")
+        cur.execute("DROP TABLE IF EXISTS isolation_test_table")
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations ("
+            "version TEXT PRIMARY KEY, checksum TEXT NOT NULL, "
+            "applied_at TIMESTAMPTZ NOT NULL DEFAULT now())"
+        )
+        cur.execute("DELETE FROM schema_migrations WHERE version = %s", (version,))
 
     directory = tmp_path / "migrations"
     directory.mkdir()
-    (directory / "0001_test.sql").write_text(
-        "CREATE TABLE IF NOT EXISTS t (id INT)", encoding="utf-8"
+    (directory / f"{version}.sql").write_text(
+        "CREATE TABLE isolation_test_table (id INT)", encoding="utf-8"
     )
     apply_migrations(dsn, directory=directory)
 
-    (directory / "0001_test.sql").write_text(
-        "CREATE TABLE IF NOT EXISTS t (id BIGINT)", encoding="utf-8"
+    (directory / f"{version}.sql").write_text(
+        "CREATE TABLE isolation_test_table (id BIGINT)", encoding="utf-8"
     )
 
     with pytest.raises(RuntimeError, match="has changed since it was applied"):
