@@ -17,7 +17,7 @@ Se pueden disputar transacciones de estos productos: Cuenta de ahorros, Cuenta c
 
 Los demás productos (Préstamo personal, Crédito hipotecario, Inversiones y Seguros) tienen sus propios canales de atención y no se gestionan con esta política.
 
-Para presentar una disputa, la transacción debe ser un cargo al cliente (una compra, un retiro, una transferencia o un pago), estar aprobada, estar dentro del plazo de su categoría (ver más abajo) y no tener otra disputa abierta.
+Para presentar una disputa, la transacción debe ser un cargo al cliente (una compra, un retiro, una transferencia o un pago), estar aprobada, no estar fechada en el futuro, estar dentro del plazo de su categoría (ver más abajo) y no tener otra disputa abierta.
 
 No se pueden disputar depósitos ni ajustes.
 
