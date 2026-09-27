@@ -132,6 +132,8 @@ class Settings(BaseSettings):
         Turns on the sandbox login endpoint; never allowed in ``prod``.
     test_identity_key : SecretStr | None
         Shared secret the sandbox login endpoint requires (at least 16 characters).
+    database_url : SecretStr | None
+        DSN of the serving store; optional until a feature that reads or writes it runs.
     """
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)
@@ -147,6 +149,7 @@ class Settings(BaseSettings):
     session_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     test_identity_enabled: bool = False
     test_identity_key: SecretStr | None = None
+    database_url: SecretStr | None = None
 
     @field_validator("nlu_model", "render_model")
     @classmethod
@@ -164,7 +167,7 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("session_signing_key", "test_identity_key")
+    @field_validator("session_signing_key", "test_identity_key", "database_url")
     @classmethod
     def _blank_secret_means_absent(cls, value: SecretStr | None) -> SecretStr | None:
         """Treat an empty secret (as in the template) as not configured."""
@@ -212,6 +215,18 @@ class Settings(BaseSettings):
         if self.anthropic_api_key is None:
             raise ConfigError("ANTHROPIC_API_KEY is required for LLM calls but is not set")
         return self.anthropic_api_key
+
+    def require_database_url(self) -> SecretStr:
+        """Return the serving-store DSN or fail with an actionable message.
+
+        Raises
+        ------
+        ConfigError
+            When ``DATABASE_URL`` is not configured.
+        """
+        if self.database_url is None:
+            raise ConfigError("DATABASE_URL is required for this operation but is not set")
+        return self.database_url
 
 
 # -----------------------------------------------------------------------------
