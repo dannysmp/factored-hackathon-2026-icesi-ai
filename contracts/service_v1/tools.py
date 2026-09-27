@@ -13,8 +13,8 @@ Scope
 -----
 In: the tool request and result types, the closed set of tools and the permission invariants each
 one enforces (the permissions table), and ``ToolPort`` itself.
-Out: implementing a tool (slices 1.3, 1.4), applying policy (``app.domain.policy``, called by the
-controller, never by a tool), and everything the controller does with a result (stream 2).
+Out: implementing a tool, applying policy (``app.domain.policy``, called by the controller, never
+by a tool), and everything the controller does with a result (stream 2).
 
 Design Principles
 -----------------
