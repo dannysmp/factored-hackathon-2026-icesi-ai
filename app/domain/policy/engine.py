@@ -82,6 +82,7 @@ def _fact(name: str, value: object) -> Fact:
 
 def _decision(
     policy: Policy,
+    request: DisputeRequest,
     outcome: Outcome,
     reason: ReasonCode,
     facts: tuple[Fact, ...],
@@ -89,7 +90,7 @@ def _decision(
     requires_confirmation: bool = False,
     triggers: tuple[ReasonCode, ...] = (),
 ) -> PolicyDecision:
-    """Assemble a decision stamped with the policy version."""
+    """Assemble a decision stamped with the policy version and the request it was made for."""
     return PolicyDecision(
         outcome=outcome,
         reason_code=reason,
@@ -97,12 +98,16 @@ def _decision(
         requires_confirmation=requires_confirmation,
         facts=facts,
         triggers=triggers,
+        transaction_ref=request.transaction_ref,
+        category=request.category,
     )
 
 
-def _ineligible(policy: Policy, reason: ReasonCode, *facts: Fact) -> PolicyDecision:
+def _ineligible(
+    policy: Policy, request: DisputeRequest, reason: ReasonCode, *facts: Fact
+) -> PolicyDecision:
     """An ineligible decision with the facts that explain the failed gate."""
-    return _decision(policy, Outcome.INELIGIBLE, reason, facts)
+    return _decision(policy, request, Outcome.INELIGIBLE, reason, facts)
 
 
 def _routing_triggers(request: DisputeRequest, policy: Policy) -> tuple[ReasonCode, ...]:
@@ -166,7 +171,10 @@ def _gate_product(request: DisputeRequest, policy: Policy, today: date) -> Polic
     if request.product_type in policy.in_scope_product_types:
         return None
     return _ineligible(
-        policy, ReasonCode.PRODUCT_OUT_OF_SCOPE, _fact("product_type", request.product_type)
+        policy,
+        request,
+        ReasonCode.PRODUCT_OUT_OF_SCOPE,
+        _fact("product_type", request.product_type),
     )
 
 
@@ -176,6 +184,7 @@ def _gate_type(request: DisputeRequest, policy: Policy, today: date) -> PolicyDe
         return None
     return _ineligible(
         policy,
+        request,
         ReasonCode.TRANSACTION_TYPE_NOT_DISPUTABLE,
         _fact("transaction_type", request.transaction_type),
     )
@@ -187,6 +196,7 @@ def _gate_status(request: DisputeRequest, policy: Policy, today: date) -> Policy
         return None
     return _ineligible(
         policy,
+        request,
         _STATUS_REASONS[request.transaction_status],
         _fact("transaction_status", request.transaction_status.value),
     )
@@ -200,6 +210,7 @@ def _gate_future_date(
         return None
     return _ineligible(
         policy,
+        request,
         ReasonCode.TRANSACTION_DATE_IN_FUTURE,
         _fact("transaction_date", request.transaction_date),
     )
@@ -213,6 +224,7 @@ def _gate_window(request: DisputeRequest, policy: Policy, today: date) -> Policy
         return None
     return _ineligible(
         policy,
+        request,
         ReasonCode.FILING_WINDOW_EXPIRED,
         _fact("category", request.category.value),
         _fact("age_days", age_days),
@@ -225,7 +237,10 @@ def _gate_open_case(request: DisputeRequest, policy: Policy, today: date) -> Pol
     if not request.has_open_case_for_transaction:
         return None
     return _ineligible(
-        policy, ReasonCode.DUPLICATE_OPEN_CASE, _fact("has_open_case_for_transaction", True)
+        policy,
+        request,
+        ReasonCode.DUPLICATE_OPEN_CASE,
+        _fact("has_open_case_for_transaction", True),
     )
 
 
@@ -276,6 +291,7 @@ def evaluate_dispute(request: DisputeRequest, policy: Policy, *, today: date) ->
         note = () if failed is None else (_fact("eligibility_gate", failed.reason_code.value),)
         return _decision(
             policy,
+            request,
             Outcome.ESCALATE,
             triggers[0],
             (*_routing_facts(request, policy), *note),
@@ -286,6 +302,7 @@ def evaluate_dispute(request: DisputeRequest, policy: Policy, *, today: date) ->
     rule = policy.categories[request.category]
     return _decision(
         policy,
+        request,
         Outcome.ELIGIBLE,
         ReasonCode.ELIGIBLE,
         (
