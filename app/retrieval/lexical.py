@@ -77,9 +77,12 @@ _MIN_TOKEN_LENGTH = 3
 # A shared idea folded to one canonical term, on both the query and the corpus side, so a
 # paraphrase using any member finds what a literal match on another member would (AC-E5-53).
 # Multi-word entries are matched as a phrase before the text is tokenized into single words.
+# Common conjugations of "vencer" ("to expire") are listed explicitly, the same way the
+# stopword lists enumerate verb conjugations, rather than stemmed: "vencio" is the accent-folded
+# form the corpus itself uses for its past tense ("Vencio el plazo...").
 _SYNONYM_GROUPS: dict[Lang, tuple[tuple[str, ...], ...]] = {
-    "es": (("plazo", "tiempo", "limite", "vence"),),
-    "pt": (("prazo", "tempo", "limite", "vence"),),
+    "es": (("plazo", "tiempo", "limite", "vence", "vencen", "vencio", "vencido"),),
+    "pt": (("prazo", "tempo", "limite", "vence", "vencem", "venceu", "vencido"),),
     "en": (("deadline", "how long", "time limit"),),
 }
 
@@ -155,6 +158,39 @@ _STOPWORDS: dict[Lang, frozenset[str]] = {
             "hace",
             "hacen",
             "hacer",
+            "soy",
+            "eres",
+            "fue",
+            "fuiste",
+            "fuimos",
+            "fueron",
+            "sera",
+            "sea",
+            "sean",
+            "sido",
+            "siendo",
+            "estoy",
+            "estamos",
+            "estaba",
+            "estaban",
+            "estuvo",
+            "estara",
+            "este",
+            "esten",
+            "estando",
+            "estado",
+            "he",
+            "has",
+            "ha",
+            "hemos",
+            "han",
+            "habia",
+            "habria",
+            "hubo",
+            "haya",
+            "hayan",
+            "habiendo",
+            "habido",
             "esto",
             "eso",
             "estas",
@@ -237,6 +273,31 @@ _STOPWORDS: dict[Lang, frozenset[str]] = {
             "faz",
             "fazem",
             "fazer",
+            "sou",
+            "foi",
+            "fomos",
+            "foram",
+            "sera",
+            "seja",
+            "sejam",
+            "seria",
+            "sido",
+            "sendo",
+            "estou",
+            "estava",
+            "estavam",
+            "esteve",
+            "estara",
+            "esteja",
+            "estejam",
+            "estando",
+            "estado",
+            "tenha",
+            "tenham",
+            "tinha",
+            "tinham",
+            "teria",
+            "teriam",
             "isto",
             "isso",
             "estas",
@@ -328,11 +389,16 @@ def _fold_accents(text: str) -> str:
 
 
 def _fold_synonyms(text: str, lang: Lang) -> str:
-    """``text`` with every synonym-group member replaced by the group's first (canonical) term."""
+    """``text`` with every synonym-group member replaced by the group's first (canonical) term.
+
+    Each member is matched at word boundaries, never as a raw substring: an unanchored
+    replacement would corrupt any word that merely contains a synonym term, folding "vencen"
+    into "plazon" or "convencer" into "conplazor" instead of leaving an unrelated word alone.
+    """
     folded = text
     for canonical, *others in _SYNONYM_GROUPS[lang]:
         for term in others:
-            folded = folded.replace(term, canonical)
+            folded = re.sub(rf"\b{re.escape(term)}\b", canonical, folded)
     return folded
 
 
