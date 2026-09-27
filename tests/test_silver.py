@@ -580,6 +580,25 @@ def test_a_crash_during_the_build_removes_a_stale_report(
     assert not report.exists()
 
 
+def test_an_interrupted_build_removes_a_stale_report(
+    clean: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-C during the build is not an ``Exception``, but must still clear a stale report."""
+    raw, out = clean
+    report = out.parent / "quality.md"
+    report.write_text("stale report from an earlier run", encoding="utf-8")
+
+    def _interrupt(*args: object, **kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(silver_module, "run_silver", _interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        main(["--raw", str(raw), "--out", str(out), "--report", str(report)])
+
+    assert not report.exists()
+
+
 def test_report_lists_counts_and_reason_codes_but_never_data_values(
     clean: tuple[Path, Path],
 ) -> None:
