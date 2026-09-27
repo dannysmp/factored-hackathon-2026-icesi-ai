@@ -1,0 +1,14 @@
+import { cleanup } from '@testing-library/react'
+import '@testing-library/jest-dom/vitest'
+import { toHaveNoViolations } from 'jest-axe'
+import { afterEach, expect } from 'vitest'
+
+// Every test can assert `expect(container).toHaveNoViolations()` without importing it itself.
+expect.extend(toHaveNoViolations)
+
+// `globals: false` (vite.config.ts) means Testing Library can't auto-detect a global `afterEach`
+// to unmount the previous test's render; without this, two tests in one file both leave a
+// `<main>` in `document.body`, and axe correctly reports "more than one main landmark".
+afterEach(() => {
+  cleanup()
+})

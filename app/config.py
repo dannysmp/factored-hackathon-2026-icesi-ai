@@ -142,6 +142,10 @@ class Settings(BaseSettings):
         Whether free-form model rendering may run. Always ``False``: nothing yet grounds a
         free-form model reply against the envelope's own facts, so no environment may turn this
         on before that grounding exists and removes the restriction.
+    data_as_of_date : str | None
+        The domain date override (ADR-15): an ISO date, or the literal ``"system"`` for the real
+        date in the bank's own zone. Optional; when absent, the domain calendar reads the loaded
+        seed's own reference date instead.
     """
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)
@@ -159,6 +163,7 @@ class Settings(BaseSettings):
     test_identity_key: SecretStr | None = None
     database_url: SecretStr | None = None
     model_renderer_enabled: bool = False
+    data_as_of_date: str | None = None
 
     @field_validator("nlu_model", "render_model")
     @classmethod

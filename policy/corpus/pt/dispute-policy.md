@@ -17,7 +17,7 @@ Podem ser contestadas transações destes produtos: Conta poupança, Conta corre
 
 Os demais produtos (Empréstimo pessoal, Financiamento imobiliário, Investimentos e Seguros) têm canais de atendimento próprios e não são tratados por esta política.
 
-Para apresentar uma contestação, a transação deve ser uma cobrança ao cliente (uma compra, um saque, uma transferência ou um pagamento), estar aprovada, estar dentro do prazo da sua categoria (veja abaixo) e não ter outra contestação em aberto.
+Para apresentar uma contestação, a transação deve ser uma cobrança ao cliente (uma compra, um saque, uma transferência ou um pagamento), estar aprovada, não estar datada no futuro, estar dentro do prazo da sua categoria (veja abaixo) e não ter outra contestação em aberto.
 
 Não podem ser contestados depósitos nem ajustes.
 

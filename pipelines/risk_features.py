@@ -70,6 +70,7 @@ from typing import Any  # Manifest contents
 import duckdb  # Window functions over the cleaned Parquet files
 
 # Local modules
+from pipelines.amounts import usd_amount_expr, usd_amount_provenance_expr  # One USD-amount rule
 from pipelines.raw import quote_literal  # Safe SQL string literals
 from pipelines.silver import git_version  # Same code-version rule as the cleaning stage
 
@@ -84,7 +85,7 @@ SPLITS = ("train", "validation", "test")
 # Features in column order, with what each one is. Categorical features are text, the rest numbers.
 FEATURES: dict[str, str] = {
     "amount_usd": "amount in US dollars, as stated or converted with the day's rate",
-    "amount_usd_source": "reported, converted or unavailable",
+    "amount_usd_source": "reported, converted or unknown",
     "currency": "currency of the transaction",
     "channel": "channel the transaction came through",
     "transaction_type": "purchase, withdrawal, transfer, payment, deposit or adjustment",
@@ -220,12 +221,14 @@ def _query(split: SplitConfig) -> str:
             t.longitude,
             t.is_fraud,
             t.amount_usd AS reported_usd,
-            CASE
-                WHEN t.amount_usd IS NOT NULL THEN CAST(t.amount_usd AS DOUBLE)
-                WHEN t.currency = 'USD' THEN CAST(t.amount AS DOUBLE)
-                WHEN r.exchange_rate IS NOT NULL
-                    THEN round(CAST(t.amount AS DOUBLE) * CAST(r.exchange_rate AS DOUBLE), 2)
-            END AS amount_usd
+            {
+        usd_amount_expr(
+            amount="t.amount",
+            currency="t.currency",
+            amount_usd="t.amount_usd",
+            exchange_rate="r.exchange_rate",
+        )
+    } AS amount_usd
         FROM transactions AS t
         LEFT JOIN rates AS r
             ON r.date = CAST(t.transaction_date AS DATE) AND r.source_currency = t.currency
@@ -241,11 +244,11 @@ def _query(split: SplitConfig) -> str:
         END AS split,
         is_fraud,
         amount_usd,
-        CASE
-            WHEN reported_usd IS NOT NULL THEN 'reported'
-            WHEN amount_usd IS NOT NULL THEN 'converted'
-            ELSE 'unavailable'
-        END AS amount_usd_source,
+        {
+        usd_amount_provenance_expr(
+            reported_usd="reported_usd", currency="currency", computed_usd="amount_usd"
+        )
+    } AS amount_usd_source,
         currency,
         channel,
         transaction_type,
