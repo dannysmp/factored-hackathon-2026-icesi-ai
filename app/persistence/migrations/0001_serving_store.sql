@@ -15,8 +15,8 @@
 -- already freeze for the service's own vocabulary (case status, dispute category, amount
 -- provenance, language).
 --
--- Sessions, turns and the audit log belong to a later, separate migration (0002, slice 2.4);
--- this one holds only the four tables above.
+-- Sessions, turns and the audit log belong to a later, separate migration; this one holds only
+-- the four tables above.
 -- =============================================================================
 
 CREATE TABLE customers (
