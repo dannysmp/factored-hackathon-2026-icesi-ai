@@ -55,6 +55,18 @@ def test_who_acted_is_always_present() -> None:
         _record(customer_id="")
 
 
+def test_a_customer_id_holding_a_control_character_is_refused() -> None:
+    """Who acted is system-held text too: it refuses a control character like every other."""
+    with pytest.raises(ValidationError, match="control or formatting character"):
+        _record(customer_id="C1\x00")
+
+
+def test_a_session_id_holding_a_control_character_is_refused() -> None:
+    """The session identifier is refused the same way as the customer identifier."""
+    with pytest.raises(ValidationError, match="control or formatting character"):
+        _record(session_id="SESSION\x00")
+
+
 def test_a_tool_result_hash_must_be_a_lowercase_hex_digest() -> None:
     """The result is identified by its hash, never by its content."""
     with pytest.raises(ValidationError):
