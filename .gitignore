@@ -19,7 +19,7 @@ __pycache__/
 .coverage.*
 htmlcov/
 
-# Generated reports are rebuilt by make targets; only the README and the five reports are tracked
+# Generated reports are rebuilt by make targets; only the README and the six reports are tracked
 /reports/*
 !/reports/README.md
 !/reports/data-profile.md
@@ -27,6 +27,7 @@ htmlcov/
 !/reports/workflow-analysis.md
 !/reports/risk-features.md
 !/reports/risk-signal.md
+!/reports/ops-seed.md
 
 # Editor, OS and agent worktrees
 .DS_Store

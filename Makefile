@@ -17,7 +17,7 @@ SILVER_DIR ?= data/silver
 
 .PHONY: help setup lint format test test-all secrets audit run clean \
         profile pipeline analyze features corpus corpus-check train evaluate up \
-        db-up db-down migrate test-integration
+        db-up db-down migrate test-integration seed load-seed
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -52,6 +52,12 @@ migrate: ## Apply pending serving-store migrations (needs DATABASE_URL)
 
 test-integration: ## Tests needing a real Postgres (DATABASE_URL must point at a migrated one)
 	$(RUN) pytest -m integration
+
+seed: ## Build the operational seed from SILVER_DIR and write reports/ops-seed.md
+	$(RUN) python -m pipelines.ops_seed --silver $(SILVER_DIR)
+
+load-seed: ## Load the built operational seed into Postgres (needs DATABASE_URL, already migrated)
+	$(RUN) python -m app.persistence.load_seed
 
 secrets: ## Scan history + staged changes (NOT unstaged/untracked files), then run the self-test
 	gitleaks git . --config .gitleaks.toml --no-banner --redact
