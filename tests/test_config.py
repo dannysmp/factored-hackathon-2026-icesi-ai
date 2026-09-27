@@ -338,13 +338,13 @@ def test_model_renderer_defaults_to_disabled() -> None:
 
 
 @pytest.mark.parametrize("app_env", ["local", "dev", "prod"])
-def test_model_renderer_cannot_be_enabled_in_any_environment(
+def test_model_renderer_may_now_be_enabled_since_the_verifier_exists(
     monkeypatch: pytest.MonkeyPatch, app_env: str
 ) -> None:
-    """Nothing yet grounds a free-form model reply against the envelope's own facts; no
-    environment may turn the model renderer on before that grounding exists."""
+    """The output verifier now grounds a free-form model reply, so the setting itself may be
+    turned on in any environment; nothing yet calls it in a request path, so this has no effect
+    until a later change wires the controller to it."""
     monkeypatch.setenv("APP_ENV", app_env)
     monkeypatch.setenv("MODEL_RENDERER_ENABLED", "true")
 
-    with pytest.raises(ConfigError, match="MODEL_RENDERER_ENABLED"):
-        load_settings(env_file=None)
+    assert load_settings(env_file=None).model_renderer_enabled is True

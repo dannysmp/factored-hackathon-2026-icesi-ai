@@ -139,9 +139,11 @@ class Settings(BaseSettings):
     database_url : SecretStr | None
         DSN of the serving store; optional until a feature that reads or writes it runs.
     model_renderer_enabled : bool
-        Whether free-form model rendering may run. Always ``False``: nothing yet grounds a
-        free-form model reply against the envelope's own facts, so no environment may turn this
-        on before that grounding exists and removes the restriction.
+        Whether free-form model rendering may run. Defaults to ``False``. The output verifier that
+        grounds a free-form model reply against the envelope's own facts exists
+        (``app.conversation.verifier``), so this setting may now be turned on; turning it on has
+        no effect yet, since the dialogue controller does not build a model candidate or slot
+        values in any request path until a later change wires it in.
     data_as_of_date : str | None
         The domain date override (ADR-15): an ISO date, or the literal ``"system"`` for the real
         date in the bank's own zone. Optional; when absent, the domain calendar reads the loaded
@@ -207,19 +209,6 @@ class Settings(BaseSettings):
         """The sandbox login secret must not be trivially guessable either."""
         if value is not None and len(value.get_secret_value()) < MIN_TEST_KEY_LENGTH:
             raise ValueError(f"must be at least {MIN_TEST_KEY_LENGTH} characters")
-        return value
-
-    @field_validator("model_renderer_enabled")
-    @classmethod
-    def _model_renderer_stays_disabled(cls, value: bool) -> bool:
-        """Refuse to start with the model renderer on: nothing yet grounds a free-form model
-        reply against the envelope's own facts, so nothing may enable it in any environment
-        before that grounding exists."""
-        if value:
-            raise ValueError(
-                "model rendering has no output verifier yet and must stay disabled "
-                "(MODEL_RENDERER_ENABLED must be false until an output verifier grounds it)"
-            )
         return value
 
     @model_validator(mode="after")
