@@ -16,6 +16,7 @@ from __future__ import annotations
 # Standard libraries
 import hashlib  # Compare artefacts byte for byte
 import json  # Read manifests
+import subprocess  # Build a throwaway repository
 from datetime import date  # Partition days
 from pathlib import Path  # Temporary dataset locations
 from typing import Any  # Query results
@@ -1007,17 +1008,101 @@ def test_only_capitalised_booleans_are_accepted(clean: tuple[Path, Path]) -> Non
     assert manifest["quarantine_reasons"] == {"type:accepts_marketing": 1}
 
 
-def test_the_code_version_is_marked_when_the_working_tree_has_uncommitted_changes(
+def _repository(root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A throwaway repository with one committed file, entered for the duration of the test."""
+
+    def git(*arguments: str) -> None:
+        subprocess.run(  # noqa: S603 - fixed argv, no shell
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *arguments],  # noqa: S607
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "--quiet")
+    tracked = root / "module.py"
+    tracked.write_text("value = 1\n", encoding="utf-8")
+    git("add", "module.py")
+    git("-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "initial")
+    monkeypatch.chdir(root)
+    return tracked
+
+
+def test_a_clean_working_tree_is_stamped_with_the_bare_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a tree identical to the commit carries the plain commit id."""
+    _repository(tmp_path, monkeypatch)
+
+    stamp = silver_module.git_version()
+
+    assert "-dirty" not in stamp
+    assert stamp != "unknown"
+
+
+def test_the_same_modified_tree_is_stamped_identically_every_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rebuild of unchanged, modified code is recognized as the same code."""
+    tracked = _repository(tmp_path, monkeypatch)
+    tracked.write_text("value = 2\n", encoding="utf-8")
+
+    first = silver_module.git_version()
+
+    assert "-dirty-" in first
+    assert silver_module.git_version() == first
+
+
+def test_two_different_modified_trees_are_stamped_differently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Outputs built from different modifications are never taken for one another."""
+    tracked = _repository(tmp_path, monkeypatch)
+    clean = silver_module.git_version()
+
+    tracked.write_text("value = 2\n", encoding="utf-8")
+    first = silver_module.git_version()
+    tracked.write_text("value = 3\n", encoding="utf-8")
+    second = silver_module.git_version()
+
+    assert len({clean, first, second}) == 3
+    assert first.split("-dirty-")[0] == second.split("-dirty-")[0] == clean
+
+
+def test_reverting_a_modification_restores_the_clean_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stamp follows the content of the tree, not the history of edits."""
+    tracked = _repository(tmp_path, monkeypatch)
+    clean = silver_module.git_version()
+
+    tracked.write_text("value = 2\n", encoding="utf-8")
+    tracked.write_text("value = 1\n", encoding="utf-8")
+
+    assert silver_module.git_version() == clean
+
+
+def test_a_staged_change_is_stamped_like_the_same_unstaged_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stamp describes the tree, whether or not its changes are staged."""
+    tracked = _repository(tmp_path, monkeypatch)
+    tracked.write_text("value = 2\n", encoding="utf-8")
+    unstaged = silver_module.git_version()
+
+    subprocess.run(["git", "add", "module.py"], cwd=tmp_path, check=True)  # noqa: S607
+
+    assert silver_module.git_version() == unstaged
+
+
+def test_a_change_that_cannot_be_read_yields_an_unknown_stamp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Outputs built from modified code are never taken for outputs of the recorded commit."""
-    answers = {"rev-parse": "abc1234", "status": " M pipelines/silver.py"}
+    """A stamp never claims a commit it cannot tie to the tree's content."""
+    answers = {"rev-parse": "abc1234", "diff": None}
     monkeypatch.setattr(silver_module, "_git", lambda *args: answers[args[0]])
 
-    assert silver_module.git_version() == "abc1234-dirty"
-
-    answers["status"] = ""
-    assert silver_module.git_version() == "abc1234"
+    assert silver_module.git_version() == "unknown"
 
 
 def test_a_build_that_fails_midway_leaves_no_manifest_of_the_earlier_build(

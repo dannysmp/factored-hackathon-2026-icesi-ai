@@ -704,15 +704,22 @@ def _git(*arguments: str) -> str | None:
 
 
 def git_version() -> str:
-    """Short commit id of the working tree, suffixed ``-dirty`` when tracked files have changes.
+    """Short commit id of the working tree, suffixed with a digest of its changes when modified.
 
-    ``unknown`` outside a repository. Uncommitted changes are marked so outputs built from
-    modified code are never taken for outputs of the recorded commit.
+    A tree with uncommitted changes to tracked files is stamped ``<commit>-dirty-<digest>``,
+    the digest covering staged and unstaged changes: the same modified tree always yields the
+    same stamp and two different modified trees never share one. ``unknown`` outside a
+    repository or when the changes cannot be read, so a stamp never claims more than is known.
     """
     commit = _git("rev-parse", "--short", "HEAD")
     if not commit:
         return "unknown"
-    return f"{commit}-dirty" if _git("status", "--porcelain", "--untracked-files=no") else commit
+    changes = _git("diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv", "--no-color")
+    if changes is None:
+        return "unknown"
+    if not changes:
+        return commit
+    return f"{commit}-dirty-{hashlib.sha256(changes.encode()).hexdigest()[:8]}"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
