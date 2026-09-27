@@ -24,6 +24,7 @@ from app.persistence.audit import PostgresAuditSink
 from app.persistence.migrate import apply_migrations
 from app.persistence.reads import PostgresToolPort
 from contracts.service_v1.audit import AuditRecord, AuditSink
+from contracts.service_v1.cases import Lang
 from contracts.service_v1.tools import (
     EvaluateDisputeRequest,
     ToolFailure,
@@ -53,16 +54,26 @@ class _FailingSink:
         raise RuntimeError("audit store is down")
 
 
-def _port(dsn: str, audit: AuditSink, *, customer_id: str) -> PostgresToolPort:
+def _port(
+    dsn: str,
+    audit: AuditSink,
+    *,
+    customer_id: str,
+    session_id: str = "SESSION-1",
+    language: Lang = "en",
+    case_create_session_cap: int = 3,
+) -> PostgresToolPort:
     return PostgresToolPort(
         dsn,
         audit,
         load_policy(),
         customer_id=customer_id,
-        session_id="SESSION-1",
+        session_id=session_id,
         trace_id="TRACE-1",
         domain_date=DOMAIN_DATE,
         now=lambda: NOW,
+        language=language,
+        case_create_session_cap=case_create_session_cap,
     )
 
 
