@@ -91,6 +91,33 @@ def test_verify_output_digests_raises_when_the_manifest_carries_no_digests(tmp_p
         _verify_output_digests(tmp_path)
 
 
+def test_verify_output_digests_raises_when_a_later_output_is_missing(tmp_path: Path) -> None:
+    """Distinct from the manifest itself being missing: the manifest and an earlier output both
+    exist, but a later table in load order was never written (or was since deleted)."""
+    _write_tiny_seed_output(tmp_path)
+    (tmp_path / TRANSACTIONS_NAME).unlink()
+    with pytest.raises(FileNotFoundError, match="build the seed first"):
+        _verify_output_digests(tmp_path)
+
+
+def test_verify_output_digests_raises_when_one_table_has_no_recorded_digest(tmp_path: Path) -> None:
+    """Distinct from the manifest carrying no output_sha256 map at all: the map exists but is
+    missing the entry for one specific table."""
+    gold_dir = tmp_path
+    gold_dir.mkdir(parents=True, exist_ok=True)
+    digests: dict[str, str] = {}
+    for name in (CUSTOMERS_NAME, PRODUCTS_NAME):
+        path = gold_dir / name
+        path.write_bytes(f"content of {name}".encode())
+        digests[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    (gold_dir / TRANSACTIONS_NAME).write_bytes(b"content of transactions")
+    (gold_dir / MANIFEST_NAME).write_text(
+        json.dumps({"reference_date": "2026-06-18", "output_sha256": digests}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="carries no digest for"):
+        _verify_output_digests(gold_dir)
+
+
 def test_load_seed_refuses_a_tampered_output_before_ever_connecting(tmp_path: Path) -> None:
     """The digest check runs before any database connection: an unreachable DSN still surfaces
     the ValueError, not a connection error, proving the check happens first."""
