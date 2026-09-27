@@ -65,6 +65,17 @@ def test_an_unknown_amount_carries_no_figure() -> None:
         )
 
 
+def test_case_status_includes_rejected() -> None:
+    """Rejected is part of the closed set (architecture.md), reachable only by an agent write."""
+    assert set(CaseStatus) == {
+        CaseStatus.OPEN,
+        CaseStatus.IN_REVIEW,
+        CaseStatus.RESOLVED,
+        CaseStatus.REJECTED,
+    }
+    assert _record(status=CaseStatus.REJECTED).status is CaseStatus.REJECTED
+
+
 def test_a_case_record_builds_from_valid_fields() -> None:
     """The happy path: every AC-E4-17 field is present and internally consistent."""
     record = _record()

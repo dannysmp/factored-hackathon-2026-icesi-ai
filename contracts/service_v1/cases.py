@@ -81,9 +81,14 @@ NUMBER_PATTERN = r"^[A-Za-z0-9_-]{1,32}$"
 
 
 def _refuse_control_characters(value: str) -> str:
-    """Refuse text holding a control character, which no system-held field needs."""
-    if any(unicodedata.category(char) == "Cc" for char in value):
-        raise ValueError("text must not contain control characters")
+    """Refuse a control character or a formatting character, which no system-held field needs.
+
+    Category ``Cc`` is the plain control characters; ``Cf`` adds the invisible formatting
+    characters, including the bidirectional overrides a right-to-left character can use to make
+    text render in an order that misleads a reader about what it says.
+    """
+    if any(unicodedata.category(char) in {"Cc", "Cf"} for char in value):
+        raise ValueError("text must not contain a control or formatting character")
     return value
 
 
@@ -149,11 +154,17 @@ class DisclosedAmount(ContractModel):
 
 
 class CaseStatus(StrEnum):
-    """Status of a filed case in the mock case service's lifecycle."""
+    """Status of a filed case.
+
+    The seed advances a case from Open through In Review to Resolved; Rejected is reachable only
+    by a narrow, audited agent write (the console's planned evolution), never by the seed or by
+    any customer tool.
+    """
 
     OPEN = "Open"
     IN_REVIEW = "In Review"
     RESOLVED = "Resolved"
+    REJECTED = "Rejected"
 
 
 class CaseRecord(ContractModel):
