@@ -156,13 +156,13 @@ def build_auth_router(
 
             Runs before the body is validated, so an unauthenticated caller learns nothing about
             the body's shape. The supplied key is compared, in constant time, before anything is
-            counted (issue #30): a correct key always proceeds, whatever this address's recorded
-            failures are, so a flood of wrong keys from a shared address can never lock out the
-            client that actually holds the secret. Only a wrong key counts as a failure, and
-            counting is atomic with the limit check (unchanged from the original fix), so a flood
-            of wrong keys cannot slip more attempts past the check than the limit allows under
-            concurrency. A success never touches the limiter (issue #31): another client sharing
-            this address keeps whatever failure count it has already earned.
+            counted: a correct key always proceeds, whatever this address's recorded failures
+            are, so a flood of wrong keys from a shared address can never lock out the client
+            that actually holds the secret. Only a wrong key counts as a failure, and counting is
+            atomic with the limit check, so a flood of wrong keys cannot slip more attempts past
+            the check than the limit allows under concurrency. A success never touches the
+            limiter: another client sharing this address keeps whatever failure count it has
+            already earned.
             """
             supplied = (x_test_login_key or "").encode("utf-8")
             if hmac.compare_digest(supplied, expected):

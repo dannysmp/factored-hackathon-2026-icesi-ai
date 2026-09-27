@@ -276,7 +276,7 @@ def test_repeated_wrong_key_failures_are_limited_and_the_limit_lifts_with_time(
 def test_a_correct_key_always_succeeds_however_many_wrong_keys_preceded_it(
     client: TestClient,
 ) -> None:
-    """Issue #30: a flood of wrong keys from one address never locks out the correct one.
+    """A flood of wrong keys from one address never locks out the correct one.
 
     The key is compared before anything is counted, so an address already well past the limit
     for wrong keys still lets its legitimate client in.
@@ -290,8 +290,8 @@ def test_a_correct_key_always_succeeds_however_many_wrong_keys_preceded_it(
 def test_a_successful_login_does_not_clear_failures_for_another_client_on_the_address(
     client: TestClient, clock: Clock
 ) -> None:
-    """Issue #31: a success is invisible to the limiter, so it cannot reset what another client
-    sharing the same address (for example, behind a proxy) has already earned."""
+    """A success is invisible to the limiter, so it cannot reset what another client sharing the
+    same address (for example, behind a proxy) has already earned."""
     for _ in range(5):
         client.post(LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": "wrong"})
     assert _login(client, "C1")["token_type"] == "Bearer"
