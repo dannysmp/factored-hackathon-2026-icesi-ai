@@ -231,212 +231,212 @@ Categories: `Transactions` (13,580), `Fees` (13,553), `Technical` (13,407), `Bra
 
 ### customers
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 173,849 |  |
-| document_number | VARCHAR(20) | no | 0.00 % | 0 | 165,394 |  |
+| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 150,000 |  |
+| document_number | VARCHAR(20) | no | 0.00 % | 0 | 150,000 |  |
 | document_type | VARCHAR(10) | no | 0.00 % | 0 | 4 | `DNI` (104,749), `CE` (15,150), `Pasaporte` (15,062), `CC` (15,039) |
-| first_name | VARCHAR(100) | no | 0.00 % | 0 | 6,810 |  |
-| last_name | VARCHAR(100) | no | 0.00 % | 0 | 4,365 |  |
-| date_of_birth | DATE | no | 0.00 % | 0 | 26,753 |  |
+| first_name | VARCHAR(100) | no | 0.00 % | 0 | 7,480 |  |
+| last_name | VARCHAR(100) | no | 0.00 % | 0 | 3,460 |  |
+| date_of_birth | DATE | no | 0.00 % | 0 | 22,956 |  |
 | gender | VARCHAR(1) | yes | 0.00 % | 0 | 3 | `F` (50,508), `O` (49,808), `M` (49,684) |
-| email | VARCHAR(100) | yes | 1.99 % | 0 | 84,951 |  |
-| mobile_phone | VARCHAR(20) | yes | 3.14 % | 0 | 154,153 |  |
-| landline_phone | VARCHAR(20) | yes | 50.04 % | 0 | 54,920 |  |
-| address | VARCHAR(200) | yes | 4.91 % | 0 | 168,966 |  |
+| email | VARCHAR(100) | yes | 1.99 % | 0 | 91,289 |  |
+| mobile_phone | VARCHAR(20) | yes | 3.14 % | 0 | 145,285 |  |
+| landline_phone | VARCHAR(20) | yes | 50.04 % | 0 | 74,942 |  |
+| address | VARCHAR(200) | yes | 4.91 % | 0 | 134,009 |  |
 | city | VARCHAR(100) | no | 0.00 % | 0 | 16 | `Guadalajara` (12,643), `Ciudad de México` (12,506), `Querétaro` (12,500), `Tijuana` (12,489), `Puebla` (12,400), `Monterrey` (12,369), `Bogotá` (9,140), `Medellín` (9,107), … +8 more |
-| state | VARCHAR(100) | no | 0.00 % | 0 | 18 | `Jalisco` (12,643), `Ciudad de México` (12,506), `Querétaro` (12,500), `Baja California` (12,489), `Puebla` (12,400), `Nuevo León` (12,369), `Cundinamarca` (9,140), `Antioquia` (9,107), … +8 more |
+| state | VARCHAR(100) | no | 0.00 % | 0 | 16 | `Jalisco` (12,643), `Ciudad de México` (12,506), `Querétaro` (12,500), `Baja California` (12,489), `Puebla` (12,400), `Nuevo León` (12,369), `Cundinamarca` (9,140), `Antioquia` (9,107), … +8 more |
 | country | VARCHAR(50) | no | 0.00 % | 0 | 3 | `México` (74,907), `Colombia` (45,251), `Argentina` (29,842) |
-| postal_code | VARCHAR(10) | yes | 10.03 % | 0 | 7,594 |  |
+| postal_code | VARCHAR(10) | yes | 10.03 % | 0 | 8,419 |  |
 | detected_accent | VARCHAR(50) | yes | 29.88 % | 0 | 3 | `mexican` (52,505), `<null>` (44,817), `colombian` (31,666), `argentine` (21,012) |
 | segment | VARCHAR(50) | no | 0.00 % | 0 | 4 | `Basic` (89,756), `Plus` (37,547), `Premium` (15,207), `Student` (7,490) |
-| credit_score | INTEGER | yes | 14.99 % | 0 | 442 |  |
-| estimated_monthly_income | DECIMAL(12,2) | yes | 20.02 % | 0 | 92,660 |  |
-| occupation | VARCHAR(100) | yes | 10.03 % | 0 | 21 | `<null>` (15,039), `Manager` (6,862), `Accountant` (6,857), `Salesperson` (6,823), `Homemaker` (6,806), `Entrepreneur` (6,805), `Doctor` (6,794), `Lawyer` (6,779), … +13 more |
+| credit_score | INTEGER | yes | 14.99 % | 0 | 400 |  |
+| estimated_monthly_income | DECIMAL(12,2) | yes | 20.02 % | 0 | 119,734 |  |
+| occupation | VARCHAR(100) | yes | 10.03 % | 0 | 20 | `<null>` (15,039), `Manager` (6,862), `Accountant` (6,857), `Salesperson` (6,823), `Homemaker` (6,806), `Entrepreneur` (6,805), `Doctor` (6,794), `Lawyer` (6,779), … +13 more |
 | marital_status | VARCHAR(20) | yes | 7.97 % | 0 | 4 | `Married` (34,765), `Divorced` (34,734), `Single` (34,474), `Widowed` (34,072), `<null>` (11,955) |
 | education_level | VARCHAR(50) | yes | 11.97 % | 0 | 5 | `College Prep` (39,583), `High School` (33,120), `University` (32,870), `<null>` (17,952), `Graduate` (13,269), `Elementary` (13,206) |
-| registration_date | TIMESTAMP | no | 0.00 % | 0 | 152,920 |  |
-| registration_branch_id | VARCHAR(20) | no | 0.00 % | 0 | 129,978 |  |
+| registration_date | TIMESTAMP | no | 0.00 % | 0 | 149,947 |  |
+| registration_branch_id | VARCHAR(20) | no | 0.00 % | 0 | 150,000 |  |
 | customer_status | VARCHAR(20) | no | 0.00 % | 0 | 4 | `Active` (127,700), `Inactive` (14,914), `Suspended` (4,407), `Closed` (2,979) |
-| last_updated | TIMESTAMP | no | 0.00 % | 0 | 140,354 |  |
+| last_updated | TIMESTAMP | no | 0.00 % | 0 | 149,961 |  |
 | accepts_marketing | BOOLEAN | no | 0.00 % | 0 | 2 | `False` (75,007), `True` (74,993) |
 
 ### products
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| product_id | VARCHAR(20) | no | 0.00 % | 0 | 467,436 |  |
-| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 172,609 |  |
-| product_type | VARCHAR(50) | yes | 0.00 % | 0 | 7 | `Cuenta Ahorro` (120,203), `Tarjeta Crédito` (100,102), `Cuenta Corriente` (99,979), `Tarjeta Débito` (39,938), `Préstamo Personal` (19,960), `Préstamo Hipotecario` (11,910), `Inversión` (5,859), `Seguro` (2,049) |
-| product_number | VARCHAR(30) | no | 0.00 % | 0 | 424,581 |  |
+| product_id | VARCHAR(20) | no | 0.00 % | 0 | 400,000 |  |
+| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 139,578 |  |
+| product_type | VARCHAR(50) | yes | 0.00 % | 0 | 8 | `Cuenta Ahorro` (120,203), `Tarjeta Crédito` (100,102), `Cuenta Corriente` (99,979), `Tarjeta Débito` (39,938), `Préstamo Personal` (19,960), `Préstamo Hipotecario` (11,910), `Inversión` (5,859), `Seguro` (2,049) |
+| product_number | VARCHAR(30) | no | 0.00 % | 0 | 399,994 |  |
 | currency | VARCHAR(3) | no | 0.00 % | 0 | 3 | `USD` (220,501), `COP` (107,975), `ARS` (71,524) |
-| current_balance | DECIMAL(15,2) | no | 0.00 % | 0 | 341,358 |  |
-| credit_limit | DECIMAL(15,2) | yes | 68.67 % | 0 | 143,753 |  |
-| interest_rate | DECIMAL(5,2) | yes | 10.02 % | 0 | 4,057 |  |
-| opening_date | DATE | no | 0.00 % | 0 | 3,237 |  |
-| expiration_date | DATE | yes | 66.71 % | 0 | 3,689 |  |
-| opening_branch_id | VARCHAR(20) | no | 0.00 % | 0 | 416 |  |
+| current_balance | DECIMAL(15,2) | no | 0.00 % | 0 | 359,956 |  |
+| credit_limit | DECIMAL(15,2) | yes | 68.67 % | 0 | 124,986 |  |
+| interest_rate | DECIMAL(5,2) | yes | 10.02 % | 0 | 4,443 |  |
+| opening_date | DATE | no | 0.00 % | 0 | 2,922 |  |
+| expiration_date | DATE | yes | 66.71 % | 0 | 3,652 |  |
+| opening_branch_id | VARCHAR(20) | no | 0.00 % | 0 | 350 |  |
 | product_status | VARCHAR(20) | no | 0.00 % | 0 | 4 | `Active` (339,965), `Closed` (32,039), `Blocked` (19,935), `Suspended` (8,061) |
 | opening_channel | VARCHAR(30) | no | 0.00 % | 0 | 4 | `Branch` (199,838), `Web` (100,282), `App` (79,726), `Call Center` (20,154) |
 | has_linked_app | BOOLEAN | no | 0.00 % | 0 | 2 | `False` (200,142), `True` (199,858) |
 | days_past_due | INTEGER | yes | 68.66 % | 0 | 7 |  |
-| last_transaction_date | TIMESTAMP | yes | 23.57 % | 0 | 307,663 |  |
-| last_updated | TIMESTAMP | no | 0.00 % | 0 | 450,378 |  |
+| last_transaction_date | TIMESTAMP | yes | 23.57 % | 0 | 305,391 |  |
+| last_updated | TIMESTAMP | no | 0.00 % | 0 | 399,686 |  |
 
 ### branches
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| branch_id | VARCHAR(20) | no | 0.00 % | 0 | 416 |  |
-| branch_code | VARCHAR(10) | no | 0.00 % | 0 | 342 |  |
-| branch_name | VARCHAR(100) | no | 0.00 % | 0 | 171 |  |
+| branch_id | VARCHAR(20) | no | 0.00 % | 0 | 350 |  |
+| branch_code | VARCHAR(10) | no | 0.00 % | 0 | 350 |  |
+| branch_name | VARCHAR(100) | no | 0.00 % | 0 | 175 |  |
 | branch_type | VARCHAR(30) | no | 0.00 % | 0 | 4 | `Express` (130), `Corporate` (129), `Premium` (48), `Main` (43) |
-| address | VARCHAR(200) | no | 0.00 % | 0 | 318 |  |
+| address | VARCHAR(200) | no | 0.00 % | 0 | 350 |  |
 | city | VARCHAR(100) | no | 0.00 % | 0 | 16 | `Puebla` (33), `Guadalajara` (30), `Ciudad de México` (29), `Tijuana` (29), `Monterrey` (28), `Querétaro` (26), `Barranquilla` (24), `Cartagena` (23), … +8 more |
-| state | VARCHAR(100) | no | 0.00 % | 0 | 18 | `Puebla` (33), `Jalisco` (30), `Baja California` (29), `Ciudad de México` (29), `Nuevo León` (28), `Querétaro` (26), `Atlántico` (24), `Bolívar` (23), … +8 more |
+| state | VARCHAR(100) | no | 0.00 % | 0 | 16 | `Puebla` (33), `Jalisco` (30), `Baja California` (29), `Ciudad de México` (29), `Nuevo León` (28), `Querétaro` (26), `Atlántico` (24), `Bolívar` (23), … +8 more |
 | country | VARCHAR(50) | no | 0.00 % | 0 | 3 | `México` (175), `Colombia` (105), `Argentina` (70) |
-| postal_code | VARCHAR(10) | yes | 0.00 % | 0 | 107 |  |
+| postal_code | VARCHAR(10) | yes | 0.00 % | 0 | 105 |  |
 | geographic_zone | VARCHAR(50) | no | 0.00 % | 0 | 1 | `Urbana` (350) |
-| phone | VARCHAR(20) | no | 0.00 % | 0 | 396 |  |
-| email | VARCHAR(100) | yes | 0.00 % | 0 | 361 |  |
+| phone | VARCHAR(20) | no | 0.00 % | 0 | 350 |  |
+| email | VARCHAR(100) | yes | 0.00 % | 0 | 350 |  |
 | opening_time | TIME | no | 0.00 % | 0 | 4 |  |
 | closing_time | TIME | no | 0.00 % | 0 | 5 |  |
 | has_atms | BOOLEAN | no | 0.00 % | 0 | 1 | `True` (350) |
 | atm_count | INTEGER | yes | 0.00 % | 0 | 7 |  |
 | has_teller_windows | BOOLEAN | no | 0.00 % | 0 | 1 | `True` (350) |
 | teller_window_count | INTEGER | yes | 0.00 % | 0 | 10 |  |
-| latitude | DECIMAL(10,7) | yes | 0.00 % | 0 | 450 |  |
-| longitude | DECIMAL(10,7) | yes | 0.00 % | 0 | 294 |  |
-| branch_opening_date | DATE | no | 0.00 % | 0 | 320 |  |
+| latitude | DECIMAL(10,7) | yes | 0.00 % | 0 | 350 |  |
+| longitude | DECIMAL(10,7) | yes | 0.00 % | 0 | 350 |  |
+| branch_opening_date | DATE | no | 0.00 % | 0 | 346 |  |
 | branch_status | VARCHAR(20) | no | 0.00 % | 0 | 2 | `Active` (336), `Temporarily Closed` (14) |
 
 ### service_agents
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| agent_id | VARCHAR(20) | no | 0.00 % | 0 | 1,094 |  |
-| employee_code | VARCHAR(15) | no | 0.00 % | 0 | 1,492 |  |
-| first_name | VARCHAR(100) | no | 0.00 % | 0 | 401 |  |
-| last_name | VARCHAR(100) | no | 0.00 % | 0 | 1,107 |  |
-| email | VARCHAR(100) | no | 0.00 % | 0 | 1,312 |  |
-| phone | VARCHAR(20) | yes | 5.75 % | 0 | 1,341 |  |
+| agent_id | VARCHAR(20) | no | 0.00 % | 0 | 1,200 |  |
+| employee_code | VARCHAR(15) | no | 0.00 % | 0 | 1,187 |  |
+| first_name | VARCHAR(100) | no | 0.00 % | 0 | 444 |  |
+| last_name | VARCHAR(100) | no | 0.00 % | 0 | 975 |  |
+| email | VARCHAR(100) | no | 0.00 % | 0 | 1,188 |  |
+| phone | VARCHAR(20) | yes | 5.75 % | 0 | 1,131 |  |
 | native_accent | VARCHAR(50) | no | 0.00 % | 0 | 3 | `mexican` (600), `colombian` (360), `argentine` (240) |
 | country_of_origin | VARCHAR(50) | no | 0.00 % | 0 | 3 | `Mexico` (600), `Colombia` (360), `Argentina` (240) |
-| assigned_branch_id | VARCHAR(20) | yes | 30.58 % | 0 | 765 |  |
+| assigned_branch_id | VARCHAR(20) | yes | 30.58 % | 0 | 833 |  |
 | agent_type | VARCHAR(30) | no | 0.00 % | 0 | 4 | `Phone` (588), `Digital` (251), `In-Person` (230), `Hybrid` (131) |
 | experience_level | VARCHAR(20) | no | 0.00 % | 0 | 4 | `Specialist` (761), `Senior` (286), `Mid-Senior` (135), `Junior` (18) |
 | languages | VARCHAR(100) | no | 0.00 % | 0 | 4 | `español` (649), `español, inglés` (422), `español, portugués` (68), `español, inglés, portugués` (61) |
-| specialty | VARCHAR(100) | yes | 39.67 % | 0 | 7 | `<null>` (476), `Fraudes` (105), `Cobranza` (97), `Retención` (96), `Soporte Técnico` (96), `Créditos` (87), `Inversiones` (83), `Ventas` (82), … +1 more |
-| hire_date | DATE | no | 0.00 % | 0 | 991 |  |
-| avg_csat | DECIMAL(3,2) | yes | 11.17 % | 0 | 142 |  |
-| total_monthly_interactions | INTEGER | yes | 9.25 % | 0 | 473 |  |
+| specialty | VARCHAR(100) | yes | 39.67 % | 0 | 8 | `<null>` (476), `Fraudes` (105), `Cobranza` (97), `Retención` (96), `Soporte Técnico` (96), `Créditos` (87), `Inversiones` (83), `Ventas` (82), … +1 more |
+| hire_date | DATE | no | 0.00 % | 0 | 1,055 |  |
+| avg_csat | DECIMAL(3,2) | yes | 11.17 % | 0 | 149 |  |
+| total_monthly_interactions | INTEGER | yes | 9.25 % | 0 | 559 |  |
 | agent_status | VARCHAR(20) | no | 0.00 % | 0 | 4 | `Active` (1,090), `Vacation` (62), `Leave` (29), `Inactive` (19) |
-| work_shift | VARCHAR(20) | no | 0.00 % | 0 | 3 | `Afternoon` (418), `Morning` (398), `Rotating` (203), `Night` (181) |
+| work_shift | VARCHAR(20) | no | 0.00 % | 0 | 4 | `Afternoon` (418), `Morning` (398), `Rotating` (203), `Night` (181) |
 
 ### marketing_campaigns
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| campaign_id | VARCHAR(20) | no | 0.00 % | 0 | 207 |  |
-| campaign_name | VARCHAR(150) | no | 0.00 % | 0 | 188 |  |
-| description | TEXT | yes | 19.50 % | 0 | 35 |  |
+| campaign_id | VARCHAR(20) | no | 0.00 % | 0 | 200 |  |
+| campaign_name | VARCHAR(150) | no | 0.00 % | 0 | 200 |  |
+| description | TEXT | yes | 19.50 % | 0 | 37 |  |
 | campaign_type | VARCHAR(50) | no | 0.00 % | 0 | 6 | `Email` (67), `SMS` (42), `WhatsApp` (37), `Push` (24), `Mix` (21), `Voice` (9) |
 | campaign_objective | VARCHAR(100) | yes | 0.00 % | 0 | 5 | `Retention` (62), `Cross-sell` (51), `Acquisition` (38), `Reactivation` (25), `Up-sell` (24) |
-| promoted_product | VARCHAR(50) | yes | 11.00 % | 0 | 6 | `Tarjeta Crédito` (52), `Cuenta Ahorro` (40), `Préstamo Personal` (28), `<null>` (22), `Inversión` (20), `Cuenta Corriente` (17), `Préstamo Hipotecario` (11), `Seguro` (10) |
+| promoted_product | VARCHAR(50) | yes | 11.00 % | 0 | 7 | `Tarjeta Crédito` (52), `Cuenta Ahorro` (40), `Préstamo Personal` (28), `<null>` (22), `Inversión` (20), `Cuenta Corriente` (17), `Préstamo Hipotecario` (11), `Seguro` (10) |
 | target_segment | VARCHAR(50) | yes | 39.50 % | 0 | 4 | `<null>` (79), `Plus` (32), `Premium` (32), `Basic` (30), `Student` (27) |
 | target_country | VARCHAR(50) | yes | 55.50 % | 0 | 3 | `<null>` (111), `Colombia` (33), `Argentina` (28), `Mexico` (28) |
-| start_date | DATE | no | 0.00 % | 0 | 214 |  |
-| end_date | DATE | no | 0.00 % | 0 | 203 |  |
-| budget | DECIMAL(12,2) | yes | 15.50 % | 0 | 179 |  |
+| start_date | DATE | no | 0.00 % | 0 | 186 |  |
+| end_date | DATE | no | 0.00 % | 0 | 180 |  |
+| budget | DECIMAL(12,2) | yes | 15.50 % | 0 | 169 |  |
 | campaign_status | VARCHAR(20) | no | 0.00 % | 0 | 3 | `Completed` (172), `Paused` (25), `Active` (3) |
-| expected_conversion_rate | DECIMAL(5,2) | yes | 7.00 % | 0 | 156 |  |
+| expected_conversion_rate | DECIMAL(5,2) | yes | 7.00 % | 0 | 176 |  |
 
 ### transactions
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| transaction_id | VARCHAR(30) | no | 0.00 % | 0 | 4,394,559 |  |
-| transaction_date | TIMESTAMP | no | 0.00 % | 0 | 3,776,378 |  |
-| process_date | DATE | no | 0.00 % | 0 | 1,215 |  |
-| product_id | VARCHAR(20) | no | 0.00 % | 0 | 405,731 |  |
-| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 167,822 |  |
+| transaction_id | VARCHAR(30) | no | 0.00 % | 0 | 4,425,008 |  |
+| transaction_date | TIMESTAMP | no | 0.00 % | 0 | 4,318,242 |  |
+| process_date | DATE | no | 0.00 % | 0 | 1,097 |  |
+| product_id | VARCHAR(20) | no | 0.00 % | 0 | 339,963 |  |
+| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 134,515 |  |
 | transaction_type | VARCHAR(50) | yes | 0.00 % | 0 | 6 | `Purchase` (1,083,406), `Withdrawal` (964,673), `Transfer` (896,438), `Payment` (738,964), `Deposit` (609,409), `Adjustment` (132,118) |
 | transaction_category | VARCHAR(50) | yes | 60.87 % | 0 | 6 | `<null>` (2,693,520), `Food` (432,468), `Services` (345,370), `Other` (260,518), `Transport` (260,316), `Entertainment` (259,643), `Health` (173,173) |
-| amount | DECIMAL(15,2) | no | 0.00 % | 0 | 2,816,513 |  |
+| amount | DECIMAL(15,2) | no | 0.00 % | 0 | 2,570,875 |  |
 | currency | VARCHAR(3) | no | 0.00 % | 0 | 3 | `USD` (2,437,979), `COP` (1,194,444), `ARS` (792,585) |
-| amount_usd | DECIMAL(15,2) | yes | 57.34 % | 0 | 656,182 |  |
+| amount_usd | DECIMAL(15,2) | yes | 57.34 % | 0 | 528,859 |  |
 | channel | VARCHAR(30) | no | 0.00 % | 0 | 6 | `POS` (1,548,161), `ATM` (1,328,334), `Web` (663,445), `App` (663,414), `Branch` (132,495), `Transfer` (89,159) |
-| branch_id | VARCHAR(20) | yes | 68.63 % | 0 | 416 |  |
-| merchant_name | VARCHAR(150) | yes | 76.74 % | 0 | 28 | `<null>` (3,395,774), `Super Ahorro` (64,527), `Restaurante El Buen Sabor` (64,370), `Tienda Don José` (64,249), `Mercado Central` (63,912), `Empresa Telefónica` (51,464), `Cable TV` (51,430), `Servicios Públicos` (51,250), … +17 more |
+| branch_id | VARCHAR(20) | yes | 68.63 % | 0 | 350 |  |
+| merchant_name | VARCHAR(150) | yes | 76.74 % | 0 | 24 | `<null>` (3,395,774), `Super Ahorro` (64,527), `Restaurante El Buen Sabor` (64,370), `Tienda Don José` (64,249), `Mercado Central` (63,912), `Empresa Telefónica` (51,464), `Cable TV` (51,430), `Servicios Públicos` (51,250), … +17 more |
 | merchant_category | VARCHAR(50) | yes | 76.75 % | 0 | 6 | `<null>` (3,396,215), `Food` (256,846), `Services` (205,124), `Other` (155,029), `Transport` (154,931), `Entertainment` (153,960), `Health` (102,903) |
-| transaction_country | VARCHAR(50) | no | 0.00 % | 0 | 6 | `México` (2,105,794), `Colombia` (1,289,503), `Argentina` (867,561), `USA` (40,621), `Spain` (40,542), `Mexico` (40,515), `Brazil` (40,472) |
-| transaction_city | VARCHAR(100) | yes | 10.00 % | 0 | 30 |  |
+| transaction_country | VARCHAR(50) | no | 0.00 % | 0 | 7 | `México` (2,105,794), `Colombia` (1,289,503), `Argentina` (867,561), `USA` (40,621), `Spain` (40,542), `Mexico` (40,515), `Brazil` (40,472) |
+| transaction_city | VARCHAR(100) | yes | 10.00 % | 0 | 28 |  |
 | transaction_status | VARCHAR(20) | no | 0.00 % | 0 | 4 | `Approved` (4,070,681), `Declined` (221,234), `Pending` (88,343), `Reversed` (44,750) |
 | response_code | VARCHAR(10) | yes | 5.00 % | 0 | 5 | `00` (3,867,312), `<null>` (221,033), `14` (84,472), `51` (84,179), `05` (84,141), `54` (83,871) |
 | is_fraud | BOOLEAN | no | 0.00 % | 0 | 2 | `False` (4,420,692), `True` (4,316) |
-| fraud_score | DECIMAL(5,2) | yes | 20.00 % | 0 | 5,159 |  |
-| latitude | DECIMAL(10,7) | yes | 80.63 % | 0 | 1,024,504 |  |
-| longitude | DECIMAL(10,7) | yes | 80.63 % | 0 | 992,206 |  |
+| fraud_score | DECIMAL(5,2) | yes | 20.00 % | 0 | 5,014 |  |
+| latitude | DECIMAL(10,7) | yes | 80.63 % | 0 | 850,555 |  |
+| longitude | DECIMAL(10,7) | yes | 80.63 % | 0 | 850,492 |  |
 
 ### call_center_interactions
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| interaction_id | VARCHAR(30) | no | 0.00 % | 0 | 715,842 |  |
-| interaction_date | TIMESTAMP | no | 0.00 % | 0 | 728,894 |  |
-| process_date | DATE | no | 0.00 % | 0 | 1,215 |  |
-| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 164,963 |  |
-| agent_id | VARCHAR(20) | yes | 0.00 % | 0 | 1,052 |  |
+| interaction_id | VARCHAR(30) | no | 0.00 % | 0 | 686,296 |  |
+| interaction_date | TIMESTAMP | no | 0.00 % | 0 | 683,625 |  |
+| process_date | DATE | no | 0.00 % | 0 | 1,097 |  |
+| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 148,443 |  |
+| agent_id | VARCHAR(20) | yes | 0.00 % | 0 | 1,090 |  |
 | interaction_type | VARCHAR(30) | no | 0.00 % | 0 | 5 | `Inbound Call` (480,678), `Outbound Call` (102,572), `Chat` (68,691), `Email` (27,543), `Video` (6,812) |
 | channel | VARCHAR(30) | no | 0.00 % | 0 | 6 | `Phone` (583,250), `Email` (27,543), `App` (26,364), `WhatsApp` (22,888), `Web Chat` (22,856), `Web` (3,395) |
 | contact_reason | VARCHAR(100) | no | 0.00 % | 0 | 6 | `Transaccional` (240,056), `Producto` (150,863), `Queja` (117,021), `Técnico` (102,899), `Comercial` (54,879), `Retención` (20,578) |
 | reason_category | VARCHAR(50) | yes | 0.00 % | 0 | 6 | `Transaccional` (240,056), `Producto` (150,863), `Queja` (117,021), `Técnico` (102,899), `Comercial` (54,879), `Retención` (20,578) |
-| duration_seconds | INTEGER | yes | 14.02 % | 0 | 986 |  |
-| wait_time_seconds | INTEGER | yes | 29.96 % | 0 | 312 |  |
+| duration_seconds | INTEGER | yes | 14.02 % | 0 | 1,049 |  |
+| wait_time_seconds | INTEGER | yes | 29.96 % | 0 | 370 |  |
 | was_resolved | BOOLEAN | yes | 0.00 % | 0 | 2 | `True` (526,030), `False` (160,266) |
 | requires_followup | BOOLEAN | no | 0.00 % | 0 | 2 | `False` (447,242), `True` (239,054) |
 | detected_sentiment | VARCHAR(20) | yes | 0.00 % | 0 | 5 | `Neutral` (459,712), `Negativo` (94,322), `Positivo` (75,562), `Muy Negativo` (37,727), `Muy Positivo` (18,973) |
-| sentiment_score | DECIMAL(3,2) | yes | 0.00 % | 0 | 306 |  |
+| sentiment_score | DECIMAL(3,2) | yes | 0.00 % | 0 | 202 |  |
 | customer_detected_accent | VARCHAR(50) | yes | 29.83 % | 0 | 3 | `mexican` (240,674), `<null>` (204,750), `colombian` (144,712), `argentine` (96,160) |
 | agent_used_accent | VARCHAR(50) | yes | 29.83 % | 0 | 3 | `mexican` (241,931), `<null>` (204,750), `colombian` (144,386), `argentine` (95,229) |
 | was_escalated | BOOLEAN | no | 0.00 % | 0 | 2 | `False` (617,910), `True` (68,386) |
-| mentioned_products | VARCHAR(200) | yes | 60.03 % | 0 | 312,189 |  |
+| mentioned_products | VARCHAR(200) | yes | 60.03 % | 0 | 274,341 |  |
 | has_transcript | BOOLEAN | no | 0.00 % | 0 | 2 | `False` (514,975), `True` (171,321) |
 | has_recording | BOOLEAN | no | 0.00 % | 0 | 2 | `True` (590,062), `False` (96,234) |
 
 ### call_transcripts
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| transcript_id | VARCHAR(30) | no | 0.00 % | 0 | 180,126 |  |
-| interaction_id | VARCHAR(30) | no | 0.00 % | 0 | 208,322 |  |
-| process_date | DATE | no | 0.00 % | 0 | 1,215 |  |
-| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 103,670 |  |
-| agent_id | VARCHAR(20) | no | 0.00 % | 0 | 1,052 |  |
-| full_text | TEXT | no | 0.00 % | 0 | 561 |  |
-| customer_text | TEXT | yes | 0.00 % | 0 | 50 |  |
-| agent_text | TEXT | yes | 0.00 % | 0 | 35 |  |
+| transcript_id | VARCHAR(30) | no | 0.00 % | 0 | 171,321 |  |
+| interaction_id | VARCHAR(30) | no | 0.00 % | 0 | 171,321 |  |
+| process_date | DATE | no | 0.00 % | 0 | 1,097 |  |
+| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 101,951 |  |
+| agent_id | VARCHAR(20) | no | 0.00 % | 0 | 1,090 |  |
+| full_text | TEXT | no | 0.00 % | 0 | 546 |  |
+| customer_text | TEXT | yes | 0.00 % | 0 | 42 |  |
+| agent_text | TEXT | yes | 0.00 % | 0 | 42 |  |
 | detected_language | VARCHAR(10) | no | 0.00 % | 0 | 1 | `es` (171,321) |
 | detected_accent | VARCHAR(50) | yes | 36.82 % | 0 | 3 | `<null>` (63,083), `mexican` (54,152), `colombian` (32,284), `argentine` (21,802) |
-| accent_confidence | DECIMAL(3,2) | yes | 10.01 % | 0 | 27 |  |
+| accent_confidence | DECIMAL(3,2) | yes | 10.01 % | 0 | 25 |  |
 | detected_keywords | VARCHAR(500) | yes | 5.13 % | 0 | 12 | `banco, servicio, cuenta` (18,173), `cuenta, servicio, banco` (18,116), `cuenta, banco, servicio` (18,113), `servicio, banco, cuenta` (18,016), `servicio, cuenta, banco` (18,016), `banco, cuenta, servicio` (17,910), `cuenta, banco` (9,082), `cuenta, servicio` (9,053), … +5 more |
 | mentioned_entities | TEXT | yes | 10.02 % | 0 | 54 |  |
 | detected_intents | VARCHAR(300) | yes | 4.94 % | 0 | 1 | `consulta_general` (162,864), `<null>` (8,457) |
 | main_topics | VARCHAR(300) | yes | 0.00 % | 0 | 6 | `Transaccional` (59,786), `Producto` (37,658), `Queja` (29,198), `Técnico` (25,691), `Comercial` (13,808), `Retención` (5,180) |
 | transcription_model | VARCHAR(50) | no | 0.00 % | 0 | 4 | `AWS Transcribe` (43,117), `Whisper v3` (42,803), `Google STT` (42,740), `Azure Speech` (42,661) |
 | audio_quality | VARCHAR(20) | yes | 5.04 % | 0 | 3 | `High` (114,371), `Medium` (40,350), `<null>` (8,638), `Low` (7,962) |
-| duration_seconds | INTEGER | no | 14.03 % | 0 | 970 |  |
+| duration_seconds | INTEGER | no | 14.03 % | 0 | 973 |  |
 
 ### satisfaction_surveys
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| survey_id | VARCHAR(30) | no | 0.00 % | 0 | 202,151 |  |
-| survey_date | TIMESTAMP | no | 0.00 % | 0 | 207,875 |  |
-| process_date | DATE | no | 0.00 % | 0 | 1,215 |  |
-| interaction_id | VARCHAR(30) | yes | 0.00 % | 0 | 245,496 |  |
-| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 140,954 |  |
-| agent_id | VARCHAR(20) | yes | 0.00 % | 0 | 1,052 |  |
+| survey_id | VARCHAR(30) | no | 0.00 % | 0 | 212,759 |  |
+| survey_date | TIMESTAMP | no | 0.00 % | 0 | 212,505 |  |
+| process_date | DATE | no | 0.00 % | 0 | 1,097 |  |
+| interaction_id | VARCHAR(30) | yes | 0.00 % | 0 | 212,759 |  |
+| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 113,640 |  |
+| agent_id | VARCHAR(20) | yes | 0.00 % | 0 | 1,090 |  |
 | survey_type | VARCHAR(20) | no | 0.00 % | 0 | 3 | `CSAT` (127,856), `NPS` (63,668), `CES` (21,235) |
 | send_channel | VARCHAR(30) | no | 0.00 % | 0 | 5 | `Email` (84,880), `SMS` (63,798), `App` (42,595), `IVR` (10,836), `Web` (10,650) |
 | main_score | INTEGER | no | 0.00 % | 0 | 7 |  |
@@ -447,34 +447,34 @@ Categories: `Transactions` (13,580), `Fees` (13,553), `Technical` (13,407), `Bra
 | question_2_response | INTEGER | yes | 61.70 % | 0 | 5 |  |
 | question_3_text | TEXT | yes | 81.13 % | 0 | 1 |  |
 | question_3_response | INTEGER | yes | 81.15 % | 0 | 5 |  |
-| open_comments | TEXT | yes | 52.44 % | 0 | 15 |  |
+| open_comments | TEXT | yes | 52.44 % | 0 | 13 |  |
 | comment_sentiment | VARCHAR(20) | yes | 52.41 % | 0 | 3 | `<null>` (111,502), `Negative` (67,529), `Neutral` (26,774), `Positive` (6,954) |
-| response_time_hours | DECIMAL(8,2) | yes | 0.00 % | 0 | 3,407 |  |
-| campaign_response_rate | DECIMAL(5,2) | yes | 15.06 % | 0 | 2,465 |  |
+| response_time_hours | DECIMAL(8,2) | yes | 0.00 % | 0 | 3,473 |  |
+| campaign_response_rate | DECIMAL(5,2) | yes | 15.06 % | 0 | 3,001 |  |
 
 ### digital_events
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| event_id | VARCHAR(30) | no | 0.00 % | 0 | 14,709,111 |  |
-| event_date | TIMESTAMP | no | 0.00 % | 0 | 10,572,811 |  |
-| process_date | DATE | no | 0.00 % | 0 | 1,215 |  |
-| customer_id | VARCHAR(20) | yes | 23.98 % | 0 | 173,849 |  |
-| session_id | VARCHAR(50) | no | 0.00 % | 0 | 1,837,582 |  |
+| event_id | VARCHAR(30) | no | 0.00 % | 0 | 15,620,994 |  |
+| event_date | TIMESTAMP | no | 0.00 % | 0 | 14,217,807 |  |
+| process_date | DATE | no | 0.00 % | 0 | 1,097 |  |
+| customer_id | VARCHAR(20) | yes | 23.98 % | 0 | 149,997 |  |
+| session_id | VARCHAR(50) | no | 0.00 % | 0 | 1,837,415 |  |
 | event_type | VARCHAR(50) | yes | 0.00 % | 0 | 7 | `PageView` (5,972,564), `Click` (3,585,034), `Login` (2,434,770), `Logout` (2,433,612), `FormSubmit` (596,908), `Error` (358,723), `Purchase` (239,383) |
 | event_category | VARCHAR(50) | no | 0.00 % | 0 | 4 | `Authentication` (4,868,382), `Navigation` (3,961,324), `Product` (3,786,314), `Transaction` (3,004,974) |
 | channel | VARCHAR(30) | no | 0.00 % | 0 | 4 | `Android App` (5,476,164), `iOS App` (3,899,497), `Desktop Web` (3,128,851), `Mobile Web` (3,116,482) |
 | platform | VARCHAR(30) | yes | 5.00 % | 0 | 5 | `Android` (6,685,963), `iOS` (5,182,421), `Windows` (991,807), `Linux` (991,774), `MacOS` (988,502), `<null>` (780,527) |
-| browser | VARCHAR(50) | yes | 62.02 % | 0 | 4 | `<null>` (9,687,736), `Safari` (1,728,968), `Chrome` (1,725,978), `Samsung Internet` (990,164), `Firefox` (744,247), `Edge` (743,901) |
-| app_version | VARCHAR(20) | yes | 42.98 % | 0 | 526 |  |
-| page_url | VARCHAR(300) | yes | 5.00 % | 0 | 13 | `/login` (2,312,677), `/logout` (2,312,586), `/products/loans` (1,199,796), `/products/savings` (1,198,797), `/products/credit-card` (1,198,674), `/payments` (952,561), `/transfer` (951,673), `/transactions` (950,903), … +5 more |
+| browser | VARCHAR(50) | yes | 62.02 % | 0 | 5 | `<null>` (9,687,736), `Safari` (1,728,968), `Chrome` (1,725,978), `Samsung Internet` (990,164), `Firefox` (744,247), `Edge` (743,901) |
+| app_version | VARCHAR(20) | yes | 42.98 % | 0 | 500 |  |
+| page_url | VARCHAR(300) | yes | 5.00 % | 0 | 12 | `/login` (2,312,677), `/logout` (2,312,586), `/products/loans` (1,199,796), `/products/savings` (1,198,797), `/products/credit-card` (1,198,674), `/payments` (952,561), `/transfer` (951,673), `/transactions` (950,903), … +5 more |
 | page_title | VARCHAR(200) | yes | 4.99 % | 0 | 12 | `Cerrar Sesión` (2,312,841), `Iniciar Sesión` (2,312,796), `Préstamos` (1,199,615), `Cuenta de Ahorro` (1,198,585), `Tarjeta de Crédito` (1,198,485), `Pagar Servicios` (952,401), `Transferir` (951,874), `Mis Movimientos` (950,599), … +5 more |
 | action | VARCHAR(100) | yes | 10.00 % | 0 | 10 | `view_product` (3,407,643), `logout` (2,191,640), `login` (2,189,929), `<null>` (1,561,432), `initiate_payment` (902,225), `initiate_transfer` (901,824), `view_transactions` (901,039), `view_accounts` (892,802), … +3 more |
-| element_id | VARCHAR(100) | yes | 15.00 % | 0 | 13 |  |
-| product_id | VARCHAR(20) | yes | 90.78 % | 0 | 465,190 |  |
-| event_value | DECIMAL(15,2) | yes | 94.91 % | 0 | 496,939 |  |
-| duration_seconds | INTEGER | yes | 63.67 % | 0 | 254 |  |
-| ip_address | VARCHAR(45) | yes | 5.00 % | 0 | 1,606,932 |  |
+| element_id | VARCHAR(100) | yes | 15.00 % | 0 | 12 |  |
+| product_id | VARCHAR(20) | yes | 90.78 % | 0 | 389,087 |  |
+| event_value | DECIMAL(15,2) | yes | 94.91 % | 0 | 397,337 |  |
+| duration_seconds | INTEGER | yes | 63.67 % | 0 | 296 |  |
+| ip_address | VARCHAR(45) | yes | 5.00 % | 0 | 1,836,678 |  |
 | ip_country | VARCHAR(50) | yes | 0.00 % | 0 | 4 | `México` (6,242,893), `Colombia` (4,806,882), `Argentina` (3,533,045), `Mexico` (1,038,174) |
 | ip_city | VARCHAR(100) | yes | 27.98 % | 0 | 16 | `<null>` (4,370,476), `Guadalajara` (951,621), `Querétaro` (938,075), `Tijuana` (935,526), `Puebla` (934,034), `Ciudad de México` (930,004), `Monterrey` (928,988), `Bogotá` (687,593), … +9 more |
 | is_mobile | BOOLEAN | no | 0.00 % | 0 | 2 | `True` (12,492,143), `False` (3,128,851) |
@@ -485,71 +485,71 @@ Categories: `Transactions` (13,580), `Fees` (13,553), `Technical` (13,407), `Bra
 
 ### complaints
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| complaint_id | VARCHAR(30) | no | 0.00 % | 0 | 66,008 |  |
-| creation_date | TIMESTAMP | no | 0.00 % | 0 | 78,331 |  |
-| process_date | DATE | no | 0.00 % | 0 | 1,215 |  |
-| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 59,121 |  |
+| complaint_id | VARCHAR(30) | no | 0.00 % | 0 | 67,095 |  |
+| creation_date | TIMESTAMP | no | 0.00 % | 0 | 67,074 |  |
+| process_date | DATE | no | 0.00 % | 0 | 1,097 |  |
+| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 54,145 |  |
 | case_type | VARCHAR(30) | no | 0.00 % | 0 | 4 | `Complaint` (40,452), `Claim` (16,598), `Request` (6,761), `Suggestion` (3,284) |
 | category | VARCHAR(100) | no | 0.00 % | 0 | 5 | `Transactions` (13,580), `Fees` (13,553), `Technical` (13,407), `Branch` (13,361), `Service` (13,194) |
 | subcategory | VARCHAR(100) | yes | 9.98 % | 0 | 5 | `Cargo no reconocido` (12,297), `Cobro indebido` (12,194), `Problema con app` (12,128), `Atención en sucursal` (11,892), `Calidad de servicio` (11,886), `<null>` (6,698) |
-| reception_channel | VARCHAR(30) | no | 0.00 % | 0 | 5 | `Call Center` (33,761), `Email` (13,323), `Web` (9,884), `App` (6,727), `Branch` (2,683), `Regulator` (717) |
-| affected_product_id | VARCHAR(20) | yes | 33.57 % | 0 | 44,958 |  |
-| related_branch_id | VARCHAR(20) | yes | 71.42 % | 0 | 416 |  |
+| reception_channel | VARCHAR(30) | no | 0.00 % | 0 | 6 | `Call Center` (33,761), `Email` (13,323), `Web` (9,884), `App` (6,727), `Branch` (2,683), `Regulator` (717) |
+| affected_product_id | VARCHAR(20) | yes | 33.57 % | 0 | 42,184 |  |
+| related_branch_id | VARCHAR(20) | yes | 71.42 % | 0 | 350 |  |
 | origin_interaction_id | VARCHAR(30) | yes | 100.00 % | 0 | 0 |  |
 | description | TEXT | no | 0.00 % | 0 | 5 |  |
-| claimed_amount | DECIMAL(15,2) | yes | 67.58 % | 0 | 22,492 |  |
+| claimed_amount | DECIMAL(15,2) | yes | 67.58 % | 0 | 21,303 |  |
 | currency | VARCHAR(3) | yes | 67.54 % | 0 | 4 | `<null>` (45,319), `MXN` (5,487), `COP` (5,456), `USD` (5,431), `ARS` (5,402) |
 | priority | VARCHAR(20) | no | 0.00 % | 0 | 4 | `Medium` (33,439), `Low` (20,411), `High` (9,890), `Critical` (3,355) |
 | status | VARCHAR(30) | yes | 0.00 % | 0 | 6 | `In Process` (26,823), `Open` (20,125), `Resolved` (13,512), `Escalated` (3,321), `Closed` (2,609), `Rejected` (705) |
-| assigned_agent_id | VARCHAR(20) | yes | 34.45 % | 0 | 1,094 |  |
-| assignment_date | TIMESTAMP | yes | 34.47 % | 0 | 53,870 |  |
-| first_response_date | TIMESTAMP | yes | 39.11 % | 0 | 35,422 |  |
-| resolution_date | TIMESTAMP | yes | 77.12 % | 0 | 13,413 |  |
-| closing_date | TIMESTAMP | yes | 96.30 % | 0 | 2,501 |  |
+| assigned_agent_id | VARCHAR(20) | yes | 34.45 % | 0 | 1,200 |  |
+| assignment_date | TIMESTAMP | yes | 34.47 % | 0 | 43,955 |  |
+| first_response_date | TIMESTAMP | yes | 39.11 % | 0 | 40,847 |  |
+| resolution_date | TIMESTAMP | yes | 77.12 % | 0 | 15,348 |  |
+| closing_date | TIMESTAMP | yes | 96.30 % | 0 | 2,480 |  |
 | sla_breached | BOOLEAN | no | 0.00 % | 0 | 2 | `False` (53,600), `True` (13,495) |
 | resolution_days | INTEGER | yes | 77.10 % | 0 | 30 |  |
-| resolution | TEXT | yes | 77.18 % | 0 | 4 |  |
-| compensation_granted | DECIMAL(15,2) | yes | 93.08 % | 0 | 4,511 |  |
+| resolution | TEXT | yes | 77.18 % | 0 | 5 |  |
+| compensation_granted | DECIMAL(15,2) | yes | 93.08 % | 0 | 4,436 |  |
 | resolution_satisfaction | INTEGER | yes | 96.30 % | 0 | 5 |  |
 | is_repeat_complainer | BOOLEAN | no | 0.00 % | 0 | 2 | `False` (57,009), `True` (10,086) |
 
 ### campaign_sends
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| send_id | VARCHAR(30) | no | 0.00 % | 0 | 2,203,531 |  |
-| send_date | TIMESTAMP | no | 0.00 % | 0 | 1,427,643 |  |
-| process_date | DATE | no | 0.00 % | 0 | 1,200 |  |
-| campaign_id | VARCHAR(20) | no | 0.00 % | 0 | 164 |  |
-| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 173,849 |  |
+| send_id | VARCHAR(30) | no | 0.00 % | 0 | 1,746,801 |  |
+| send_date | TIMESTAMP | no | 0.00 % | 0 | 1,729,711 |  |
+| process_date | DATE | no | 0.00 % | 0 | 1,083 |  |
+| campaign_id | VARCHAR(20) | no | 0.00 % | 0 | 175 |  |
+| customer_id | VARCHAR(20) | no | 0.00 % | 0 | 150,000 |  |
 | send_channel | VARCHAR(30) | no | 0.00 % | 0 | 5 | `Email` (620,195), `SMS` (432,283), `WhatsApp` (349,144), `Push` (290,650), `Voice` (54,529) |
-| template_used | VARCHAR(100) | yes | 10.03 % | 0 | 858 |  |
-| subject | VARCHAR(200) | yes | 68.03 % | 0 | 9 | `<null>` (1,188,342), `¡Oferta especial en Tarjeta Crédito!` (191,344), `¡Oferta especial en Préstamo Personal!` (95,544), `¡Oferta especial en Cuenta Corriente!` (79,322), `¡Oferta especial en Cuenta Ahorro!` (66,310), `¡Oferta especial en Inversión!` (38,402), `¡Oferta especial en nan!` (38,142), `¡Oferta especial en Seguro!` (25,469), … +1 more |
+| template_used | VARCHAR(100) | yes | 10.03 % | 0 | 875 |  |
+| subject | VARCHAR(200) | yes | 68.03 % | 0 | 8 | `<null>` (1,188,342), `¡Oferta especial en Tarjeta Crédito!` (191,344), `¡Oferta especial en Préstamo Personal!` (95,544), `¡Oferta especial en Cuenta Corriente!` (79,322), `¡Oferta especial en Cuenta Ahorro!` (66,310), `¡Oferta especial en Inversión!` (38,402), `¡Oferta especial en nan!` (38,142), `¡Oferta especial en Seguro!` (25,469), … +1 more |
 | send_status | VARCHAR(20) | no | 0.00 % | 0 | 4 | `Sent` (1,642,044), `Failed` (52,306), `Bounced` (34,900), `Blocked` (17,551) |
 | was_delivered | BOOLEAN | no | 0.00 % | 0 | 2 | `True` (1,642,044), `False` (104,757) |
 | was_opened | BOOLEAN | yes | 27.72 % | 0 | 2 | `False` (775,263), `True` (487,309), `<null>` (484,229) |
-| open_date | TIMESTAMP | yes | 72.10 % | 0 | 535,875 |  |
+| open_date | TIMESTAMP | yes | 72.10 % | 0 | 485,996 |  |
 | was_clicked | BOOLEAN | yes | 0.00 % | 0 | 2 | `False` (1,649,008), `True` (97,793) |
-| click_date | TIMESTAMP | yes | 94.40 % | 0 | 135,250 |  |
+| click_date | TIMESTAMP | yes | 94.40 % | 0 | 97,749 |  |
 | click_count | INTEGER | yes | 94.40 % | 0 | 5 |  |
 | had_conversion | BOOLEAN | no | 0.00 % | 0 | 2 | `False` (1,737,002), `True` (9,799) |
-| conversion_date | TIMESTAMP | yes | 99.44 % | 0 | 13,027 |  |
-| conversion_value | DECIMAL(15,2) | yes | 99.44 % | 0 | 13,870 |  |
+| conversion_date | TIMESTAMP | yes | 99.44 % | 0 | 9,798 |  |
+| conversion_value | DECIMAL(15,2) | yes | 99.44 % | 0 | 9,709 |  |
 | open_device | VARCHAR(30) | yes | 74.90 % | 0 | 3 | `<null>` (1,308,424), `Desktop` (146,494), `Tablet` (146,450), `Mobile` (145,433) |
 | open_country | VARCHAR(50) | yes | 74.90 % | 0 | 3 | `<null>` (1,308,278), `México` (219,090), `Colombia` (132,441), `Argentina` (86,992) |
 | failure_reason | VARCHAR(200) | yes | 94.30 % | 0 | 3 | `<null>` (1,647,204), `SMTP error` (49,706), `Invalid email address` (33,209), `User blocked sender` (16,682) |
-| send_cost | DECIMAL(10,4) | yes | 15.00 % | 0 | 2,305 |  |
+| send_cost | DECIMAL(10,4) | yes | 15.00 % | 0 | 2,901 |  |
 
 ### daily_exchange_rates
 
-| Column | Type | Nullable | Missing | Unparseable | Distinct (estimate) | Values |
+| Column | Type | Nullable | Missing | Unparseable | Distinct | Values |
 |---|---|---|---|---|---|---|
-| date | DATE | no | 0.00 % | 0 | 1,215 |  |
+| date | DATE | no | 0.00 % | 0 | 1,097 |  |
 | source_currency | VARCHAR(3) | no | 0.00 % | 0 | 4 |  |
 | target_currency | VARCHAR(3) | no | 0.00 % | 0 | 4 |  |
-| exchange_rate | DECIMAL(12,6) | no | 0.00 % | 0 | 7,717 |  |
-| buy_rate | DECIMAL(12,6) | yes | 0.00 % | 0 | 9,411 |  |
-| sell_rate | DECIMAL(12,6) | yes | 0.00 % | 0 | 9,657 |  |
+| exchange_rate | DECIMAL(12,6) | no | 0.00 % | 0 | 9,520 |  |
+| buy_rate | DECIMAL(12,6) | yes | 0.00 % | 0 | 9,614 |  |
+| sell_rate | DECIMAL(12,6) | yes | 0.00 % | 0 | 9,636 |  |
 | source | VARCHAR(50) | yes | 0.00 % | 0 | 4 | `Bloomberg` (3,303), `Reuters` (3,297), `Internal` (3,293), `Central Bank` (3,271) |

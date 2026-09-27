@@ -62,7 +62,7 @@ class ColumnProfile:
     unparseable: int
     integers_written_as_decimals: int
     text_encoding_suspects: int
-    distinct_estimate: int
+    distinct_count: int
     top_values: tuple[ValueCount, ...]
 
     @property
