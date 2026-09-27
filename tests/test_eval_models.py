@@ -27,7 +27,7 @@ def _case(**overrides: Any) -> Case:
         "category": CaseCategory.NORMAL,
         "lang": "es",
         "provenance": "observed",
-        "seed_ref": "ops_seed:transactions:12345",
+        "seed_ref": "eval_bank:ES-NORMAL-001",
         "user_turns": ("No reconozco un cargo en mi tarjeta.",),
         "expected_intent": Intent.CONFIRM_FILING,
     }

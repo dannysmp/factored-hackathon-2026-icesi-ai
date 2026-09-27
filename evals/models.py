@@ -38,11 +38,11 @@ Runtime Contract
 
 Limitations
 -----------
-``Case`` does not validate that ``seed_ref`` resolves to a real row of ``data/gold/ops_seed``;
-that binding is checked when the corpus is authored and again by the runner before a case
-executes. Provenance is stated once per case, not per utterance or per injected condition inside
-it; a case whose turns mix provenances states the more specific one in its free-text
-description.
+``Case`` does not validate that ``seed_ref`` resolves to a real row of ``data/gold/ops_seed`` or
+``data/gold/eval_bank``; that binding is checked when the corpus is authored and again by the
+runner before a case executes. Provenance is stated once per case, not per utterance or per
+injected condition inside it; a case whose turns mix provenances states the more specific one in
+its free-text description.
 """
 
 from __future__ import annotations
@@ -111,8 +111,12 @@ class Case:
         Whether the case reflects an observed row, team-authored wording, or an injected
         condition (see the module's Limitations).
     seed_ref
-        The identifier of the `data/gold/ops_seed` row (or rows) the case's initial state is
-        built from.
+        The identifier of the row (or rows) the case's initial state is built from: a
+        `data/gold/ops_seed` identifier for a case grounded in the demo bank's seeded state, or a
+        `data/gold/eval_bank` identifier for a frozen scenario built for this harness (in
+        particular, every injected adversarial condition — an orphan transaction, a null field,
+        a poisoned merchant name — lives in `eval_bank`, since `ops_seed` is not built to hold
+        one).
     user_turns
         The customer's scripted lines, in order, in `lang`.
     expected_intent
