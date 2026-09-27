@@ -27,6 +27,7 @@ dependencies = [
     "pydantic-settings>=2.4,<3",  # Typed, fail-fast configuration from the environment
     "pyjwt>=2.8,<3",  # Signs and verifies the short-lived session tokens
     "pyyaml>=6,<7",  # Loads the versioned dispute-policy files
+    "psycopg[binary]>=3.2,<4",  # Serving-store driver: vanilla SQL over a DSN, no ORM
 ]
 
 [dependency-groups]
