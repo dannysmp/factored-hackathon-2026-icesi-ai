@@ -317,6 +317,20 @@ def test_the_conditions_of_a_dispute_are_all_stated(policy: Policy, language: st
     assert messages.transactions.split("{approved}")[1] in section
 
 
+_FUTURE_DATE_KEYWORD = {"es": "futur", "pt": "futur", "en": "future"}
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_a_future_dated_transaction_cannot_be_disputed(policy: Policy, language: str) -> None:
+    """The who-can-dispute section states the future-date gate, the one condition that used to
+    be missing from the sentence (`_gate_future_date` in the engine, reason
+    ``transaction_date_in_future``)."""
+    text = render_corpus(policy)[f"{language}/dispute-policy.md"]
+    section = text.split("{#who-can-dispute}")[1].split("{#filing-windows}")[0]
+
+    assert _FUTURE_DATE_KEYWORD[language] in section.lower()
+
+
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_exclusions_are_derived_from_what_the_policy_accepts(policy: Policy, language: str) -> None:
     """A product or type the policy accepts is never listed as excluded, and vice versa."""
@@ -397,6 +411,29 @@ def test_the_confirmation_section_follows_the_categories_that_require_it(
     listed = f"{messages.categories[DisputeCategory.WRONG_AMOUNT]} {messages.and_word} "
     assert listed + messages.categories[DisputeCategory.FRAUD_CLAIM] in some
     assert messages.confirmation_all not in some
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_four_of_five_categories_never_read_as_all_of_them(policy: Policy, language: str) -> None:
+    """One category short of every one still names them, and never prints the ``all`` text."""
+    messages = MESSAGES[language]
+    missing = DisputeCategory.SERVICE_NOT_RECEIVED
+    required = [c for c in DisputeCategory if c is not missing]
+    categories = {
+        c: policy.categories[c].model_copy(update={"requires_confirmation": c is not missing})
+        for c in DisputeCategory
+    }
+    text = render_corpus(policy.model_copy(update={"categories": categories}))[
+        f"{language}/dispute-policy.md"
+    ]
+
+    assert messages.confirmation_all not in text
+    for category in required:
+        assert messages.categories[category] in text
+    assert (
+        messages.categories[missing]
+        not in text.split("{#confirmation}")[1].split("{#human-review}")[0]
+    )
 
 
 def test_a_type_without_a_translation_appears_as_the_source_spells_it(policy: Policy) -> None:

@@ -17,7 +17,7 @@ Transactions on these products can be disputed: Savings account, Checking accoun
 
 The other products (Personal loan, Mortgage, Investments and Insurance) have their own claim processes and are not handled by this policy.
 
-To file a dispute, the transaction must be a charge to the customer (a purchase, a withdrawal, a transfer or a payment), be approved, be within the deadline of its category (see below) and have no other open dispute.
+To file a dispute, the transaction must be a charge to the customer (a purchase, a withdrawal, a transfer or a payment), be approved, not be dated in the future, be within the deadline of its category (see below) and have no other open dispute.
 
 Transactions that are deposits or adjustments cannot be disputed.
 
