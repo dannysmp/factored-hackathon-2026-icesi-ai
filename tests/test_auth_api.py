@@ -250,39 +250,59 @@ def test_failed_logins_with_bad_bodies_count_toward_the_limit(client: TestClient
     for _ in range(5):
         client.post(LOGIN, json={}, headers={"X-Test-Login-Key": "wrong"})
 
-    blocked = client.post(
-        LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": LOGIN_KEY}
-    )
+    blocked = client.post(LOGIN, json={}, headers={"X-Test-Login-Key": "wrong"})
 
     _assert_problem(blocked, 429, "too_many_attempts", reauth=False)
 
 
-def test_repeated_failures_are_limited_and_the_limit_lifts_with_time(
+def test_repeated_wrong_key_failures_are_limited_and_the_limit_lifts_with_time(
     client: TestClient, clock: Clock
 ) -> None:
-    """Five failures in a minute block the client, even with the right secret, for a minute."""
+    """Five wrong-key failures in a minute block further wrong-key attempts for a minute."""
     for _ in range(5):
         client.post(LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": "wrong"})
 
-    blocked = client.post(
-        LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": LOGIN_KEY}
-    )
+    blocked = client.post(LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": "wrong"})
 
     _assert_problem(blocked, 429, "too_many_attempts", reauth=False)
     assert blocked.headers["retry-after"] == "60"
     clock.now = START + timedelta(seconds=60)
+    blocked_again = client.post(
+        LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": "wrong"}
+    )
+    _assert_problem(blocked_again, 401, "test_login_rejected", reauth=True)
+
+
+def test_a_correct_key_always_succeeds_however_many_wrong_keys_preceded_it(
+    client: TestClient,
+) -> None:
+    """Issue #30: a flood of wrong keys from one address never locks out the correct one.
+
+    The key is compared before anything is counted, so an address already well past the limit
+    for wrong keys still lets its legitimate client in.
+    """
+    for _ in range(40):
+        client.post(LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": "wrong"})
+
     assert _login(client)["token_type"] == "Bearer"
 
 
-def test_a_successful_login_clears_the_failures(client: TestClient) -> None:
-    """Failures before a success do not count against later attempts."""
-    for _ in range(4):
+def test_a_successful_login_does_not_clear_failures_for_another_client_on_the_address(
+    client: TestClient, clock: Clock
+) -> None:
+    """Issue #31: a success is invisible to the limiter, so it cannot reset what another client
+    sharing the same address (for example, behind a proxy) has already earned."""
+    for _ in range(5):
         client.post(LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": "wrong"})
-    _login(client)
-    for _ in range(4):
-        client.post(LOGIN, json={"customer_id": "C1"}, headers={"X-Test-Login-Key": "wrong"})
+    assert _login(client, "C1")["token_type"] == "Bearer"
 
-    assert _login(client)["token_type"] == "Bearer"
+    still_blocked = client.post(
+        LOGIN, json={"customer_id": "C2"}, headers={"X-Test-Login-Key": "wrong"}
+    )
+
+    _assert_problem(still_blocked, 429, "too_many_attempts", reauth=False)
+    clock.now = START + timedelta(seconds=60)
+    assert _login(client, "C2")["token_type"] == "Bearer"
 
 
 # -----------------------------------------------------------------------------

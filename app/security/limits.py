@@ -16,14 +16,17 @@ Design Principles
 -----------------
 - The clock is injected and the table is bounded, so a flood of distinct clients cannot exhaust
   memory; the oldest entries are dropped first.
-- A successful attempt clears the client's failures.
+- This limiter only ever counts what its caller reports as a failure: it has no notion of a
+  success, and nothing here clears a key's count except the window passing. A caller that
+  decides an attempt succeeded simply never calls ``begin_attempt`` for it, so a success can
+  never erase another client's recorded failures on a key they share (for example, one client
+  address behind a proxy).
 
 Runtime Contract
 ----------------
 ``AttemptLimiter.begin_attempt(key) -> int`` is 0 when an attempt may proceed (and counts it as a
-failure right away), otherwise the seconds to wait. ``reset(key)`` clears the count after a
-success. Counting first makes the check and the count one step, so concurrent attempts cannot
-all pass the check before any is counted.
+failure right away), otherwise the seconds to wait. Counting first makes the check and the count
+one step, so concurrent attempts cannot all pass the check before any is counted.
 
 Limitations
 -----------
@@ -78,7 +81,8 @@ class AttemptLimiter:
     def begin_attempt(self, key: str) -> int:
         """Count an attempt by ``key`` and say how long to wait; 0 means it may proceed.
 
-        The attempt is counted as a failure immediately; a success calls :meth:`reset`.
+        Call this only for an attempt the caller has already decided is a failure: the attempt
+        is counted as one immediately, and there is no way to take the count back.
         """
         now = self._clock()
         with self._lock:
@@ -90,8 +94,3 @@ class AttemptLimiter:
                 self._failures.pop(next(iter(self._failures)))
             self._failures[key] = [*recent, now]
             return 0
-
-    def reset(self, key: str) -> None:
-        """Forget the failures of ``key`` after a success."""
-        with self._lock:
-            self._failures.pop(key, None)

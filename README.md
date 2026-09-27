@@ -156,7 +156,7 @@ customer types (a document number, a name) is never accepted as proof of identit
 rejects any field but `customer_id`, and real deployments receive sessions from the bank's
 identity provider.
 
-Failed sandbox logins are counted per connection address; behind a reverse proxy that address is the proxy's unless the server is configured to trust forwarded headers, and the limiter is per process.
+Failed sandbox logins are counted per connection address; behind a reverse proxy that address is the proxy's unless the server is configured to trust forwarded headers, and the limiter is per process. The shared secret is always compared before anything is counted, so a correct key succeeds however many wrong keys the address has sent, and a success never clears another client's recorded failures on a shared address.
 
 Every failure has the same shape (an RFC 9457 problem document) with a stable `code`, a safe message
 and a `request_id`; the same identifier is in the `X-Request-ID` response header, which a client may
