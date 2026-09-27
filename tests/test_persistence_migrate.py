@@ -108,6 +108,30 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
 
 
 @pytest.mark.integration
+def test_a_value_outside_the_closed_set_is_rejected_by_the_database() -> None:
+    """The migration's CHECK constraints hold even if the tool layer's own validation does not.
+
+    Scoped to its own row, cleaned up first, so it does not depend on or disturb what other
+    tests leave in the shared ``customers`` table.
+    """
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL is not set")
+    apply_migrations(dsn)
+
+    customer_id = "CHECK_TEST_1"
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM customers WHERE customer_id = %s", (customer_id,))
+        with pytest.raises(psycopg.errors.CheckViolation):
+            cur.execute(
+                "INSERT INTO customers "
+                "(customer_id, first_name, last_name, country, customer_status) "
+                "VALUES (%s, 'A', 'B', 'CO', 'NotARealStatus')",
+                (customer_id,),
+            )
+
+
+@pytest.mark.integration
 def test_a_changed_migration_file_is_refused(tmp_path: Path) -> None:
     """A migration already applied is never silently re-applied under a changed file.
 
