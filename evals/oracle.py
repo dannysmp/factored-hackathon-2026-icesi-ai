@@ -19,13 +19,16 @@ In: recomputing the five eligibility gates that depend only on the transaction's
 facts and the case's category and domain date (product scope, transaction type, transaction
 status, transaction date not in the future, filing window); comparing the recomputed outcome
 against what a filed case implies (``Outcome.ELIGIBLE``).
-Out: recomputing routing or escalation (NLU confidence, repeat-complainer, amount and risk-score
-thresholds) — those are session-time signals no stored record carries, and the residual risk this
-oracle covers is an ineligible case slipping past the controller, not a differing escalation
-choice; recomputing the duplicate-open-case gate (a store-level uniqueness invariant enforced and
-tested at write time, not re-derived here); reading a live case service (this is a pure function,
-tested here against handmade facts; wiring it over a running system's own filed cases is a
-separate, later integration).
+Out: recomputing routing or escalation (NLU confidence, repeat-complainer and risk-score
+thresholds are session-time signals no stored record carries; the amount threshold's own input,
+``CaseRecord.amount``, is stored but is deliberately not recomputed here either) — the residual
+risk this oracle covers is an ineligible case slipping past the controller, not a differing
+escalation choice, and a stored fraud-claim row (which the engine can never resolve to
+``Outcome.ELIGIBLE``) is exactly that same residual risk, not yet checked as a violation here;
+recomputing the duplicate-open-case gate (a store-level uniqueness invariant enforced and tested
+at write time, not re-derived here); reading a live case service (this is a pure function, tested
+here against handmade facts; wiring it over a running system's own filed cases is a separate,
+later integration, and closing both gaps above belongs with that wiring).
 
 Design Principles
 ------------------
@@ -59,9 +62,14 @@ Runtime Contract
 Limitations
 -----------
 Flags a case whose eligibility no longer recomputes, but does not explain why an escalate-outcome
-case skipped filing (a case row is never created for one, so there is nothing to check). Trusts
-the caller's ``transactions_by_ref`` mapping; verifying that mapping's own provenance against
-``data/gold/ops_seed`` or ``data/gold/eval_bank`` is the caller's responsibility.
+case skipped filing (a case row is never created for one, so there is nothing to check). A stored
+fraud-claim case is marked not applicable rather than checked against the residual risk it
+actually represents (the engine can never resolve one to ``Outcome.ELIGIBLE``, so its mere
+existence as a filed case is itself the defect class this oracle exists to catch); closing this
+gap, and recomputing the amount-threshold escalation from ``CaseRecord.amount`` now that it is
+known to be stored, both belong with the live-system integration this module does not attempt
+yet. Trusts the caller's ``transactions_by_ref`` mapping; verifying that mapping's own provenance
+against ``data/gold/ops_seed`` or ``data/gold/eval_bank`` is the caller's responsibility.
 """
 
 from __future__ import annotations

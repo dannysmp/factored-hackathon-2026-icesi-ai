@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 # Local modules
+from app.security.sessions import CUSTOMER_ID_PATTERN
 from contracts.service_v1.cases import REF_PATTERN
 from pipelines.eval_bank import (
     CUSTOMERS_NAME,
@@ -149,6 +150,24 @@ def test_every_transaction_id_matches_the_shared_reference_pattern(tmp_path: Pat
     build_eval_bank(tmp_path, code_version="test")
     for row in read_table(tmp_path, TRANSACTIONS_NAME):
         assert re.fullmatch(REF_PATTERN, row["transaction_id"])
+
+
+def test_every_customer_and_product_id_matches_the_sessions_stricter_pattern(
+    tmp_path: Path,
+) -> None:
+    """`customer_id`/`product_id` are also checked against the session layer's own, shorter
+    pattern (`app.security.sessions.CUSTOMER_ID_PATTERN`, at most 20 characters) — a looser bound
+    here would look fine in this bank and fail the moment a real customer-facing path read it,
+    including the orphan scenario's deliberately unresolvable identifiers."""
+    build_eval_bank(tmp_path, code_version="test")
+    for row in read_table(tmp_path, CUSTOMERS_NAME):
+        assert CUSTOMER_ID_PATTERN.fullmatch(row["customer_id"])
+    for row in read_table(tmp_path, PRODUCTS_NAME):
+        assert CUSTOMER_ID_PATTERN.fullmatch(row["product_id"])
+        assert CUSTOMER_ID_PATTERN.fullmatch(row["customer_id"])
+    for row in read_table(tmp_path, TRANSACTIONS_NAME):
+        assert CUSTOMER_ID_PATTERN.fullmatch(row["customer_id"])
+        assert CUSTOMER_ID_PATTERN.fullmatch(row["product_id"])
 
 
 def test_a_non_orphan_transactions_customer_and_product_both_exist(tmp_path: Path) -> None:
