@@ -893,8 +893,8 @@ def test_a_routed_handoff_needs_an_escalate_decision_and_no_handoff_reads_as_eli
 # -----------------------------------------------------------------------------
 
 # A card-shaped digit run. Free text is not screened for it: that redaction control lives at the
-# masking serializer (the egress boundary), not in these field validators (issue #80); a contract
-# field only ever refuses a control character.
+# masking serializer (the egress boundary), not in these field validators; a contract field only
+# ever refuses a control character.
 _CARD_NUMBER = "4111111111111111"
 
 

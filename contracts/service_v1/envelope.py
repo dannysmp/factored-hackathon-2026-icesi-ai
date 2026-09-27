@@ -116,7 +116,7 @@ def _require_utc(value: datetime) -> datetime:
     return value
 
 
-# Free text a system field may hold: no control characters and no card number.
+# Free text a system field may hold: no control characters.
 SafeText = Annotated[str, AfterValidator(_refuse_control_characters)]
 
 # An instant of record, always UTC.
