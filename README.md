@@ -181,7 +181,7 @@ requirements, and which controls exist today, are in [SECURITY.md](SECURITY.md).
 | `make profile` fails with `cannot load table …` or `lacks key column` | The message names the table; check that the raw files match the layout described under *Data* |
 | `make pipeline` exits with code 1 and `reports/data-quality.md` exists | A table could not be cleaned; the report names it and the reason (for example a file without a header row) |
 | `make pipeline` exits non-zero and `reports/data-quality.md` is missing | The build crashed before finishing; a report from an earlier run is removed rather than left stale, so its absence is the crash's own signal. Check the traceback |
-| `make analyze` exits with code 1 and `cleaned table … not found` | Run `make pipeline` first: the analysis reads the cleaned layer |
+| `make analyze` exits non-zero | Run `make pipeline` first: the analysis reads the cleaned layer. Any earlier `reports/workflow-analysis.md` is removed rather than left stale, so its absence is expected; `analysis_failed` in the log names a handled reason, otherwise check the traceback |
 | The service exits with `SESSION_SIGNING_KEY is required` | Set `SESSION_SIGNING_KEY` in `.env` (32 or more characters); only `APP_ENV=local` may start without it |
 | Every request answers `401` with `session_expired` | Sessions last `SESSION_TTL_SECONDS` (default 15 minutes); sign in again |
 | `make train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |

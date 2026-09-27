@@ -26,6 +26,17 @@ its result to `experiments.jsonl`. It only decides whether the boosted-model and
 proceed in their planned order; the precision floor, the threshold, the bootstrap interval, the
 routing decision and the model card are theirs.
 
+## `boosted.py`
+
+The full boosted-model comparison and the with/without ablation of `customer_country` and
+`country_mismatch`: an uncapped `HistGradientBoostingClassifier` against the logistic baseline, on
+identical features fitted on the training period only. The comparison itself is a
+customer-resampled paired bootstrap on the test period, read exactly once: the customer identifier
+is obtained by joining the mart's transaction identifier to the cleaned transactions table for
+grouping only, and is never a feature and never logged. `python -m models.boosted` appends its
+result to `experiments.jsonl`, including which model the bootstrap interval selects and why. The
+precision floor, the threshold and the model card stay with the calibration slice.
+
 ## `experiments.jsonl`
 
 The experiment log: one JSON line per run, appended, never edited. Each line carries the code and
