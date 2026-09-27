@@ -59,6 +59,14 @@ Design Principles
   inside ``create_dispute_case`` itself, exactly as ``evaluate_dispute`` does, and the amount,
   currency and provenance stored on the case row come from that fresh read, never from
   ``request`` or from the (possibly stale) ``decision`` object.
+- **A ``duplicate_open_case`` refusal names the case it collided with** (AC-E4-16):
+  ``CreateDisputeCaseResult.existing_case_number`` is looked up fresh, both on the proactive path
+  (``_creation_limit_refusal``) and on the store-level race (``_insert_case``'s
+  ``UniqueViolation`` handler) — never trusted from an earlier read.
+- **A replay is its own audit record, not only a log line** (AC-E4-15): ``_replay_or_conflict``
+  writes ``AuditAction.CASE_CREATION_REPLAYED``, a compatible addition after this contract froze,
+  the same way ``TRANSACTION_PROBED``/``CASE_PROBED`` were — so a trace built from audit records
+  alone accounts for every filing call the customer actually made, including a repeat.
 
 Runtime Contract
 -----------------
@@ -86,10 +94,7 @@ write are two separate store connections, not one atomic transaction (matching
 ``app.persistence.audit``'s own one-connection-per-call design): a process crash in the narrow
 window after the audit write commits but before the case insert's own connection commits could
 leave an audit record for a case that does not exist; there is no cross-connection two-phase
-commit in this codebase to close that window. ``AC-E4-16``'s "the existing case number" on a
-``duplicate_open_case`` refusal is not carried on the result: ``CreateDisputeCaseResult`` (frozen)
-requires ``case_number`` to be absent exactly when ``created`` is ``False``; flagged for the
-architect's conformance note rather than widened here.
+commit in this codebase to close that window.
 """
 
 from __future__ import annotations
@@ -282,7 +287,8 @@ class PostgresToolPort:
         logger.warning("%s trace_id=%s request_id=%s", event, self._trace_id, current_request_id())
 
     def _log_replay(self, case_number: str, idempotency_key: str) -> None:
-        """A replayed filing call (AC-E4-15): no second audit record, but observable in the logs."""
+        """A replayed filing call (AC-E4-15), for immediate operational grep alongside its own
+        ``case_creation_replayed`` audit record (``_replay_or_conflict``)."""
         logger.info(
             "case_replay trace_id=%s request_id=%s session_id=%s case_number=%s idempotency_key=%s",
             self._trace_id,
@@ -540,18 +546,19 @@ class PostgresToolPort:
     # Evaluation
     # -------------------------------------------------------------------------------------
 
-    def _has_open_case_for(self, transaction_ref: str) -> bool:
+    def _open_case_number_for(self, transaction_ref: str) -> str | None:
+        """The number of an open case already on file for ``transaction_ref``, if any."""
         with (
             psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
             conn.cursor() as cur,
         ):
             cur.execute(
-                "SELECT EXISTS(SELECT 1 FROM cases WHERE transaction_id = %s "
-                "AND customer_id = %s AND status = ANY(%s))",
+                "SELECT case_number FROM cases WHERE transaction_id = %s "
+                "AND customer_id = %s AND status = ANY(%s) LIMIT 1",
                 (transaction_ref, self._customer_id, list(_OPEN_CASE_STATUSES)),
             )
-            (exists,) = cur.fetchone() or (False,)
-        return bool(exists)
+            row = cur.fetchone()
+        return row[0] if row is not None else None
 
     def evaluate_dispute(self, request: EvaluateDisputeRequest) -> PolicyDecision | ToolFailure:
         """The policy decision for ``request``, computed fresh; no side effect.
@@ -577,7 +584,7 @@ class PostgresToolPort:
             return ToolFailure(tool=ToolName.EVALUATE_DISPUTE, cause="error", retryable=False)
 
         try:
-            has_open_case = self._has_open_case_for(request.transaction_ref)
+            has_open_case = self._open_case_number_for(request.transaction_ref) is not None
         except psycopg.Error:
             self._log_failure("evaluate_dispute_failed")
             return ToolFailure(tool=ToolName.EVALUATE_DISPUTE, cause="error")
@@ -614,10 +621,16 @@ class PostgresToolPort:
     # -------------------------------------------------------------------------------------
 
     def _refuse(
-        self, refusal: ToolRefusalCode, decision: PolicyDecision
+        self,
+        refusal: ToolRefusalCode,
+        decision: PolicyDecision,
+        *,
+        existing_case_number: str | None = None,
     ) -> CreateDisputeCaseResult:
         """Audit and return a permission refusal; ``AuditSink.record`` raising still propagates."""
-        result = CreateDisputeCaseResult(created=False, refusal=refusal)
+        result = CreateDisputeCaseResult(
+            created=False, refusal=refusal, existing_case_number=existing_case_number
+        )
         self._write_audit(
             AuditAction.CASE_CREATION_REFUSED,
             result.model_dump(mode="json"),
@@ -654,7 +667,14 @@ class PostgresToolPort:
             and existing.category == request.category.value
         ):
             self._log_replay(existing.case_number, request.idempotency_key)
-            return CreateDisputeCaseResult(created=True, case_number=existing.case_number)
+            result = CreateDisputeCaseResult(created=True, case_number=existing.case_number)
+            self._write_audit(
+                AuditAction.CASE_CREATION_REPLAYED,
+                result.model_dump(mode="json"),
+                reason_code=decision.reason_code,
+                policy_version=decision.policy_version,
+            )
+            return result
         return self._refuse(ToolRefusalCode.IDEMPOTENCY_CONFLICT, decision)
 
     def _session_case_count(self) -> int:
@@ -757,12 +777,16 @@ class PostgresToolPort:
     ) -> CreateDisputeCaseResult | ToolFailure | None:
         """A refusal for the duplicate-open-case or session-cap invariant; ``None`` to proceed."""
         try:
-            has_open_case = self._has_open_case_for(transaction_ref)
+            open_case_number = self._open_case_number_for(transaction_ref)
         except psycopg.Error:
             self._log_failure("create_dispute_case_failed")
             return ToolFailure(tool=ToolName.CREATE_DISPUTE_CASE, cause="error")
-        if has_open_case:
-            return self._refuse(ToolRefusalCode.DUPLICATE_OPEN_CASE, decision)
+        if open_case_number is not None:
+            return self._refuse(
+                ToolRefusalCode.DUPLICATE_OPEN_CASE,
+                decision,
+                existing_case_number=open_case_number,
+            )
 
         try:
             session_case_count = self._session_case_count()
@@ -825,12 +849,12 @@ class PostgresToolPort:
                         "language": self._language,
                     },
                 )
-                # Written on the same (still uncommitted) connection as the insert above: a
-                # failure here propagates, and exiting this ``with`` block on an exception rolls
-                # the case insert back too, so a filing whose audit record cannot be written
-                # creates no case (AC-E4-19). The audit sink itself still commits on its own,
-                # separate connection (app.persistence.audit); see the module's Limitations for
-                # the narrow window that leaves open.
+                # The audit sink commits on its own, separate connection (app.persistence.audit),
+                # not this one — but it is still called before this ``with`` block exits: a
+                # failure here propagates and rolls this (still uncommitted) case insert back, so
+                # a *raised exception* on the audit write creates no case (AC-E4-19). This is not
+                # a single atomic transaction across both connections; see the module's
+                # Limitations for the separate, narrower crash-window gap that leaves open.
                 record = self._case_record(
                     _ResolvedCase(
                         owned=True,
@@ -862,7 +886,22 @@ class PostgresToolPort:
                 if raced is not None:
                     return self._replay_or_conflict(raced, request, decision)
             elif constraint == _OPEN_CASE_CONSTRAINT:
-                return self._refuse(ToolRefusalCode.DUPLICATE_OPEN_CASE, decision)
+                try:
+                    open_case_number = self._open_case_number_for(request.transaction_ref)
+                except psycopg.Error:
+                    open_case_number = None
+                # Defensive only: the violation just raised guarantees a matching open row
+                # exists; ``None`` here would mean it closed in the instant between the
+                # violation and this query, an unreachable window in practice. Fails closed as
+                # a store error rather than a refusal missing a field the contract requires.
+                if open_case_number is None:
+                    self._log_failure("create_dispute_case_failed")
+                    return ToolFailure(tool=ToolName.CREATE_DISPUTE_CASE, cause="error")
+                return self._refuse(
+                    ToolRefusalCode.DUPLICATE_OPEN_CASE,
+                    decision,
+                    existing_case_number=open_case_number,
+                )
             self._log_failure("create_dispute_case_failed")
             return ToolFailure(tool=ToolName.CREATE_DISPUTE_CASE, cause="error")
         except psycopg.Error:

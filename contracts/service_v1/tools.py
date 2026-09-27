@@ -235,11 +235,17 @@ class CreateDisputeCaseRequest(ContractModel):
 
 
 class CreateDisputeCaseResult(ContractModel):
-    """Either the case was created, or refused for a permission reason — never both."""
+    """Either the case was created, or refused for a permission reason — never both.
+
+    ``existing_case_number`` is a compatible addition to this pre-freeze contract: a
+    ``duplicate_open_case`` refusal names the case already on file for the transaction, so the
+    customer does not have to look it up separately.
+    """
 
     created: bool
     case_number: Annotated[str, Field(pattern=NUMBER_PATTERN)] | None = None
     refusal: ToolRefusalCode | None = None
+    existing_case_number: Annotated[str, Field(pattern=NUMBER_PATTERN)] | None = None
 
     @model_validator(mode="after")
     def _created_xor_refused(self) -> CreateDisputeCaseResult:
@@ -248,6 +254,12 @@ class CreateDisputeCaseResult(ContractModel):
             raise ValueError("created and refusal are mutually exclusive")
         if self.created != (self.case_number is not None):
             raise ValueError("case_number is present exactly when the case was created")
+        if (self.existing_case_number is not None) != (
+            self.refusal == ToolRefusalCode.DUPLICATE_OPEN_CASE
+        ):
+            raise ValueError(
+                "existing_case_number is present exactly when refused as duplicate_open_case"
+            )
         return self
 
 

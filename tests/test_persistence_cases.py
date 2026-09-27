@@ -4,19 +4,28 @@ Case Creation Tests
 
 Component: ``app.persistence.reads.PostgresToolPort.create_dispute_case``. Needs a real, migrated
 Postgres — the constraints under test (migration 0004's reason-code check and the partial unique
-index) and the race-losing paths only exist at the store; marked ``integration``, skipped when
-``DATABASE_URL`` is not set. Mirrors ``tests/test_persistence_reads.py``'s fixture style: a
-self-contained seed, not shared through a ``conftest.py``.
+index), the race-losing paths and the genuine two-thread races only exist at the store; marked
+``integration``, skipped when ``DATABASE_URL`` is not set. Mirrors
+``tests/test_persistence_reads.py``'s fixture style: a self-contained seed, not shared through a
+``conftest.py``.
 
 The create tool never evaluates policy (ADR-3): every test hands it an already-decided
 ``PolicyDecision`` built by ``_decision`` below, exactly as the controller would after evaluating
 one itself, and checks only the permission invariants the tool enforces on top of it.
+
+The two genuine-race tests synchronize two real threads with a ``threading.Barrier`` around a
+patched read (``_find_by_idempotency_key`` or ``_open_case_number_for``), so both threads observe
+"no conflict yet" before either inserts — the only way to make the store's own unique constraints,
+not the tool's proactive pre-checks, be what actually resolves the race.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
+import threading
 from datetime import UTC, date, datetime
+from unittest.mock import patch
 
 import psycopg
 import psycopg.errors
@@ -131,6 +140,34 @@ def _request(
     )
 
 
+def _insert_case_row(dsn: str, **overrides: str) -> None:
+    """A case row inserted directly, bypassing the tool — for seeding a competing row out of
+    band, before or during a call the test makes through the port."""
+    values = {
+        "case_number": "CASE-DIRECT",
+        "customer_id": "CLI-A",
+        "transaction_id": "TRX-A1",
+        "session_id": "SESSION-OTHER",
+        "idempotency_key": "IDEMP-DIRECT",
+        "status": "Open",
+        "category": "unrecognized_charge",
+        "reason_code": "eligible",
+        **overrides,
+    }
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO cases (case_number, customer_id, transaction_id, session_id, "
+            "idempotency_key, status, category, amount, currency, amount_provenance, "
+            "domain_date, expected_first_response_date, created_at_utc, policy_version, "
+            "reason_code, language) VALUES "
+            "(%(case_number)s, %(customer_id)s, %(transaction_id)s, %(session_id)s, "
+            "%(idempotency_key)s, %(status)s, %(category)s, 100.00, 'USD', 'reported', "
+            "'2026-06-01', '2026-10-01', '2026-06-01 09:00:00+00', %(policy_version)s, "
+            "%(reason_code)s, 'en')",
+            {**values, "policy_version": POLICY_VERSION},
+        )
+
+
 @pytest.fixture
 def dsn() -> str:
     value = os.environ.get("DATABASE_URL")
@@ -204,7 +241,9 @@ def test_a_confirmed_eligible_filing_creates_a_case_and_reads_back_correctly(dsn
     assert record.amount.money.amount == 100
     assert record.amount.money.currency == "USD"
     assert record.domain_date.isoformat() == DOMAIN_DATE
-    assert record.expected_first_response_date >= record.domain_date
+    # unrecognized_charge's first_response_days is 3 (policy/dispute_policy_v1.yaml); calendar
+    # days are never adjusted for weekends (app.domain.policy.engine.expected_first_response).
+    assert record.expected_first_response_date == date(2026, 6, 21)
     assert record.created_at_utc == NOW
     assert record.policy_version == POLICY_VERSION
     assert record.language == "en"
@@ -282,7 +321,7 @@ def test_a_filing_that_does_not_match_the_decision_is_refused_confirmation_misma
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-15: idempotency replay, sequential and racing
+# AC-E4-15: idempotency replay — sequential, out-of-band, and a genuine race
 # -----------------------------------------------------------------------------
 
 
@@ -302,38 +341,128 @@ def test_the_same_key_and_payload_filed_twice_replays_the_same_case(dsn: str) ->
     assert first.case_number == second.case_number
     # The freshly filed case (created_at_utc = NOW) sorts before the seeded, older CASE-A2-OPEN.
     assert _case_numbers(port) == [first.case_number, "CASE-A2-OPEN"]
-    # Exactly one case_created audit record: the replay is observable in the logs, not the trail.
-    created_records = [r for r in sink.records if r.action.value == "case_created"]
-    assert len(created_records) == 1
+    # Exactly one case_created record; the replay gets its own, distinct audit action, so a trace
+    # built from audit records alone still shows both filing calls the customer actually made.
+    actions = [r.action.value for r in sink.records]
+    assert actions.count("case_created") == 1
+    assert actions.count("case_creation_replayed") == 1
 
 
 @pytest.mark.integration
-def test_a_race_on_the_same_key_and_payload_still_yields_one_case(dsn: str) -> None:
-    """Both calls resolve the pre-check to "no existing row"; the store's own unique constraint
-    (``cases_customer_idempotency_key_unique``, migration 0001) is what actually decides the
-    race, exercised here by inserting the competing row directly, after the pre-check, before
-    the tool's own insert."""
+def test_a_key_already_taken_before_the_call_replays_via_the_proactive_check(dsn: str) -> None:
+    """The competing row exists before ``create_dispute_case`` is even called, so this exercises
+    the proactive ``_find_by_idempotency_key`` pre-check, not the store's ``UniqueViolation``
+    handler — that handler needs a call already in flight when the competing row lands, which
+    only a genuine concurrent race (below) can force."""
     sink = _RecordingSink(dsn)
     port = _port(dsn, sink, customer_id="CLI-A")
-    request = _request(transaction_ref="TRX-A1", idempotency_key="IDEMP-RACE")
-
-    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO cases (case_number, customer_id, transaction_id, session_id, "
-            "idempotency_key, status, category, amount, currency, amount_provenance, "
-            "domain_date, expected_first_response_date, created_at_utc, policy_version, "
-            "reason_code, language) VALUES "
-            "('CASE-RACE-WINNER', 'CLI-A', 'TRX-A1', 'SESSION-OTHER', 'IDEMP-RACE', 'Open', "
-            "'unrecognized_charge', 100.00, 'USD', 'reported', '2026-06-01', '2026-10-01', "
-            "'2026-06-01 09:00:00+00', %s, 'eligible', 'en')",
-            (POLICY_VERSION,),
-        )
+    request = _request(transaction_ref="TRX-A1", idempotency_key="IDEMP-OUT-OF-BAND")
+    _insert_case_row(
+        dsn,
+        case_number="CASE-OUT-OF-BAND-WINNER",
+        idempotency_key="IDEMP-OUT-OF-BAND",
+    )
 
     result = port.create_dispute_case(request)
 
     assert isinstance(result, CreateDisputeCaseResult)
     assert result.created is True
-    assert result.case_number == "CASE-RACE-WINNER"
+    assert result.case_number == "CASE-OUT-OF-BAND-WINNER"
+
+
+@pytest.mark.integration
+def test_a_genuine_concurrent_race_on_the_same_idempotency_key_is_resolved_by_the_store(
+    dsn: str,
+) -> None:
+    """Two real threads, synchronized so both pass the proactive idempotency pre-check before
+    either inserts: the store's own unique constraint (``cases_customer_idempotency_key_unique``,
+    migration 0001) is what actually resolves the race, exercised through
+    ``PostgresToolPort``'s own ``UniqueViolation``-handling branch in ``_insert_case``, not
+    simulated by inserting a row out of band."""
+    barrier = threading.Barrier(2)
+    original = PostgresToolPort._find_by_idempotency_key
+
+    def _synced(self: PostgresToolPort, idempotency_key: str) -> object:
+        result = original(self, idempotency_key)
+        with contextlib.suppress(threading.BrokenBarrierError):
+            barrier.wait(timeout=5)
+        return result
+
+    request = _request(transaction_ref="TRX-A1", idempotency_key="IDEMP-TRUE-RACE")
+    results: list[CreateDisputeCaseResult | ToolFailure | None] = [None, None]
+    sinks = [_RecordingSink(dsn), _RecordingSink(dsn)]
+
+    def _call(index: int) -> None:
+        port = _port(dsn, sinks[index], customer_id="CLI-A", session_id=f"SESSION-RACE-{index}")
+        results[index] = port.create_dispute_case(request)
+
+    with patch.object(PostgresToolPort, "_find_by_idempotency_key", _synced):
+        threads = [threading.Thread(target=_call, args=(i,)) for i in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=15)
+
+    assert all(isinstance(r, CreateDisputeCaseResult) for r in results)
+    created = [r for r in results if isinstance(r, CreateDisputeCaseResult)]
+    assert all(r.created for r in created)
+    assert created[0].case_number == created[1].case_number
+    # One winner (case_created) and one loser (case_creation_replayed) — never two case_created.
+    all_actions = [r.action.value for sink in sinks for r in sink.records]
+    assert all_actions.count("case_created") == 1
+    assert all_actions.count("case_creation_replayed") == 1
+
+
+@pytest.mark.integration
+def test_the_idempotency_race_recheck_finding_nothing_fails_closed(dsn: str) -> None:
+    """Defensive only: the recheck after a lost idempotency race normally finds the winner's row
+    (proven above). If it ever found nothing — an unreachable window in practice, since the
+    ``UniqueViolation`` itself guarantees a matching row exists — the call must fail closed
+    rather than silently creating a second case for the same key."""
+    sink = _RecordingSink(dsn)
+    port = _port(dsn, sink, customer_id="CLI-A")
+    # The competing row is filed against TRX-A3 (no open case), while this call targets TRX-A1
+    # (also no open case): the idempotency constraint is scoped only by (customer_id,
+    # idempotency_key), so the two rows still collide on insert, but the mismatched transaction
+    # keeps the proactive duplicate-open-case check from short-circuiting before that insert.
+    request = _request(transaction_ref="TRX-A1", idempotency_key="IDEMP-FALLTHROUGH")
+    _insert_case_row(
+        dsn,
+        case_number="CASE-FALLTHROUGH-WINNER",
+        transaction_id="TRX-A3",
+        idempotency_key="IDEMP-FALLTHROUGH",
+    )
+
+    with patch.object(PostgresToolPort, "_find_by_idempotency_key", return_value=None):
+        result = port.create_dispute_case(request)
+
+    assert isinstance(result, ToolFailure)
+
+
+@pytest.mark.integration
+def test_the_open_case_lookup_failing_during_the_race_handler_fails_closed(dsn: str) -> None:
+    """Defensive only: if the lookup for the existing case number itself fails while handling a
+    lost duplicate-open-case race, the call fails closed as a store error — never an unhandled
+    exception, and never a refusal missing the field the contract requires it to carry."""
+    sink = _RecordingSink(dsn)
+    port = _port(dsn, sink, customer_id="CLI-A")
+    request = _request(transaction_ref="TRX-A3", idempotency_key="IDEMP-OPEN-LOOKUP-FAILS")
+    # A different key, so this collides only on the open-case constraint, not the idempotency one.
+    _insert_case_row(
+        dsn,
+        case_number="CASE-OPEN-RACE-WINNER",
+        transaction_id="TRX-A3",
+        idempotency_key="IDEMP-OTHER-KEY",
+    )
+
+    with patch.object(
+        PostgresToolPort,
+        "_open_case_number_for",
+        side_effect=[None, psycopg.OperationalError("connection lost")],
+    ):
+        result = port.create_dispute_case(request)
+
+    assert isinstance(result, ToolFailure)
 
 
 # -----------------------------------------------------------------------------
@@ -345,7 +474,11 @@ def test_a_race_on_the_same_key_and_payload_still_yields_one_case(dsn: str) -> N
 def test_the_same_key_with_a_different_payload_is_refused_idempotency_conflict(dsn: str) -> None:
     sink = _RecordingSink(dsn)
     port = _port(dsn, sink, customer_id="CLI-A")
-    port.create_dispute_case(_request(transaction_ref="TRX-A1", idempotency_key="IDEMP-REUSED"))
+    first = port.create_dispute_case(
+        _request(transaction_ref="TRX-A1", idempotency_key="IDEMP-REUSED")
+    )
+    assert isinstance(first, CreateDisputeCaseResult)
+    assert first.case_number is not None
 
     result = port.create_dispute_case(
         _request(
@@ -360,7 +493,7 @@ def test_the_same_key_with_a_different_payload_is_refused_idempotency_conflict(d
     assert result.created is False
     assert result.refusal is not None
     assert result.refusal.value == "idempotency_conflict"
-    assert len(_case_numbers(port)) == 2  # The one filed, plus the seeded CASE-A2-OPEN.
+    assert set(_case_numbers(port)) == {first.case_number, "CASE-A2-OPEN"}
 
 
 @pytest.mark.integration
@@ -378,6 +511,78 @@ def test_a_new_key_for_a_transaction_with_an_open_case_is_refused_duplicate_open
     assert result.created is False
     assert result.refusal is not None
     assert result.refusal.value == "duplicate_open_case"
+    assert result.existing_case_number == "CASE-A2-OPEN"
+
+
+@pytest.mark.integration
+def test_a_genuine_concurrent_race_for_the_same_transaction_is_resolved_by_the_store(
+    dsn: str,
+) -> None:
+    """Two real threads targeting a transaction with no open case yet, synchronized so both pass
+    the proactive open-case pre-check before either inserts: the partial unique index
+    (``cases_transaction_id_open_unique``, migration 0004) is what actually resolves the race,
+    exercised through ``_insert_case``'s ``UniqueViolation`` handler for that constraint."""
+    barrier = threading.Barrier(2)
+    original = PostgresToolPort._open_case_number_for
+
+    def _synced(self: PostgresToolPort, transaction_ref: str) -> object:
+        result = original(self, transaction_ref)
+        with contextlib.suppress(threading.BrokenBarrierError):
+            barrier.wait(timeout=5)
+        return result
+
+    results: list[CreateDisputeCaseResult | ToolFailure | None] = [None, None]
+
+    def _call(index: int) -> None:
+        sink = _RecordingSink(dsn)
+        port = _port(dsn, sink, customer_id="CLI-A", session_id=f"SESSION-OPEN-RACE-{index}")
+        request = _request(transaction_ref="TRX-A3", idempotency_key=f"IDEMP-OPEN-RACE-{index}")
+        results[index] = port.create_dispute_case(request)
+
+    with patch.object(PostgresToolPort, "_open_case_number_for", _synced):
+        threads = [threading.Thread(target=_call, args=(i,)) for i in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=15)
+
+    outcomes = [r for r in results if isinstance(r, CreateDisputeCaseResult)]
+    assert len(outcomes) == 2
+    created = [r for r in outcomes if r.created]
+    refused = [r for r in outcomes if not r.created]
+    assert len(created) == 1
+    assert len(refused) == 1
+    assert refused[0].refusal is not None
+    assert refused[0].refusal.value == "duplicate_open_case"
+    assert refused[0].existing_case_number == created[0].case_number
+
+
+# -----------------------------------------------------------------------------
+# Check-order: duplicate_open_case is checked before the session cap
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_duplicate_open_case_takes_priority_over_the_session_cap(dsn: str) -> None:
+    """When a call would trip both invariants, the customer hears about the specific transaction
+    that already has a case, not a generic cap message that tells them nothing about which one."""
+    sink = _RecordingSink(dsn)
+    port = _port(dsn, sink, customer_id="CLI-A", case_create_session_cap=1)
+    first = port.create_dispute_case(
+        _request(transaction_ref="TRX-A1", idempotency_key="IDEMP-PRIORITY-1")
+    )
+    assert isinstance(first, CreateDisputeCaseResult)
+    assert first.created is True  # The session is now at its cap of 1.
+
+    result = port.create_dispute_case(
+        _request(transaction_ref="TRX-A2", idempotency_key="IDEMP-PRIORITY-2")
+    )
+
+    assert isinstance(result, CreateDisputeCaseResult)
+    assert result.created is False
+    assert result.refusal is not None
+    assert result.refusal.value == "duplicate_open_case"
+    assert result.existing_case_number == "CASE-A2-OPEN"
 
 
 # -----------------------------------------------------------------------------

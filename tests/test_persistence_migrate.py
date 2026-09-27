@@ -106,6 +106,7 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         "0002_ops_meta",
         "0003_audit",
         "0004_case_write_constraints",
+        "0005_audit_log_replay_action",
     )
 
     again = apply_migrations(dsn)
