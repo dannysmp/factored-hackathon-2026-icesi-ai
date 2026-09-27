@@ -10,6 +10,8 @@
 #   test         Hermetic tests with the coverage gate, and the policy-corpus drift check
 #                (runs after lint).
 #   secret-scan  Full-history secret scan and the scanner self-test.
+#   gate-scripts Executed fixture test of the review gate's glob translation
+#                (.github/scripts/glob-match.js), independent of the other jobs.
 #
 # Security posture:
 #   The workflow token is read-only and no cloud credentials are configured. Third-party
@@ -19,6 +21,7 @@
 # Pinned actions:
 #   actions/checkout       11d5960a326750d5838078e36cf38b85af677262   release v4
 #   astral-sh/setup-uv     d0d8abe699bfb85fec6de9f7adb5ae17292296ff   release v6
+#   actions/setup-node     820762786026740c76f36085b0efc47a31fe5020   release v7.0.0
 #
 # Usage:
 #   Runs automatically. To reproduce locally: make lint test audit secrets
@@ -106,3 +109,19 @@ jobs:
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
       - name: Scan history and staged changes, then prove the scanner blocks a planted key
         run: make secrets
+
+  # ---------------------------------------------------------------------------
+  # Review gate helper scripts
+  # ---------------------------------------------------------------------------
+  gate-scripts:
+    name: gate-scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install a pinned Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+      - name: Run the glob translation's fixture test
+        run: node .github/scripts/glob-match.test.js
