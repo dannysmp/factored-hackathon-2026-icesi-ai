@@ -43,7 +43,11 @@ version: the older version stays in the cleaned table. Quarantined rows hold the
 delivered, with canonical spellings applied; rows quarantined for an orphan reference have
 already been typed and hold their values rendered as text (``false`` for ``False``, ``10.0000``
 for ``10.00``). The code version
-records the commit, suffixed ``-dirty`` when tracked files have uncommitted changes.
+records the commit; when tracked files have uncommitted changes it is suffixed
+``-dirty-<digest>``, the digest identifying those changes, and it is ``unknown`` outside a
+repository. The digest is taken over the output of ``git diff``, so it also depends on the
+machine's diff formatting configuration (``diff.noprefix``, ``diff.context``,
+``diff.algorithm``).
 """
 
 from __future__ import annotations
