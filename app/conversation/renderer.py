@@ -6,15 +6,17 @@ Overview
 --------
 Turns a ``RenderEnvelope`` into the reply text, the persistent reference-date line and, for a
 demonstration session, its notice — the fixed-wording path the architecture calls the template
-renderer. It reads only the envelope: every number, date and name it states comes from ``facts``,
-``decisions`` or ``sources``, never invented, and the numbers guard checks it.
+renderer. Every number, date and name a template states is interpolated directly from ``facts``,
+``decisions`` or ``sources`` by this module's own code: there is no free-form generation here for
+a value to be invented from, so grounding is a property of the code, not something checked at
+render time.
 
 Scope
 -----
-In: the fixed-wording texts per language, the date and amount formatting rules, ``render()`` and
-``numbers_guard()``.
-Out: the model renderer (a later change, for wording ``render_mode="model"`` does not cover); the
-dialogue controller, which decides which template applies.
+In: the fixed-wording texts per language, the date and amount formatting rules, ``render()``.
+Out: the model renderer (a later change, for wording ``render_mode="model"`` does not cover) and
+its grounding check, which belongs to the output verifier (E7); the dialogue controller, which
+decides which template applies.
 
 Design Principles
 -----------------
@@ -24,17 +26,15 @@ Design Principles
 - Dates are always absolute and carry the year, in words, in the reply language (AC-E5-47); the
   reference-date line is computed once and returned alongside the reply, never inside it, so
   every turn can show it regardless of intent (AC-E5-48).
-- Money is written with the reply language's separators; the numbers guard is checked against the
-  same formatted string this module produces, so a legitimate grouped or fractional amount is
-  never mistaken for an invented one.
+- Money is written with the reply language's separators, computed by this module's own
+  ``format_money``/``format_date``, never composed from a value the caller passed as text.
 - One to four short sentences per reply, one question at a time, matching the product's shared
   conversation rules.
 
 Runtime Contract
 ----------------
 ``render(envelope) -> RenderedReply``. ``reference_date_line(domain_date, lang)``.
-``demo_notice(lang)``. ``numbers_guard(reply, envelope)`` raises ``ValueError`` on an ungrounded
-number.
+``demo_notice(lang)``.
 
 Limitations
 -----------
@@ -47,7 +47,6 @@ module renders the offer as its own text.
 from __future__ import annotations
 
 # Standard libraries
-import re  # The numbers guard's digit and number-span matching
 from collections.abc import Callable  # Type of one template's renderer function
 from dataclasses import dataclass  # Immutable result of one render
 from datetime import date  # Absolute dates, always formatted in words
@@ -646,103 +645,11 @@ def render(envelope: RenderEnvelope) -> RenderedReply:
         When ``envelope.template_id`` has no renderer (a contract addition this module has not
         caught up with yet).
     ValueError
-        When ``envelope.render_mode`` is not ``"template"``, or the rendered text states a
-        number the envelope does not hold (see ``numbers_guard``).
+        When ``envelope.render_mode`` is not ``"template"``.
     """
     if envelope.render_mode != "template" or envelope.template_id is None:
         raise ValueError("render() only handles template-mode envelopes")
     reply = _RENDERERS[envelope.template_id](envelope)
-    numbers_guard(reply, envelope)
     return RenderedReply(
         reply=reply, reference_date_line=reference_date_line(envelope.domain_date, envelope.lang)
     )
-
-
-# -----------------------------------------------------------------------------
-# Numbers guard
-# -----------------------------------------------------------------------------
-
-_DIGITS = re.compile(r"\d+")
-
-# A maximal run of digit groups joined by a single character from this set: a formatted number's
-# own separators (thousands grouping, a decimal comma or point, the Spanish non-breaking space),
-# plus the punctuation and the bare space a fabricated reply might use to glue two grounded
-# fragments together instead. What tells two genuinely separate numbers apart in every reply this
-# module writes is a word between them ("del 18 de junio de 2026", never "18 2026"); a joiner is
-# only absorbed into the span when a digit follows it directly, so a sentence-ending period after
-# a year is never swept into the number. Checked as one whole span, never as independent digit
-# runs, so two grounded fragments glued by one of these characters and no word cannot each pass on
-# their own. This is a defense against exactly the joiners listed, not a claim that no character
-# could ever join two fragments unnoticed (a letter between two digit runs is not covered, and
-# would need a different check); the fixed set of hand-written templates in this module never
-# produces that shape, and it is a known, deliberate limit of this guard, not an assumed one.
-_NUMBER_SPAN = re.compile(r"\d+(?:[ \-:/_.," + chr(0xA0) + r"]\d+)*")
-
-
-def _date_numbers(value: date) -> set[str]:
-    return {str(value.day), str(value.year)}
-
-
-def _bare_digits(text: str) -> set[str]:
-    """Every maximal digit run inside ``text``; an identifier may mix letters and digits."""
-    return set(_DIGITS.findall(text))
-
-
-def _allowed_numbers(envelope: RenderEnvelope) -> set[str]:
-    """Every complete number token the envelope's own facts, decisions and sources could state.
-
-    A formatted amount is kept as one whole token (with its own separators), never split into
-    fragments, so a reply can only state it back exactly as this module would format it.
-    """
-    numbers: set[str] = set()
-    facts = envelope.facts
-    for transaction in facts.transactions:
-        numbers |= _date_numbers(transaction.occurred_on)
-        numbers.add(_format_amount(transaction.amount, envelope.lang))
-        numbers |= _bare_digits(transaction.product.last4)
-        numbers |= _bare_digits(transaction.ref)
-    for case in facts.cases:
-        numbers |= _date_numbers(case.filed_on)
-        if case.expected_response_on is not None:
-            numbers |= _date_numbers(case.expected_response_on)
-        numbers |= _bare_digits(case.case_number)
-        numbers |= _bare_digits(case.transaction_ref)
-    if facts.window is not None:
-        numbers.add(str(facts.window.days_allowed))
-        numbers.add(str(facts.window.age_days))
-        numbers |= _date_numbers(facts.window.deadline)
-    for value in facts.policy_values:
-        numbers |= _bare_digits(value.value)
-    if facts.expected_response_on is not None:
-        numbers |= _date_numbers(facts.expected_response_on)
-    if facts.date_to_confirm is not None:
-        numbers |= _date_numbers(facts.date_to_confirm.resolved_on)
-    if facts.contact_within_hours is not None:
-        numbers.add(str(facts.contact_within_hours))
-    if facts.ticket_ref is not None:
-        numbers |= _bare_digits(facts.ticket_ref)
-    numbers |= _date_numbers(envelope.domain_date)
-    for decision in envelope.decisions:
-        numbers |= _bare_digits(decision.policy_version)
-    return numbers
-
-
-def numbers_guard(reply: str, envelope: RenderEnvelope) -> None:
-    """Refuse a reply that states a number the envelope does not hold (AC-E5-43).
-
-    Every contiguous span of digits and formatting separators in the reply is checked as one
-    whole token against the envelope's own facts (see ``_NUMBER_SPAN``), so a fabricated value
-    assembled from two grounded fragments glued by a space or a common punctuation mark is
-    caught even when each fragment alone is legitimate. See ``_NUMBER_SPAN`` for exactly which
-    joiners this defends against, and the limit that is deliberate, not assumed.
-
-    Raises
-    ------
-    ValueError
-        Naming the first ungrounded number found.
-    """
-    allowed = _allowed_numbers(envelope)
-    for match in _NUMBER_SPAN.finditer(reply):
-        span = match.group()
-        if any(char.isdigit() for char in span) and span not in allowed:
-            raise ValueError(f"reply states a number not grounded in the envelope: {span}")

@@ -19,6 +19,9 @@ Design Principles
   from the composition root.
 - Secrets are ``SecretStr`` and never appear in error messages or ``repr`` output.
 - Model identifiers are pinned to an allow-list so a typo or an unreviewed model cannot ship.
+- Free-form model rendering cannot be turned on by configuration in any environment until the
+  output verifier that grounds it ships (E7 slice 2.6): the setting exists for the code that
+  will read it, but validation refuses the value ``true`` outright, not just by default.
 
 Runtime Contract
 ----------------
@@ -134,6 +137,10 @@ class Settings(BaseSettings):
         Shared secret the sandbox login endpoint requires (at least 16 characters).
     database_url : SecretStr | None
         DSN of the serving store; optional until a feature that reads or writes it runs.
+    model_renderer_enabled : bool
+        Whether free-form model rendering may run. Always ``False``: the model renderer has no
+        output verifier yet (E7 slice 2.6), so no environment may turn this on before that slice
+        ships and removes the restriction.
     """
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)
@@ -150,6 +157,7 @@ class Settings(BaseSettings):
     test_identity_enabled: bool = False
     test_identity_key: SecretStr | None = None
     database_url: SecretStr | None = None
+    model_renderer_enabled: bool = False
 
     @field_validator("nlu_model", "render_model")
     @classmethod
@@ -193,6 +201,18 @@ class Settings(BaseSettings):
         """The sandbox login secret must not be trivially guessable either."""
         if value is not None and len(value.get_secret_value()) < MIN_TEST_KEY_LENGTH:
             raise ValueError(f"must be at least {MIN_TEST_KEY_LENGTH} characters")
+        return value
+
+    @field_validator("model_renderer_enabled")
+    @classmethod
+    def _model_renderer_stays_disabled(cls, value: bool) -> bool:
+        """Refuse to start with the model renderer on: it has no output verifier yet (E7 slice
+        2.6), so nothing may enable it in any environment before that slice ships."""
+        if value:
+            raise ValueError(
+                "model rendering has no output verifier yet and must stay disabled "
+                "(MODEL_RENDERER_ENABLED must be false until slice 2.6 ships)"
+            )
         return value
 
     @model_validator(mode="after")

@@ -9,7 +9,6 @@ passed in, never a clock, a file or a network call.
 from __future__ import annotations
 
 # Standard libraries
-import re  # Escaping a fabricated joiner in a match pattern
 from datetime import date  # Fixed reference and transaction dates
 from decimal import Decimal  # Money in the tests
 
@@ -21,7 +20,6 @@ from app.conversation.renderer import (
     demo_notice,
     format_date,
     format_money,
-    numbers_guard,
     reference_date_line,
     render,
 )
@@ -29,8 +27,6 @@ from app.domain.policy.models import DisputeCategory, Outcome, TransactionStatus
 from contracts.service_v1.envelope import (
     CaseFact,
     CustomerReason,
-    DateSource,
-    DateToConfirm,
     Decision,
     DisputeFacts,
     Envelope,
@@ -348,31 +344,6 @@ def test_render_refuses_a_non_template_envelope() -> None:
         render(envelope)
 
 
-# -----------------------------------------------------------------------------
-# Numbers guard
-# -----------------------------------------------------------------------------
-
-
-def test_numbers_guard_accepts_every_number_the_envelope_grounds() -> None:
-    """A reply that only states grounded numbers passes."""
-    envelope = _envelope(
-        intent=Intent.PRESENT_TRANSACTIONS,
-        template_id=TemplateId.PRESENT_ONE,
-        facts=DisputeFacts(transactions=(_transaction(),), candidate_count=1),
-    )
-    rendered = render(envelope)
-
-    numbers_guard(rendered.reply, envelope)
-
-
-def test_numbers_guard_refuses_an_invented_number() -> None:
-    """A number nowhere in the envelope's facts, decisions or sources is refused."""
-    envelope = _envelope()
-
-    with pytest.raises(ValueError, match="999999"):
-        numbers_guard("Su cargo es de 999999.", envelope)
-
-
 def test_a_transaction_without_a_merchant_is_shown_without_inventing_one() -> None:
     """AC-E5-59: a null merchant is never filled in with an invented name."""
     envelope = _envelope(
@@ -384,7 +355,6 @@ def test_a_transaction_without_a_merchant_is_shown_without_inventing_one() -> No
     rendered = render(envelope)
 
     assert "None" not in rendered.reply
-    numbers_guard(rendered.reply, envelope)
 
 
 @pytest.mark.parametrize(
@@ -432,8 +402,8 @@ def test_the_policy_answer_cites_the_section_title_in_the_reply_language() -> No
     assert source.section_id not in rendered.reply
 
 
-def test_numbers_guard_grounds_a_case_without_an_expected_response_date() -> None:
-    """A case fact with no response date yet still grounds its own numbers."""
+def test_dispute_status_grounds_a_case_without_an_expected_response_date() -> None:
+    """A case fact with no response date yet still renders without failing."""
     case = CaseFact(
         case_number="D-9", status="Open", filed_on=_DOMAIN_DATE, transaction_ref="tx-1001"
     )
@@ -445,57 +415,4 @@ def test_numbers_guard_grounds_a_case_without_an_expected_response_date() -> Non
 
     rendered = render(envelope)
 
-    numbers_guard(rendered.reply, envelope)
-
-
-def test_numbers_guard_grounds_a_date_awaiting_confirmation() -> None:
-    """A resolved date offered for confirmation is itself a grounded number."""
-    envelope = _envelope(
-        facts=DisputeFacts(
-            date_to_confirm=DateToConfirm(resolved_on=date(2026, 6, 17), source=DateSource.RELATIVE)
-        )
-    )
-
-    numbers_guard(f"¿Se refiere al {format_date(date(2026, 6, 17), 'es')}?", envelope)
-
-
-def _envelope_with_a_case_and_an_amount() -> RenderEnvelope:
-    """An envelope grounding a case number's digits ("19") and an amount's ("234.56")."""
-    case = CaseFact(
-        case_number="D-19", status="Open", filed_on=_DOMAIN_DATE, transaction_ref="tx-1001"
-    )
-    return _envelope(
-        intent=Intent.DISPUTE_STATUS,
-        template_id=TemplateId.DISPUTE_STATUS,
-        lang="en",
-        facts=DisputeFacts(
-            cases=(case,),
-            transactions=(_transaction(amount=Money(amount=Decimal("234.56"), currency="USD")),),
-            candidate_count=1,
-        ),
-    )
-
-
-@pytest.mark.parametrize("joiner", [",", "-", ":", "/", " ", "_"])
-def test_numbers_guard_rejects_fabricated_numbers_joined_by_any_separator(joiner: str) -> None:
-    """A number assembled from two unrelated grounded fragments is not itself grounded.
-
-    A case number's digits ("19") and an amount's digits ("234.56") each pass on their own; the
-    guard must still refuse a reply that glues them into one number neither fact ever stated,
-    whichever of the joining characters it recognizes is used to glue them.
-    """
-    envelope = _envelope_with_a_case_and_an_amount()
-
-    with pytest.raises(ValueError, match=re.escape(f"19{joiner}234.56")):
-        numbers_guard(f"Your total is 19{joiner}234.56 USD.", envelope)
-
-
-def test_numbers_guard_does_not_claim_to_catch_every_conceivable_joiner() -> None:
-    """A documented, deliberate limit: a letter between two fragments is not this guard's job.
-
-    No hand-written template in this module ever places two grounded numbers back to back with
-    only a letter between them, so this is a stated limit, not a silently assumed one.
-    """
-    envelope = _envelope_with_a_case_and_an_amount()
-
-    numbers_guard("Your total is 19a234.56 USD.", envelope)
+    assert case.case_number in rendered.reply
