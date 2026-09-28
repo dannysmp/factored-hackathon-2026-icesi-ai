@@ -58,6 +58,12 @@ Design Principles
   (``app.observability.turn_metrics``). Logged once the model call already happened, before the
   store save is attempted, since real spend occurred regardless of whether the save then replays
   or conflicts.
+- **An unreachable dependency is not the customer's ambiguity.** ``Understanding.understand``
+  raising ``UnderstandingUnavailable`` (the LLM port's own bounded retries and circuit breaker
+  were exhausted) escalates directly to a handoff, saved with the same idempotent discipline as any
+  other turn — it never reaches ``_advance``, so it never spends a clarification-budget attempt on
+  an outage that was never the customer's own confusion. No accounting is logged for that attempt:
+  nothing was priced.
 
 Runtime Contract
 ----------------
@@ -112,7 +118,7 @@ from app.conversation.renderer import RenderedReply, demo_notice
 from app.conversation.reply import render_reply
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DialogueStore, DuplicateTurn
-from app.conversation.understanding import TurnAccounting, Understanding
+from app.conversation.understanding import TurnAccounting, Understanding, UnderstandingUnavailable
 from app.domain.policy.models import DisputeCategory, Outcome, Policy, PolicyDecision, ReasonCode
 from app.llm.pricing import cost_usd  # Per-turn cost accounting
 from app.persistence.handoff_outbox import HandoffContent
@@ -300,7 +306,12 @@ class DialogueController:
         if current is not None and current.last_turn_id == request.turn_id:
             return self._respond(current, self._replay_envelope(current))
 
-        state, expected_version, result, accounting = self._start_turn(current, request)
+        try:
+            state, expected_version, result, accounting = self._start_turn(current, request)
+        except UnderstandingUnavailable:
+            return self._handoff_from_turn(
+                current, expected_version=current.version if current is not None else 0
+            )
         new_state, envelope = self._advance(state, result)
         self._log_turn_completed(new_state, accounting)
 
@@ -321,6 +332,55 @@ class DialogueController:
                 "Fetch the current state and try again.",
             ) from conflict
 
+        return self._respond(saved, envelope)
+
+    def _handoff_from_turn(
+        self, current: DialogueState | None, *, expected_version: int
+    ) -> TurnResponse:
+        """Escalate a turn that could not even be understood, because the understanding port's own
+        dependency was unreachable after its bounded retries — never the customer's own
+        ambiguity, so it skips ``_advance`` and its clarification-budget accounting entirely.
+
+        Persists exactly like a normal turn advance: the same idempotent save, the same
+        ``DuplicateTurn``/``Conflict`` handling, so a retried request behaves no differently than
+        any other turn that happens to end in a handoff.
+        """
+        request = self._request
+        assert request is not None  # noqa: S101 - set at the top of handle_turn
+        logger.warning(
+            "llm_understanding_unavailable_handoff session_id=%s request_id=%s",
+            self._session_id(),
+            current_request_id(),
+        )
+        base = current or DialogueState(
+            session_id=self._session_id(),
+            lang="es",
+            phase=ConversationPhase.STARTED,
+            updated_at=self._now(),
+        )
+        new_state, envelope = self._handoff(
+            base,
+            trigger=HandoffTrigger.TOOL_FAILURE,
+            reason_codes=(),
+            template=TemplateId.HANDOFF_REVIEW,
+            actions=(ActionRecord(action="llm_understand", result="unavailable"),),
+        )
+        try:
+            saved = self._store.save(
+                new_state,
+                expected_version=expected_version,
+                turn_id=request.turn_id,
+                now=self._now(),
+            )
+        except DuplicateTurn as duplicate:
+            return self._respond(duplicate.state, self._replay_envelope(duplicate.state))
+        except Conflict as conflict:
+            raise ProblemError(
+                ErrorCode.TURN_CONFLICT,
+                409,
+                "The conversation moved on",
+                "Fetch the current state and try again.",
+            ) from conflict
         return self._respond(saved, envelope)
 
     def _start_turn(
@@ -924,13 +984,33 @@ class DialogueController:
         if state.phase is ConversationPhase.CLOSED:
             return self._envelope(state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
 
+        return self._replay_recompute(state)
+
+    def _replay_recompute(self, state: DialogueState) -> RenderEnvelope:
+        """Recompute a replayed turn's reply exactly as the original turn was, unless the
+        understanding port's own dependency is unreachable right now: that failure is not
+        the customer's ambiguity, and recomputing it needs the same dependency that just failed,
+        so it renders a generic acknowledgment instead of recomputing — without touching persisted
+        state or writing a new outbox row, since replay never mutates state and a retried replay
+        call is free to try recomputing again once the outage clears.
+        """
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
         # A replay's own re-understanding is not a new turn (per-turn accounting is scoped to
         # handle_turn's own call in _start_turn); its accounting, if any, is not logged again here.
-        result, _replay_accounting = self._understanding.understand(
-            request.text, language_hint=state.lang
-        )
+        try:
+            result, _replay_accounting = self._understanding.understand(
+                request.text, language_hint=state.lang
+            )
+        except UnderstandingUnavailable:
+            logger.warning(
+                "llm_understanding_unavailable_replay session_id=%s request_id=%s",
+                state.session_id,
+                current_request_id(),
+            )
+            return self._envelope(
+                state, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
+            )
         _, envelope = self._advance(state, result)
         return envelope
 

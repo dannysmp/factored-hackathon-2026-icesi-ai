@@ -101,6 +101,7 @@ _COLUMNS = (
     "expected_intent",
     "expected_reason_code",
     "expected_safe_behavior",
+    "injected_failure",
     "description",
 )
 
@@ -120,6 +121,11 @@ def _row(case: Case) -> dict[str, str]:
         ),
         "expected_safe_behavior": (
             case.expected_safe_behavior.value if case.expected_safe_behavior else ""
+        ),
+        "injected_failure": (
+            f"{case.injected_failure.tool.value}:{case.injected_failure.cause}"
+            if case.injected_failure
+            else ""
         ),
         "description": case.description,
     }

@@ -26,8 +26,10 @@ Design Principles
   mapping into ``NluResult`` is where the contract's own bounds and rules apply. A result that
   fails them once is repaired once (truncating an overlong free-text field, dropping a choice out
   of range, nulling an enum-like value the model spelled wrong) and validated again; a result that
-  still fails, or a call the port itself could not complete, becomes ``NluResult.unusable()``: one
-  question, then a person — the customer is never shown a model or provider error.
+  still fails becomes ``NluResult.unusable()``: one question, then a person — the customer is
+  never shown a model or provider error. A call the port could not complete at all is a different
+  outcome (``UnderstandingUnavailable``, raised rather than swallowed): unlike a malformed result,
+  it is not the customer's own ambiguity, so it must not be treated as one.
 - The masking serializer is the only path text takes to leave the process: this class never builds
   the user message from anything but ``redact_pan(text).masked``.
 - Temperature 0: this is structured extraction, not open-ended writing.
@@ -37,7 +39,8 @@ Runtime Contract
 ``LlmNlu(llm, *, model, prompt=None)`` implementing
 ``app.conversation.understanding.Understanding``: ``understand(...)`` returns the parsed
 ``NluResult`` paired with a ``TurnAccounting`` built from the completion's own token/latency
-accounting, or ``(NluResult.unusable(), None)`` when the call itself did not complete.
+accounting, ``(NluResult.unusable(), None)`` when the call completed but its output was not
+usable, or raises ``UnderstandingUnavailable`` when the call could not be completed at all.
 """
 
 from __future__ import annotations
@@ -50,9 +53,18 @@ from decimal import Decimal, InvalidOperation  # Money is never a float; malform
 from pydantic import BaseModel, ConfigDict, ValidationError  # Loose intermediate model
 
 # Local modules
-from app.conversation.understanding import TurnAccounting  # What this call cost, if it completed
+from app.conversation.understanding import (  # What this call cost; raised, never swallowed
+    TurnAccounting,
+    UnderstandingUnavailable,
+)
 from app.domain.policy.models import DisputeCategory  # Closed set of dispute categories
-from app.llm.client import CompletionRequest, LlmClient, LlmError, ToolSpec  # The port
+from app.llm.client import (  # The port
+    CompletionRequest,
+    LlmClient,
+    LlmError,
+    LlmUnavailable,
+    ToolSpec,
+)
 from app.llm.masking import redact_pan  # The only egress path for the customer's own text
 from app.llm.prompts import PromptTemplate, load_prompt  # Versioned prompt loading and filling
 from contracts.service_v1.envelope import LANGUAGES, Lang  # Closed set of languages
@@ -254,9 +266,18 @@ class LlmNlu:
     ) -> tuple[NluResult, TurnAccounting | None]:
         """Understand ``text`` through the model, or return unusable understanding.
 
-        Empty text and a failed or invalid call are both treated as unusable: the customer is
-        never shown a model or provider error, only asked again — and neither produces accounting,
-        since no real, priced call completed.
+        Empty text and an invalid call's output are both treated as unusable: the customer is
+        never shown a model or provider error, only asked again — genuine ambiguity a
+        clarification question can resolve, and neither produces accounting, since no real,
+        priced call completed. A call that could not reach the provider at all, after its own
+        bounded retries, is a different outcome and raises ``UnderstandingUnavailable`` instead:
+        that is not the customer's ambiguity to clarify, and it produces no accounting either.
+
+        Raises
+        ------
+        UnderstandingUnavailable
+            The underlying call raised ``LlmUnavailable`` — the provider or the circuit breaker
+            in front of it could not be reached, even after retrying.
         """
         if not text.strip():
             return NluResult.unusable(), None
@@ -275,6 +296,8 @@ class LlmNlu:
         )
         try:
             result = self._llm.complete(request)
+        except LlmUnavailable as error:
+            raise UnderstandingUnavailable(str(error)) from error
         except LlmError:
             return NluResult.unusable(), None
         accounting = TurnAccounting(

@@ -35,10 +35,14 @@ Design Principles
 Runtime Contract
 ----------------
 ``Understanding`` (protocol): ``understand(text, *, language_hint) -> tuple[NluResult,
-TurnAccounting | None]``.
+TurnAccounting | None]``, or raises ``UnderstandingUnavailable`` instead of returning at all.
 ``TurnAccounting(model, prompt_version, input_tokens, output_tokens, latency_ms)``.
+``UnderstandingUnavailable``: raised instead of returning a result when the port could not reach
+its own dependency after its bounded retries — distinct from ``NluResult.unusable()``, which
+means the dependency answered but produced nothing usable. A caller that cannot tell the two apart
+would spend a customer's clarification budget on an outage that was never their own confusion.
 ``FakeNlu``: a keyword-based implementation with no network access; always returns ``None``
-accounting.
+accounting and never raises ``UnderstandingUnavailable``, since it makes no call that could fail.
 """
 
 from __future__ import annotations
@@ -64,8 +68,9 @@ class TurnAccounting:
     """What one real model call behind a turn's understanding cost.
 
     Never produced by ``FakeNlu``, and never produced for a real call the port itself could not
-    complete (``understand`` then returns ``NluResult.unusable()`` paired with ``None``) — the
-    absence of a real, priced call is not an accounting event.
+    complete (``understand`` then returns ``NluResult.unusable()`` paired with ``None``, or raises
+    ``UnderstandingUnavailable`` outright) — the absence of a real, priced call is not an
+    accounting event.
     """
 
     model: str
@@ -73,6 +78,18 @@ class TurnAccounting:
     input_tokens: int
     output_tokens: int
     latency_ms: float
+
+
+class UnderstandingUnavailable(Exception):
+    """The port's own dependency could not be reached, after its bounded retries.
+
+    Distinct from ``NluResult.unusable()``: that outcome means the dependency was reached and
+    answered, just not with anything usable (empty text, a malformed model output) — genuine
+    customer-facing ambiguity a clarification question can resolve. This exception means the
+    dependency itself was not reachable; retrying the same question would not help, and the
+    caller must not spend the customer's clarification budget on it. No accounting is produced
+    either way: nothing was priced.
+    """
 
 
 class Understanding(Protocol):
@@ -85,6 +102,11 @@ class Understanding(Protocol):
 
         ``language_hint`` is a tie-breaker; the accounting half is ``None`` whenever no real,
         priced model call happened (``FakeNlu``, always; a real call the port could not complete).
+
+        Raises
+        ------
+        UnderstandingUnavailable
+            The port's own dependency could not be reached after its bounded retries.
         """
         ...
 

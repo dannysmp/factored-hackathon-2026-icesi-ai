@@ -33,6 +33,9 @@ Design Principles
 - Structured JSON logging (``app.observability.logging``) is installed before anything else runs,
   so every event this factory or a route logs, including a start-up failure, is already a JSON
   line carrying the service's own identity and version.
+- Bounded retries and one circuit breaker per external dependency sit in front of the LLM
+  client and the tool port, built once and shared across every turn the app serves — never rebuilt
+  per request, since breaker state held on an object rebuilt every request could never trip.
 
 Runtime Contract
 ----------------
@@ -83,7 +86,6 @@ from app.config import (
 from app.conversation.controller import DialogueController, HandoffOutbox
 from app.conversation.llm_understanding import LlmNlu
 from app.conversation.model_renderer import LlmRenderer
-from app.conversation.understanding import Understanding
 from app.domain.calendar import (  # Domain date
     DomainCalendar,
     DomainCalendarError,
@@ -92,6 +94,7 @@ from app.domain.calendar import (  # Domain date
 from app.domain.policy.loader import load_policy
 from app.domain.policy.models import Policy
 from app.llm.anthropic_client import AnthropicLlmClient
+from app.llm.client import LlmClient  # The port the retried client implements
 from app.observability.logging import configure_logging  # Structured logging, installed once
 from app.persistence.audit import PostgresAuditSink
 from app.persistence.customers import customer_status  # The sandbox login's existence check
@@ -100,6 +103,9 @@ from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.ops_meta import read_data_as_of  # The seed's own reference date
 from app.persistence.reads import PostgresToolPort
 from app.persistence.signin_audit import PostgresSignInAuditSink  # The demo broker's audit store
+from app.reliability.breaker import InMemoryCircuitBreaker  # Shared per dependency
+from app.reliability.retry import RetriedLlmClient, RetryPolicy  # Bounded retry
+from app.reliability.tool_port import RetriedToolPort  # Bounded retry for the tool port
 from app.retrieval.lexical import LexicalRetriever
 from app.security.demo_personas import (  # The demo broker's persona list
     PersonaList,
@@ -208,8 +214,8 @@ def _default_customer_lookup(settings: Settings) -> CustomerLookup:
     return functools.partial(customer_status, dsn)
 
 
-def _understanding(settings: Settings) -> Understanding:
-    """The model-backed understanding port for one turn.
+def _build_anthropic_client(settings: Settings) -> AnthropicLlmClient:
+    """The real Anthropic adapter, built only when actually needed.
 
     Raises
     ------
@@ -218,22 +224,7 @@ def _understanding(settings: Settings) -> Understanding:
     """
     if settings.llm_provider is not LlmProvider.ANTHROPIC:
         raise ConfigError(f"the '{settings.llm_provider.value}' LLM provider has no adapter yet")
-    llm = AnthropicLlmClient(settings.require_anthropic_key())
-    return LlmNlu(llm, model=settings.nlu_model)
-
-
-def _model_renderer(settings: Settings) -> LlmRenderer:
-    """The model-backed reply renderer for one turn; only built when the feature is enabled.
-
-    Raises
-    ------
-    ConfigError
-        The configured provider has no adapter yet, or its API key is not configured.
-    """
-    if settings.llm_provider is not LlmProvider.ANTHROPIC:
-        raise ConfigError(f"the '{settings.llm_provider.value}' LLM provider has no adapter yet")
-    llm = AnthropicLlmClient(settings.require_anthropic_key())
-    return LlmRenderer(llm, model=settings.render_model)
+    return AnthropicLlmClient(settings.require_anthropic_key())
 
 
 def _controller_factory(
@@ -248,8 +239,37 @@ def _controller_factory(
 
     Every dependency that needs ``DATABASE_URL`` or an LLM provider key is resolved inside the
     returned closure, not here (see the module's own Design Principles): building the factory
-    itself never requires them.
+    itself never requires them. The LLM client and both circuit breakers are the one
+    exception to "built inside the closure" — they are built once, here, and shared by every
+    call the closure makes for the lifetime of this app: breaker state held on an object rebuilt
+    every request would reset every request and could never trip.
     """
+    llm_breaker = InMemoryCircuitBreaker(
+        settings.llm_breaker_failure_threshold,
+        settings.llm_breaker_reset_seconds,
+        clock=clock,
+        name="llm",
+    )
+    tool_breaker = InMemoryCircuitBreaker(
+        settings.tool_breaker_failure_threshold,
+        settings.tool_breaker_reset_seconds,
+        clock=clock,
+        name="tool",
+    )
+    llm_client: LlmClient = RetriedLlmClient(
+        build_inner=lambda: _build_anthropic_client(settings),
+        policy=RetryPolicy(
+            settings.llm_retry_max_attempts,
+            settings.llm_retry_base_delay_ms,
+            settings.llm_retry_max_delay_ms,
+        ),
+        breaker=llm_breaker,
+    )
+    tool_retry_policy = RetryPolicy(
+        settings.tool_retry_max_attempts,
+        settings.tool_retry_base_delay_ms,
+        settings.tool_retry_max_delay_ms,
+    )
 
     def build(principal: Principal) -> DialogueController:
         dsn = settings.require_database_url().get_secret_value()
@@ -257,21 +277,30 @@ def _controller_factory(
         current = store.get(principal.session_id)
         language = current.lang if current is not None else "es"
         audit = PostgresAuditSink(dsn)
-        tool_port = PostgresToolPort(
-            dsn,
-            audit,
-            policy,
-            customer_id=principal.customer_id,
-            session_id=principal.session_id,
-            trace_id=principal.session_id,
-            domain_date=calendar.reference_date,
-            now=clock,
-            language=language,
-            case_create_session_cap=settings.case_create_session_cap,
+        tool_port = RetriedToolPort(
+            PostgresToolPort(
+                dsn,
+                audit,
+                policy,
+                customer_id=principal.customer_id,
+                session_id=principal.session_id,
+                trace_id=principal.session_id,
+                domain_date=calendar.reference_date,
+                now=clock,
+                language=language,
+                case_create_session_cap=settings.case_create_session_cap,
+            ),
+            policy=tool_retry_policy,
+            breaker=tool_breaker,
         )
         outbox: HandoffOutbox = PostgresHandoffOutbox(dsn)
+        model_renderer = (
+            LlmRenderer(llm_client, model=settings.render_model)
+            if settings.model_renderer_enabled
+            else None
+        )
         return DialogueController(
-            _understanding(settings),
+            LlmNlu(llm_client, model=settings.nlu_model),
             store=store,
             tool_port=tool_port,
             retriever=retriever,
@@ -279,7 +308,7 @@ def _controller_factory(
             outbox=outbox,
             domain_date=calendar.reference_date,
             now=clock,
-            model_renderer=_model_renderer(settings) if settings.model_renderer_enabled else None,
+            model_renderer=model_renderer,
         )
 
     return build
