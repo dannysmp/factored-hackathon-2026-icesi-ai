@@ -35,8 +35,12 @@ FROM python:3.11-slim AS runtime
 # The base image's own pip/setuptools/wheel bootstrap (never used at runtime: the venv below
 # carries every dependency the app actually imports) vendors older copies of themselves that pick
 # up their own CVEs over time; stripped here rather than patched piecemeal, since nothing running
-# in this container ever calls pip or setuptools again.
-RUN python3 -m pip uninstall --yes pip setuptools wheel
+# in this container ever calls pip or setuptools again. `pip uninstall` only removes the installed
+# site-packages copies, not ensurepip's own bundled wheel archives (the same vendored code,
+# unpacked again on the next `ensurepip` run) — removed explicitly, since a scanner that does not
+# unpack nested wheels would otherwise miss it while it still ships in the image.
+RUN python3 -m pip uninstall --yes pip setuptools wheel \
+  && rm -rf /usr/local/lib/python3.11/ensurepip
 
 RUN useradd --create-home --shell /usr/sbin/nologin app
 WORKDIR /app
