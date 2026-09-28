@@ -362,6 +362,21 @@ def test_a_known_agent_persona_receives_a_sixty_minute_demo_session(
     assert record.resolved_customer_id is None
 
 
+def test_an_agent_document_number_or_customer_identifier_is_never_accepted(
+    agent_client: TestClient,
+) -> None:
+    for payload in (
+        {"document_number": "123"},
+        {"agent_id": "AGENT-1"},
+        {"persona": "agent-beatriz", "extra": 1},
+    ):
+        response = agent_client.post(
+            AGENT_LOGIN, json=payload, headers={"X-Demo-Access-Code": AGENT_ACCESS_CODE}
+        )
+        assert response.status_code == 422
+        assert "access_token" not in response.json()
+
+
 def test_an_agent_token_is_refused_by_the_customer_only_session_endpoint(
     agent_client: TestClient,
 ) -> None:
