@@ -52,6 +52,11 @@ Design Principles
   reply) has no tool call that isn't already safe to repeat, so it is simply recomputed.
 - **PII minimization.** No raw customer text reaches a store, a log or a handoff packet; a handoff
   names its category and reason codes, never a transcript.
+- **An unreachable dependency is not the customer's ambiguity.** ``Understanding.understand``
+  raising ``UnderstandingUnavailable`` (E9: the LLM port's own bounded retries and circuit breaker
+  were exhausted) escalates directly to a handoff, saved with the same idempotent discipline as any
+  other turn — it never reaches ``_advance``, so it never spends a clarification-budget attempt on
+  an outage that was never the customer's own confusion.
 
 Runtime Contract
 ----------------
@@ -98,7 +103,7 @@ from app.conversation.renderer import RenderedReply, demo_notice
 from app.conversation.reply import render_reply
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DialogueStore, DuplicateTurn
-from app.conversation.understanding import Understanding
+from app.conversation.understanding import Understanding, UnderstandingUnavailable
 from app.domain.policy.models import DisputeCategory, Outcome, Policy, PolicyDecision, ReasonCode
 from app.persistence.handoff_outbox import HandoffContent
 from app.retrieval.lexical import LexicalRetriever
@@ -285,7 +290,12 @@ class DialogueController:
         if current is not None and current.last_turn_id == request.turn_id:
             return self._respond(current, self._replay_envelope(current))
 
-        state, expected_version, result = self._start_turn(current, request)
+        try:
+            state, expected_version, result = self._start_turn(current, request)
+        except UnderstandingUnavailable:
+            return self._handoff_from_turn(
+                current, expected_version=current.version if current is not None else 0
+            )
         new_state, envelope = self._advance(state, result)
 
         try:
@@ -305,6 +315,50 @@ class DialogueController:
                 "Fetch the current state and try again.",
             ) from conflict
 
+        return self._respond(saved, envelope)
+
+    def _handoff_from_turn(
+        self, current: DialogueState | None, *, expected_version: int
+    ) -> TurnResponse:
+        """Escalate a turn that could not even be understood, because the understanding port's own
+        dependency was unreachable after its bounded retries (E9) — never the customer's own
+        ambiguity, so it skips ``_advance`` and its clarification-budget accounting entirely.
+
+        Persists exactly like a normal turn advance: the same idempotent save, the same
+        ``DuplicateTurn``/``Conflict`` handling, so a retried request behaves no differently than
+        any other turn that happens to end in a handoff.
+        """
+        request = self._request
+        assert request is not None  # noqa: S101 - set at the top of handle_turn
+        base = current or DialogueState(
+            session_id=self._session_id(),
+            lang="es",
+            phase=ConversationPhase.STARTED,
+            updated_at=self._now(),
+        )
+        new_state, envelope = self._handoff(
+            base,
+            trigger=HandoffTrigger.TOOL_FAILURE,
+            reason_codes=(),
+            template=TemplateId.HANDOFF_REVIEW,
+            actions=(ActionRecord(action="llm_understand", result="unavailable"),),
+        )
+        try:
+            saved = self._store.save(
+                new_state,
+                expected_version=expected_version,
+                turn_id=request.turn_id,
+                now=self._now(),
+            )
+        except DuplicateTurn as duplicate:
+            return self._respond(duplicate.state, self._replay_envelope(duplicate.state))
+        except Conflict as conflict:
+            raise ProblemError(
+                ErrorCode.TURN_CONFLICT,
+                409,
+                "The conversation moved on",
+                "Fetch the current state and try again.",
+            ) from conflict
         return self._respond(saved, envelope)
 
     def _start_turn(
@@ -859,9 +913,24 @@ class DialogueController:
         if state.phase is ConversationPhase.CLOSED:
             return self._envelope(state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
 
+        return self._replay_recompute(state)
+
+    def _replay_recompute(self, state: DialogueState) -> RenderEnvelope:
+        """Recompute a replayed turn's reply exactly as the original turn was, unless the
+        understanding port's own dependency is unreachable right now (E9): that failure is not
+        the customer's ambiguity, and recomputing it needs the same dependency that just failed,
+        so it renders a generic acknowledgment instead of recomputing — without touching persisted
+        state or writing a new outbox row, since replay never mutates state and a retried replay
+        call is free to try recomputing again once the outage clears.
+        """
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
-        result = self._understanding.understand(request.text, language_hint=state.lang)
+        try:
+            result = self._understanding.understand(request.text, language_hint=state.lang)
+        except UnderstandingUnavailable:
+            return self._envelope(
+                state, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
+            )
         _, envelope = self._advance(state, result)
         return envelope
 

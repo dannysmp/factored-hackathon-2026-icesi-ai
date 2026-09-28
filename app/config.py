@@ -152,6 +152,21 @@ class Settings(BaseSettings):
         Permission-class invariant the create tool enforces itself (ADR-3), not a policy value:
         an anti-abuse bound on how many cases one session may file, never a limit on how many
         distinct disputes a customer legitimately has. Between 1 and 50.
+    llm_retry_max_attempts, llm_retry_base_delay_ms, llm_retry_max_delay_ms : int
+        Bounded retry (E9) for a transient LLM failure (``LlmUnavailable``): full-jitter
+        exponential backoff between attempts, capped at ``llm_retry_max_delay_ms``. A permanent
+        failure (``LlmRequestRejected``, ``LlmOutputInvalid``) is never retried, whatever these
+        values are.
+    tool_retry_max_attempts, tool_retry_base_delay_ms, tool_retry_max_delay_ms : int
+        Bounded retry (E9) for a retryable tool failure (``ToolFailure.retryable`` and
+        ``cause`` in ``"timeout"``/``"error"``, never ``"circuit_open"``); a refusal for a
+        permission or not-found reason (``retryable=False``) is never retried.
+    llm_breaker_failure_threshold, llm_breaker_reset_seconds : int, float
+        The LLM circuit breaker (E9): opens after this many consecutive post-retry failures, and
+        allows one trial call again after this many seconds.
+    tool_breaker_failure_threshold, tool_breaker_reset_seconds : int, float
+        The tool-port circuit breaker (E9), shared by every tool method: the store is one
+        dependency, not six, so one outage trips one breaker.
     demo_signin_enabled : bool
         Turns on the demonstration sign-in broker for customers (ADR-18): a public, persona-based
         sign-in path meant for the deployed demonstration, unlike the sandbox login. Mutually
@@ -190,6 +205,16 @@ class Settings(BaseSettings):
     model_renderer_enabled: bool = False
     data_as_of_date: str | None = None
     case_create_session_cap: int = Field(default=3, ge=1, le=50)
+    llm_retry_max_attempts: int = Field(default=2, ge=1, le=5)
+    llm_retry_base_delay_ms: int = Field(default=200, ge=0, le=5000)
+    llm_retry_max_delay_ms: int = Field(default=2000, ge=0, le=30000)
+    tool_retry_max_attempts: int = Field(default=3, ge=1, le=5)
+    tool_retry_base_delay_ms: int = Field(default=50, ge=0, le=5000)
+    tool_retry_max_delay_ms: int = Field(default=400, ge=0, le=30000)
+    llm_breaker_failure_threshold: int = Field(default=5, ge=1, le=20)
+    llm_breaker_reset_seconds: float = Field(default=30.0, ge=1, le=300)
+    tool_breaker_failure_threshold: int = Field(default=5, ge=1, le=20)
+    tool_breaker_reset_seconds: float = Field(default=10.0, ge=1, le=300)
     demo_signin_enabled: bool = False
     demo_signin_access_code: SecretStr | None = None
     demo_agent_signin_enabled: bool = False
