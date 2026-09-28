@@ -11,16 +11,20 @@
 #   purchase or DNS setup is needed; a real domain replaces it later by
 #   changing this one value.
 # Usage:
-#   Copied to the host by the deploy pipeline (a later slice) alongside
-#   docker-compose.prod.yml; not run directly from this repository.
+#   Copied to the host by the deploy pipeline alongside docker-compose.prod.yml; not run
+#   directly from this repository.
 # =============================================================================
 
 {$HOST_NAME} {
-	# The web build's static files, served by the web container.
-	handle /api/* {
+	# The backend's own routes: /api/*, its health endpoints and the session/auth routes
+	# (app/main.py and app/api/auth.py register /health/live, /health/ready, /v1/session and
+	# /v1/auth/* at the root, not under /api) all route here.
+	@backend path /api/* /health/* /v1/*
+	handle @backend {
 		reverse_proxy backend:8000
 	}
 
+	# The web build's static files, served by the web container.
 	handle {
 		reverse_proxy web:80
 	}
