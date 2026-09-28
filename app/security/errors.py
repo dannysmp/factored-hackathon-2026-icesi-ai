@@ -57,6 +57,7 @@ class ErrorCode(StrEnum):
     REQUEST_REFUSED = "request_refused"
     SERVICE_UNAVAILABLE = "service_unavailable"
     INTERNAL_ERROR = "internal_error"
+    TURN_CONFLICT = "turn_conflict"
 
 
 class ProblemError(Exception):
