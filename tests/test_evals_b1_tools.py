@@ -24,11 +24,19 @@ from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.migrate import apply_migrations
 from app.persistence.reads import PostgresToolPort
 from app.retrieval.lexical import LexicalRetriever
-from evals.runner.baselines.b1_tools import TOOL_SCHEMAS, B1ToolDispatcher
+from evals.runner.baselines.b1_tools import _REQUEST_SUMMARY_OF, TOOL_SCHEMAS, B1ToolDispatcher
 from evals.runner.baselines.naive_agent_client import ToolCall
 
 _NOW = datetime(2026, 6, 18, 15, 0, tzinfo=UTC)
 _TODAY = date(2026, 6, 18)
+
+
+def test_the_duplicated_request_summary_table_agrees_with_the_controller_s_own() -> None:
+    """b1_tools' own module docstring calls this duplication deliberate and checked by test, not
+    a divergent reimplementation; this is that check — every key and value must match exactly."""
+    import app.conversation.controller as controller_module  # noqa: PLC0415 - internal table
+
+    assert controller_module._REQUEST_SUMMARY_OF == _REQUEST_SUMMARY_OF
 
 
 def test_every_tool_schema_names_one_of_the_seven_tools() -> None:
@@ -153,7 +161,12 @@ def dsn() -> str:
             "transaction_date, transaction_type, merchant_name, amount, currency, amount_usd, "
             "amount_usd_provenance, transaction_status) VALUES "
             "('TRX-B1-A1', 'CLI-B1-A', 'PRD-B1-A', '2026-06-08 09:00:00', 'Purchase', "
-            "'A Merchant', 100.00, 'USD', 100.00, 'reported', 'Approved')"
+            "'A Merchant', 100.00, 'USD', 100.00, 'reported', 'Approved'), "
+            # Above the policy's escalate_amount_usd threshold (5000.00): evaluate_dispute
+            # resolves this one to ESCALATE_AMOUNT_ABOVE_THRESHOLD, not ELIGIBLE, so the
+            # turn-scoping tests below have a real escalate_* decision to isolate.
+            "('TRX-B1-A2', 'CLI-B1-A', 'PRD-B1-A', '2026-06-09 09:00:00', 'Purchase', "
+            "'A Merchant', 6000.00, 'USD', 6000.00, 'reported', 'Approved')"
         )
     return value
 
@@ -310,25 +323,57 @@ def test_handoff_writes_a_real_outbox_row_and_records_the_ticket(
     assert row[0] == "Customer reported a possible fraud."
 
 
+def _escalate_amount_decision(dispatcher: B1ToolDispatcher, *, turn_id: str) -> None:
+    """Produce a real escalate_amount_above_threshold decision (TRX-B1-A2 is above the policy's
+    escalate_amount_usd threshold) — the only decision shape that can actually reach
+    ``_handoff``'s ``escalate_``-prefix filter, unlike an ELIGIBLE one."""
+    dispatcher.dispatch(
+        ToolCall(
+            id="t1",
+            name="evaluate_dispute",
+            input={"transaction_ref": "TRX-B1-A2", "category": "unrecognized_charge"},
+        ),
+        session_id="s",
+        turn_id=turn_id,
+        trace_id="s",
+    )
+
+
 @pytest.mark.integration
-def test_handoff_attaches_this_turn_s_escalate_reason_code_not_an_older_turn_s(
+def test_handoff_attaches_this_turn_s_escalate_reason_code(
     dsn: str, retriever: LexicalRetriever
 ) -> None:
     dispatcher = _dispatcher(dsn, retriever)
 
     dispatcher.start_turn()
+    _escalate_amount_decision(dispatcher, turn_id="turn-00000001")
     dispatcher.dispatch(
-        ToolCall(
-            id="t1",
-            name="evaluate_dispute",
-            input={"transaction_ref": "TRX-B1-A1", "category": "unrecognized_charge"},
-        ),
+        ToolCall(id="t2", name="handoff", input={"trigger": "amount_review"}),
         session_id="s",
         turn_id="turn-00000001",
         trace_id="s",
     )
 
-    # A new turn starts: the earlier turn's decision must not leak into this turn's handoff.
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT reason_code FROM handoff_reason_codes WHERE ticket_ref = %s",
+            (dispatcher.handoff_ticket,),
+        )
+        rows = cur.fetchall()
+    assert rows == [("escalate_amount_above_threshold",)]
+
+
+@pytest.mark.integration
+def test_handoff_does_not_attach_an_older_turn_s_escalate_reason_code(
+    dsn: str, retriever: LexicalRetriever
+) -> None:
+    dispatcher = _dispatcher(dsn, retriever)
+
+    dispatcher.start_turn()
+    _escalate_amount_decision(dispatcher, turn_id="turn-00000001")
+
+    # A new turn starts: the earlier turn's escalate_* decision must not leak into this turn's
+    # handoff, even though it is still tracked in _decisions for create_dispute_case's own lookup.
     dispatcher.start_turn()
     dispatcher.dispatch(
         ToolCall(id="t2", name="handoff", input={"trigger": "customer_request"}),
