@@ -745,7 +745,9 @@ def test_no_turn_log_configured_records_nothing_and_never_fails(
 
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
 
-    assert response.reply
+    assert "Hola" in response.reply
+    assert response.state_version == 1
+    assert not response.end_session
 
 
 def test_replaying_a_turn_never_records_a_second_history_entry(
@@ -1311,6 +1313,45 @@ def test_a_save_time_race_replays_the_winning_state(
     )
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert response.handoff_ticket == "T-9999"
+
+
+def test_a_save_time_race_never_records_turn_history_either(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The lost-race ``DuplicateTurn`` replay path (distinct from the fast duplicate-turn-id path
+    tested elsewhere) must never record history either: nothing new was actually decided here."""
+    winner = DialogueState(
+        session_id=_SESSION_ID,
+        version=2,
+        lang="es",
+        phase=ConversationPhase.HANDED_OFF,
+        last_turn_id="turn-0001",
+        last_ticket_ref="T-9999",
+        updated_at=_NOW,
+    )
+
+    @dataclass
+    class RaceStore:
+        def get(self, session_id: str) -> DialogueState | None:
+            return None
+
+        def save(self, state: DialogueState, *, expected_version: int, turn_id: str, now: object):  # type: ignore[no-untyped-def]
+            raise DuplicateTurn(winner)
+
+    turn_log = FakeDialogueTurnLog()
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=RaceStore(),  # type: ignore[arg-type]
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        turn_log=turn_log,
+    )
+
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert turn_log.entries == []
 
 
 def test_a_repeated_turn_id_after_a_terminal_reply_recomputes_safely(

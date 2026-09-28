@@ -41,18 +41,23 @@ def _entry(**changes: object) -> TimelineEntry:
 
 
 @pytest.fixture
-def turn_log() -> PostgresDialogueTurnLog:
-    dsn = os.environ.get("DATABASE_URL")
-    if not dsn:
+def dsn() -> str:
+    value = os.environ.get("DATABASE_URL")
+    if not value:
         pytest.skip("DATABASE_URL is not set")
-    apply_migrations(dsn)
+    apply_migrations(value)
     # TRUNCATE is refused at the store (migration 0008), including for this reset: the session's
     # own replication role is switched off for it, since a trigger created without ENABLE REPLICA
     # or ENABLE ALWAYS does not fire under 'replica' (matching tests/test_persistence_audit.py).
-    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+    with psycopg.connect(value) as conn, conn.cursor() as cur:
         cur.execute("SET LOCAL session_replication_role = replica")
         cur.execute("TRUNCATE TABLE dialogue_turn_log")
         conn.commit()
+    return value
+
+
+@pytest.fixture
+def turn_log(dsn: str) -> PostgresDialogueTurnLog:
     return PostgresDialogueTurnLog(dsn)
 
 
@@ -119,3 +124,55 @@ def test_entries_from_different_conversations_do_not_mix(
     turn_log.record(theirs, session_id="s-2", turn_id="t-1")
 
     assert turn_log.timeline_for("s-1") == (mine,)
+
+
+# -----------------------------------------------------------------------------
+# Append-only, enforced at the store (mirrors tests/test_persistence_audit.py)
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_dialogue_turn_log_refuses_an_update_at_the_store(
+    turn_log: PostgresDialogueTurnLog, dsn: str
+) -> None:
+    """Fails at the store, not only in code."""
+    turn_log.record(_entry(trace_id="s-1"), session_id="s-1", turn_id="t-1")
+
+    with (
+        psycopg.connect(dsn, autocommit=True) as conn,
+        conn.cursor() as cur,
+        pytest.raises(psycopg.errors.RaiseException, match="append-only"),
+    ):
+        cur.execute("UPDATE dialogue_turn_log SET render_mode = 'model'")
+
+
+@pytest.mark.integration
+def test_dialogue_turn_log_refuses_a_delete_at_the_store(
+    turn_log: PostgresDialogueTurnLog, dsn: str
+) -> None:
+    """Fails at the store, not only in code."""
+    turn_log.record(_entry(trace_id="s-1"), session_id="s-1", turn_id="t-1")
+
+    with (
+        psycopg.connect(dsn, autocommit=True) as conn,
+        conn.cursor() as cur,
+        pytest.raises(psycopg.errors.RaiseException, match="append-only"),
+    ):
+        cur.execute("DELETE FROM dialogue_turn_log")
+
+
+@pytest.mark.integration
+def test_dialogue_turn_log_refuses_a_truncate_at_the_store_even_for_the_table_owner(
+    turn_log: PostgresDialogueTurnLog, dsn: str
+) -> None:
+    """TRUNCATE fires no row-level trigger, so it needs (and has) its own; this project has no
+    role separation, so the connecting role is also the table's owner, and Postgres normally lets
+    an owner TRUNCATE regardless of any row-level rule."""
+    turn_log.record(_entry(trace_id="s-1"), session_id="s-1", turn_id="t-1")
+
+    with (
+        psycopg.connect(dsn, autocommit=True) as conn,
+        conn.cursor() as cur,
+        pytest.raises(psycopg.errors.RaiseException, match="append-only"),
+    ):
+        cur.execute("TRUNCATE TABLE dialogue_turn_log")
