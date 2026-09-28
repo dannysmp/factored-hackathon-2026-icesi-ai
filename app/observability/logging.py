@@ -41,6 +41,9 @@ Runtime Contract
 ``configure_logging(level, *, service_version, environment) -> None`` installs the formatter and
 filter on the root logger; safe to call more than once (a fresh call replaces the prior handler
 rather than stacking a second one).
+``configure_logging_from_settings(settings) -> None`` does the same from a ``Settings`` object, or
+a safe fallback when ``settings`` is ``None`` (a CLI entrypoint that resolved its own DSN and
+could not load settings for an unrelated reason).
 
 Limitations
 -----------
@@ -61,10 +64,18 @@ from datetime import UTC, datetime  # Timestamp formatting
 from typing import Any  # Untyped extra attributes logging.Filter attaches to a LogRecord
 
 # Local modules
+from app.config import Settings  # Fields configure_logging_from_settings reads
 from app.llm.masking import redact_pan  # Card-shaped digit-run redaction, reused from LLM egress
 from app.security.middleware import current_request_id, current_session_id  # Request context
 
 SERVICE_NAME = "dispute-intake"
+
+# What a CLI entrypoint logs with when it resolves its own DSN (--dsn) and settings could not be
+# loaded for an unrelated reason: an explicit --dsn must not be blocked by, for example, an
+# invalid signing key nothing on that code path even reads.
+_FALLBACK_LOG_LEVEL = "INFO"
+_FALLBACK_SERVICE_VERSION = "unknown"
+_FALLBACK_ENVIRONMENT = "unknown"
 
 
 class _ContextFilter(logging.Filter):
@@ -120,3 +131,25 @@ def configure_logging(level: str, *, service_version: str, environment: str) -> 
     handler.addFilter(_ContextFilter())
     handler.setFormatter(_JsonFormatter(service_version=service_version, environment=environment))
     root.addHandler(handler)
+
+
+def configure_logging_from_settings(settings: Settings | None) -> None:
+    """Install logging from ``settings``, or a safe fallback when settings could not be loaded.
+
+    For a CLI entrypoint that can resolve its DSN from ``--dsn`` instead of ``DATABASE_URL``: an
+    unrelated, invalid setting (a malformed signing key, say) must not block that entrypoint from
+    running with an explicit DSN, so ``settings=None`` here means "loading settings failed and the
+    caller decided to proceed anyway," not "no settings exist."
+    """
+    if settings is not None:
+        configure_logging(
+            settings.log_level,
+            service_version=settings.service_version,
+            environment=settings.app_env.value,
+        )
+    else:
+        configure_logging(
+            _FALLBACK_LOG_LEVEL,
+            service_version=_FALLBACK_SERVICE_VERSION,
+            environment=_FALLBACK_ENVIRONMENT,
+        )

@@ -60,8 +60,8 @@ import duckdb  # Reads the seed's own Parquet files
 import psycopg  # Serving-store driver
 
 # Local modules
-from app.config import ConfigError, load_settings  # The one validated source of DATABASE_URL
-from app.observability.logging import configure_logging  # Structured logging, installed once
+from app.config import ConfigError, load_settings  # The one validated source of a DSN
+from app.observability.logging import configure_logging_from_settings  # Structured logging
 from pipelines.ops_seed import (  # The seed's own output names
     CUSTOMERS_NAME,
     MANIFEST_NAME,
@@ -228,19 +228,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         settings = load_settings()
     except ConfigError as exc:
-        parser.error(str(exc))
-    configure_logging(
-        settings.log_level,
-        service_version=settings.service_version,
-        environment=settings.app_env.value,
-    )
-    if args.dsn:
+        # An explicit --dsn does not need the rest of settings to be valid; only DATABASE_URL
+        # resolution (below) does, and only when --dsn was not given.
+        if not args.dsn:
+            parser.error(str(exc))
+        configure_logging_from_settings(None)
         dsn = args.dsn
     else:
-        try:
-            dsn = settings.require_database_url().get_secret_value()
-        except ConfigError as exc:
-            parser.error(str(exc))
+        configure_logging_from_settings(settings)
+        if args.dsn:
+            dsn = args.dsn
+        else:
+            try:
+                dsn = settings.require_database_url().get_secret_value()
+            except ConfigError as exc:
+                parser.error(str(exc))
     result = load_seed(dsn, args.gold)
     logger.info(
         "seed_loaded rows=%s data_as_of=%s",
