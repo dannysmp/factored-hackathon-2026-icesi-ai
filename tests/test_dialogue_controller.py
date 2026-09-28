@@ -1560,6 +1560,36 @@ def test_an_unreachable_understanding_dependency_hands_off_on_a_fresh_session(
     assert outbox.packets[0].trigger.value == "tool_failure"
 
 
+def test_an_unreachable_understanding_dependency_still_records_turn_history(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The forced handoff genuinely advances the session (a new ``HANDED_OFF`` state is saved),
+    unlike a replay, so the console's own timeline must still see it — this is exactly the
+    escalation-under-degradation event that timeline exists to surface."""
+    turn_log = FakeDialogueTurnLog()
+    controller = DialogueController(
+        UnavailableNlu(),
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        retriever=retriever,
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+        turn_log=turn_log,
+    )
+
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert len(turn_log.entries) == 1
+    entry, session_id, turn_id = turn_log.entries[0]
+    assert session_id == _SESSION_ID
+    assert turn_id == "turn-0001"
+    assert entry.intent is Intent.HANDOFF
+    assert entry.state_before == "started"
+    assert entry.state_after == "handed_off"
+
+
 def test_an_unreachable_understanding_dependency_never_spends_the_clarification_budget(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:

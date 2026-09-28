@@ -386,7 +386,7 @@ class DialogueController:
                 "The conversation moved on",
                 "Fetch the current state and try again.",
             ) from conflict
-        return self._respond(saved, envelope)
+        return self._respond(saved, envelope, state_before=base.phase)
 
     def _start_turn(
         self, current: DialogueState | None, request: TurnRequest
