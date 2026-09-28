@@ -1,40 +1,54 @@
 """
-Golden Set Case Sheet
-=====================
+Golden Set Case Files
+======================
 
 Overview
 --------
-Renders the golden set's authored cases as a CSV case sheet (``evals/golden/case_sheet.csv``), or
-checks that the committed file is exactly what the cases would generate. The check is what stops
-the sheet a language reviewer reads from drifting away from the cases the harness actually runs.
+Renders each category group's authored cases as its own CSV file under ``evals/golden/cases/``,
+or checks that the committed files are exactly what the cases would generate. The check is what
+stops the files a language reviewer reads from drifting away from the cases the harness actually
+runs. Nothing at runtime reads these files: the harness consumes `Case` objects directly from the
+category modules; the files exist only for a human reader, so no loader reconstructs them back
+into records — the schema guarantee a reader needs is already `Case.__post_init__`'s own
+validation, run when each module is authored.
 
 Scope
 -----
-In: reading the category modules' `CASES` tuples, rendering or comparing the one CSV file, the
-command line ``python -m evals.golden.case_sheet [--check]``.
+In: reading the category modules' `CASES` tuples, rendering or comparing the per-group CSV files,
+the command line ``python -m evals.golden.case_sheet [--check]``.
 Out: the cases themselves (one module per category); running or scoring a case.
 
 Design Principles
 -------------------
+- **One file per category group, never a shared one.** Each category-group pull request touches
+  only its own file (`evals/golden/cases/<category>.csv`); no two category groups' pull requests
+  can conflict on the same generated file, even when their branches stack. Only this module
+  itself is shared, and adding a category only ever needs one import and one `CATEGORY_CASES`
+  entry, never a change to the render or check functions.
+- **`ALL_CASES` is ordered by the mix table, not by delivery.** Derived by iterating
+  `CaseCategory`'s own declaration order (`plan/docs/evaluation-plan.md`'s row order: normal,
+  ambiguous, unsupported, human-required, multilingual, adversarial) and looking up each
+  category in `CATEGORY_CASES`, so the combined tuple's order never depends on which category
+  group's pull request happened to land first.
 - Mirrors `app.domain.policy.corpus` and `pipelines.policy_corpus`: a pure render function, a
-  write step that only touches the file when its content changed, and a check step a test and CI
-  both call so an added category that forgets to regenerate the sheet cannot be merged.
-- One row per case, one case per row: `user_turns` join with " | " so the sheet stays one line per
+  write step that only touches a file when its content changed, and a check step (stray-file
+  detection copied from `pipelines.policy_corpus.check_corpus`'s own pattern) that a test and CI
+  both call, so an added or changed category that forgets to regenerate its file cannot be merged.
+- One row per case, one case per row: `user_turns` join with " | " so a file stays one line per
   case for a reviewer scanning it, and columns are stable and named, never positional.
-- `ALL_CASES` concatenates every category module in the golden set's mix-table order; adding a
-  category is one import and one line here, never a change to the render function.
 
 Runtime Contract
 -----------------
-``render_case_sheet(cases) -> str``. ``write_case_sheet(directory) -> list[str]`` returns the
-files that changed (empty when the sheet was already correct). ``check_case_sheet(directory) ->
-list[str]`` returns what differs, is missing, or is stray. ``main(argv) -> int``: 0 on success, 1
-when ``--check`` finds drift.
+``CATEGORY_CASES``: every category module's `CASES`, keyed by its `CaseCategory`. ``ALL_CASES``:
+every case, in `CaseCategory`'s declared order. ``render_case_sheet(cases) -> str``.
+``write_case_sheet(directory) -> list[str]`` returns the relative paths that changed.
+``check_case_sheet(directory) -> list[str]`` returns what is missing, differs, or is stray.
+``main(argv) -> int``: 0 on success, 1 when ``--check`` finds drift.
 
 Limitations
 -----------
-Only the human-required category exists as of this slice; the sheet holds 22 of the golden set's
-135 cases until the remaining category modules land.
+Only the human-required category exists as of this slice; `ALL_CASES` holds 22 of the golden
+set's 135 cases until the remaining category modules land.
 """
 
 from __future__ import annotations
@@ -49,17 +63,24 @@ from collections.abc import Sequence
 from pathlib import Path
 
 # Local modules
-from evals.golden.human_required import CASES as HUMAN_REQUIRED_CASES
-from evals.models import Case
+from evals.golden.human_required import CASES as HUMAN_REQUIRED_CASES  # Category group
+from evals.models import Case, CaseCategory  # The record shape and its category vocabulary
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DIRECTORY = Path(__file__).parent
-SHEET_FILENAME = "case_sheet.csv"
+DEFAULT_DIRECTORY = Path(__file__).parent / "cases"
 
-#: Every authored case, in the golden set's mix-table category order
-#: (`plan/docs/evaluation-plan.md`).
-ALL_CASES: tuple[Case, ...] = HUMAN_REQUIRED_CASES
+#: Every category module's cases, keyed by the `CaseCategory` its own CSV is written under.
+#: Adding a category is one import and one entry here, never a change to the functions below.
+CATEGORY_CASES: dict[CaseCategory, tuple[Case, ...]] = {
+    CaseCategory.HUMAN_REQUIRED: HUMAN_REQUIRED_CASES,
+}
+
+#: Every authored case, in `CaseCategory`'s declared order (the golden set's mix-table row
+#: order), not the order category groups were delivered in.
+ALL_CASES: tuple[Case, ...] = tuple(
+    case for category in CaseCategory for case in CATEGORY_CASES.get(category, ())
+)
 
 _COLUMNS = (
     "case_id",
@@ -105,46 +126,69 @@ def render_case_sheet(cases: Sequence[Case]) -> str:
     return buffer.getvalue()
 
 
+def _expected_files() -> dict[str, str]:
+    """Every category's expected relative filename mapped to its rendered content."""
+    return {
+        f"{category.value}.csv": render_case_sheet(cases)
+        for category, cases in CATEGORY_CASES.items()
+    }
+
+
 def write_case_sheet(directory: Path = DEFAULT_DIRECTORY) -> list[str]:
-    """Write the case sheet under ``directory``; return the relative paths that changed."""
-    text = render_case_sheet(ALL_CASES)
-    target = directory / SHEET_FILENAME
-    if target.is_file() and target.read_text(encoding="utf-8") == text:
-        return []
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(".csv.tmp")
-    temporary.write_text(text, encoding="utf-8")
-    os.replace(temporary, target)
-    return [SHEET_FILENAME]
+    """Write every category's CSV under ``directory``; return the relative paths that changed."""
+    changed = []
+    for relative, text in _expected_files().items():
+        target = directory / relative
+        if target.is_file() and target.read_text(encoding="utf-8") == text:
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix(".csv.tmp")
+        temporary.write_text(text, encoding="utf-8")
+        os.replace(temporary, target)
+        changed.append(relative)
+    return changed
 
 
 def check_case_sheet(directory: Path = DEFAULT_DIRECTORY) -> list[str]:
-    """What differs from, is missing from, or is stray in ``directory``; empty means clean."""
-    text = render_case_sheet(ALL_CASES)
-    target = directory / SHEET_FILENAME
-    if not target.is_file():
-        return [f"missing: {SHEET_FILENAME}"]
-    if target.read_text(encoding="utf-8") != text:
-        return [f"stale: {SHEET_FILENAME}"]
-    return []
+    """Relative paths that are missing, differ, or are not generated; empty means clean."""
+    expected = _expected_files()
+    drift = []
+    for relative, text in expected.items():
+        target = directory / relative
+        if not target.is_file() or target.read_text(encoding="utf-8") != text:
+            drift.append(relative)
+    if directory.is_dir():
+        # Hidden files (``.DS_Store`` and the like) are tooling debris, not case-sheet content.
+        present = {
+            relative.as_posix()
+            for relative in (path.relative_to(directory) for path in directory.rglob("*"))
+            if (directory / relative).is_file()
+            and not any(part.startswith(".") for part in relative.parts)
+        }
+        drift.extend(sorted(present - set(expected)))
+    return drift
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``python -m evals.golden.case_sheet [--check]``."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--check", action="store_true", help="fail instead of writing when the sheet is stale"
+        "--check", action="store_true", help="fail instead of writing when a file is stale"
     )
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     if args.check:
         drift = check_case_sheet(DEFAULT_DIRECTORY)
-        for line in drift:
-            logger.error(line)
-        return 1 if drift else 0
+        for relative in drift:
+            logger.error("case_sheet_drift file=%s", relative)
+        if drift:
+            return 1
+        logger.info("case_sheet_current")
+        return 0
 
-    for changed in write_case_sheet(DEFAULT_DIRECTORY):
-        logger.info("wrote %s", changed)
+    for relative in write_case_sheet(DEFAULT_DIRECTORY):
+        logger.info("case_sheet_written file=%s", relative)
     return 0
 
 
