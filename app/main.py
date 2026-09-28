@@ -69,8 +69,10 @@ from starlette.responses import Response  # Handler return type
 from app.api.auth import TEST_SESSIONS_PATH, CustomerLookup, build_auth_router  # Auth routes
 from app.api.demo_signin import (  # Demo broker routes
     AGENT_SESSIONS_PATH,
+    DEMO_PERSONAS_PATH,
     DEMO_SESSIONS_PATH,
     build_demo_agent_signin_router,
+    build_demo_persona_directory_router,
     build_demo_signin_router,
 )
 from app.api.turns import ControllerFactory, build_turns_router  # The turns route
@@ -487,6 +489,7 @@ def create_app(
     # Both demo brokers share one persona load and one audit sink, built at most once
     demo_router: APIRouter | None = None
     agent_demo_router: APIRouter | None = None
+    demo_persona_router: APIRouter | None = None
     if resolved.demo_signin_enabled or resolved.demo_agent_signin_enabled:
         demo_personas, demo_audit = _load_demo_state(resolved, signin_audit)
         if resolved.demo_signin_enabled:
@@ -512,6 +515,18 @@ def create_app(
                 attempt_limiter=AttemptLimiter(clock=clock),
                 issuance_limiter=IssuanceLimiter(clock=clock),
             )
+        # Kill-switch parity applied per flag, not as one coarse on/off: a deployment could run
+        # only one of the two brokers, and the directory must never leak the other audience's
+        # personas while its own switch is off. Its own AttemptLimiter instance, never either
+        # broker's own: those count wrong access codes, a different contract from a plain
+        # per-address request cap on a route with no notion of "wrong".
+        public_paths.append(DEMO_PERSONAS_PATH)
+        demo_persona_router = build_demo_persona_directory_router(
+            personas=demo_personas,
+            include_customers=resolved.demo_signin_enabled,
+            include_agents=resolved.demo_agent_signin_enabled,
+            attempt_limiter=AttemptLimiter(clock=clock),
+        )
 
     # Middleware: the last one added is the outermost. The body-size cap runs after the request
     # context (so its own refusal still carries a request id) and before session authentication
@@ -566,5 +581,7 @@ def create_app(
         app.include_router(demo_router)
     if agent_demo_router is not None:
         app.include_router(agent_demo_router)
+    if demo_persona_router is not None:
+        app.include_router(demo_persona_router)
 
     return app

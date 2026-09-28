@@ -13,10 +13,14 @@ document number.
 
 Scope
 -----
-In: the two routes (customer and agent), their request and response shapes, and wiring the
-access-code check, the persona lookup, the issuance limits and the sign-in audit together in the
-order ADR-18 requires. The two brokers share every helper below but are never the same route or
-the same access code, matching ADR-18's "a leaked customer code leaves the console protected".
+In: the three routes (customer sign-in, agent sign-in, and the read-only persona directory both
+pickers use), their request and response shapes, and wiring the access-code check, the persona
+lookup, the issuance limits and the sign-in audit together in the order ADR-18 requires. The two
+sign-in brokers share every helper below but are never the same route or the same access code,
+matching ADR-18's "a leaked customer code leaves the console protected". The persona directory
+carries no access code of its own — it mints no session and reveals nothing beyond a slug, a
+display name, a language and which audience it belongs to (never a customer or agent id) — but is
+gated by the same two settings, so the kill switch hides it exactly like the two sign-in routes.
 Out: validating the persona file or checking it against the seed (``app.security.demo_personas``,
 done once at start-up — the agent list has no seed to check against), issuing or verifying the
 token itself (``SessionService``), the two limiter implementations (``app.security.limits``,
@@ -45,6 +49,9 @@ Runtime Contract
 201 session (public while ``DEMO_SIGNIN_ENABLED`` is true).
 ``POST /v1/auth/demo-agent-sessions``  body ``{"persona": str}``, header ``X-Demo-Access-Code``  ->
 201 session (public while ``DEMO_AGENT_SIGNIN_ENABLED`` is true), its own access code.
+``GET /v1/auth/demo-personas``  -> 200 ``{"personas": [{slug, display_name, language, audience}]}``
+(public whenever either kill switch is on; customer personas only, agent personas only, or both,
+matching which switch is on).
 
 Limitations
 -----------
@@ -62,7 +69,7 @@ import hmac  # Constant-time comparison of the shared access code
 import logging  # Structured events about demo sign-ins
 import re  # Strict persona-slug pattern
 from datetime import datetime, timedelta  # Session lifetimes and reservation TTLs
-from typing import Annotated  # Header and field declarations
+from typing import Annotated, Literal  # Header and field declarations, closed audience values
 
 # Third-party libraries
 from fastapi import APIRouter, Depends, Header, Request  # Routing and request access
@@ -88,6 +95,7 @@ logger = logging.getLogger(__name__)
 
 DEMO_SESSIONS_PATH = "/v1/auth/demo-sessions"
 AGENT_SESSIONS_PATH = "/v1/auth/demo-agent-sessions"
+DEMO_PERSONAS_PATH = "/v1/auth/demo-personas"
 CUSTOMER_TTL = timedelta(minutes=30)
 AGENT_TTL = timedelta(minutes=60)
 
@@ -116,6 +124,26 @@ class DemoSignInRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     persona: Annotated[str, Field(min_length=1, max_length=32, pattern=_ANCHORED_PERSONA_SLUG)]
+
+
+class DemoPersonaSummary(BaseModel):
+    """One persona as the directory shows it: enough to pick it, nothing that identifies who it
+    maps to (ADR-18) — no ``customer_id``/``agent_id``, no ``scenario``/``specialty``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    slug: str
+    display_name: str
+    language: str
+    audience: Literal["customer", "agent"]
+
+
+class DemoPersonaDirectory(BaseModel):
+    """The whole listing the sign-in screen's picker renders."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    personas: tuple[DemoPersonaSummary, ...]
 
 
 def _client_address(request: Request) -> str:
@@ -498,5 +526,73 @@ def build_demo_agent_signin_router(
         return SessionResponse(
             access_token=issued.token, expires_at=issued.expires_at, expires_in=ttl_seconds
         )
+
+    return router
+
+
+def build_demo_persona_directory_router(
+    *,
+    personas: PersonaList,
+    include_customers: bool,
+    include_agents: bool,
+    attempt_limiter: AttemptLimiter,
+) -> APIRouter:
+    """Build the read-only persona directory a sign-in picker renders (ADR-18).
+
+    Unauthenticated by design: ADR-18's access codes bound *issuance* (spend and session risk),
+    not read access to a non-sensitive persona list, and this route mints no session and reveals
+    no customer or agent identifier. Rate-limited all the same, against the same abuse surface
+    every other public route on this host faces, using ``attempt_limiter`` as a plain per-address
+    request counter — every call counts, not only a failure, since a listing route has no
+    separate notion of "wrong".
+
+    Parameters
+    ----------
+    personas : PersonaList
+        Already loaded (``app.security.demo_personas``).
+    include_customers : bool
+        List customer personas — pass the same value as ``DEMO_SIGNIN_ENABLED`` so a caller can
+        never discover personas for a broker that is off.
+    include_agents : bool
+        List agent personas — pass the same value as ``DEMO_AGENT_SIGNIN_ENABLED``, for the same
+        reason.
+    attempt_limiter : AttemptLimiter
+        This route's own instance — never one of the two sign-in brokers' own limiters, which
+        count wrong access codes, a different contract.
+    """
+    router = APIRouter()
+
+    @router.get(DEMO_PERSONAS_PATH)
+    def list_demo_personas(request: Request) -> DemoPersonaDirectory:
+        """List the personas the enabled broker(s) will accept, never who they map to."""
+        wait = attempt_limiter.begin_attempt(_client_address(request))
+        if wait:
+            logger.warning("demo_persona_directory_limited request_id=%s", current_request_id())
+            raise _rate_limited(wait)
+        summaries: list[DemoPersonaSummary] = []
+        if include_customers:
+            summaries.extend(
+                DemoPersonaSummary(
+                    slug=persona.slug,
+                    display_name=persona.display_name,
+                    language=persona.language,
+                    audience="customer",
+                )
+                for persona in personas.customers
+            )
+        if include_agents:
+            summaries.extend(
+                # An agent may speak more than one language; the directory's own `language` field
+                # is singular so the picker shows one row per persona, not one per language it
+                # speaks — the first language in the list is that persona's primary one.
+                DemoPersonaSummary(
+                    slug=persona.slug,
+                    display_name=persona.display_name,
+                    language=persona.languages[0],
+                    audience="agent",
+                )
+                for persona in personas.agents
+            )
+        return DemoPersonaDirectory(personas=tuple(summaries))
 
     return router
