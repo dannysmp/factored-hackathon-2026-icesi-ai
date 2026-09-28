@@ -3,10 +3,15 @@ LLM Provider Selection Tests
 =============================
 
 Component: ``app.main._understanding`` and ``app.main._model_renderer``. Hermetic: no network,
-no database, no ``.env``.
+no database, no ``.env``. Both take the shared ``llm_client`` ``_controller_factory`` builds
+once (E9); every case here either never touches it (the stub branch) or raises before it would
+be touched, so a placeholder stands in for it without needing a real or fake ``LlmClient``.
 """
 
 from __future__ import annotations
+
+# Standard libraries
+from typing import cast
 
 # Third-party libraries
 import pytest  # Fixtures and monkeypatch
@@ -15,6 +20,9 @@ import pytest  # Fixtures and monkeypatch
 import app.main as main_module
 from app.config import ConfigError, load_settings
 from app.conversation.understanding import FakeNlu
+from app.llm.client import LlmClient
+
+_UNUSED_LLM_CLIENT = cast(LlmClient, object())
 
 
 def test_the_stub_provider_builds_a_fake_understanding_with_no_key_and_no_network(
@@ -24,7 +32,7 @@ def test_the_stub_provider_builds_a_fake_understanding_with_no_key_and_no_networ
     monkeypatch.setenv("LLM_PROVIDER", "stub")
     settings = load_settings(env_file=None)
 
-    understanding = main_module._understanding(settings)
+    understanding = main_module._understanding(_UNUSED_LLM_CLIENT, settings)
 
     assert isinstance(understanding, FakeNlu)
 
@@ -35,7 +43,7 @@ def test_a_provider_with_no_adapter_still_refuses(monkeypatch: pytest.MonkeyPatc
     settings = load_settings(env_file=None)
 
     with pytest.raises(ConfigError, match="'bedrock' LLM provider has no adapter yet"):
-        main_module._understanding(settings)
+        main_module._understanding(_UNUSED_LLM_CLIENT, settings)
 
 
 def test_model_rendering_under_the_stub_provider_fails_closed_not_silently(
@@ -49,4 +57,4 @@ def test_model_rendering_under_the_stub_provider_fails_closed_not_silently(
     settings = load_settings(env_file=None)
 
     with pytest.raises(ConfigError, match="'stub' LLM provider has no adapter yet"):
-        main_module._model_renderer(settings)
+        main_module._model_renderer(_UNUSED_LLM_CLIENT, settings)

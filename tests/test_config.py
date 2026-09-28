@@ -40,6 +40,16 @@ _ENV_KEYS = (
     "DATABASE_URL",
     "MODEL_RENDERER_ENABLED",
     "CASE_CREATE_SESSION_CAP",
+    "LLM_RETRY_MAX_ATTEMPTS",
+    "LLM_RETRY_BASE_DELAY_MS",
+    "LLM_RETRY_MAX_DELAY_MS",
+    "TOOL_RETRY_MAX_ATTEMPTS",
+    "TOOL_RETRY_BASE_DELAY_MS",
+    "TOOL_RETRY_MAX_DELAY_MS",
+    "LLM_BREAKER_FAILURE_THRESHOLD",
+    "LLM_BREAKER_RESET_SECONDS",
+    "TOOL_BREAKER_FAILURE_THRESHOLD",
+    "TOOL_BREAKER_RESET_SECONDS",
     "DEMO_SIGNIN_ENABLED",
     "DEMO_SIGNIN_ACCESS_CODE",
     "DEMO_AGENT_SIGNIN_ENABLED",
@@ -277,6 +287,59 @@ def test_the_case_create_session_cap_bounds_are_inclusive(
     monkeypatch.setenv("CASE_CREATE_SESSION_CAP", cap)
 
     assert load_settings(env_file=None).case_create_session_cap == int(cap)
+
+
+def test_the_reliability_settings_default_to_the_designed_values() -> None:
+    """A bare environment yields the documented retry and breaker defaults."""
+    settings = load_settings(env_file=None)
+
+    assert settings.llm_retry_max_attempts == 2
+    assert settings.llm_retry_base_delay_ms == 200
+    assert settings.llm_retry_max_delay_ms == 2000
+    assert settings.tool_retry_max_attempts == 3
+    assert settings.tool_retry_base_delay_ms == 50
+    assert settings.tool_retry_max_delay_ms == 400
+    assert settings.llm_breaker_failure_threshold == 5
+    assert settings.llm_breaker_reset_seconds == 30.0
+    assert settings.tool_breaker_failure_threshold == 5
+    assert settings.tool_breaker_reset_seconds == 10.0
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "LLM_RETRY_MAX_ATTEMPTS",
+        "TOOL_RETRY_MAX_ATTEMPTS",
+        "LLM_BREAKER_FAILURE_THRESHOLD",
+        "TOOL_BREAKER_FAILURE_THRESHOLD",
+    ],
+)
+def test_a_zero_attempts_or_threshold_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    """Zero attempts or a zero failure threshold would never actually call or never actually
+    open; both are configuration mistakes, not valid bounds."""
+    monkeypatch.setenv(name, "0")
+
+    with pytest.raises(ConfigError, match=name):
+        load_settings(env_file=None)
+
+
+@pytest.mark.parametrize(
+    "name", ["LLM_RETRY_BASE_DELAY_MS", "TOOL_RETRY_BASE_DELAY_MS", "LLM_RETRY_MAX_DELAY_MS"]
+)
+def test_a_negative_delay_is_rejected(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    monkeypatch.setenv(name, "-1")
+
+    with pytest.raises(ConfigError, match=name):
+        load_settings(env_file=None)
+
+
+def test_a_zero_base_delay_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero (retry immediately, no backoff) is a valid, if aggressive, configuration."""
+    monkeypatch.setenv("LLM_RETRY_BASE_DELAY_MS", "0")
+
+    assert load_settings(env_file=None).llm_retry_base_delay_ms == 0
 
 
 def test_the_sandbox_login_needs_its_secret(monkeypatch: pytest.MonkeyPatch) -> None:
