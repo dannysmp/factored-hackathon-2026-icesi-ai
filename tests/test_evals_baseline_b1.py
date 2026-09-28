@@ -184,6 +184,7 @@ def test_run_case_answers_a_policy_question_via_one_tool_round(
     assert reply.handoff_ticket is None
     assert reply.next_expected is None
     assert len(stub.messages.calls) == 2
+    assert transcript.latencies_seconds[0] > 0  # summed over 2 real send() calls, never zero
 
     result = score_case(dsn, transcript)
     assert result.correct_outcome is True
