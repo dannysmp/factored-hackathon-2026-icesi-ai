@@ -24,18 +24,19 @@ file itself.
 ## Slide 2 — Architecture and its trade-offs
 
 - The system splits along one line the whole design follows: **the model understands and renders
-  language; code decides and acts.** Dispute eligibility, routing and confirmation requirements
-  live only in the deterministic policy engine — the model never decides an outcome.
-- **Every write is read back before the customer is told it happened** (verify-before-report); a
-  document number is never accepted as identity, in any tool, for any customer.
+  language; code decides and acts** (ADR-1: a deterministic policy engine over an autonomous agent
+  loop). Dispute eligibility, routing and confirmation requirements live only in that engine — the
+  model never decides an outcome.
+- **Every write is read back before the customer is told it happened**; a document number is never
+  accepted as identity, in any tool, for any customer (ADR-18).
 - Three deliberate right-sizing trade-offs, each with a written trigger to move up a tier (the full
   set is the technology evolution matrix in `plan/docs/architecture.md`):
-  - **Policy retrieval:** lexical BM25 with an abstention floor, not embeddings — the corpus is
-    about 21 chunks; embeddings are added only if measured recall falls below 0.95.
-  - **LLM access:** the Anthropic API with one managed secret, not Bedrock — moves to Bedrock the
-    moment the account has model access, removing the last long-lived model key.
-  - **Analytics:** DuckDB over partitioned Parquet, not a managed warehouse — moves to Athena the
-    moment a single node stops being comfortable.
+  - **Policy retrieval (ADR-16):** lexical BM25 with an abstention floor, not embeddings — the
+    corpus is about 21 chunks; embeddings are added only if measured recall falls below 0.95.
+  - **LLM access (ADR-7):** the Anthropic API with one managed secret, not Bedrock — moves to
+    Bedrock the moment the account has model access, removing the last long-lived model key.
+  - **Analytics (ADR-9):** DuckDB over partitioned Parquet, not a managed warehouse — moves to
+    Athena the moment a single node stops being comfortable.
 - The trade-off is proportional to a demonstration's load, and every one of them is a configuration
   or infrastructure change, not a redesign, when its trigger fires.
 
@@ -52,13 +53,14 @@ file itself.
   | A fraud claim, a large amount, a repeat complainer, or low confidence after two clarifications | Escalate to a person with a structured packet |
   | Anything that moves money or resolves a dispute | **Never automated — a non-goal, not a future feature** |
 
-- **Authorization is enforced in the tool layer**, not in the model: every tool is scoped to the
-  authenticated session's own customer, and no tool accepts a customer identifier as an argument.
-- **The risk model only routes; it never decides.** A fraud claim always reaches a person by
-  category alone, regardless of the risk score.
+- **Authorization is enforced in the tool layer**, not in the model (ADR-3): every tool is scoped
+  to the authenticated session's own customer, and no tool accepts a customer identifier as an
+  argument.
+- **The risk model only routes; it never decides** (ADR-6). A fraud claim always reaches a person
+  by category alone, regardless of the risk score.
 - The human-agent console is a **read-only viewer** today by deliberate decision, not by an
-  unfinished feature — narrow audited writes are the planned next step, scheduled after every
-  planned slice of this release has merged.
+  unfinished feature (ADR-17) — narrow audited writes are the planned next step, scheduled after
+  every planned slice of this release has merged.
 
 ## Slide 4 — Evaluation results
 
