@@ -23,7 +23,9 @@ from app.security.errors import ErrorCode
 from app.security.limits import AttemptLimiter
 from app.security.sessions import (
     ISSUER,
+    AgentPrincipal,
     InMemoryRevocationStore,
+    Principal,
     SessionRejected,
     SessionService,
 )
@@ -77,9 +79,10 @@ def _forge(
     return jwt.encode(claims, key, algorithm=algorithm, headers=headers)
 
 
-def _code(service: SessionService, token: str) -> ErrorCode:
+def _code(service: SessionService, token: str, *, audience: str = "customer") -> ErrorCode:
+    verify = service.verify_customer if audience == "customer" else service.verify_agent
     with pytest.raises(SessionRejected) as raised:
-        service.verify(token)
+        verify(token)
     return raised.value.code
 
 
@@ -92,7 +95,7 @@ def test_a_token_identifies_the_customer_it_was_issued_for(service: SessionServi
     """Round trip: the principal carries the customer, the session and the lifetime."""
     issued = service.issue("CUST-0042", audience="customer")
 
-    principal = service.verify(issued.token)
+    principal = service.verify_customer(issued.token)
 
     assert principal.customer_id == "CUST-0042"
     assert principal.session_id == issued.session_id
@@ -129,7 +132,7 @@ def test_the_last_second_of_the_lifetime_is_valid_and_the_next_is_expired(
     token = service.issue("C1", audience="customer").token
 
     clock.now = START + timedelta(seconds=899)
-    assert service.verify(token).customer_id == "C1"
+    assert service.verify_customer(token).customer_id == "C1"
     clock.now = START + timedelta(seconds=900)
     assert _code(service, token) is ErrorCode.SESSION_EXPIRED
     clock.now = START + timedelta(days=30)
@@ -167,13 +170,17 @@ def test_issuing_for_an_unconfigured_audience_is_refused(service: SessionService
         service.issue("C1", audience="unknown")
 
 
-def test_a_demo_flag_and_the_issuing_audience_round_trip(service: SessionService) -> None:
-    """The principal reports which audience issued the token, and whether it was a demo one."""
+def test_a_demo_flag_round_trips_and_an_agent_token_yields_an_agent_principal(
+    service: SessionService,
+) -> None:
+    """``AgentPrincipal`` is a distinct type from ``Principal`` (ADR-17, ADR-18), not a flag on
+    one shared type — a route written against one type cannot silently accept the other."""
     issued = service.issue("A1", audience="agent", demo=True)
 
-    principal = service.verify(issued.token)
+    principal = service.verify_agent(issued.token)
 
-    assert principal.audience == "agent"
+    assert isinstance(principal, AgentPrincipal)
+    assert principal.agent_id == "A1"
     assert principal.demo is True
 
 
@@ -189,10 +196,23 @@ def test_a_customer_token_and_an_agent_token_use_different_keys(
     forged_as_agent = _forge(_claims(clock, aud="agent"), key="k" * 40, kid="agent")
     forged_as_customer = _forge(_claims(clock, aud="customer"), key="g" * 40, kid="customer")
 
-    assert service.verify(customer_token).audience == "customer"
-    assert service.verify(agent_token).audience == "agent"
-    assert _code(service, forged_as_agent) is ErrorCode.SESSION_INVALID
-    assert _code(service, forged_as_customer) is ErrorCode.SESSION_INVALID
+    assert isinstance(service.verify_customer(customer_token), Principal)
+    assert isinstance(service.verify_agent(agent_token), AgentPrincipal)
+    assert _code(service, forged_as_agent, audience="agent") is ErrorCode.SESSION_INVALID
+    assert _code(service, forged_as_customer, audience="customer") is ErrorCode.SESSION_INVALID
+
+
+def test_a_token_of_the_right_signature_but_the_wrong_audience_method_is_refused(
+    service: SessionService,
+) -> None:
+    """``verify_customer``/``verify_agent`` refuse a validly signed token of the other audience,
+    exactly like a bad signature — the split itself is the audience check, not a field compared
+    after the fact."""
+    customer_token = service.issue("C1", audience="customer").token
+    agent_token = service.issue("A1", audience="agent").token
+
+    assert _code(service, customer_token, audience="agent") is ErrorCode.SESSION_INVALID
+    assert _code(service, agent_token, audience="customer") is ErrorCode.SESSION_INVALID
 
 
 @pytest.mark.parametrize("kid", [None, "unknown-audience"])
@@ -313,7 +333,7 @@ def test_a_revoked_session_is_refused_until_it_would_have_expired(
 ) -> None:
     """Logout takes effect immediately and never outlives the token."""
     issued = service.issue("C1", audience="customer")
-    principal = service.verify(issued.token)
+    principal = service.verify_customer(issued.token)
 
     service.revoke(principal)
 
@@ -329,9 +349,9 @@ def test_revoking_one_session_leaves_the_others(service: SessionService) -> None
         service.issue("C1", audience="customer"),
     )
 
-    service.revoke(service.verify(first.token))
+    service.revoke(service.verify_customer(first.token))
 
-    assert service.verify(second.token).customer_id == "C1"
+    assert service.verify_customer(second.token).customer_id == "C1"
 
 
 def test_the_revocation_store_forgets_expired_entries_and_never_forgets_live_ones() -> None:
