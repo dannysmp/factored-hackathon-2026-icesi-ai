@@ -14,35 +14,43 @@
 version: 1
 customers:
   - slug: ana
+    display_name: Ana
     customer_id: CUST-DEMO-ES-1
     language: es
     scenario: eligible
   - slug: joao
+    display_name: João
     customer_id: CUST-DEMO-PT-1
     language: pt
     scenario: eligible
   - slug: emma
+    display_name: Emma
     customer_id: CUST-DEMO-EN-1
     language: en
     scenario: eligible
   - slug: carlos
+    display_name: Carlos
     customer_id: CUST-DEMO-ES-2
     language: es
     scenario: human_required
   - slug: mariana
+    display_name: Mariana
     customer_id: CUST-DEMO-PT-2
     language: pt
     scenario: repeat_complainer
   - slug: sofia
+    display_name: Sofía
     customer_id: CUST-DEMO-ES-3
     language: es
     scenario: eligible
 agents:
   - slug: agent-beatriz
+    display_name: Beatriz
     agent_id: AGENT-DEMO-PT-1
     languages: [pt, es]
     specialty: null
   - slug: agent-diego
+    display_name: Diego
     agent_id: AGENT-DEMO-FRAUD-1
     languages: [es]
     specialty: fraud
