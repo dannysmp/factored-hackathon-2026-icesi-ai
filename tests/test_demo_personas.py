@@ -62,6 +62,11 @@ def test_a_valid_persona_file_loads(tmp_path: Path) -> None:
     assert ana.customer_id == "CUST-1"
     assert personas.customer_by_slug("unknown") is None
 
+    beatriz = personas.agent_by_slug("agent-beatriz")
+    assert beatriz is not None
+    assert beatriz.agent_id == "AGENT-1"
+    assert personas.agent_by_slug("unknown") is None
+
 
 @pytest.mark.parametrize(
     "text",
@@ -79,6 +84,9 @@ def test_a_valid_persona_file_loads(tmp_path: Path) -> None:
         "version: 1\ncustomers:\n  - slug: a\n    customer_id: C1\n    language: es\n"
         "    scenario: eligible\nagents:\n  - slug: b\n    agent_id: A1\n    languages: [es]\n"
         "  - slug: b\n    agent_id: A2\n    languages: [es]\n",
+        "version: 1\ncustomers:\n  - slug: a\n    customer_id: C1\n    language: es\n"
+        "    scenario: eligible\nagents:\n  - slug: b\n    agent_id: 'has a space'\n"
+        "    languages: [es]\n",
     ],
     ids=[
         "bad-yaml",
@@ -88,6 +96,7 @@ def test_a_valid_persona_file_loads(tmp_path: Path) -> None:
         "bad-language",
         "unknown-field",
         "duplicate-agent-slug",
+        "malformed-agent-id",
     ],
 )
 def test_an_invalid_persona_file_is_refused(tmp_path: Path, text: str) -> None:

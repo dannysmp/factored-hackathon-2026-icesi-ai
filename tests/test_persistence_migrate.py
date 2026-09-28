@@ -115,6 +115,7 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         "0005_audit_log_replay_action",
         "0006_dialogue_and_handoff",
         "0006_signin_audit",
+        "0007_signin_audit_agent_id",
     )
 
     again = apply_migrations(dsn)

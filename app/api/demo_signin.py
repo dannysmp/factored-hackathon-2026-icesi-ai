@@ -13,11 +13,15 @@ document number.
 
 Scope
 -----
-In: the one route, its request and response shapes, and wiring the access-code check, the persona
-lookup, the issuance limits and the sign-in audit together in the order ADR-18 requires.
+In: the two routes (customer and agent), their request and response shapes, and wiring the
+access-code check, the persona lookup, the issuance limits and the sign-in audit together in the
+order ADR-18 requires. The two brokers share every helper below but are never the same route or
+the same access code, matching ADR-18's "a leaked customer code leaves the console protected".
 Out: validating the persona file or checking it against the seed (``app.security.demo_personas``,
-done once at start-up), issuing or verifying the token itself (``SessionService``), the two
-limiter implementations (``app.security.limits``, ``app.security.issuance_limits``).
+done once at start-up — the agent list has no seed to check against), issuing or verifying the
+token itself (``SessionService``), the two limiter implementations (``app.security.limits``,
+``app.security.issuance_limits``), the console's own read routes (queue, packet, audit timeline —
+ADR-17, a later slice; this module only gets an agent a token).
 
 Design Principles
 ------------------
@@ -39,11 +43,15 @@ Runtime Contract
 -----------------
 ``POST /v1/auth/demo-sessions``  body ``{"persona": str}``, header ``X-Demo-Access-Code``  ->
 201 session (public while ``DEMO_SIGNIN_ENABLED`` is true).
+``POST /v1/auth/demo-agent-sessions``  body ``{"persona": str}``, header ``X-Demo-Access-Code``  ->
+201 session (public while ``DEMO_AGENT_SIGNIN_ENABLED`` is true), its own access code.
 
 Limitations
 -----------
-Customer-only (ADR-18's agent audience is 1.5b); the persona file's ``agents`` section is loaded
-but not yet wired to any route.
+An issued agent session has nowhere to go yet: the console's own routes (ADR-17) are a later
+slice that also registers the ``/v1/agent`` audience prefix with the authentication middleware.
+Until then an agent token verifies correctly (proven at the token and audit level) but is not
+accepted by any protected route — including ``/v1/session``, still customer-only.
 """
 
 from __future__ import annotations
@@ -79,11 +87,15 @@ from app.security.signin_audit import (  # The sign-in audit record and sink
 logger = logging.getLogger(__name__)
 
 DEMO_SESSIONS_PATH = "/v1/auth/demo-sessions"
+AGENT_SESSIONS_PATH = "/v1/auth/demo-agent-sessions"
 CUSTOMER_TTL = timedelta(minutes=30)
+AGENT_TTL = timedelta(minutes=60)
 
-# Bound how many live demo customer sessions one address, the whole broker, and one persona slot
-# may hold at once (ADR-18: "limits that count successes"). A persona is one demo identity; more
-# than one live session under it risks the duplicate-open-case contamination Arch C8 names.
+# Bound how many live demo sessions one address, the whole broker, and one persona slot may hold
+# at once (ADR-18: "limits that count successes"). A persona is one demo identity; more than one
+# live session under it risks the duplicate-open-case contamination Arch C8 names for customers,
+# and a confusing shared queue view for agents. The same defaults serve both brokers; each gets
+# its own ``IssuanceLimiter`` instance, so the caps never share counters across audiences.
 DEFAULT_ADDRESS_CAP = 3
 DEFAULT_GLOBAL_CAP = 50
 DEFAULT_PERSONA_CAP = 1
@@ -316,6 +328,169 @@ def build_demo_signin_router(
             raise
         logger.info(
             "demo_session_issued session_id=%s request_id=%s",
+            issued.session_id,
+            current_request_id(),
+        )
+        ttl_seconds = int((issued.expires_at - sessions.now()).total_seconds())
+        return SessionResponse(
+            access_token=issued.token, expires_at=issued.expires_at, expires_in=ttl_seconds
+        )
+
+    return router
+
+
+def build_demo_agent_signin_router(
+    *,
+    sessions: SessionService,
+    demo_access_code: SecretStr,
+    personas: PersonaList,
+    audit: SignInAuditSink,
+    attempt_limiter: AttemptLimiter,
+    issuance_limiter: IssuanceLimiter,
+    address_cap: int = DEFAULT_ADDRESS_CAP,
+    global_cap: int = DEFAULT_GLOBAL_CAP,
+    persona_cap: int = DEFAULT_PERSONA_CAP,
+) -> APIRouter:
+    """Build the agent demonstration sign-in route (ADR-17, ADR-18).
+
+    Mirrors ``build_demo_signin_router`` exactly, audience by audience: its own access code (never
+    the customer one — a leaked customer code must not expose the console), its own persona list
+    (``personas.agents``), its own TTL (60 minutes, ADR-18's agent bound) and its own resolved-id
+    audit field (``resolved_agent_id``, never ``resolved_customer_id``). The two brokers never
+    share an ``AttemptLimiter`` or ``IssuanceLimiter`` instance, so a run on one never counts
+    against the other.
+
+    Parameters
+    ----------
+    sessions : SessionService
+        Issues session tokens; must hold a signing key for the ``"agent"`` audience.
+    demo_access_code : SecretStr
+        The agent broker's own shared secret, compared in constant time.
+    personas : PersonaList
+        Already loaded (``app.security.demo_personas``); agent personas are not checked against
+        any seed, since they resolve to no row (unlike customers).
+    audit : SignInAuditSink
+        Where every attempt, refused included, is recorded before a token is ever returned.
+    attempt_limiter : AttemptLimiter
+        Limits wrong access codes per client address for this broker only.
+    issuance_limiter : IssuanceLimiter
+        Bounds concurrent successful sign-ins per address, globally and per persona slot, for this
+        broker only.
+    """
+    expected = demo_access_code.get_secret_value().encode("utf-8")
+    router = APIRouter()
+
+    def _audit_or_fail_closed(entry: SignInAuditRecord) -> None:
+        """Write the audit record or fail the whole attempt closed (ADR-18)."""
+        try:
+            audit.record(entry)
+        except Exception as error:
+            logger.error("signin_audit_failed request_id=%s", current_request_id())
+            raise ProblemError(
+                ErrorCode.SERVICE_UNAVAILABLE,
+                503,
+                "The sign-in could not be completed",
+                "Try again shortly.",
+                headers={"Retry-After": "60"},
+            ) from error
+
+    def authorize_demo_agent_client(
+        request: Request,
+        x_demo_access_code: Annotated[str | None, Header()] = None,
+    ) -> None:
+        """Refuse the agent demo sign-in unless the caller holds the agent access code."""
+        supplied = (x_demo_access_code or "").encode("utf-8")
+        if hmac.compare_digest(supplied, expected):
+            return
+        address = _client_address(request)
+        wait = attempt_limiter.begin_attempt(address)
+        record = SignInAuditRecord(
+            trace_id=current_request_id(),
+            occurred_at=sessions.now(),
+            audience=SignInAudience.AGENT,
+            outcome=SignInOutcome.REFUSED,
+            reason_code=(
+                SignInReasonCode.RATE_LIMITED if wait else SignInReasonCode.INVALID_ACCESS_CODE
+            ),
+            client_address_hash=_address_hash(address),
+        )
+        if wait:
+            logger.warning("demo_agent_signin_limited request_id=%s", current_request_id())
+            _audit_or_fail_closed(record)
+            raise _rate_limited(wait)
+        logger.warning("demo_agent_signin_rejected request_id=%s", current_request_id())
+        _audit_or_fail_closed(record)
+        raise _refusal()
+
+    @router.post(
+        AGENT_SESSIONS_PATH, status_code=201, dependencies=[Depends(authorize_demo_agent_client)]
+    )
+    def create_demo_agent_session(body: DemoSignInRequest, request: Request) -> SessionResponse:
+        """Issue an agent demo session for a known persona, or refuse (ADR-17, ADR-18)."""
+        address = _client_address(request)
+        address_hash = _address_hash(address)
+        persona = personas.agent_by_slug(body.persona)
+        if persona is None:
+            logger.warning("demo_agent_signin_unknown_persona request_id=%s", current_request_id())
+            _audit_or_fail_closed(
+                SignInAuditRecord(
+                    trace_id=current_request_id(),
+                    occurred_at=sessions.now(),
+                    audience=SignInAudience.AGENT,
+                    outcome=SignInOutcome.REFUSED,
+                    reason_code=SignInReasonCode.UNKNOWN_PERSONA,
+                    client_address_hash=address_hash,
+                    persona_slug=body.persona,
+                )
+            )
+            raise _refusal()
+
+        reserved = _reserve_all(
+            issuance_limiter,
+            [
+                (f"address:{address}", address_cap),
+                ("global:agent", global_cap),
+                (f"persona:{persona.slug}", persona_cap),
+            ],
+            AGENT_TTL,
+        )
+        if reserved is None:
+            logger.warning("demo_agent_signin_capacity_reached request_id=%s", current_request_id())
+            _audit_or_fail_closed(
+                SignInAuditRecord(
+                    trace_id=current_request_id(),
+                    occurred_at=sessions.now(),
+                    audience=SignInAudience.AGENT,
+                    outcome=SignInOutcome.REFUSED,
+                    reason_code=SignInReasonCode.RATE_LIMITED,
+                    client_address_hash=address_hash,
+                    persona_slug=persona.slug,
+                )
+            )
+            raise _rate_limited(60)
+
+        issued = sessions.issue(persona.agent_id, audience="agent", ttl=AGENT_TTL, demo=True)
+        try:
+            _audit_or_fail_closed(
+                SignInAuditRecord(
+                    trace_id=current_request_id(),
+                    occurred_at=sessions.now(),
+                    audience=SignInAudience.AGENT,
+                    outcome=SignInOutcome.ISSUED,
+                    reason_code=SignInReasonCode.ISSUED,
+                    client_address_hash=address_hash,
+                    persona_slug=persona.slug,
+                    resolved_agent_id=persona.agent_id,
+                    session_id=issued.session_id,
+                )
+            )
+        except ProblemError:
+            # Same reservation-leak fix as the customer broker: no token reaches the caller on
+            # this path, so the three reservations above must not either.
+            _release_all(issuance_limiter, reserved)
+            raise
+        logger.info(
+            "demo_agent_session_issued session_id=%s request_id=%s",
             issued.session_id,
             current_request_id(),
         )

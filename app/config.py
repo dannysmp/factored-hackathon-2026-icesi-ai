@@ -159,6 +159,18 @@ class Settings(BaseSettings):
     demo_signin_access_code : SecretStr | None
         Shared secret the demo sign-in broker requires (at least 16 characters), compared in
         constant time and rate-limited.
+    demo_agent_signin_enabled : bool
+        Turns on the demonstration sign-in broker for agents (ADR-17, ADR-18): the console's own
+        sign-in path, separate from the customer broker so a leaked customer code never exposes
+        it. Mutually exclusive with ``test_identity_enabled``; not restricted to any environment.
+    demo_agent_access_code : SecretStr | None
+        Shared secret the agent demo sign-in broker requires (at least 16 characters), its own
+        code so it never shares a failure domain with the customer broker's.
+    agent_session_signing_key : SecretStr | None
+        Key that signs agent-audience session tokens (at least 32 characters), separate from
+        ``session_signing_key`` so a customer token and an agent token can never be confused even
+        if one key were compromised (ADR-18). Optional in ``local``, where a throw-away key is
+        generated; required in ``dev`` and ``prod`` once the agent broker is enabled.
     """
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)
@@ -180,6 +192,9 @@ class Settings(BaseSettings):
     case_create_session_cap: int = Field(default=3, ge=1, le=50)
     demo_signin_enabled: bool = False
     demo_signin_access_code: SecretStr | None = None
+    demo_agent_signin_enabled: bool = False
+    demo_agent_access_code: SecretStr | None = None
+    agent_session_signing_key: SecretStr | None = None
 
     @field_validator("nlu_model", "render_model")
     @classmethod
@@ -198,7 +213,12 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "session_signing_key", "test_identity_key", "database_url", "demo_signin_access_code"
+        "session_signing_key",
+        "test_identity_key",
+        "database_url",
+        "demo_signin_access_code",
+        "demo_agent_access_code",
+        "agent_session_signing_key",
     )
     @classmethod
     def _blank_secret_means_absent(cls, value: SecretStr | None) -> SecretStr | None:
@@ -207,7 +227,7 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("session_signing_key")
+    @field_validator("session_signing_key", "agent_session_signing_key")
     @classmethod
     def _signing_key_is_long_enough(cls, value: SecretStr | None) -> SecretStr | None:
         """A short signing key can be guessed; require at least 32 characters."""
@@ -219,10 +239,10 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("test_identity_key", "demo_signin_access_code")
+    @field_validator("test_identity_key", "demo_signin_access_code", "demo_agent_access_code")
     @classmethod
     def _test_key_is_long_enough(cls, value: SecretStr | None) -> SecretStr | None:
-        """The sandbox login secret and the demo access code must not be trivially guessable."""
+        """The sandbox login secret and the demo access codes must not be trivially guessable."""
         if value is not None and len(value.get_secret_value()) < MIN_TEST_KEY_LENGTH:
             raise ValueError(f"must be at least {MIN_TEST_KEY_LENGTH} characters")
         return value
@@ -250,6 +270,24 @@ class Settings(BaseSettings):
             raise ValueError("DEMO_SIGNIN_ACCESS_CODE is required when DEMO_SIGNIN_ENABLED is true")
         return self
 
+    @model_validator(mode="after")
+    def _demo_agent_signin_rules(self) -> Settings:
+        """The agent demo broker needs its own code and never runs alongside the sandbox login.
+
+        A separate rule from the customer broker's own (rather than one combined check) because
+        the two settings are independent: either, both or neither may be on (ADR-18 runs both
+        together in the deployment), and each names its own missing setting in the error.
+        """
+        if self.demo_agent_signin_enabled and self.test_identity_enabled:
+            raise ValueError(
+                "DEMO_AGENT_SIGNIN_ENABLED and TEST_IDENTITY_ENABLED are mutually exclusive"
+            )
+        if self.demo_agent_signin_enabled and self.demo_agent_access_code is None:
+            raise ValueError(
+                "DEMO_AGENT_ACCESS_CODE is required when DEMO_AGENT_SIGNIN_ENABLED is true"
+            )
+        return self
+
     def require_anthropic_key(self) -> SecretStr:
         """Return the Anthropic API key or fail with an actionable message.
 
@@ -275,6 +313,20 @@ class Settings(BaseSettings):
                 "DEMO_SIGNIN_ACCESS_CODE is required when DEMO_SIGNIN_ENABLED is true"
             )
         return self.demo_signin_access_code
+
+    def require_demo_agent_signin_access_code(self) -> SecretStr:
+        """Return the agent demo broker's access code or fail with an actionable message.
+
+        Raises
+        ------
+        ConfigError
+            When ``DEMO_AGENT_ACCESS_CODE`` is not configured.
+        """
+        if self.demo_agent_access_code is None:
+            raise ConfigError(
+                "DEMO_AGENT_ACCESS_CODE is required when DEMO_AGENT_SIGNIN_ENABLED is true"
+            )
+        return self.demo_agent_access_code
 
     def require_database_url(self) -> SecretStr:
         """Return the serving-store DSN or fail with an actionable message.
