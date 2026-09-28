@@ -128,6 +128,19 @@ def test_a_protected_path_with_no_configured_audience_is_refused_not_silently_ac
     assert response.json()["code"] == ErrorCode.SESSION_INVALID.value
 
 
+def test_a_path_mapped_to_an_unrecognized_audience_is_refused() -> None:
+    """A configuration mistake — a prefix mapped to something other than "customer" or "agent" —
+    is refused like any other authentication failure, not treated as an open audience."""
+    sessions = _service()
+    client = TestClient(_app(sessions, {"/v1": "unknown-audience"}))
+    token = sessions.issue("C1", audience="customer").token
+
+    response = client.get("/v1/whoami", headers=_bearer(token))
+
+    assert response.status_code == 401
+    assert response.json()["code"] == ErrorCode.SESSION_INVALID.value
+
+
 def test_a_missing_bearer_token_is_refused() -> None:
     sessions = _service()
     client = TestClient(_app(sessions, {"/v1": "customer"}))

@@ -254,11 +254,14 @@ class SessionService:
     ) -> tuple[str, str, datetime, datetime, bool]:
         """Decode and validate ``token``, refusing anything not for ``expected_audience``.
 
-        Shared by ``verify_customer`` and ``verify_agent``: the audience decides which key is
-        even attempted, so a token signed for the other audience never reaches this method at
-        all with a key that would verify it — this check exists only as defense in depth against
-        a future audience sharing a key by mistake, and returns the same refusal a bad signature
-        would.
+        Shared by ``verify_customer`` and ``verify_agent``. The key that verifies the signature is
+        selected by the token's own header (``kid``), not by ``expected_audience`` — so this
+        method's explicit ``kid != expected_audience`` check is the sole thing that refuses a
+        validly signed token of the other audience; without it, a customer token would decode
+        successfully inside ``verify_agent`` (and vice versa) using the customer key the header
+        itself names, silently producing the wrong principal type rather than being refused. The
+        refusal it raises is identical to a bad signature's, so a caller learns nothing about
+        which audiences exist.
         """
         # The header's key selector is untrusted: it only picks which key to try. If it names an
         # audience this service holds no key for, or the token is malformed, that is refused
