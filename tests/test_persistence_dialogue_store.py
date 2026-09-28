@@ -163,9 +163,90 @@ def test_a_case_filed_and_a_handoff_survive_a_round_trip(store: DialogueStore) -
     filed = _state().with_case_filed("D-1")
     store.save(filed, expected_version=0, turn_id="t-1", now=_NOW)
 
-    assert store.get("s-1") is not None
-    assert store.get("s-1").last_case_number == "D-1"  # type: ignore[union-attr]
-    assert store.get("s-1").phase is ConversationPhase.CLOSED  # type: ignore[union-attr]
+    read_back = store.get("s-1")
+
+    assert read_back is not None
+    assert read_back.last_case_number == "D-1"
+    assert read_back.phase is ConversationPhase.CLOSED
+
+
+# -----------------------------------------------------------------------------
+# Postgres-only: telemetry
+# -----------------------------------------------------------------------------
+
+
+def _postgres_store() -> PostgresDialogueStore:
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL is not set")
+    apply_migrations(dsn)
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("TRUNCATE TABLE dialogue_state CASCADE")
+    return PostgresDialogueStore(dsn)
+
+
+@pytest.mark.integration
+def test_a_repeated_turn_id_logs_a_replay_event(caplog: pytest.LogCaptureFixture) -> None:
+    """A replay is its own log line, for operational grep alongside the port's own doctrine."""
+    store = _postgres_store()
+    store.save(_state(), expected_version=0, turn_id="t-1", now=_NOW)
+
+    with (
+        caplog.at_level("INFO", logger="app.persistence.dialogue_store"),
+        pytest.raises(DuplicateTurn),
+    ):
+        store.save(_state(), expected_version=0, turn_id="t-1", now=_LATER)
+
+    assert any(
+        "dialogue_turn_replayed" in record.message and "session_id=s-1" in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.integration
+def test_a_stale_version_logs_a_conflict_event(caplog: pytest.LogCaptureFixture) -> None:
+    """A stale write is logged before it is raised, not silently retried in the dark."""
+    store = _postgres_store()
+    store.save(_state(), expected_version=0, turn_id="t-1", now=_NOW)
+
+    with (
+        caplog.at_level("WARNING", logger="app.persistence.dialogue_store"),
+        pytest.raises(Conflict),
+    ):
+        store.save(_state(), expected_version=0, turn_id="t-2", now=_LATER)
+
+    assert any(
+        "dialogue_state_conflict" in record.message and "session_id=s-1" in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.integration
+def test_a_get_failure_logs_before_propagating(caplog: pytest.LogCaptureFixture) -> None:
+    """A genuine store failure on a read is logged, then still raised — never swallowed."""
+    store = PostgresDialogueStore("postgresql://nobody:nowhere@localhost:1/does_not_exist")
+
+    with (
+        caplog.at_level("WARNING", logger="app.persistence.dialogue_store"),
+        pytest.raises(psycopg.Error),
+    ):
+        store.get("s-1")
+
+    assert any("dialogue_state_get_failed" in record.message for record in caplog.records)
+
+
+@pytest.mark.integration
+def test_a_save_failure_logs_before_propagating(caplog: pytest.LogCaptureFixture) -> None:
+    """A genuine store failure on a write is logged, then still raised — never swallowed."""
+    store = PostgresDialogueStore("postgresql://nobody:nowhere@localhost:1/does_not_exist")
+
+    with (
+        caplog.at_level("WARNING", logger="app.persistence.dialogue_store"),
+        pytest.raises(psycopg.Error),
+    ):
+        store.save(_state(), expected_version=0, turn_id="t-1", now=_NOW)
+
+    assert any("dialogue_state_save_failed" in record.message for record in caplog.records)
 
 
 # -----------------------------------------------------------------------------
