@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import threading
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from unittest.mock import patch
 
 # Third-party libraries
@@ -20,14 +21,22 @@ import psycopg.errors
 import pytest
 
 # Local modules
-from app.domain.policy.models import ReasonCode
+from app.domain.policy.models import DisputeCategory, ReasonCode, TransactionStatus
 from app.persistence.handoff_outbox import (
     HandoffContent,
     HandoffReplayMismatch,
     PostgresHandoffOutbox,
 )
 from app.persistence.migrate import apply_migrations
-from contracts.service_v1.envelope import LocalizedTitle, Slot, SourceRef
+from contracts.service_v1.envelope import (
+    LocalizedTitle,
+    Money,
+    ProductLabel,
+    RiskEvidence,
+    Slot,
+    SourceRef,
+    TransactionFact,
+)
 from contracts.service_v1.handoff import (
     ActionRecord,
     HandoffPacket,
@@ -113,6 +122,113 @@ def test_a_replay_with_different_content_is_refused(outbox: PostgresHandoffOutbo
 
     with pytest.raises(HandoffReplayMismatch):
         _record(outbox, _content(trigger=HandoffTrigger.CARD_LOSS))
+
+
+@pytest.mark.integration
+def test_a_replay_with_different_risk_is_refused(outbox: PostgresHandoffOutbox) -> None:
+    """A field beyond the top-level scalars — risk evidence — is checked too, not just the ones
+    most visible at a glance."""
+    _record(outbox, _content())
+
+    with pytest.raises(HandoffReplayMismatch):
+        _record(
+            outbox,
+            _content(
+                risk=RiskEvidence(score=0.9, interval_low=0.8, interval_high=0.95, base_rate=0.01)
+            ),
+        )
+
+
+@pytest.mark.integration
+def test_a_replay_with_different_reason_codes_is_refused(outbox: PostgresHandoffOutbox) -> None:
+    """A repeating child-table part (reason codes) is compared too, not only scalar columns."""
+    _record(outbox, _content(reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,)))
+
+    with pytest.raises(HandoffReplayMismatch):
+        _record(outbox, _content(reason_codes=(ReasonCode.ESCALATE_FRAUD_CLAIM,)))
+
+
+def _transaction_fact(ref: str) -> TransactionFact:
+    return TransactionFact(
+        ref=ref,
+        occurred_on=_REFERENCE_DATE,
+        merchant="A Shop",
+        amount=Money(amount=Decimal("10.00"), currency="USD"),
+        product=ProductLabel(name="Visa", last4="1234"),
+        status=TransactionStatus.APPROVED,
+    )
+
+
+@pytest.mark.parametrize(
+    ("baseline", "changed"),
+    [
+        (
+            {"verified_facts": (_transaction_fact("tx-1"),)},
+            {"verified_facts": (_transaction_fact("tx-2"),)},
+        ),
+        (
+            {"actions": (ActionRecord(action="looked_up_transaction", result="found"),)},
+            {"actions": (ActionRecord(action="looked_up_transaction", result="not_found"),)},
+        ),
+        (
+            {"open_questions": (OpenQuestion(slot=Slot.REASON, attempts=1),)},
+            {"open_questions": (OpenQuestion(slot=Slot.REASON, attempts=2),)},
+        ),
+        ({"existing_case_number": "D-1"}, {"existing_case_number": "D-2"}),
+        (
+            {"attempted_action": ActionRecord(action="create_dispute_case", result="tool_failure")},
+            {"attempted_action": ActionRecord(action="create_dispute_case", result="timeout")},
+        ),
+        (
+            {
+                "sources": (
+                    SourceRef(
+                        section_id="filing-windows",
+                        titles=(
+                            LocalizedTitle(lang="es", text="A"),
+                            LocalizedTitle(lang="pt", text="A"),
+                            LocalizedTitle(lang="en", text="A"),
+                        ),
+                        corpus_version="2",
+                    ),
+                )
+            },
+            {
+                "sources": (
+                    SourceRef(
+                        section_id="evidence-required",
+                        titles=(
+                            LocalizedTitle(lang="es", text="B"),
+                            LocalizedTitle(lang="pt", text="B"),
+                            LocalizedTitle(lang="en", text="B"),
+                        ),
+                        corpus_version="2",
+                    ),
+                )
+            },
+        ),
+        ({"category": DisputeCategory.FRAUD_CLAIM}, {"category": DisputeCategory.WRONG_AMOUNT}),
+    ],
+    ids=[
+        "verified_facts",
+        "actions",
+        "open_questions",
+        "existing_case_number",
+        "attempted_action",
+        "sources",
+        "category",
+    ],
+)
+@pytest.mark.integration
+def test_a_replay_mismatch_is_caught_for_every_persisted_field(
+    outbox: PostgresHandoffOutbox, baseline: dict[str, object], changed: dict[str, object]
+) -> None:
+    """Every persisted, content-bearing field is part of the mismatch check, not only the ones
+    most visible at a glance."""
+    _record(outbox, _content(**baseline))
+
+    with pytest.raises(HandoffReplayMismatch):
+        _record(outbox, _content(**changed))
 
 
 @pytest.mark.integration

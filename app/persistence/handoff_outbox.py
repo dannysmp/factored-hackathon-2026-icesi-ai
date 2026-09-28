@@ -27,17 +27,16 @@ Design Principles
   race path distinguishes that constraint from the ``ticket_ref`` primary key by name
   (``exc.diag.constraint_name``, the same idiom ``reads.py`` uses): only the former is an ordinary
   replay to reclassify, the latter is a genuine, loggable failure.
-- **A replay never trusts the caller's fresh content over what is on file.** The persisted row's
-  own comparable fields (trigger, request summary, policy version, category, customer label,
-  language) are read back and checked against ``content`` before a replay is treated as ordinary;
-  a disagreement raises ``HandoffReplayMismatch`` rather than silently returning a packet built
-  from the new call's content, which could permanently disagree with the row a later reader (the
-  console) reads directly. ``verified_facts`` and ``sources`` are not part of this comparison,
-  since neither is fully reconstructable from the outbox row alone (their titles/full facts are
-  re-hydrated at read time elsewhere, by design) — an identical retry of the same call produces
-  the same values for these too, so checking the fields the row does store is what actually
-  detects the failure mode this guards against: a caller passing genuinely different content for
-  an id pair it has already used.
+- **A replay never trusts the caller's fresh content over what is on file.** Every persisted,
+  content-bearing field — the outbox row's own scalar columns and all four child tables — is read
+  back and checked against ``content`` before a replay is treated as ordinary; a disagreement
+  raises ``HandoffReplayMismatch`` rather than silently returning a packet built from the new
+  call's content, which could permanently disagree with the row a later reader (the console) reads
+  directly. Only identity and timing fields are excluded (see ``_existing_row``'s own docstring for
+  exactly which, and why). A full ``TransactionFact``/localized ``SourceRef`` title is not part of
+  the comparison, since neither is stored in full (only ``verified_transaction_ref`` and
+  ``section_id``/``corpus_version`` are, by this module's own re-hydrate-elsewhere design) — the
+  identifiers that are stored are what's compared.
 - **One raw identifier, one masked label, one source.** ``content.customer_id`` is the only
   customer identifier ``record`` reads: the row's own identity column and the packet's masked
   label are both derived from it, so the two can never name different customers the way two
@@ -155,18 +154,54 @@ class PostgresHandoffOutbox:
     def _existing_row(
         self, cur: psycopg.Cursor, session_id: str, turn_id: str
     ) -> tuple[str, tuple[object, ...]] | None:
-        """The existing row's ticket and its comparable fields, or ``None`` for no match."""
+        """The existing row's ticket and every persisted, content-bearing field, or ``None``.
+
+        Covers every column ``_insert`` writes except identity and timing fields
+        (``session_id``, ``turn_id``, ``customer_id``, ``trace_id``, ``reference_date``,
+        ``created_at_utc``, ``ticket_ref`` itself): those either identify the row rather than
+        describe the handoff, or are expected to vary slightly between an original call and a
+        genuine retry's freshly-read clock, which a byte-for-byte comparison would wrongly flag.
+        A field added to ``HandoffContent``/``_insert`` later needs adding here too, the same
+        obligation ``_insert`` itself already carries for a new column.
+        """
         cur.execute(
             "SELECT ticket_ref, trigger, request_summary, policy_version, category, "
-            "customer_first_name, customer_masked_id, language "
+            "customer_first_name, customer_masked_id, language, verified_transaction_ref, "
+            "attempted_action_action, attempted_action_result, existing_case_number, "
+            "risk_score, risk_interval_low, risk_interval_high, risk_base_rate "
             "FROM handoff_outbox WHERE session_id = %s AND turn_id = %s",
             (session_id, turn_id),
         )
         row = cur.fetchone()
-        return None if row is None else (str(row[0]), tuple(row[1:]))
+        if row is None:
+            return None
+        ticket_ref = str(row[0])
+        cur.execute(
+            "SELECT action, result FROM handoff_actions WHERE ticket_ref = %s ORDER BY ord",
+            (ticket_ref,),
+        )
+        actions = tuple(cur.fetchall())
+        cur.execute(
+            "SELECT slot, attempts FROM handoff_open_questions WHERE ticket_ref = %s",
+            (ticket_ref,),
+        )
+        open_questions = frozenset(cur.fetchall())
+        cur.execute(
+            "SELECT reason_code FROM handoff_reason_codes WHERE ticket_ref = %s ORDER BY ord",
+            (ticket_ref,),
+        )
+        reason_codes = tuple(code for (code,) in cur.fetchall())
+        cur.execute(
+            "SELECT section_id, corpus_version FROM handoff_sources "
+            "WHERE ticket_ref = %s ORDER BY ord",
+            (ticket_ref,),
+        )
+        sources = tuple(cur.fetchall())
+        return ticket_ref, (*row[1:], actions, open_questions, reason_codes, sources)
 
     def _comparable_fields(self, content: HandoffContent) -> tuple[object, ...]:
         """``content``'s own values, in the same order ``_existing_row`` reads them back."""
+        risk = content.risk
         return (
             content.trigger.value,
             content.request_summary,
@@ -175,6 +210,18 @@ class PostgresHandoffOutbox:
             content.first_name,
             mask_customer_id(content.customer_id),
             content.language,
+            content.verified_facts[0].ref if content.verified_facts else None,
+            content.attempted_action.action if content.attempted_action is not None else None,
+            content.attempted_action.result if content.attempted_action is not None else None,
+            content.existing_case_number,
+            risk.score if risk is not None else None,
+            risk.interval_low if risk is not None else None,
+            risk.interval_high if risk is not None else None,
+            risk.base_rate if risk is not None else None,
+            tuple((action.action, action.result) for action in content.actions),
+            frozenset((q.slot.value, q.attempts) for q in content.open_questions),
+            tuple(code.value for code in content.reason_codes),
+            tuple((source.section_id, source.corpus_version) for source in content.sources),
         )
 
     def _replay_or_mismatch(
