@@ -40,6 +40,8 @@ _ENV_KEYS = (
     "DATABASE_URL",
     "MODEL_RENDERER_ENABLED",
     "CASE_CREATE_SESSION_CAP",
+    "POST_HANDOFF_CONTACT_DAYS_PRIORITY",
+    "POST_HANDOFF_CONTACT_DAYS_DEFAULT",
     "DEMO_SIGNIN_ENABLED",
     "DEMO_SIGNIN_ACCESS_CODE",
     "DEMO_AGENT_SIGNIN_ENABLED",
@@ -277,6 +279,34 @@ def test_the_case_create_session_cap_bounds_are_inclusive(
     monkeypatch.setenv("CASE_CREATE_SESSION_CAP", cap)
 
     assert load_settings(env_file=None).case_create_session_cap == int(cap)
+
+
+def test_the_post_handoff_contact_days_default_to_h18() -> None:
+    """A bare environment yields the ratified H18 figures: 1 day priority, 2 days otherwise."""
+    settings = load_settings(env_file=None)
+
+    assert settings.post_handoff_contact_days_priority == 1
+    assert settings.post_handoff_contact_days_default == 2
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [("POST_HANDOFF_CONTACT_DAYS_PRIORITY", "-1"), ("POST_HANDOFF_CONTACT_DAYS_DEFAULT", "-1")],
+)
+def test_a_negative_post_handoff_contact_days_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(ConfigError, match=name):
+        load_settings(env_file=None)
+
+
+def test_a_zero_post_handoff_contact_days_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero (same-day) is a valid, if aggressive, configuration."""
+    monkeypatch.setenv("POST_HANDOFF_CONTACT_DAYS_PRIORITY", "0")
+
+    assert load_settings(env_file=None).post_handoff_contact_days_priority == 0
 
 
 def test_the_sandbox_login_needs_its_secret(monkeypatch: pytest.MonkeyPatch) -> None:
