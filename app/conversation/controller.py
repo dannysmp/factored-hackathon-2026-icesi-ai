@@ -56,11 +56,14 @@ Design Principles
 Runtime Contract
 ----------------
 ``DialogueController(understanding, store, tool_port, retriever, policy, outbox, *, domain_date,
-now, model_renderer=None)`` with ``handle_turn(request: TurnRequest, *, principal: Principal) ->
-TurnResponse``. ``HandoffOutbox`` (protocol): the port this module writes a handoff through.
-``model_renderer`` is ``None`` by default (the fixed-wording template path only); passing an
-``LlmRenderer`` lets eligible replies render through the model path instead, verified, with the
+now, model_renderer=None, turn_log=None)`` with ``handle_turn(request: TurnRequest, *, principal:
+Principal) -> TurnResponse``. ``HandoffOutbox`` (protocol): the port this module writes a handoff
+through. ``model_renderer`` is ``None`` by default (the fixed-wording template path only); passing
+an ``LlmRenderer`` lets eligible replies render through the model path instead, verified, with the
 template as its own deterministic fallback (``app.conversation.reply.render_reply``).
+``DialogueTurnLog`` (protocol): the port this module records the console's own audit timeline
+through (ADR-17); ``turn_log`` is ``None`` by default (nothing is recorded) and is never consulted
+on a replayed turn, only on a turn this call genuinely advances.
 
 Limitations
 -----------
@@ -109,6 +112,7 @@ from app.tools.create_dispatch import create_dispute_case
 from app.tools.dispatcher import dispatch
 from contracts.service_v1 import tools as tool_contracts
 from contracts.service_v1.api import TurnRequest, TurnResponse
+from contracts.service_v1.console import TimelineEntry
 from contracts.service_v1.envelope import (
     CUSTOMER_REASON_OF,
     CustomerReason,
@@ -195,6 +199,21 @@ class HandoffOutbox(Protocol):
         ...
 
 
+class DialogueTurnLog(Protocol):
+    """Where a turn's own history is written; the port ``PostgresDialogueTurnLog`` implements."""
+
+    def record(self, entry: TimelineEntry, *, session_id: str, turn_id: str) -> None:
+        """Write one turn's history row.
+
+        Raises
+        ------
+        psycopg.Error
+            The store could not be reached; the caller logs a warning and continues — losing this
+            entry degrades the console's own view of the conversation, never the reply itself.
+        """
+        ...
+
+
 def _idempotency_key(turn_id: str) -> str:
     """A deterministic key for ``create_dispute_case``, derived from the turn id.
 
@@ -248,6 +267,7 @@ class DialogueController:
         domain_date: date,
         now: Clock,
         model_renderer: LlmRenderer | None = None,
+        turn_log: DialogueTurnLog | None = None,
     ) -> None:
         self._understanding = understanding
         self._store = store
@@ -258,6 +278,7 @@ class DialogueController:
         self._domain_date = domain_date
         self._now = now
         self._model_renderer = model_renderer
+        self._turn_log = turn_log
         # Set once per call, at the top of handle_turn: every private helper below reads the
         # current turn's own request and principal from here rather than threading them through
         # every method signature. Safe because one instance ever handles exactly one turn.
@@ -286,6 +307,7 @@ class DialogueController:
             return self._respond(current, self._replay_envelope(current))
 
         state, expected_version, result = self._start_turn(current, request)
+        state_before = state.phase
         new_state, envelope = self._advance(state, result)
 
         try:
@@ -305,7 +327,7 @@ class DialogueController:
                 "Fetch the current state and try again.",
             ) from conflict
 
-        return self._respond(saved, envelope)
+        return self._respond(saved, envelope, state_before=state_before)
 
     def _start_turn(
         self, current: DialogueState | None, request: TurnRequest
@@ -894,10 +916,18 @@ class DialogueController:
             template_id=template,
         )
 
-    def _respond(self, state: DialogueState, envelope: RenderEnvelope) -> TurnResponse:
+    def _respond(
+        self,
+        state: DialogueState,
+        envelope: RenderEnvelope,
+        *,
+        state_before: ConversationPhase | None = None,
+    ) -> TurnResponse:
         rendered: RenderedReply = render_reply(envelope, model_renderer=self._model_renderer)
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
+        if state_before is not None:
+            self._record_turn(state, envelope, rendered, state_before)
         return TurnResponse(
             turn_id=request.turn_id,
             conversation_id=state.session_id,
@@ -910,6 +940,42 @@ class DialogueController:
             end_session=envelope.end_session,
             handoff_ticket=state.last_ticket_ref if envelope.intent is Intent.HANDOFF else None,
         )
+
+    def _record_turn(
+        self,
+        state: DialogueState,
+        envelope: RenderEnvelope,
+        rendered: RenderedReply,
+        state_before: ConversationPhase,
+    ) -> None:
+        """Record this turn's history for the console's timeline (ADR-17); never on a replay,
+        never affecting the reply already computed above.
+
+        ``reason_code`` is not yet populated (a disclosed gap): the domain ``ReasonCode`` behind a
+        policy decision is not currently threaded onto ``Decision`` for this to read.
+        """
+        if self._turn_log is None:
+            return
+        request = self._request
+        assert request is not None  # noqa: S101 - set at the top of handle_turn
+        entry = TimelineEntry(
+            occurred_at=self._now(),
+            trace_id=state.session_id,
+            intent=envelope.intent,
+            state_before=state_before.value,
+            state_after=state.phase.value,
+            render_mode=rendered.render_mode,
+            reason_code=None,
+            policy_version=envelope.decisions[0].policy_version if envelope.decisions else None,
+        )
+        try:
+            self._turn_log.record(entry, session_id=state.session_id, turn_id=request.turn_id)
+        except psycopg.Error:
+            logger.warning(
+                "dialogue_turn_not_logged session_id=%s request_id=%s",
+                state.session_id,
+                current_request_id(),
+            )
 
 
 _Handler = Callable[

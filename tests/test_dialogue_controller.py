@@ -49,7 +49,8 @@ from app.security.sessions import Principal
 from contracts.service_v1.api import TurnRequest
 from contracts.service_v1.cases import AmountProvenance, CaseRecord, CaseStatus, DisclosedAmount
 from contracts.service_v1.cases import Money as CaseMoney
-from contracts.service_v1.envelope import CUSTOMER_REASON_OF, CustomerReason, Slot
+from contracts.service_v1.console import TimelineEntry
+from contracts.service_v1.envelope import CUSTOMER_REASON_OF, CustomerReason, Intent, Slot
 from contracts.service_v1.handoff import HandoffPacket, HandoffTrigger
 from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult, TransactionHint
 from contracts.service_v1.tools import (
@@ -257,6 +258,19 @@ class FakeHandoffOutbox:
         return packet
 
 
+@dataclass
+class FakeDialogueTurnLog:
+    """Records every entry it's given; ``fail`` proves a store failure never reaches the reply."""
+
+    fail: bool = False
+    entries: list[tuple[TimelineEntry, str, str]] = field(default_factory=list)
+
+    def record(self, entry: TimelineEntry, *, session_id: str, turn_id: str) -> None:
+        if self.fail:
+            raise psycopg.OperationalError("turn log unreachable")
+        self.entries.append((entry, session_id, turn_id))
+
+
 @pytest.fixture
 def policy() -> Policy:
     return load_policy()
@@ -275,6 +289,7 @@ def _controller(
     policy: Policy,
     outbox: FakeHandoffOutbox,
     retriever: LexicalRetriever,
+    turn_log: FakeDialogueTurnLog | None = None,
 ) -> tuple[DialogueController, ScriptedNlu]:
     nlu = ScriptedNlu(result)
     controller = DialogueController(
@@ -286,6 +301,7 @@ def _controller(
         outbox=outbox,
         domain_date=_DOMAIN_DATE,
         now=_now,
+        turn_log=turn_log,
     )
     return controller, nlu
 
@@ -676,6 +692,116 @@ def test_replaying_an_ineligible_turn_never_re_evaluates_or_files(
     assert store.get(_SESSION_ID).last_case_number is None  # type: ignore[union-attr]
     assert not replay.end_session
     assert replay.state_version == original.state_version
+
+
+# -----------------------------------------------------------------------------
+# The console's own turn history (ADR-17)
+# -----------------------------------------------------------------------------
+
+
+def test_a_fresh_turn_advance_records_its_own_history(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    turn_log = FakeDialogueTurnLog()
+    result = NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, language="es")
+    controller, _ = _controller(
+        result,
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        turn_log=turn_log,
+    )
+
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert len(turn_log.entries) == 1
+    entry, session_id, turn_id = turn_log.entries[0]
+    assert session_id == _SESSION_ID
+    assert turn_id == "turn-0001"
+    assert entry.trace_id == _SESSION_ID
+    assert entry.intent is Intent.CLARIFY
+    assert entry.state_before == "started"
+    assert entry.state_after == "started"
+    assert entry.render_mode == "template"
+    assert entry.reason_code is None
+
+
+def test_no_turn_log_configured_records_nothing_and_never_fails(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """``turn_log`` is ``None`` by default: a turn advances exactly as it would otherwise."""
+    result = NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, language="es")
+    controller, _ = _controller(
+        result,
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+
+    response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.reply
+
+
+def test_replaying_a_turn_never_records_a_second_history_entry(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    turn_log = FakeDialogueTurnLog()
+    result = NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, language="es")
+
+    controller, _ = _controller(
+        result,
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        turn_log=turn_log,
+    )
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    controller, _ = _controller(
+        result,
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        turn_log=turn_log,
+    )
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert len(turn_log.entries) == 1
+
+
+def test_a_turn_log_failure_never_changes_the_reply(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Losing a timeline entry degrades the console's own view of the conversation, never the
+    conversation itself — the same customer reply is returned either way."""
+    result = NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, language="es")
+    controller, _ = _controller(
+        result,
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        turn_log=FakeDialogueTurnLog(fail=True),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.reply
+    assert "dialogue_turn_not_logged" in caplog.text
+    assert _SESSION_ID in caplog.text
 
 
 @pytest.mark.parametrize(
