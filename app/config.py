@@ -153,8 +153,8 @@ class Settings(BaseSettings):
         an anti-abuse bound on how many cases one session may file, never a limit on how many
         distinct disputes a customer legitimately has. Between 1 and 50.
     post_handoff_contact_days_priority, post_handoff_contact_days_default : int
-        The promised contact time after a handoff (H18, ratified D62): 1 calendar day for a
-        fraud report or a lost or stolen card, 2 calendar days for every other trigger, counted
+        The promised contact time after a handoff: 1 calendar day for a fraud report or a lost
+        or stolen card, 2 calendar days for every other trigger, counted
         from the data reference date. A synthetic configuration value with its own provenance,
         separate from ``Policy.first_response_days`` (which promises a response to a *filed
         dispute*, a different lifecycle event a handoff ticket never reaches) and keyed by the

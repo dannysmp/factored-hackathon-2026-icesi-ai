@@ -281,8 +281,8 @@ def test_the_case_create_session_cap_bounds_are_inclusive(
     assert load_settings(env_file=None).case_create_session_cap == int(cap)
 
 
-def test_the_post_handoff_contact_days_default_to_h18() -> None:
-    """A bare environment yields the ratified H18 figures: 1 day priority, 2 days otherwise."""
+def test_the_post_handoff_contact_days_default_to_the_ratified_figures() -> None:
+    """A bare environment yields the ratified figures: 1 day priority, 2 days otherwise."""
     settings = load_settings(env_file=None)
 
     assert settings.post_handoff_contact_days_priority == 1

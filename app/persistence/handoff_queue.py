@@ -19,8 +19,9 @@ routes and the audit-of-agent-reads write they must perform (ADR-17), writing to
 
 Design Principles
 -----------------
-- **The promised contact time is keyed by trigger, never by dispute category** (H18, ratified):
-  it is a synthetic configuration value for a handoff ticket's own lifecycle, distinct from
+- **The promised contact time is keyed by trigger, never by dispute category:** it is a separate,
+  synthetic configuration value with its own provenance, for a handoff ticket's own lifecycle,
+  distinct from
   ``Policy.first_response_days``, which promises a response to a *filed dispute* — a different
   event a handoff ticket, by construction, never reaches. Keying on ``trigger`` also
   means a categoryless fraud-report or card-loss ticket (reachable in practice — a customer can
