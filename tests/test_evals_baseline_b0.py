@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 # Local modules
-from app.config import LlmProvider, Settings, load_settings
+from app.config import AppEnvironment, ConfigError, LlmProvider, Settings, load_settings
 from app.persistence.migrate import apply_migrations
 from contracts.service_v1.envelope import Intent
 from evals.models import Case, CaseCategory
@@ -49,6 +49,23 @@ def test_build_b0_app_needs_no_database_when_no_sign_in_path_is_enabled() -> Non
     app = build_b0_app(settings)
 
     assert app is not None
+
+
+def test_build_b0_app_refuses_when_app_env_is_prod() -> None:
+    """A ``Settings`` object with ``app_env=prod`` is refused even though ``model_copy`` never
+    revalidates ``Settings``'s own ``llm_provider=stub``-in-prod rule; a settings object built
+    this way (rather than through ``load_settings``) must not be able to sail past it."""
+    settings = load_settings(env_file=None).model_copy(
+        update={
+            "app_env": AppEnvironment.PROD,
+            "llm_provider": LlmProvider.ANTHROPIC,
+            "service_version": "test-sha",
+            "data_as_of_date": "2026-06-18",
+        }
+    )
+
+    with pytest.raises(ConfigError, match="not allowed when APP_ENV=prod"):
+        build_b0_app(settings)
 
 
 # -----------------------------------------------------------------------------
@@ -91,11 +108,12 @@ def dsn() -> str:
 
 
 @pytest.mark.integration
-def test_b0_answers_a_policy_question_end_to_end_with_no_real_model_key(dsn: str) -> None:
-    """B0's own end-to-end shape: real store, real controller, real retriever and policy — no
-    LLM call, the deterministic classifier only, exactly as the evaluation plan defines B0. The
-    configured Anthropic key is a value that would fail if the adapter ever tried to use it, so a
-    passing run is itself proof no model call happened."""
+def test_b0_answers_a_policy_question_end_to_end(dsn: str) -> None:
+    """B0's own end-to-end shape: real store, real controller, real retriever and policy —
+    exactly as the evaluation plan defines B0. This proves the case is answered correctly; it does
+    not by itself prove no LLM call happened (a real network call could succeed or fail and this
+    case would still score correctly either way) — that structural property has its own test,
+    below."""
     settings = _settings(database_url=SecretStr(dsn))
     client = TestClient(build_b0_app(settings))
     case = Case(
@@ -111,4 +129,35 @@ def test_b0_answers_a_policy_question_end_to_end_with_no_real_model_key(dsn: str
     results = run_cases(client, dsn, (case,), test_login_key=LOGIN_KEY)
 
     assert len(results) == 1
+    assert results[0].correct_outcome is True
+
+
+@pytest.mark.integration
+def test_b0_never_constructs_a_real_anthropic_client(
+    dsn: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Structural proof that B0 makes no LLM call: the Anthropic SDK's own client class is
+    patched to fail immediately if anything ever tries to construct one. A passing run here means
+    the code path that would build a real client was never reached at all, not merely that a call
+    from it went unobserved."""
+
+    def _must_not_construct(*args: object, **kwargs: object) -> object:
+        raise AssertionError("B0 must never construct a real Anthropic client")
+
+    monkeypatch.setattr("anthropic.Anthropic", _must_not_construct)
+
+    settings = _settings(database_url=SecretStr(dsn))
+    client = TestClient(build_b0_app(settings))
+    case = Case(
+        case_id="b0-test-03",
+        category=CaseCategory.NORMAL,
+        lang="es",
+        provenance="observed",
+        seed_ref="ops_seed:CLI-B0-A",
+        user_turns=("¿Cuánto tiempo tengo para presentar una disputa?",),
+        expected_intent=Intent.POLICY_ANSWER,
+    )
+
+    results = run_cases(client, dsn, (case,), test_login_key=LOGIN_KEY)
+
     assert results[0].correct_outcome is True
