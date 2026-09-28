@@ -63,11 +63,6 @@ def test_resolve_customer_id_returns_a_customer_reference_directly() -> None:
     assert resolve_customer_id("postgresql://unused", "ops_seed:CLI-A1B2") == "CLI-A1B2"
 
 
-def test_resolve_customer_id_refuses_eval_bank_for_now() -> None:
-    with pytest.raises(NotImplementedError, match="eval_bank"):
-        resolve_customer_id("postgresql://unused", "eval_bank:TRX-EVALBANK-ORPHAN")
-
-
 @pytest.fixture
 def dsn() -> str:
     value = os.environ.get("DATABASE_URL")
@@ -106,6 +101,14 @@ def test_resolve_customer_id_looks_up_the_transactions_owning_customer(dsn: str)
 def test_resolve_customer_id_raises_for_a_transaction_absent_from_the_store(dsn: str) -> None:
     with pytest.raises(ValueError, match="names no transaction"):
         resolve_customer_id(dsn, "ops_seed:TRX-DOES-NOT-EXIST")
+
+
+@pytest.mark.integration
+def test_resolve_customer_id_looks_up_an_eval_bank_reference_the_same_way(dsn: str) -> None:
+    """An eval_bank-sourced transaction id resolves through the exact same query as an
+    ops_seed one, once its row exists in the same transactions table — eval_bank's own design
+    principle: a reader treats its rows exactly like seed rows."""
+    assert resolve_customer_id(dsn, "eval_bank:TRX-A1") == "CLI-A"
 
 
 def test_resolve_customer_id_rejects_an_identifier_shaped_like_neither() -> None:
