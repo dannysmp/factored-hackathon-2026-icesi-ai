@@ -57,5 +57,6 @@ medium ≤ 30 days**; exceptions are documented with the compensating controls.
 | Masking and redaction before model calls | Planned |
 | Confirmation, idempotency and read-back for state-changing operations | Implemented (the create tool: explicit confirmation matched against the decision, an idempotency key enforced at the store, and an audit record for every filing and refusal; the controller's read-back call before reporting success is stream 2's) |
 | Retention and purge procedure | Planned |
+| Demonstration sign-in broker: audience-separated signing keys, an access code compared before anything is counted, concurrent-session caps that release on a later refusal, and every attempt audited (append-only) before a token is returned | Implemented (customer and agent audiences, each with its own access code and signing key; the console's own routes to consume an agent session are a later slice) |
 
 This table is updated in the same change that implements a control.

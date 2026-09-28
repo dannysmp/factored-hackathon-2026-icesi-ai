@@ -17,7 +17,8 @@ SILVER_DIR ?= data/silver
 
 .PHONY: help setup lint format test test-all secrets audit run clean \
         profile pipeline analyze features corpus corpus-check train evaluate up \
-        db-up db-down migrate test-integration seed eval-bank load-seed load-analytics
+        db-up db-down migrate test-integration seed eval-bank load-seed load-analytics \
+        reset-demo-personas
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -64,6 +65,9 @@ load-seed: ## Load the built operational seed into Postgres (needs DATABASE_URL,
 
 load-analytics: ## Load the dispute-demand marts into the Postgres analytics schema (needs DATABASE_URL, already migrated)
 	$(RUN) python -m pipelines.analytics_load
+
+reset-demo-personas: ## Delete demo personas' accumulated cases before a demonstration (needs DATABASE_URL)
+	$(RUN) python -m app.persistence.reset_demo_personas
 
 secrets: ## Scan history + staged changes (NOT unstaged/untracked files), then run the self-test
 	gitleaks git . --config .gitleaks.toml --no-banner --redact

@@ -6,13 +6,18 @@
 #   Exercises the whole path the deploy just brought up: Caddy's automatic
 #   certificate for the sslip.io host name, and the reverse proxy routing to
 #   the backend's health endpoint and to the web build's static page. Tests
-#   the deployment path itself, not functional completeness.
+#   the deployment path itself, not functional completeness. The optional
+#   `--dashboard` flag additionally proves the `dashboard.` subdomain reaches
+#   Metabase, once `08-deploy-metabase.sh` has run.
 # Design:
 #   Certificate issuance and the containers' own start-up both take a few
 #   seconds after `docker compose up -d` returns; retries with a fixed
-#   backoff rather than treating the first failure as final.
+#   backoff rather than treating the first failure as final. The dashboard
+#   check only proves the path is reachable (HTTP success), not a specific
+#   response body: unlike the app's own endpoints, Metabase's health payload
+#   isn't a contract this repository owns.
 # Usage:
-#   infra/scripts/06-smoke-test.sh <host-name>
+#   infra/scripts/06-smoke-test.sh <host-name> [--dashboard]
 #   (the sslip.io host name 05-deploy.sh printed on its last line)
 # =============================================================================
 
@@ -20,8 +25,8 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source lib/common.sh
 
-if [[ $# -ne 1 ]]; then
-  log "usage: 06-smoke-test.sh <host-name>"
+if [[ $# -lt 1 || $# -gt 2 || ( $# -eq 2 && "$2" != "--dashboard" ) ]]; then
+  log "usage: 06-smoke-test.sh <host-name> [--dashboard]"
   exit 1
 fi
 readonly HOST_NAME="$1"
@@ -48,7 +53,26 @@ check() {
   return 1
 }
 
+check_reachable() {
+  local url="$1" attempt=1
+  while (( attempt <= MAX_ATTEMPTS )); do
+    if curl --fail --silent --show-error --max-time 10 -o /dev/null "${url}"; then
+      log "ok: ${url}"
+      return 0
+    fi
+    log "attempt ${attempt}: ${url} not reachable yet"
+    attempt=$((attempt + 1))
+    sleep "${RETRY_SECONDS}"
+  done
+  log "refusing: ${url} never became reachable within $((MAX_ATTEMPTS * RETRY_SECONDS))s"
+  return 1
+}
+
 check "/health/live" '"live"'
 check "/" "<"
+
+if [[ "${2:-}" == "--dashboard" ]]; then
+  check_reachable "https://dashboard.${HOST_NAME}/api/health"
+fi
 
 log "smoke test passed: ${BASE_URL}"

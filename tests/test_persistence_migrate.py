@@ -95,7 +95,7 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
     with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(
             "DROP TABLE IF EXISTS cases, transactions, products, customers, "
-            "ops_meta, audit_log, handoff_actions, handoff_open_questions, "
+            "ops_meta, audit_log, signin_audit, handoff_actions, handoff_open_questions, "
             "handoff_reason_codes, handoff_sources, handoff_outbox, dialogue_state, "
             "schema_migrations CASCADE"
         )
@@ -114,6 +114,8 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         "0004_case_write_constraints",
         "0005_audit_log_replay_action",
         "0006_dialogue_and_handoff",
+        "0006_signin_audit",
+        "0007_signin_audit_agent_id",
     )
 
     again = apply_migrations(dsn)

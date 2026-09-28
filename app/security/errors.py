@@ -50,6 +50,7 @@ class ErrorCode(StrEnum):
     SESSION_EXPIRED = "session_expired"
     SESSION_REVOKED = "session_revoked"
     TEST_LOGIN_REJECTED = "test_login_rejected"
+    DEMO_SIGNIN_REJECTED = "demo_signin_rejected"
     TOO_MANY_ATTEMPTS = "too_many_attempts"
     VALIDATION_ERROR = "validation_error"
     NOT_FOUND = "not_found"
