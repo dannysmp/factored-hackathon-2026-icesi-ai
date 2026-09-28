@@ -33,18 +33,24 @@ readonly GITHUB_REPO="dannysmp/factored-hackathon-2026-icesi-ai"
 # later can widen this to a GitHub Environment condition instead.
 readonly GITHUB_DEFAULT_BRANCH="main"
 readonly OIDC_PROVIDER_URL="https://token.actions.githubusercontent.com"
-## AWS validates a public-CA OIDC provider like GitHub's against its real certificate chain and
-## no longer uses this value for that check; the API still requires one well-formed entry. Kept
-## as the thumbprint AWS's own docs have published for this provider; confirm it is still current
-## before the first run (`aws iam create-open-id-connect-provider help` / AWS's GitHub OIDC guide).
-readonly OIDC_THUMBPRINT="6938fd4d98bab03faadb97b34396831e3780aea1"
+## AWS still requires a well-formed thumbprint on the provider and, in practice, denies
+## sts:AssumeRoleWithWebIdentity once it goes stale: GitHub Actions' OIDC issuer has changed its
+## certificate authority before (DigiCert to Let's Encrypt), silently invalidating a value copied
+## from documentation rather than derived from the live endpoint. Recompute it from the actual
+## served chain instead of trusting a copied value:
+##   echo | openssl s_client -servername token.actions.githubusercontent.com \
+##     -connect token.actions.githubusercontent.com:443 -showcerts 2>/dev/null \
+##     | awk '/BEGIN CERT/,/END CERT/{print > ("/tmp/c" n ".pem")} /END CERT/{n++}'
+##   openssl x509 -in /tmp/c$(( $(ls /tmp/c*.pem | wc -l) - 1 )).pem -noout -fingerprint -sha1
+## (the SHA1 fingerprint of the last certificate in the served chain, not the leaf).
+readonly OIDC_THUMBPRINT="ab9d0263244dd0326eb67015705a667e79cfe998"
 readonly ROLE_NAME="dispute-intake-ci-deploy"
 
 account_id="$(aws sts get-caller-identity --query Account --output text)"
 provider_arn="arn:aws:iam::${account_id}:oidc-provider/token.actions.githubusercontent.com"
 
 if aws iam get-open-id-connect-provider --open-id-connect-provider-arn "${provider_arn}" >/dev/null 2>&1; then
-  log "OIDC provider already exists, leaving it as is"
+  log "OIDC provider already exists, reconciling its thumbprint"
 else
   log "creating the GitHub Actions OIDC provider"
   aws iam create-open-id-connect-provider \
@@ -54,6 +60,12 @@ else
     --tags "Key=${INFRA_TAG_KEY},Value=${INFRA_TAG_VALUE}" \
     >/dev/null
 fi
+
+# Always reconciled, not only set at creation: an existing provider's thumbprint drifting stale
+# (as it just did) is exactly the failure this script must self-heal from on its next run.
+aws iam update-open-id-connect-provider-thumbprint \
+  --open-id-connect-provider-arn "${provider_arn}" \
+  --thumbprint-list "${OIDC_THUMBPRINT}"
 
 trust_policy=$(cat <<JSON
 {
