@@ -68,8 +68,21 @@ def queue(dsn: str) -> PostgresHandoffQueue:
     return PostgresHandoffQueue(dsn, contact_days_priority=1, contact_days_default=2)
 
 
-def _record(outbox: PostgresHandoffOutbox, content: HandoffContent, *, turn_id: str) -> None:
-    outbox.record(content, session_id=f"s-{turn_id}", turn_id=turn_id, trace_id=f"trace-{turn_id}")
+def _record(outbox: PostgresHandoffOutbox, content: HandoffContent, *, turn_id: str) -> str:
+    packet = outbox.record(
+        content, session_id=f"s-{turn_id}", turn_id=turn_id, trace_id=f"trace-{turn_id}"
+    )
+    return packet.ticket_ref
+
+
+def _set_status(dsn: str, ticket_ref: str, status: str) -> None:
+    """Set a ticket's status directly at the store — no write path exists yet (ADR-17: the seed
+    is the interim source of truth for the ticket lifecycle), so a test reaching for a non-default
+    status has no other way to produce one."""
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE handoff_outbox SET status = %s WHERE ticket_ref = %s", (status, ticket_ref)
+        )
 
 
 _TODAY = DomainCalendar(reference_date=date(2026, 6, 20), origin=DateOrigin.SETTING)
@@ -215,7 +228,58 @@ def test_a_trigger_filter_returns_only_matching_tickets(
 
 
 @pytest.mark.integration
+def test_a_language_and_trigger_filter_together_are_anded(
+    outbox: PostgresHandoffOutbox, queue: PostgresHandoffQueue
+) -> None:
+    _record(outbox, _content(language="pt", trigger=HandoffTrigger.FRAUD_REPORT), turn_id="match")
+    _record(
+        outbox, _content(language="es", trigger=HandoffTrigger.FRAUD_REPORT), turn_id="wrong-lang"
+    )
+    _record(
+        outbox,
+        _content(language="pt", trigger=HandoffTrigger.CARD_LOSS),
+        turn_id="wrong-trigger",
+    )
+
+    response = queue.list_tickets(
+        QueueFilters(language="pt", trigger=HandoffTrigger.FRAUD_REPORT), calendar=_TODAY
+    )
+
+    assert len(response.items) == 1
+    assert response.items[0].language == "pt"
+    assert response.items[0].trigger is HandoffTrigger.FRAUD_REPORT
+
+
+@pytest.mark.integration
 def test_no_tickets_returns_an_empty_queue(queue: PostgresHandoffQueue) -> None:
     response = queue.list_tickets(QueueFilters(), calendar=_TODAY)
 
     assert response.items == ()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("status", ["resolved", "rejected"])
+def test_a_closed_ticket_is_excluded_from_the_queue(
+    outbox: PostgresHandoffOutbox, queue: PostgresHandoffQueue, dsn: str, status: str
+) -> None:
+    ticket_ref = _record(outbox, _content(), turn_id="t-1")
+    _set_status(dsn, ticket_ref, status)
+
+    response = queue.list_tickets(QueueFilters(), calendar=_TODAY)
+
+    assert response.items == ()
+
+
+@pytest.mark.integration
+def test_an_in_review_ticket_still_appears_in_the_queue(
+    outbox: PostgresHandoffOutbox, queue: PostgresHandoffQueue, dsn: str
+) -> None:
+    """A ticket already claimed by an agent (in_review) is not yet closed — it must not vanish
+    from the queue, or an agent could lose track of their own claimed work."""
+    ticket_ref = _record(outbox, _content(), turn_id="t-1")
+    _set_status(dsn, ticket_ref, "in_review")
+
+    response = queue.list_tickets(QueueFilters(), calendar=_TODAY)
+
+    assert len(response.items) == 1
+    assert response.items[0].status is TicketStatus.IN_REVIEW

@@ -4,8 +4,9 @@ Postgres Handoff Queue
 
 Overview
 --------
-The read side of the handoff outbox the human-agent console needs (ADR-17): the queue of open
-tickets, filtered by language and trigger, fraud and card-loss tickets sorted first. Backs
+The read side of the handoff outbox the human-agent console needs (ADR-17): the queue of tickets
+still needing an agent's attention (a resolved or rejected ticket never appears), filtered by
+language and trigger, fraud and card-loss tickets sorted first. Backs
 ``contracts/service_v1/console.py``'s ``QueueResponse``/``QueueItem``.
 
 Scope
@@ -41,7 +42,7 @@ Runtime Contract
 from __future__ import annotations
 
 # Standard libraries
-from datetime import timedelta  # Promised contact date, ticket age
+from datetime import date, timedelta  # Promised contact date, ticket age
 from typing import Any  # Raw driver rows
 
 # Third-party libraries
@@ -65,17 +66,27 @@ _CONNECT_TIMEOUT_SECONDS = 5
 _COLUMNS = "ticket_ref, trigger, language, category, status, created_at_utc, reference_date"
 
 
+_CLOSED_STATUSES = (TicketStatus.RESOLVED.value, TicketStatus.REJECTED.value)
+
+
 def _build_query(filters: QueueFilters) -> tuple[str, tuple[object, ...]]:
-    """The query and its parameters for ``filters``; a bare filter is never string-interpolated."""
-    clauses: list[str] = []
-    params: list[object] = []
+    """The query and its parameters for ``filters``; a bare filter is never string-interpolated.
+
+    A resolved or rejected ticket never appears: the queue is for tickets still needing an agent's
+    attention, whether or not one has already been claimed (``in_review``) — excluding only the
+    two closed statuses, rather than keeping just ``open``, is what makes ``QueueItem.status`` a
+    field worth showing per ticket at all, since a queue that only ever held one status would have
+    no need to report it.
+    """
+    clauses: list[str] = ["status NOT IN (%s, %s)"]
+    params: list[object] = list(_CLOSED_STATUSES)
     if filters.language is not None:
         clauses.append("language = %s")
         params.append(filters.language)
     if filters.trigger is not None:
         clauses.append("trigger = %s")
         params.append(filters.trigger.value)
-    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    where = f" WHERE {' AND '.join(clauses)}"
     # The column list and the WHERE clause are built from a closed set of module constants and
     # contract enum values, never request text, so there is nothing here a query-builder warning
     # need apply to.
@@ -91,7 +102,7 @@ class PostgresHandoffQueue:
         self._contact_days_priority = contact_days_priority
         self._contact_days_default = contact_days_default
 
-    def _promised_contact_by(self, trigger: HandoffTrigger, reference_date: Any) -> Any:
+    def _promised_contact_by(self, trigger: HandoffTrigger, reference_date: date) -> date:
         days = self._contact_days_priority if is_priority(trigger) else self._contact_days_default
         return reference_date + timedelta(days=days)
 
