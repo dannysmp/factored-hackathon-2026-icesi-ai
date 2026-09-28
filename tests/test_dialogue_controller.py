@@ -75,7 +75,11 @@ def _now() -> datetime:
 
 def _principal() -> Principal:
     return Principal(
-        customer_id=_CUSTOMER_ID, session_id=_SESSION_ID, issued_at=_NOW, expires_at=_NOW
+        customer_id=_CUSTOMER_ID,
+        session_id=_SESSION_ID,
+        issued_at=_NOW,
+        expires_at=_NOW,
+        audience="customer",
     )
 
 
