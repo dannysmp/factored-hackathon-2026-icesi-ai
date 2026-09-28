@@ -40,6 +40,11 @@ _ENV_KEYS = (
     "DATABASE_URL",
     "MODEL_RENDERER_ENABLED",
     "CASE_CREATE_SESSION_CAP",
+    "DEMO_SIGNIN_ENABLED",
+    "DEMO_SIGNIN_ACCESS_CODE",
+    "DEMO_AGENT_SIGNIN_ENABLED",
+    "DEMO_AGENT_ACCESS_CODE",
+    "AGENT_SESSION_SIGNING_KEY",
 )
 
 
@@ -305,6 +310,53 @@ def test_the_sandbox_login_can_be_enabled_outside_production(
     assert load_settings(env_file=None).test_identity_enabled is True
 
 
+def test_the_demo_broker_needs_its_own_access_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enabling it without the shared access code is a start-up error."""
+    monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
+
+    with pytest.raises(ConfigError, match="DEMO_SIGNIN_ACCESS_CODE is required"):
+        load_settings(env_file=None)
+
+
+def test_the_demo_broker_and_the_sandbox_login_are_mutually_exclusive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both are sign-in paths; enabling both at once is a configuration error, not a priority."""
+    monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "d" * 16)
+    monkeypatch.setenv("TEST_IDENTITY_ENABLED", "true")
+    monkeypatch.setenv("TEST_IDENTITY_KEY", "t" * 16)
+
+    with pytest.raises(ConfigError, match="mutually exclusive"):
+        load_settings(env_file=None)
+
+
+def test_the_demo_broker_can_be_enabled_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unlike the sandbox login, the demo broker exists precisely for prod (ADR-18)."""
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "d" * 16)
+
+    assert load_settings(env_file=None).demo_signin_enabled is True
+
+
+@pytest.mark.parametrize("code", ["c" * 15])
+def test_a_short_demo_access_code_is_rejected(monkeypatch: pytest.MonkeyPatch, code: str) -> None:
+    """The demo access code has the same length floor as the sandbox login's own key."""
+    monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", code)
+
+    with pytest.raises(ConfigError, match="at least 16 characters"):
+        load_settings(env_file=None)
+
+
+def test_a_blank_demo_access_code_is_treated_as_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty value, as the template ships it, means not configured."""
+    monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "")
+
+    assert load_settings(env_file=None).demo_signin_access_code is None
+
+
 @pytest.mark.parametrize("key", ["k" * 40, "ab" * 20, "abcdefg" * 6])
 def test_a_signing_key_with_few_different_characters_is_rejected(
     monkeypatch: pytest.MonkeyPatch, key: str
@@ -314,6 +366,128 @@ def test_a_signing_key_with_few_different_characters_is_rejected(
 
     with pytest.raises(ConfigError, match="different characters"):
         load_settings(env_file=None)
+
+
+# -----------------------------------------------------------------------------
+# Agent demonstration sign-in broker (ADR-17, ADR-18)
+# -----------------------------------------------------------------------------
+
+
+def test_the_agent_demo_broker_needs_its_own_access_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEMO_AGENT_SIGNIN_ENABLED", "true")
+
+    with pytest.raises(ConfigError, match="DEMO_AGENT_ACCESS_CODE is required"):
+        load_settings(env_file=None)
+
+
+def test_the_agent_demo_broker_and_the_sandbox_login_are_mutually_exclusive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_AGENT_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_AGENT_ACCESS_CODE", "d" * 16)
+    monkeypatch.setenv("TEST_IDENTITY_ENABLED", "true")
+    monkeypatch.setenv("TEST_IDENTITY_KEY", "t" * 16)
+
+    with pytest.raises(ConfigError, match="mutually exclusive"):
+        load_settings(env_file=None)
+
+
+def test_the_customer_and_agent_demo_brokers_may_both_be_enabled_together(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-18 runs both together in the deployment; they are not mutually exclusive with each
+    other, only each with the sandbox login."""
+    monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "c" * 16)
+    monkeypatch.setenv("DEMO_AGENT_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_AGENT_ACCESS_CODE", "d" * 16)
+
+    settings = load_settings(env_file=None)
+
+    assert settings.demo_signin_enabled is True
+    assert settings.demo_agent_signin_enabled is True
+
+
+def test_the_agent_demo_broker_can_be_enabled_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("DEMO_AGENT_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_AGENT_ACCESS_CODE", "d" * 16)
+
+    assert load_settings(env_file=None).demo_agent_signin_enabled is True
+
+
+@pytest.mark.parametrize("code", ["c" * 15])
+def test_a_short_agent_demo_access_code_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    monkeypatch.setenv("DEMO_AGENT_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_AGENT_ACCESS_CODE", code)
+
+    with pytest.raises(ConfigError, match="at least 16 characters"):
+        load_settings(env_file=None)
+
+
+def test_a_blank_agent_demo_access_code_is_treated_as_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_AGENT_ACCESS_CODE", "")
+
+    assert load_settings(env_file=None).demo_agent_access_code is None
+
+
+def test_the_agent_signing_key_has_the_same_length_floor_as_the_customer_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AGENT_SESSION_SIGNING_KEY", "k" * 31)
+
+    with pytest.raises(ConfigError, match="at least 32 characters"):
+        load_settings(env_file=None)
+
+
+def test_an_agent_signing_key_with_few_different_characters_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AGENT_SESSION_SIGNING_KEY", "k" * 40)
+
+    with pytest.raises(ConfigError, match="different characters"):
+        load_settings(env_file=None)
+
+
+def test_a_blank_agent_signing_key_is_treated_as_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENT_SESSION_SIGNING_KEY", "")
+
+    assert load_settings(env_file=None).agent_session_signing_key is None
+
+
+def test_the_two_access_codes_must_not_be_the_same_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A copy-paste SSM mistake must not silently defeat the two-broker separation (ADR-18)."""
+    monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "shared-code-0123456789")
+    monkeypatch.setenv("DEMO_AGENT_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_AGENT_ACCESS_CODE", "shared-code-0123456789")
+
+    with pytest.raises(ConfigError, match="must not be the same value"):
+        load_settings(env_file=None)
+
+
+def test_the_two_signing_keys_must_not_be_the_same_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "abcdefgh" * 4)
+    monkeypatch.setenv("AGENT_SESSION_SIGNING_KEY", "abcdefgh" * 4)
+
+    with pytest.raises(ConfigError, match="must not be the same value"):
+        load_settings(env_file=None)
+
+
+def test_the_two_signing_keys_may_differ(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "abcdefgh" * 4)
+    monkeypatch.setenv("AGENT_SESSION_SIGNING_KEY", "ponmlkji" * 4)
+
+    settings = load_settings(env_file=None)
+
+    assert settings.session_signing_key is not None
+    assert settings.agent_session_signing_key is not None
 
 
 # -----------------------------------------------------------------------------
