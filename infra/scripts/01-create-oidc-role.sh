@@ -32,6 +32,16 @@ readonly GITHUB_REPO="dannysmp/factored-hackathon-2026-icesi-ai"
 # it), not from any branch or pull request in the repository — adding environment-gated releases
 # later can widen this to a GitHub Environment condition instead.
 readonly GITHUB_DEFAULT_BRANCH="main"
+
+# This account's GitHub Actions OIDC subject claim embeds the owner's and repository's own
+# immutable numeric ids alongside their names (`repo:name@id/name@id:ref:...`), not the plain
+# `repo:owner/repo:ref:...` form most OIDC setup guides show — confirmed by decoding a real token
+# a dispatched workflow requested, not assumed from documentation. Fetched live rather than
+# hardcoded: the ids are stable for a given repository, but deriving them here keeps this script
+# correct if it is ever reused against a different repository.
+github_owner_id="$(gh api "repos/${GITHUB_REPO}" --jq '.owner.id')"
+github_repo_id="$(gh api "repos/${GITHUB_REPO}" --jq '.id')"
+readonly GITHUB_SUBJECT="repo:${GITHUB_REPO%%/*}@${github_owner_id}/${GITHUB_REPO##*/}@${github_repo_id}:ref:refs/heads/${GITHUB_DEFAULT_BRANCH}"
 readonly OIDC_PROVIDER_URL="https://token.actions.githubusercontent.com"
 ## AWS still requires a well-formed thumbprint on the provider and, in practice, denies
 ## sts:AssumeRoleWithWebIdentity once it goes stale: GitHub Actions' OIDC issuer has changed its
@@ -78,7 +88,7 @@ trust_policy=$(cat <<JSON
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:${GITHUB_REPO}:ref:refs/heads/${GITHUB_DEFAULT_BRANCH}"
+          "token.actions.githubusercontent.com:sub": "${GITHUB_SUBJECT}"
         }
       }
     }
