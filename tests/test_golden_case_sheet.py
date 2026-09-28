@@ -1,10 +1,10 @@
 """
-Golden Set Case Sheet Tests
+Golden Set Case Files Tests
 ============================
 
 Component: ``evals.golden.case_sheet``. Uses ``tmp_path`` for the write/check round trip, so the
-committed sheet under ``evals/golden/`` is never touched by the suite; the drift check against
-the real committed file is exercised separately, against the actual package directory.
+committed files under ``evals/golden/cases/`` are never touched by the suite; the drift check
+against the real committed files is exercised separately, against the actual package directory.
 """
 
 from __future__ import annotations
@@ -21,12 +21,14 @@ import pytest
 from evals.golden import case_sheet
 from evals.golden.case_sheet import (
     ALL_CASES,
+    CATEGORY_CASES,
     DEFAULT_DIRECTORY,
     check_case_sheet,
     main,
     render_case_sheet,
     write_case_sheet,
 )
+from evals.models import CaseCategory
 
 
 def test_render_produces_one_row_per_case() -> None:
@@ -39,7 +41,7 @@ def test_render_is_deterministic() -> None:
     assert render_case_sheet(ALL_CASES) == render_case_sheet(ALL_CASES)
 
 
-def test_row_fields_match_the_case(tmp_path: Path) -> None:
+def test_row_fields_match_the_case() -> None:
     text = render_case_sheet(ALL_CASES)
     rows = list(csv.DictReader(io.StringIO(text)))
     first_case, first_row = ALL_CASES[0], rows[0]
@@ -48,10 +50,32 @@ def test_row_fields_match_the_case(tmp_path: Path) -> None:
     assert first_row["user_turns"] == " | ".join(first_case.user_turns)
 
 
+def test_all_cases_is_ordered_by_category_declaration_not_delivery() -> None:
+    # CaseCategory's own declared order is the mix table's row order; a case's position in
+    # ALL_CASES must follow that, not whichever order category-group pull requests landed in.
+    order = [category for category in CaseCategory if category in CATEGORY_CASES]
+    seen_order = []
+    for case in ALL_CASES:
+        if case.category not in seen_order:
+            seen_order.append(case.category)
+    assert seen_order == order
+
+
+def test_all_cases_has_no_duplicate_case_ids() -> None:
+    ids = [case.case_id for case in ALL_CASES]
+    assert len(ids) == len(set(ids))
+
+
+def test_all_cases_has_no_duplicate_seed_refs() -> None:
+    refs = [case.seed_ref for case in ALL_CASES]
+    assert len(refs) == len(set(refs))
+
+
 def test_write_then_check_round_trip(tmp_path: Path) -> None:
-    assert check_case_sheet(tmp_path) == ["missing: case_sheet.csv"]
+    expected_missing = sorted(f"{category.value}.csv" for category in CATEGORY_CASES)
+    assert sorted(check_case_sheet(tmp_path)) == expected_missing
     changed = write_case_sheet(tmp_path)
-    assert changed == ["case_sheet.csv"]
+    assert sorted(changed) == expected_missing
     assert check_case_sheet(tmp_path) == []
 
 
@@ -60,25 +84,36 @@ def test_write_is_idempotent(tmp_path: Path) -> None:
     assert write_case_sheet(tmp_path) == []
 
 
-def test_committed_case_sheet_has_no_drift() -> None:
-    # The file actually committed under evals/golden/ must be exactly what the cases generate.
-    assert check_case_sheet(DEFAULT_DIRECTORY) == []
+def test_check_reports_a_stray_file(tmp_path: Path) -> None:
+    write_case_sheet(tmp_path)
+    (tmp_path / "not_a_category.csv").write_text("stray", encoding="utf-8")
+    assert check_case_sheet(tmp_path) == ["not_a_category.csv"]
 
 
-def test_check_reports_stale_when_content_differs(tmp_path: Path) -> None:
-    (tmp_path / "case_sheet.csv").write_text("stale content", encoding="utf-8")
-    assert check_case_sheet(tmp_path) == ["stale: case_sheet.csv"]
+def test_check_reports_drift_when_content_differs(tmp_path: Path) -> None:
+    write_case_sheet(tmp_path)
+    first_file = f"{next(iter(CATEGORY_CASES)).value}.csv"
+    (tmp_path / first_file).write_text("stale content", encoding="utf-8")
+    assert check_case_sheet(tmp_path) == [first_file]
 
 
-def test_main_writes_the_sheet(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_on_a_nonexistent_directory_reports_missing_without_crashing(tmp_path: Path) -> None:
+    missing_directory = tmp_path / "does-not-exist-yet"
+    expected = sorted(f"{category.value}.csv" for category in CATEGORY_CASES)
+    assert sorted(check_case_sheet(missing_directory)) == expected
+
+
+def test_main_writes_every_category(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(case_sheet, "DEFAULT_DIRECTORY", tmp_path)
     assert main([]) == 0
-    assert (tmp_path / "case_sheet.csv").read_text(encoding="utf-8") == render_case_sheet(ALL_CASES)
+    for category, cases in CATEGORY_CASES.items():
+        content = (tmp_path / f"{category.value}.csv").read_text(encoding="utf-8")
+        assert content == render_case_sheet(cases)
     # A second run finds nothing to write, exercising the idempotent branch too.
     assert main([]) == 0
 
 
-def test_main_check_fails_until_the_sheet_is_written(
+def test_main_check_fails_until_the_files_are_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(case_sheet, "DEFAULT_DIRECTORY", tmp_path)
@@ -90,5 +125,12 @@ def test_main_check_fails_until_the_sheet_is_written(
 def test_main_check_fails_on_drift(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(case_sheet, "DEFAULT_DIRECTORY", tmp_path)
     write_case_sheet(tmp_path)
-    (tmp_path / "case_sheet.csv").write_text("stale content", encoding="utf-8")
+    first_file = f"{next(iter(CATEGORY_CASES)).value}.csv"
+    (tmp_path / first_file).write_text("stale content", encoding="utf-8")
     assert main(["--check"]) == 1
+
+
+def test_committed_case_files_have_no_drift() -> None:
+    # The files actually committed under evals/golden/cases/ must be exactly what the cases
+    # generate — the check CI relies on.
+    assert check_case_sheet(DEFAULT_DIRECTORY) == []

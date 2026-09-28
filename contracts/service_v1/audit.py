@@ -63,7 +63,10 @@ class AuditAction(StrEnum):
     froze: a reference call whose reference exists but belongs to another customer answers the
     session's customer exactly as a genuine not-found would (same code, message and shape), but
     is audited distinguishably from one, so enumeration is visible in the trail even though it is
-    invisible to the caller.
+    invisible to the caller. ``CASE_CREATION_REPLAYED`` is the same kind of addition: a repeated
+    confirmation with the same idempotency key and payload answers the customer exactly as the
+    original filing did, but the trail still shows a distinct entry for it, so a trace built from
+    audit records alone accounts for every filing call the customer actually made.
     """
 
     TRANSACTIONS_LISTED = "transactions_listed"
@@ -75,15 +78,17 @@ class AuditAction(StrEnum):
     DISPUTE_EVALUATED = "dispute_evaluated"
     CASE_CREATED = "case_created"
     CASE_CREATION_REFUSED = "case_creation_refused"
+    CASE_CREATION_REPLAYED = "case_creation_replayed"
 
 
 class AuditRecord(ContractModel):
     """One append-only entry: who did what, on what basis, and when.
 
     Written for every user-affecting decision. ``reason_code`` and ``policy_version`` are set
-    exactly for the actions a policy decision produced (``dispute_evaluated``, ``case_created``
-    and ``case_creation_refused`` for a decision the tool itself rejected); a plain read of the
-    customer's own data carries neither.
+    exactly for the actions a policy decision produced (``dispute_evaluated``, ``case_created``,
+    ``case_creation_refused`` for a decision the tool itself rejected, and
+    ``case_creation_replayed`` for the decision the original filing rested on); a plain read of
+    the customer's own data carries neither.
     """
 
     trace_id: Annotated[str, Field(pattern=NUMBER_PATTERN)]

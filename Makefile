@@ -17,7 +17,7 @@ SILVER_DIR ?= data/silver
 
 .PHONY: help setup lint format test test-all secrets audit run clean \
         profile pipeline analyze features corpus corpus-check train evaluate up \
-        db-up db-down migrate test-integration seed load-seed
+        db-up db-down migrate test-integration seed eval-bank load-seed load-analytics
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -56,8 +56,14 @@ test-integration: ## Tests needing a real Postgres (DATABASE_URL must point at a
 seed: ## Build the operational seed from SILVER_DIR and write reports/ops-seed.md
 	$(RUN) python -m pipelines.ops_seed --silver $(SILVER_DIR)
 
+eval-bank: ## Write the frozen evaluation scenario bank
+	$(RUN) python -m pipelines.eval_bank
+
 load-seed: ## Load the built operational seed into Postgres (needs DATABASE_URL, already migrated)
 	$(RUN) python -m app.persistence.load_seed
+
+load-analytics: ## Load the dispute-demand marts into the Postgres analytics schema (needs DATABASE_URL, already migrated)
+	$(RUN) python -m pipelines.analytics_load
 
 secrets: ## Scan history + staged changes (NOT unstaged/untracked files), then run the self-test
 	gitleaks git . --config .gitleaks.toml --no-banner --redact
@@ -92,10 +98,12 @@ corpus: ## Regenerate the multilingual policy corpus in policy/corpus from the p
 corpus-check: ## Fail when policy/corpus differs from what the policy generates
 	$(RUN) python -m pipelines.policy_corpus --check
 
-# ---- Not yet implemented (fail loudly until they are) --------------------------
+train: ## Run the risk signal probe, the boosted-model comparison and calibration; write the model card
+	$(RUN) python -m models.probe
+	$(RUN) python -m models.boosted
+	$(RUN) python -m models.calibration
 
-train: ## Train and log the risk model
-	@echo "make train is not implemented yet" >&2; exit 2
+# ---- Not yet implemented (fail loudly until they are) --------------------------
 
 evaluate: ## Run the evaluation harness: make evaluate SYSTEM={P|B0|B1}
 	@echo "make evaluate is not implemented yet" >&2; exit 2
