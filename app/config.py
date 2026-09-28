@@ -158,7 +158,7 @@ class Settings(BaseSettings):
         exclusive with ``test_identity_enabled``; unlike it, not restricted to any environment.
     demo_signin_access_code : SecretStr | None
         Shared secret the demo sign-in broker requires (at least 16 characters), compared in
-        constant time and rate-limited; never the same value as ``test_identity_key``.
+        constant time and rate-limited.
     """
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)

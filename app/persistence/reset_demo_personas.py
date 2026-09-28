@@ -4,9 +4,9 @@ Demo Persona Reset
 
 Overview
 --------
-Restores every demo persona's customer to its seeded state before a demonstration (ADR-18,
-CR-12 Arch C8): deletes the case rows a previous demo run created for a persona's customer, so
-the duplicate-open-case rule cannot block a scripted flow that was already exercised once. An
+Restores every demo persona's customer to its seeded state before a demonstration (ADR-18):
+deletes the case rows a previous demo run created for a persona's customer, so the
+duplicate-open-case rule cannot block a scripted flow that was already exercised once. An
 operator command, run before a demonstration, not an HTTP route — the sign-in broker itself never
 needs to reset anything, so this is not new public attack surface.
 

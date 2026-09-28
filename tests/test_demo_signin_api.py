@@ -70,6 +70,20 @@ class _FailingAuditSink:
         raise RuntimeError("audit store is down")
 
 
+class _FlakyAuditSink:
+    """A fake ``SignInAuditSink`` that fails its first ``fail_times`` calls, then succeeds."""
+
+    def __init__(self, fail_times: int) -> None:
+        self._fail_times = fail_times
+        self.records: list[SignInAuditRecord] = []
+
+    def record(self, entry: SignInAuditRecord) -> None:
+        if self._fail_times > 0:
+            self._fail_times -= 1
+            raise RuntimeError("audit store is down")
+        self.records.append(entry)
+
+
 def _settings(**updates: Any) -> Settings:
     values: dict[str, Any] = {
         "session_signing_key": SecretStr(SIGNING_KEY),
@@ -240,6 +254,30 @@ def test_a_filing_that_cannot_be_audited_fails_closed(clock: Clock) -> None:
 
     assert response.status_code == 503
     assert "access_token" not in response.json()
+
+
+def test_a_failed_audit_write_releases_the_issuance_reservations_it_held(clock: Clock) -> None:
+    """The default persona cap is 1: if a failed audit write left its reservation burning, an
+    immediate retry for the same persona would also be refused, even though no session was ever
+    delivered the first time. It must not be — this is the fix for the gap the architect's
+    conformance review found in this same round."""
+    app = create_app(
+        _settings(),
+        clock=clock,
+        customer_lookup=_always_active,
+        signin_audit=_FlakyAuditSink(fail_times=1),
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+
+    first = client.post(
+        DEMO_LOGIN, json={"persona": "ana"}, headers={"X-Demo-Access-Code": ACCESS_CODE}
+    )
+    second = client.post(
+        DEMO_LOGIN, json={"persona": "ana"}, headers={"X-Demo-Access-Code": ACCESS_CODE}
+    )
+
+    assert first.status_code == 503
+    assert second.status_code == 201
 
 
 def test_the_route_does_not_exist_when_the_broker_is_disabled(clock: Clock) -> None:

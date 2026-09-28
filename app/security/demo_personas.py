@@ -5,7 +5,7 @@ Demo Personas
 Overview
 --------
 Reads the demo sign-in broker's persona file into a validated ``PersonaList``, and checks each
-customer persona against the seed at start-up (ADR-18, CR-12 Arch C4). The demo broker route
+customer persona against the seed at start-up (ADR-18). The demo broker route
 accepts a persona slug, never a customer identifier or a document number; this module is what
 turns a slug into a customer_id, and only after start-up has already proven that customer_id
 resolves to a real, active, seeded customer.
@@ -21,7 +21,7 @@ Design Principles
 ------------------
 - Fail loudly at start-up, exactly like the policy loader: an unreadable, malformed or invalid
   persona file raises ``PersonaError`` naming the file; an unresolvable or inactive customer
-  raises it naming the **slug**, never the customer_id (SECURITY.md: PII minimization) — CR-12
+  raises it naming the **slug**, never the customer_id (SECURITY.md: PII minimization) — ADR-18
   requires active customers only, stricter than the sandbox login's own no-status-gate rule
   (AC-E4-48 does not apply here: this is a startup data-integrity check, not a sign-in decision).
 - The validation only runs when the caller asks for it (``validate_active_customers``), so an

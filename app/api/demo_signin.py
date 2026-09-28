@@ -125,12 +125,15 @@ def _refusal() -> ProblemError:
 
 def _reserve_all(
     limiter: IssuanceLimiter, keys_and_caps: list[tuple[str, int]], ttl: timedelta
-) -> bool:
+) -> list[tuple[str, datetime]] | None:
     """Reserve every key in order, or release whatever already succeeded and refuse.
 
     Reserving three independent keys is not one atomic operation across all three, so a caller
     that stopped after the first success would leave it burning capacity for an attempt that
-    never completed; this releases every earlier success as soon as one key refuses.
+    never completed; this releases every earlier success as soon as one key refuses. On success,
+    returns every ``(key, expiry)`` reserved, so the caller can release them too if a later step
+    of the same attempt — issuing the token, writing its audit record — fails after all three
+    reservations already succeeded.
     """
     reserved: list[tuple[str, datetime]] = []
     for key, cap in keys_and_caps:
@@ -138,9 +141,15 @@ def _reserve_all(
         if expiry is None:
             for done_key, done_expiry in reserved:
                 limiter.release(done_key, done_expiry)
-            return False
+            return None
         reserved.append((key, expiry))
-    return True
+    return reserved
+
+
+def _release_all(limiter: IssuanceLimiter, reserved: list[tuple[str, datetime]]) -> None:
+    """Undo every reservation in ``reserved`` (the attempt they were held for did not complete)."""
+    for key, expiry in reserved:
+        limiter.release(key, expiry)
 
 
 def _rate_limited(wait: int) -> ProblemError:
@@ -266,7 +275,7 @@ def build_demo_signin_router(
             ],
             CUSTOMER_TTL,
         )
-        if not reserved:
+        if reserved is None:
             logger.warning("demo_signin_capacity_reached request_id=%s", current_request_id())
             _audit_or_fail_closed(
                 SignInAuditRecord(
@@ -284,19 +293,27 @@ def build_demo_signin_router(
         issued = sessions.issue(
             persona.customer_id, audience="customer", ttl=CUSTOMER_TTL, demo=True
         )
-        _audit_or_fail_closed(
-            SignInAuditRecord(
-                trace_id=current_request_id(),
-                occurred_at=sessions.now(),
-                audience=SignInAudience.CUSTOMER,
-                outcome=SignInOutcome.ISSUED,
-                reason_code=SignInReasonCode.ISSUED,
-                client_address_hash=address_hash,
-                persona_slug=persona.slug,
-                resolved_customer_id=persona.customer_id,
-                session_id=issued.session_id,
+        try:
+            _audit_or_fail_closed(
+                SignInAuditRecord(
+                    trace_id=current_request_id(),
+                    occurred_at=sessions.now(),
+                    audience=SignInAudience.CUSTOMER,
+                    outcome=SignInOutcome.ISSUED,
+                    reason_code=SignInReasonCode.ISSUED,
+                    client_address_hash=address_hash,
+                    persona_slug=persona.slug,
+                    resolved_customer_id=persona.customer_id,
+                    session_id=issued.session_id,
+                )
             )
-        )
+        except ProblemError:
+            # No token reaches the caller on this path (ADR-18: fail closed on the audit write),
+            # so the three reservations above must not either — otherwise one audit-store hiccup
+            # would burn a persona's only slot for up to its full TTL despite no session ever
+            # being delivered, the same self-inflicted lockout the caps exist to prevent.
+            _release_all(issuance_limiter, reserved)
+            raise
         logger.info(
             "demo_session_issued session_id=%s request_id=%s",
             issued.session_id,

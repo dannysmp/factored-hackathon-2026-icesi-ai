@@ -22,11 +22,12 @@ Design Principles
   are checked, so a token from another system cannot be replayed here.
 - **One signing key per audience, never one key shared across audiences** (ADR-18): a customer
   token and an agent token can never be confused for each other, even if one key were somehow
-  compromised. The audience a token claims is carried in an unprotected JWT header (``kid``) used
-  only to select which key to attempt verification with; the actual guarantee comes from that key
-  successfully verifying the signature and the payload's own ``aud`` claim matching. A caller who
-  does not hold a given audience's key cannot forge membership in it by lying in the header — the
-  signature simply fails to verify.
+  compromised. The audience a token claims is carried in a JWT header (``kid``), read before
+  verification and used only to select which key to attempt it with; the header is part of the
+  signed input, but that is not what proves anything here — the actual guarantee comes from that
+  key successfully verifying the signature and the payload's own ``aud`` claim matching. A
+  caller who does not hold a given audience's key cannot forge membership in it by lying in the
+  header — the signature simply fails to verify.
 - The clock is injected. Expiry is checked against it, after the signature is verified, so only a
   validly signed token can be reported as expired.
 - Tokens are short-lived and revocable; revocation entries live only as long as the token would.
@@ -197,8 +198,8 @@ class SessionService:
             "exp": int(expires_at.timestamp()),
             "demo": demo,
         }
-        # The audience also names the key: carried in the unprotected header only to select which
-        # key to attempt verification with, never trusted on its own (see the module's Design
+        # The audience also names the key: carried in the header only to select which key to
+        # attempt verification with, never trusted on its own (see the module's Design
         # Principles). A forged header naming a key the signer does not hold cannot produce a
         # signature that key will verify.
         token = jwt.encode(
