@@ -403,6 +403,28 @@ def test_the_sandbox_login_can_be_enabled_outside_production(
     assert load_settings(env_file=None).test_identity_enabled is True
 
 
+def test_the_stub_llm_provider_can_never_be_enabled_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Whatever else is set, prod refuses the stub LLM provider, same reasoning as the sandbox
+    login: a CI-only shortcut must never reach a real deployment."""
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("LLM_PROVIDER", "stub")
+
+    with pytest.raises(ConfigError, match="not allowed when APP_ENV=prod"):
+        load_settings(env_file=None)
+
+
+def test_the_stub_llm_provider_can_be_enabled_outside_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Local, dev and CI may select the stub provider freely."""
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.setenv("LLM_PROVIDER", "stub")
+
+    assert load_settings(env_file=None).llm_provider is LlmProvider.STUB
+
+
 def test_the_demo_broker_needs_its_own_access_code(monkeypatch: pytest.MonkeyPatch) -> None:
     """Enabling it without the shared access code is a start-up error."""
     monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")

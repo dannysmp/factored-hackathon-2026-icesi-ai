@@ -71,7 +71,11 @@ def _persona_list(*customer_ids: str) -> PersonaList:
         version=1,
         customers=tuple(
             CustomerPersona(
-                slug=f"persona-{i}", customer_id=customer_id, language="es", scenario="eligible"
+                slug=f"persona-{i}",
+                display_name=f"Persona {i}",
+                customer_id=customer_id,
+                language="es",
+                scenario="eligible",
             )
             for i, customer_id in enumerate(customer_ids)
         ),
