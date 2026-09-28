@@ -119,9 +119,7 @@ def client(_retriever: LexicalRetriever) -> TestClient:
     def always_active(customer_id: str) -> str | None:
         return "Active"
 
-    app = create_app(
-        _settings(), customer_lookup=always_active, controller_factory=build
-    )
+    app = create_app(_settings(), customer_lookup=always_active, controller_factory=build)
     return TestClient(app)
 
 
@@ -169,6 +167,30 @@ def test_turns_rejects_a_malformed_body(client: TestClient) -> None:
 
     assert response.status_code == 422
     assert response.json()["code"] == ErrorCode.VALIDATION_ERROR.value
+
+
+def test_an_oversized_body_is_refused_before_authentication(
+    _retriever: LexicalRetriever,
+) -> None:
+    """The body-size cap runs ahead of session authentication end to end: an oversized,
+    unauthenticated request is refused for its size (413), never merely for lacking a session."""
+    calls: list[Principal] = []
+
+    def build(principal: Principal) -> DialogueController:
+        calls.append(principal)
+        raise AssertionError("the controller must never be built for a refused, oversized body")
+
+    app = create_app(
+        _settings(), customer_lookup=lambda customer_id: "Active", controller_factory=build
+    )
+    client = TestClient(app)
+
+    oversized = b"x" * (64 * 1024 + 1)
+    response = client.post(TURNS, content=oversized)
+
+    assert response.status_code == 413
+    assert response.json()["code"] == ErrorCode.PAYLOAD_TOO_LARGE.value
+    assert not calls
 
 
 def test_a_repeated_turn_id_replays_the_same_reply(client: TestClient) -> None:

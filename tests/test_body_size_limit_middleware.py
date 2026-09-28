@@ -9,7 +9,9 @@ FastAPI's in-process test client; no database, no LLM call.
 from __future__ import annotations
 
 # Standard libraries
-from collections.abc import Mapping
+import asyncio
+from collections.abc import Mapping, MutableMapping
+from typing import Any
 
 # Third-party libraries
 from fastapi.testclient import TestClient
@@ -66,3 +68,45 @@ def test_the_limit_counts_bytes_actually_read_not_content_length() -> None:
     )
 
     assert response.status_code == 413
+
+
+def test_a_body_split_across_several_asgi_messages_is_replayed_whole() -> None:
+    """A body arriving as more than one ``http.request`` message (``more_body=True`` between
+    them) is fully reassembled for the downstream app, not just its first chunk."""
+    chunks = [b"first-", b"second-", b"third"]
+    received: list[bytes] = []
+
+    async def downstream_app(scope: Any, receive: Any, send: Any) -> None:
+        body = b""
+        more = True
+        while more:
+            message = await receive()
+            body += message.get("body", b"")
+            more = message.get("more_body", False)
+        received.append(body)
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware = BodySizeLimitMiddleware(downstream_app, max_bytes=1024)
+
+    async def fake_receive() -> MutableMapping[str, Any]:
+        if not chunks:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        chunk = chunks.pop(0)
+        return {"type": "http.request", "body": chunk, "more_body": bool(chunks)}
+
+    sent: list[MutableMapping[str, Any]] = []
+
+    async def fake_send(message: MutableMapping[str, Any]) -> None:
+        sent.append(message)
+
+    scope: MutableMapping[str, Any] = {
+        "type": "http",
+        "path": "/echo",
+        "headers": [],
+        "method": "POST",
+    }
+    asyncio.run(middleware(scope, fake_receive, fake_send))
+
+    assert received == [b"first-second-third"]
+    assert sent[0]["status"] == 200
