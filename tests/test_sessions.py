@@ -22,7 +22,6 @@ from pydantic import SecretStr  # Signing key
 from app.security.errors import ErrorCode
 from app.security.limits import AttemptLimiter
 from app.security.sessions import (
-    AUDIENCE,
     ISSUER,
     InMemoryRevocationStore,
     SessionRejected,
@@ -30,6 +29,8 @@ from app.security.sessions import (
 )
 
 KEY = SecretStr("k" * 40)
+AGENT_KEY = SecretStr("g" * 40)
+AUDIENCE = "customer"
 START = datetime(2026, 9, 26, 12, 0, 0, tzinfo=UTC)
 
 
@@ -50,7 +51,7 @@ def clock() -> Clock:
 
 @pytest.fixture
 def service(clock: Clock) -> SessionService:
-    return SessionService(KEY, 900, clock=clock)
+    return SessionService({"customer": KEY, "agent": AGENT_KEY}, 900, clock=clock)
 
 
 def _claims(clock: Clock, **overrides: object) -> dict[str, object]:
@@ -61,12 +62,19 @@ def _claims(clock: Clock, **overrides: object) -> dict[str, object]:
         "sid": "session-1",
         "iat": int(clock.now.timestamp()),
         "exp": int((clock.now + timedelta(minutes=15)).timestamp()),
+        "demo": False,
     }
     return {**base, **overrides}
 
 
-def _forge(claims: dict[str, object], key: str = "k" * 40, algorithm: str = "HS256") -> str:
-    return jwt.encode(claims, key, algorithm=algorithm)
+def _forge(
+    claims: dict[str, object],
+    key: str = "k" * 40,
+    algorithm: str = "HS256",
+    kid: str | None = "customer",
+) -> str:
+    headers = {"kid": kid} if kid is not None else None
+    return jwt.encode(claims, key, algorithm=algorithm, headers=headers)
 
 
 def _code(service: SessionService, token: str) -> ErrorCode:
@@ -82,7 +90,7 @@ def _code(service: SessionService, token: str) -> ErrorCode:
 
 def test_a_token_identifies_the_customer_it_was_issued_for(service: SessionService) -> None:
     """Round trip: the principal carries the customer, the session and the lifetime."""
-    issued = service.issue("CUST-0042")
+    issued = service.issue("CUST-0042", audience="customer")
 
     principal = service.verify(issued.token)
 
@@ -94,7 +102,10 @@ def test_a_token_identifies_the_customer_it_was_issued_for(service: SessionServi
 
 def test_every_session_gets_a_new_identifier(service: SessionService) -> None:
     """Session identifiers are unique and unguessable in length."""
-    first, second = service.issue("C1"), service.issue("C1")
+    first, second = (
+        service.issue("C1", audience="customer"),
+        service.issue("C1", audience="customer"),
+    )
 
     assert first.session_id != second.session_id
     assert len(first.session_id) >= 16
@@ -108,14 +119,14 @@ def test_a_customer_identifier_with_an_unsafe_shape_is_never_signed(
 ) -> None:
     """The identifier pattern is enforced before signing."""
     with pytest.raises(ValueError, match="invalid format"):
-        service.issue(customer_id)
+        service.issue(customer_id, audience="customer")
 
 
 def test_the_last_second_of_the_lifetime_is_valid_and_the_next_is_expired(
     service: SessionService, clock: Clock
 ) -> None:
     """Expiry is exclusive: at the expiry instant the session is over."""
-    token = service.issue("C1").token
+    token = service.issue("C1", audience="customer").token
 
     clock.now = START + timedelta(seconds=899)
     assert service.verify(token).customer_id == "C1"
@@ -127,12 +138,69 @@ def test_the_last_second_of_the_lifetime_is_valid_and_the_next_is_expired(
 
 def test_the_lifetime_is_the_configured_one(clock: Clock) -> None:
     """A shorter configured lifetime shortens the token."""
-    short = SessionService(KEY, 60, clock=clock)
-    token = short.issue("C1").token
+    short = SessionService({"customer": KEY}, 60, clock=clock)
+    token = short.issue("C1", audience="customer").token
 
     clock.now = START + timedelta(seconds=60)
 
     assert _code(short, token) is ErrorCode.SESSION_EXPIRED
+
+
+def test_an_explicit_ttl_overrides_the_configured_default(
+    service: SessionService, clock: Clock
+) -> None:
+    """ADR-18: a demo customer session (30 minutes) can differ from the configured default."""
+    issued = service.issue("C1", audience="customer", ttl=timedelta(minutes=30))
+
+    assert issued.expires_at == START + timedelta(minutes=30)
+
+
+def test_at_least_one_audience_is_required(clock: Clock) -> None:
+    """A service with no signing key configured for any audience cannot issue or verify."""
+    with pytest.raises(ValueError, match="at least one audience"):
+        SessionService({}, 900, clock=clock)
+
+
+def test_issuing_for_an_unconfigured_audience_is_refused(service: SessionService) -> None:
+    """Only the audiences a signing key was actually provided for can be issued."""
+    with pytest.raises(ValueError, match="no signing key configured"):
+        service.issue("C1", audience="unknown")
+
+
+def test_a_demo_flag_and_the_issuing_audience_round_trip(service: SessionService) -> None:
+    """The principal reports which audience issued the token, and whether it was a demo one."""
+    issued = service.issue("A1", audience="agent", demo=True)
+
+    principal = service.verify(issued.token)
+
+    assert principal.audience == "agent"
+    assert principal.demo is True
+
+
+def test_a_customer_token_and_an_agent_token_use_different_keys(
+    service: SessionService, clock: Clock
+) -> None:
+    """Distinct audiences never share a signing key, per audience (ADR-18)."""
+    customer_token = service.issue("C1", audience="customer").token
+    agent_token = service.issue("A1", audience="agent").token
+
+    # A customer key cannot verify a token minted under the agent key's kid, and vice versa —
+    # proven directly by forging what a key confusion attack would produce.
+    forged_as_agent = _forge(_claims(clock, aud="agent"), key="k" * 40, kid="agent")
+    forged_as_customer = _forge(_claims(clock, aud="customer"), key="g" * 40, kid="customer")
+
+    assert service.verify(customer_token).audience == "customer"
+    assert service.verify(agent_token).audience == "agent"
+    assert _code(service, forged_as_agent) is ErrorCode.SESSION_INVALID
+    assert _code(service, forged_as_customer) is ErrorCode.SESSION_INVALID
+
+
+@pytest.mark.parametrize("kid", [None, "unknown-audience"])
+def test_a_missing_or_unknown_key_selector_is_invalid(
+    service: SessionService, clock: Clock, kid: str | None
+) -> None:
+    """A token naming no audience, or one this service holds no key for, is refused."""
+    assert _code(service, _forge(_claims(clock), kid=kid)) is ErrorCode.SESSION_INVALID
 
 
 # -----------------------------------------------------------------------------
@@ -244,7 +312,7 @@ def test_a_revoked_session_is_refused_until_it_would_have_expired(
     service: SessionService, clock: Clock
 ) -> None:
     """Logout takes effect immediately and never outlives the token."""
-    issued = service.issue("C1")
+    issued = service.issue("C1", audience="customer")
     principal = service.verify(issued.token)
 
     service.revoke(principal)
@@ -256,7 +324,10 @@ def test_a_revoked_session_is_refused_until_it_would_have_expired(
 
 def test_revoking_one_session_leaves_the_others(service: SessionService) -> None:
     """Sessions are independent, also for the same customer."""
-    first, second = service.issue("C1"), service.issue("C1")
+    first, second = (
+        service.issue("C1", audience="customer"),
+        service.issue("C1", audience="customer"),
+    )
 
     service.revoke(service.verify(first.token))
 

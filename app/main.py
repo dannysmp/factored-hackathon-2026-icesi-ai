@@ -46,7 +46,7 @@ import logging  # Structured events
 import secrets  # Throw-away signing key for local runs
 
 # Third-party libraries
-from fastapi import FastAPI, Request  # Web framework
+from fastapi import APIRouter, FastAPI, Request  # Web framework
 from fastapi.exceptions import RequestValidationError  # Validation failures of requests
 from pydantic import SecretStr  # Signing key that never prints
 from starlette.exceptions import HTTPException as StarletteHTTPException  # Routing failures
@@ -54,6 +54,7 @@ from starlette.responses import Response  # Handler return type
 
 # Local modules
 from app.api.auth import TEST_SESSIONS_PATH, CustomerLookup, build_auth_router  # Auth routes
+from app.api.demo_signin import DEMO_SESSIONS_PATH, build_demo_signin_router  # Demo broker route
 from app.config import (
     AppEnvironment,  # Environments with different key rules
     ConfigError,  # Missing signing key outside local
@@ -67,13 +68,20 @@ from app.domain.calendar import (  # Domain date
 )
 from app.persistence.customers import customer_status  # The sandbox login's existence check
 from app.persistence.ops_meta import read_data_as_of  # The seed's own reference date
+from app.persistence.signin_audit import PostgresSignInAuditSink  # The demo broker's audit store
+from app.security.demo_personas import (  # The demo broker's persona list
+    load_personas,
+    validate_active_customers,
+)
 from app.security.errors import ErrorCode, ProblemError, problem_response  # Failure format
+from app.security.issuance_limits import IssuanceLimiter  # Concurrent-session caps
 from app.security.limits import AttemptLimiter  # Failed-login limit
 from app.security.middleware import (  # Cross-cutting request handling
     RequestContextMiddleware,
     SessionAuthMiddleware,
 )
 from app.security.sessions import Clock, SessionService, utc_now  # Sessions and the clock
+from app.security.signin_audit import SignInAuditSink  # The demo broker's audit sink interface
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +206,7 @@ def create_app(
     *,
     clock: Clock = utc_now,
     customer_lookup: CustomerLookup | None = None,
+    signin_audit: SignInAuditSink | None = None,
 ) -> FastAPI:
     """Build the FastAPI application.
 
@@ -206,10 +215,16 @@ def create_app(
     settings : Settings | None
         Configuration to use; loaded from the environment when omitted.
     clock : Clock
-        Source of the current time for sessions and the login limiter; tests inject their own.
+        Source of the current time for sessions and the login limiters; tests inject their own.
     customer_lookup : CustomerLookup | None
-        The sandbox login's existence check (AC-E4-47); tests inject a fake one. When omitted and
-        the sandbox login is enabled, the real, store-backed one is built from ``DATABASE_URL``.
+        The sandbox login's existence check (AC-E4-47), reused to validate the demo broker's
+        persona list against the seed (ADR-18) when it is enabled instead; tests inject a fake
+        one. When omitted and either sign-in path is enabled, the real, store-backed one is built
+        from ``DATABASE_URL``.
+    signin_audit : SignInAuditSink | None
+        Where the demo broker records every sign-in attempt; tests inject a fake one. When
+        omitted and the demo broker is enabled, the real, store-backed one is built from
+        ``DATABASE_URL``.
 
     Returns
     -------
@@ -221,25 +236,52 @@ def create_app(
     ------
     ConfigError
         When no settings are given and the environment is invalid, when a signing key is required
-        and missing, when no domain date resolves (ADR-15), or when the sandbox login is enabled,
-        no ``customer_lookup`` was injected, and ``DATABASE_URL`` is not configured.
+        and missing, when no domain date resolves (ADR-15), or when a sign-in path is enabled, no
+        ``customer_lookup``/``signin_audit`` was injected, and ``DATABASE_URL`` is not configured.
+    PersonaError
+        The demo broker is enabled and its persona file is missing, malformed, or names a persona
+        that does not resolve to an Active seeded customer.
     """
     # Resolve configuration once, failing fast before any route is registered
     resolved = settings if settings is not None else load_settings()
-    sessions = SessionService(_signing_key(resolved), resolved.session_ttl_seconds, clock=clock)
+    sessions = SessionService(
+        {"customer": _signing_key(resolved)}, resolved.session_ttl_seconds, clock=clock
+    )
     limiter = AttemptLimiter(clock=clock)
     calendar = _domain_calendar(resolved, clock=clock)
     app = FastAPI(title="Dispute Intake API", version=resolved.service_version)
 
     # The sandbox login is public only while it exists; otherwise its path is protected too
     test_key = resolved.test_identity_key if resolved.test_identity_enabled else None
-    public_paths = (TEST_SESSIONS_PATH,) if test_key is not None else ()
+    public_paths = [TEST_SESSIONS_PATH] if test_key is not None else []
     lookup = customer_lookup
-    if test_key is not None and lookup is None:
+    if (test_key is not None or resolved.demo_signin_enabled) and lookup is None:
         lookup = _default_customer_lookup(resolved)
 
+    demo_router: APIRouter | None = None
+    if resolved.demo_signin_enabled:
+        demo_personas = load_personas()
+        validate_active_customers(demo_personas, lookup if lookup is not None else (lambda _: None))
+        demo_audit = signin_audit
+        if demo_audit is None:
+            demo_audit = PostgresSignInAuditSink(resolved.require_database_url().get_secret_value())
+        public_paths.append(DEMO_SESSIONS_PATH)
+        demo_router = build_demo_signin_router(
+            sessions=sessions,
+            demo_access_code=resolved.require_demo_signin_access_code(),
+            personas=demo_personas,
+            audit=demo_audit,
+            attempt_limiter=AttemptLimiter(clock=clock),
+            issuance_limiter=IssuanceLimiter(clock=clock),
+        )
+
     # Middleware: the last one added is the outermost, so the request context wraps the rest
-    app.add_middleware(SessionAuthMiddleware, sessions=sessions, public_paths=public_paths)
+    app.add_middleware(
+        SessionAuthMiddleware,
+        sessions=sessions,
+        audience_by_prefix={"/v1": "customer"},
+        public_paths=public_paths,
+    )
     app.add_middleware(RequestContextMiddleware)
     _register_error_handlers(app)
 
@@ -268,5 +310,9 @@ def create_app(
             customer_lookup=lookup if lookup is not None else (lambda customer_id: None),
         )
     )
+
+    # The demo broker is registered only when it is enabled
+    if demo_router is not None:
+        app.include_router(demo_router)
 
     return app

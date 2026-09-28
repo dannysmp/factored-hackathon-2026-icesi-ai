@@ -93,11 +93,17 @@ class SessionResponse(BaseModel):
 
 
 class SessionInfo(BaseModel):
-    """Who the current session belongs to."""
+    """Who the current session belongs to.
+
+    ``demo`` and ``audience`` are additive fields (ADR-18): the interface's demonstration banner
+    reads them to show a non-dismissible notice whenever ``demo`` is true.
+    """
 
     customer_id: str
     session_id: str
     expires_at: datetime
+    audience: str
+    demo: bool
 
 
 def principal_of(request: Request) -> Principal:
@@ -204,7 +210,7 @@ def build_auth_router(
                     "Sign-in was refused",
                     reauth_required=True,
                 )
-            issued = sessions.issue(body.customer_id)
+            issued = sessions.issue(body.customer_id, audience="customer")
             logger.info(
                 "session_issued session_id=%s request_id=%s",
                 issued.session_id,
@@ -223,6 +229,8 @@ def build_auth_router(
             customer_id=principal.customer_id,
             session_id=principal.session_id,
             expires_at=principal.expires_at,
+            audience=principal.audience,
+            demo=principal.demo,
         )
 
     @router.post("/v1/auth/logout", status_code=204)

@@ -152,6 +152,13 @@ class Settings(BaseSettings):
         Permission-class invariant the create tool enforces itself (ADR-3), not a policy value:
         an anti-abuse bound on how many cases one session may file, never a limit on how many
         distinct disputes a customer legitimately has. Between 1 and 50.
+    demo_signin_enabled : bool
+        Turns on the demonstration sign-in broker for customers (ADR-18): a public, persona-based
+        sign-in path meant for the deployed demonstration, unlike the sandbox login. Mutually
+        exclusive with ``test_identity_enabled``; unlike it, not restricted to any environment.
+    demo_signin_access_code : SecretStr | None
+        Shared secret the demo sign-in broker requires (at least 16 characters), compared in
+        constant time and rate-limited.
     """
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)
@@ -171,6 +178,8 @@ class Settings(BaseSettings):
     model_renderer_enabled: bool = False
     data_as_of_date: str | None = None
     case_create_session_cap: int = Field(default=3, ge=1, le=50)
+    demo_signin_enabled: bool = False
+    demo_signin_access_code: SecretStr | None = None
 
     @field_validator("nlu_model", "render_model")
     @classmethod
@@ -188,7 +197,9 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("session_signing_key", "test_identity_key", "database_url")
+    @field_validator(
+        "session_signing_key", "test_identity_key", "database_url", "demo_signin_access_code"
+    )
     @classmethod
     def _blank_secret_means_absent(cls, value: SecretStr | None) -> SecretStr | None:
         """Treat an empty secret (as in the template) as not configured."""
@@ -208,10 +219,10 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("test_identity_key")
+    @field_validator("test_identity_key", "demo_signin_access_code")
     @classmethod
     def _test_key_is_long_enough(cls, value: SecretStr | None) -> SecretStr | None:
-        """The sandbox login secret must not be trivially guessable either."""
+        """The sandbox login secret and the demo access code must not be trivially guessable."""
         if value is not None and len(value.get_secret_value()) < MIN_TEST_KEY_LENGTH:
             raise ValueError(f"must be at least {MIN_TEST_KEY_LENGTH} characters")
         return value
@@ -225,6 +236,20 @@ class Settings(BaseSettings):
             raise ValueError("TEST_IDENTITY_KEY is required when TEST_IDENTITY_ENABLED is true")
         return self
 
+    @model_validator(mode="after")
+    def _demo_signin_rules(self) -> Settings:
+        """The demo broker needs its own code and never runs alongside the sandbox login.
+
+        Unlike the sandbox login, the demo broker is not restricted to any environment: it exists
+        precisely so the deployed demonstration (which runs as ``prod``) has a working sign-in
+        (ADR-18).
+        """
+        if self.demo_signin_enabled and self.test_identity_enabled:
+            raise ValueError("DEMO_SIGNIN_ENABLED and TEST_IDENTITY_ENABLED are mutually exclusive")
+        if self.demo_signin_enabled and self.demo_signin_access_code is None:
+            raise ValueError("DEMO_SIGNIN_ACCESS_CODE is required when DEMO_SIGNIN_ENABLED is true")
+        return self
+
     def require_anthropic_key(self) -> SecretStr:
         """Return the Anthropic API key or fail with an actionable message.
 
@@ -236,6 +261,20 @@ class Settings(BaseSettings):
         if self.anthropic_api_key is None:
             raise ConfigError("ANTHROPIC_API_KEY is required for LLM calls but is not set")
         return self.anthropic_api_key
+
+    def require_demo_signin_access_code(self) -> SecretStr:
+        """Return the demo broker's access code or fail with an actionable message.
+
+        Raises
+        ------
+        ConfigError
+            When ``DEMO_SIGNIN_ACCESS_CODE`` is not configured.
+        """
+        if self.demo_signin_access_code is None:
+            raise ConfigError(
+                "DEMO_SIGNIN_ACCESS_CODE is required when DEMO_SIGNIN_ENABLED is true"
+            )
+        return self.demo_signin_access_code
 
     def require_database_url(self) -> SecretStr:
         """Return the serving-store DSN or fail with an actionable message.

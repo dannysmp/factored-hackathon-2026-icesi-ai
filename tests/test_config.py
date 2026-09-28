@@ -40,6 +40,8 @@ _ENV_KEYS = (
     "DATABASE_URL",
     "MODEL_RENDERER_ENABLED",
     "CASE_CREATE_SESSION_CAP",
+    "DEMO_SIGNIN_ENABLED",
+    "DEMO_SIGNIN_ACCESS_CODE",
 )
 
 
@@ -303,6 +305,53 @@ def test_the_sandbox_login_can_be_enabled_outside_production(
     monkeypatch.setenv("TEST_IDENTITY_KEY", "t" * 16)
 
     assert load_settings(env_file=None).test_identity_enabled is True
+
+
+def test_the_demo_broker_needs_its_own_access_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enabling it without the shared access code is a start-up error."""
+    monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
+
+    with pytest.raises(ConfigError, match="DEMO_SIGNIN_ACCESS_CODE is required"):
+        load_settings(env_file=None)
+
+
+def test_the_demo_broker_and_the_sandbox_login_are_mutually_exclusive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both are sign-in paths; enabling both at once is a configuration error, not a priority."""
+    monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "d" * 16)
+    monkeypatch.setenv("TEST_IDENTITY_ENABLED", "true")
+    monkeypatch.setenv("TEST_IDENTITY_KEY", "t" * 16)
+
+    with pytest.raises(ConfigError, match="mutually exclusive"):
+        load_settings(env_file=None)
+
+
+def test_the_demo_broker_can_be_enabled_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unlike the sandbox login, the demo broker exists precisely for prod (ADR-18)."""
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "d" * 16)
+
+    assert load_settings(env_file=None).demo_signin_enabled is True
+
+
+@pytest.mark.parametrize("code", ["c" * 15])
+def test_a_short_demo_access_code_is_rejected(monkeypatch: pytest.MonkeyPatch, code: str) -> None:
+    """The demo access code has the same length floor as the sandbox login's own key."""
+    monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", code)
+
+    with pytest.raises(ConfigError, match="at least 16 characters"):
+        load_settings(env_file=None)
+
+
+def test_a_blank_demo_access_code_is_treated_as_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty value, as the template ships it, means not configured."""
+    monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "")
+
+    assert load_settings(env_file=None).demo_signin_access_code is None
 
 
 @pytest.mark.parametrize("key", ["k" * 40, "ab" * 20, "abcdefg" * 6])

@@ -12,7 +12,8 @@ Scope
 -----
 In: request identifiers, security headers, the bearer-token check and the principal handed to
 routes.
-Out: issuing tokens (``sessions``), the routes, and what a customer may do once authenticated.
+Out: issuing tokens (``sessions``), the routes, and what a customer or agent may do once
+authenticated.
 
 Design Principles
 -----------------
@@ -20,6 +21,10 @@ Design Principles
   listed as public, so a route added later is protected without anyone remembering to. The
   decision uses one normalisation of the path (without ``root_path``, slashes collapsed, lower
   case) so no spelling of a protected path escapes it.
+- **A valid token of the wrong audience is refused exactly like no session at all** (ADR-18): a
+  path-prefix-to-audience map decides which audience a path requires, by longest matching prefix,
+  and a token whose own audience does not match is not distinguished from a missing one — a
+  customer token reaching an agent-only path learns nothing about what that path is.
 - The failure says what the client can do: ``reauth_required`` is true for a missing, invalid,
   expired or revoked session.
 - A supplied request identifier is used only if it has a safe shape; otherwise a new one is
@@ -30,7 +35,8 @@ Runtime Contract
 ----------------
 ``RequestContextMiddleware(app)`` sets ``scope["state"]["request_id"]`` and the ``X-Request-ID``
 header.
-``SessionAuthMiddleware(app, sessions, public_paths)`` sets ``scope["state"]["principal"]``.
+``SessionAuthMiddleware(app, sessions, audience_by_prefix, public_paths)`` sets
+``scope["state"]["principal"]``.
 ``current_request_id()`` returns the identifier of the request being handled.
 
 Limitations
@@ -44,7 +50,7 @@ from __future__ import annotations
 import logging  # Structured events about refused sessions
 import re  # Safe shape of a client-supplied request identifier
 import secrets  # Generated request identifiers
-from collections.abc import Iterable, MutableMapping  # Types of ASGI messages
+from collections.abc import Iterable, Mapping, MutableMapping  # Types of ASGI messages
 from contextvars import ContextVar  # Request identifier visible to loggers
 
 # Third-party libraries
@@ -180,14 +186,31 @@ def _rejection(code: ErrorCode) -> ProblemError:
     )
 
 
+def _required_audience(path: str, audience_by_prefix: Mapping[str, str]) -> str | None:
+    """The audience required for ``path``, by longest matching prefix; ``None`` if none applies."""
+    best: str | None = None
+    best_length = -1
+    for prefix, audience in audience_by_prefix.items():
+        matches = path == prefix or path.startswith(prefix + "/")
+        if matches and len(prefix) > best_length:
+            best, best_length = audience, len(prefix)
+    return best
+
+
 class SessionAuthMiddleware:
-    """Requires a valid session for ``/v1`` and everything under it that is not public."""
+    """Requires a valid session of the right audience for ``/v1`` and everything under it that is
+    not public."""
 
     def __init__(
-        self, app: ASGIApp, sessions: SessionService, public_paths: Iterable[str] = ()
+        self,
+        app: ASGIApp,
+        sessions: SessionService,
+        audience_by_prefix: Mapping[str, str],
+        public_paths: Iterable[str] = (),
     ) -> None:
         self._app = app
         self._sessions = sessions
+        self._audience_by_prefix = dict(audience_by_prefix)
         self._public = frozenset(public_paths)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -197,10 +220,13 @@ class SessionAuthMiddleware:
         if kind not in ("http", "websocket") or not is_protected(path) or path in self._public:
             await self._app(scope, receive, send)
             return
+        required_audience = _required_audience(path, self._audience_by_prefix)
 
         # Resolve the session or refuse with the standard problem document
         try:
             principal = self._sessions.verify(_bearer_token(scope))
+            if required_audience is not None and principal.audience != required_audience:
+                raise SessionRejected(ErrorCode.SESSION_INVALID)
         except SessionRejected as rejected:
             problem = _rejection(rejected.code)
         except ProblemError as failure:

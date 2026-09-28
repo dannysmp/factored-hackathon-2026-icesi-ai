@@ -1,0 +1,48 @@
+# Demo sign-in personas (ADR-18): the closed set of slugs the demo broker accepts. A slug is
+# never a customer identifier or a document number — the customer_id it maps to never appears on
+# the wire.
+#
+# PLACEHOLDER DATA: the customer_id values below are structurally valid but do not name real
+# seeded customers. The six-script/two-to-three-agent composition (Spanish, Portuguese, English,
+# human-required, repeat complainer) is approved, but the exact seeded customer identifiers were
+# carried to the maintainer separately and are not recorded anywhere this file's author could
+# read. Startup validation (app.security.demo_personas) fails closed, naming the slug, when a
+# customer_id here does not resolve to an Active seeded customer — so shipping placeholders is
+# safe: DEMO_SIGNIN_ENABLED simply cannot start until the real identifiers replace these. Replace
+# every customer_id below with a real Active customer before enabling DEMO_SIGNIN_ENABLED in any
+# environment.
+version: 1
+customers:
+  - slug: ana
+    customer_id: CUST-DEMO-ES-1
+    language: es
+    scenario: eligible
+  - slug: joao
+    customer_id: CUST-DEMO-PT-1
+    language: pt
+    scenario: eligible
+  - slug: emma
+    customer_id: CUST-DEMO-EN-1
+    language: en
+    scenario: eligible
+  - slug: carlos
+    customer_id: CUST-DEMO-ES-2
+    language: es
+    scenario: human_required
+  - slug: mariana
+    customer_id: CUST-DEMO-PT-2
+    language: pt
+    scenario: repeat_complainer
+  - slug: sofia
+    customer_id: CUST-DEMO-ES-3
+    language: es
+    scenario: eligible
+agents:
+  - slug: agent-beatriz
+    agent_id: AGENT-DEMO-PT-1
+    languages: [pt, es]
+    specialty: null
+  - slug: agent-diego
+    agent_id: AGENT-DEMO-FRAUD-1
+    languages: [es]
+    specialty: fraud
