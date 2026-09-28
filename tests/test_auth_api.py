@@ -33,11 +33,22 @@ from pydantic import SecretStr  # Secrets in injected settings
 from app.api.auth import principal_of
 from app.config import AppEnvironment, ConfigError, Settings, load_settings
 from app.main import create_app
+from app.security.signin_audit import SignInAuditRecord
 
 START = datetime(2026, 9, 26, 12, 0, 0, tzinfo=UTC)
 LOGIN_KEY = "test-login-key-0123456789"
 SIGNING_KEY = "s" * 40
+AGENT_SIGNING_KEY = "a" * 40
+AGENT_ACCESS_CODE = "agent-access-code-0123456789"
 LOGIN = "/v1/auth/test-sessions"
+
+
+class _NoOpAuditSink:
+    """A ``SignInAuditSink`` that discards every record; these tests are about the signing-key
+    fallback, not the audit trail."""
+
+    def record(self, entry: SignInAuditRecord) -> None:
+        pass
 
 
 def _always_active(customer_id: str) -> str | None:
@@ -561,6 +572,76 @@ def test_without_a_signing_key_local_runs_with_a_throw_away_key_and_others_refus
                 ),
                 clock=clock,
             )
+
+
+def _agent_broker_settings(**updates: Any) -> Settings:
+    values: dict[str, Any] = {
+        "test_identity_enabled": False,
+        "demo_agent_signin_enabled": True,
+        "demo_agent_access_code": SecretStr(AGENT_ACCESS_CODE),
+    }
+    return _settings(**{**values, **updates})
+
+
+def test_without_an_agent_signing_key_local_runs_with_a_throw_away_key_and_others_refuse_to_start(
+    clock: Clock,
+) -> None:
+    """The agent audience's own mirror of the customer signing key's own test above."""
+    local = create_app(
+        _agent_broker_settings(agent_session_signing_key=None, app_env=AppEnvironment.LOCAL),
+        clock=clock,
+        customer_lookup=_always_active,
+        signin_audit=_NoOpAuditSink(),
+    )
+    other = create_app(
+        _agent_broker_settings(agent_session_signing_key=None, app_env=AppEnvironment.LOCAL),
+        clock=clock,
+        customer_lookup=_always_active,
+        signin_audit=_NoOpAuditSink(),
+    )
+    issued = TestClient(local, raise_server_exceptions=False).post(
+        "/v1/auth/demo-agent-sessions",
+        json={"persona": "agent-beatriz"},
+        headers={"X-Demo-Access-Code": AGENT_ACCESS_CODE},
+    )
+    token = issued.json()["access_token"]
+
+    # A different process's throw-away key never verifies a token minted by this one
+    assert TestClient(other).get("/v1/session", headers=_bearer(token)).status_code == 401
+    for environment in (AppEnvironment.DEV, AppEnvironment.PROD):
+        with pytest.raises(ConfigError, match="AGENT_SESSION_SIGNING_KEY"):
+            create_app(
+                _agent_broker_settings(agent_session_signing_key=None, app_env=environment),
+                clock=clock,
+                customer_lookup=_always_active,
+                signin_audit=_NoOpAuditSink(),
+            )
+
+
+def test_the_agent_broker_starts_and_serves_when_the_customer_broker_is_disabled(
+    clock: Clock,
+) -> None:
+    """The ``create_app`` wiring branch for "agent enabled, customer not" is its own path."""
+    app_instance = create_app(
+        _agent_broker_settings(demo_signin_enabled=False),
+        clock=clock,
+        customer_lookup=_always_active,
+        signin_audit=_NoOpAuditSink(),
+    )
+    client = TestClient(app_instance, raise_server_exceptions=False)
+
+    agent_response = client.post(
+        "/v1/auth/demo-agent-sessions",
+        json={"persona": "agent-beatriz"},
+        headers={"X-Demo-Access-Code": AGENT_ACCESS_CODE},
+    )
+    customer_response = client.post(
+        "/v1/auth/demo-sessions", json={"persona": "ana"}, headers={"X-Demo-Access-Code": "any"}
+    )
+
+    assert agent_response.status_code == 201
+    assert customer_response.status_code == 401
+    assert customer_response.json()["code"] == "session_missing"
 
 
 def test_the_sandbox_login_refuses_to_start_without_a_customer_lookup_or_a_database(

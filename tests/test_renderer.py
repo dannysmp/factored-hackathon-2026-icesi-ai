@@ -383,6 +383,70 @@ def test_a_transaction_without_an_amount_states_it_plainly_in_every_language(
     assert phrase in rendered.reply
 
 
+@pytest.mark.parametrize(
+    ("lang", "expected_phrase"),
+    [
+        ("es", "en Tienda Sol"),
+        ("pt", "em Tienda Sol"),
+        ("en", "at Tienda Sol"),
+    ],
+)
+def test_present_one_names_the_merchant_with_its_own_language_s_preposition(
+    lang: Lang, expected_phrase: str
+) -> None:
+    """The merchant name never carries a preposition borrowed from another reply language."""
+    envelope = _envelope(
+        intent=Intent.PRESENT_TRANSACTIONS,
+        template_id=TemplateId.PRESENT_ONE,
+        lang=lang,
+        facts=DisputeFacts(transactions=(_transaction(),), candidate_count=1),
+    )
+
+    rendered = render(envelope)
+
+    assert expected_phrase in rendered.reply
+
+
+@pytest.mark.parametrize(
+    ("category", "expected_phrase"),
+    [
+        (DisputeCategory.UNRECOGNIZED_CHARGE, "an unrecognized charge dispute"),
+        (DisputeCategory.DUPLICATE_CHARGE, "a duplicate charge dispute"),
+        (DisputeCategory.WRONG_AMOUNT, "a wrong amount dispute"),
+        (DisputeCategory.SERVICE_NOT_RECEIVED, "a service not received dispute"),
+        (DisputeCategory.FRAUD_CLAIM, "a fraud claim dispute"),
+    ],
+)
+def test_confirm_filing_uses_the_grammatical_article_in_english(
+    category: DisputeCategory, expected_phrase: str
+) -> None:
+    """ "an" precedes a vowel-sound category name in English; "a" precedes every other one."""
+    facts = DisputeFacts(
+        transactions=(_transaction(),),
+        candidate_count=1,
+        selected_ref="tx-1001",
+        category=category,
+    )
+    envelope = _envelope(
+        lang="en",
+        intent=Intent.CONFIRM_FILING,
+        template_id=TemplateId.CONFIRM_FILING,
+        facts=facts,
+        decisions=(
+            Decision(
+                outcome=Outcome.ELIGIBLE,
+                customer_reason=CustomerReason.ELIGIBLE,
+                policy_version="2",
+                requires_confirmation=True,
+            ),
+        ),
+    )
+
+    rendered = render(envelope)
+
+    assert expected_phrase in rendered.reply
+
+
 def test_confirm_filing_states_a_missing_amount_plainly_too() -> None:
     """The confirmation prompt is grounded the same way present_transactions is."""
     facts = DisputeFacts(

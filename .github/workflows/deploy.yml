@@ -7,14 +7,17 @@
 #   answers over HTTPS. A one-off smoke exercise runs this once against
 #   whatever is on main today, with no sign-in enabled, and tears down after
 #   — the default input below; a deployment meant to persist disables it.
+#   The Metabase dashboard is a separate, opt-in job on top of the same
+#   deployment: `deploy_metabase` leaves it out of a base-stack-only smoke
+#   exercise, and stands it up alongside a deployment meant to persist.
 #
 # Security posture:
 #   No static AWS keys: the job assumes infra/scripts/01-create-oidc-role.sh's
 #   role through GitHub's own OIDC token, scoped to workflow runs on `main`.
 #   That role can push to this project's two ECR repositories and send an
 #   SSM command to an instance tagged for this project — nothing else. The
-#   two application secrets are read on the host by its own instance role;
-#   this workflow never sees either value.
+#   application secrets are read on the host by its own instance role; this
+#   workflow never sees any of their values.
 #
 # Pinned actions:
 #   actions/checkout                11d5960a326750d5838078e36cf38b85af677262   release v4
@@ -25,7 +28,8 @@
 #   Manual only (workflow_dispatch): the account must already be provisioned
 #   by infra/scripts/01-04 and carry the `anthropic-api-key` and
 #   `session-signing-key` SSM parameters (infra/scripts/put-secret.sh) before
-#   the first run.
+#   the first run; `deploy_metabase` additionally needs the five Metabase
+#   SSM parameters `infra/README.md` lists.
 # =============================================================================
 
 name: Deploy
@@ -37,6 +41,10 @@ on:
         description: "Tear down the host, its Elastic IP and its security group after the smoke test (leave enabled for a one-off smoke exercise, disable for a deployment meant to persist)"
         type: boolean
         default: true
+      deploy_metabase:
+        description: "Also provision the Metabase dashboard after the base stack is smoke-tested (needs its SSM parameters already set; leave disabled for a base-stack-only smoke exercise)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -113,6 +121,8 @@ jobs:
     needs: build-scan-push
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      host_name: ${{ steps.deploy.outputs.host_name }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -135,15 +145,37 @@ jobs:
       - name: Smoke test the deployed path over HTTPS
         run: infra/scripts/06-smoke-test.sh "${{ steps.deploy.outputs.host_name }}"
 
+  deploy-metabase:
+    name: deploy-metabase
+    needs: deploy-and-smoke-test
+    if: ${{ inputs.deploy_metabase }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Assume the CI deploy role via OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/dispute-intake-ci-deploy
+          aws-region: us-east-1
+
+      - name: Provision Metabase and connect the analytics schema
+        run: infra/scripts/08-deploy-metabase.sh
+
+      - name: Smoke test the dashboard subdomain over HTTPS
+        run: infra/scripts/06-smoke-test.sh "${{ needs.deploy-and-smoke-test.outputs.host_name }}" --dashboard
+
   teardown:
     name: teardown
-    # Runs whenever the run was not cancelled, regardless of whether build-scan-push or
-    # deploy-and-smoke-test failed: a failed deploy or a failed smoke test is exactly when a
-    # host must not be left running unattended, so teardown_after's own true/false is the only
-    # thing that should gate it here, never the earlier jobs' success/failure. Still restricted
+    # Runs whenever the run was not cancelled, regardless of whether any earlier job failed or
+    # was skipped (deploy-metabase is skipped outright when deploy_metabase is false): a failed
+    # deploy or a failed smoke test is exactly when a host must not be left running unattended, so
+    # teardown_after's own true/false is the only thing that should gate it here. Still restricted
     # to main, matching build-scan-push's own guard: a dispatch off any other ref does nothing
-    # upstream (both jobs are skipped, not failed), and must not tear down a host anyway.
-    needs: [build-scan-push, deploy-and-smoke-test]
+    # upstream (every earlier job is skipped, not failed), and must not tear down a host anyway.
+    needs: [build-scan-push, deploy-and-smoke-test, deploy-metabase]
     if: ${{ !cancelled() && inputs.teardown_after && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
