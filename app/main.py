@@ -84,6 +84,7 @@ from app.config import (
 from app.conversation.controller import DialogueController, HandoffOutbox
 from app.conversation.llm_understanding import LlmNlu
 from app.conversation.model_renderer import LlmRenderer
+from app.conversation.understanding import FakeNlu, Understanding
 from app.domain.calendar import (  # Domain date
     DomainCalendar,
     DomainCalendarError,
@@ -218,11 +219,49 @@ def _build_anthropic_client(settings: Settings) -> AnthropicLlmClient:
     Raises
     ------
     ConfigError
-        The configured provider has no adapter yet, or its API key is not configured.
+        The configured provider is not ``anthropic``, or its API key is not configured.
     """
     if settings.llm_provider is not LlmProvider.ANTHROPIC:
         raise ConfigError(f"the '{settings.llm_provider.value}' LLM provider has no adapter yet")
     return AnthropicLlmClient(settings.require_anthropic_key())
+
+
+def _understanding(llm_client: LlmClient, settings: Settings) -> Understanding:
+    """The understanding port for one turn: model-backed, or the stub CI selects.
+
+    ``llm_client`` is the shared, retried and circuit-broken client ``_controller_factory``
+    builds once — the stub branch never touches it, and the model-backed branch reuses it
+    rather than building a second, unprotected client, so understanding gets the same
+    resilience (E9) as every other LLM call.
+
+    Raises
+    ------
+    ConfigError
+        The configured provider has no adapter yet.
+    """
+    if settings.llm_provider is LlmProvider.STUB:
+        return FakeNlu()
+    if settings.llm_provider is not LlmProvider.ANTHROPIC:
+        raise ConfigError(f"the '{settings.llm_provider.value}' LLM provider has no adapter yet")
+    return LlmNlu(llm_client, model=settings.nlu_model)
+
+
+def _model_renderer(llm_client: LlmClient, settings: Settings) -> LlmRenderer:
+    """The model-backed reply renderer for one turn; only built when the feature is enabled.
+
+    Checked eagerly, before the renderer is ever constructed: ``llm_client`` is built lazily
+    (E9's ``RetriedLlmClient`` only calls ``_build_anthropic_client`` on first real use), so
+    without this check a stub provider with rendering enabled would not fail until the first
+    actual model call instead of failing closed up front.
+
+    Raises
+    ------
+    ConfigError
+        The configured provider has no adapter yet.
+    """
+    if settings.llm_provider is not LlmProvider.ANTHROPIC:
+        raise ConfigError(f"the '{settings.llm_provider.value}' LLM provider has no adapter yet")
+    return LlmRenderer(llm_client, model=settings.render_model)
 
 
 def _controller_factory(
@@ -293,12 +332,10 @@ def _controller_factory(
         )
         outbox: HandoffOutbox = PostgresHandoffOutbox(dsn)
         model_renderer = (
-            LlmRenderer(llm_client, model=settings.render_model)
-            if settings.model_renderer_enabled
-            else None
+            _model_renderer(llm_client, settings) if settings.model_renderer_enabled else None
         )
         return DialogueController(
-            LlmNlu(llm_client, model=settings.nlu_model),
+            _understanding(llm_client, settings),
             store=store,
             tool_port=tool_port,
             retriever=retriever,

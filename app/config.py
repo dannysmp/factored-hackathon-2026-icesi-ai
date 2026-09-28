@@ -19,10 +19,10 @@ Design Principles
   from the composition root.
 - Secrets are ``SecretStr`` and never appear in error messages or ``repr`` output.
 - Model identifiers are pinned to an allow-list so a typo or an unreviewed model cannot ship.
-- Free-form model rendering may be turned on by configuration now that an output verifier exists
-  to ground it against the envelope's own facts (``app.conversation.verifier``); the setting still
-  defaults to off, and nothing reads it in a request path yet, so turning it on has no effect until
-  a later change wires a caller to it.
+- Free-form model rendering is wired into the request path (the dialogue controller builds a
+  model candidate and slot values for every eligible template, ``app.conversation.reply``) and is
+  grounded against the envelope's own facts by the output verifier (``app.conversation.verifier``);
+  the setting still defaults to off.
 
 Runtime Contract
 ----------------
@@ -85,10 +85,16 @@ class AppEnvironment(StrEnum):
 
 
 class LlmProvider(StrEnum):
-    """Providers selectable behind the LLM provider interface."""
+    """Providers selectable behind the LLM provider interface.
+
+    ``STUB`` makes no model call at all: the evaluation harness's smoke slice selects it so CI
+    exercises the real turns endpoint and dialogue controller without a network call or a
+    configured API key. It is never available in production (see ``Settings._stub_llm_rules``).
+    """
 
     ANTHROPIC = "anthropic"
     BEDROCK = "bedrock"
+    STUB = "stub"
 
 
 class LogLevel(StrEnum):
@@ -139,11 +145,14 @@ class Settings(BaseSettings):
     database_url : SecretStr | None
         DSN of the serving store; optional until a feature that reads or writes it runs.
     model_renderer_enabled : bool
-        Whether free-form model rendering may run. Defaults to ``False``. The output verifier that
-        grounds a free-form model reply against the envelope's own facts exists
-        (``app.conversation.verifier``), so this setting may now be turned on; turning it on has
-        no effect yet, since the dialogue controller does not build a model candidate or slot
-        values in any request path until a later change wires it in.
+        Whether free-form model rendering runs. Defaults to ``False``. When ``True``, the dialogue
+        controller builds a model candidate and slot values for every eligible template
+        (``app.conversation.reply.MODEL_ELIGIBLE_TEMPLATES``) on every request, grounded against
+        the envelope's own facts by the output verifier (``app.conversation.verifier``); building
+        the model renderer itself still requires ``llm_provider`` to be ``anthropic``
+        (``_model_renderer`` in ``app.main``), so enabling this with any other provider fails
+        closed with a ``ConfigError`` on every request, never a silent no-op and never a call to
+        that other provider.
     data_as_of_date : str | None
         The domain date override (ADR-15): an ISO date, or the literal ``"system"`` for the real
         date in the bank's own zone. Optional; when absent, the domain calendar reads the loaded
@@ -279,6 +288,14 @@ class Settings(BaseSettings):
             raise ValueError("TEST_IDENTITY_ENABLED is not allowed when APP_ENV=prod")
         if self.test_identity_enabled and self.test_identity_key is None:
             raise ValueError("TEST_IDENTITY_KEY is required when TEST_IDENTITY_ENABLED is true")
+        return self
+
+    @model_validator(mode="after")
+    def _stub_llm_rules(self) -> Settings:
+        """The stub LLM provider exists only to keep CI network-free; it can never run in
+        production, the same restriction the sandbox login carries and for the same reason."""
+        if self.llm_provider is LlmProvider.STUB and self.app_env is AppEnvironment.PROD:
+            raise ValueError("LLM_PROVIDER=stub is not allowed when APP_ENV=prod")
         return self
 
     @model_validator(mode="after")
