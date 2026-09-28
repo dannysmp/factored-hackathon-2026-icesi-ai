@@ -26,7 +26,12 @@ Design Principles
 Runtime Contract
 ----------------
 ``Understanding`` (protocol): ``understand(text, *, language_hint) -> NluResult``.
-``FakeNlu``: a keyword-based implementation with no network access.
+``UnderstandingUnavailable``: raised instead of returning a result when the port could not reach
+its own dependency after its bounded retries (E9) — distinct from ``NluResult.unusable()``, which
+means the dependency answered but produced nothing usable. A caller that cannot tell the two apart
+would spend a customer's clarification budget on an outage that was never their own confusion.
+``FakeNlu``: a keyword-based implementation with no network access; it never raises
+``UnderstandingUnavailable``, since it makes no call that could fail this way.
 """
 
 from __future__ import annotations
@@ -46,11 +51,28 @@ from contracts.service_v1.nlu import (  # The typed result and its vocabulary
 )
 
 
+class UnderstandingUnavailable(Exception):
+    """The port's own dependency could not be reached, after its bounded retries.
+
+    Distinct from ``NluResult.unusable()``: that outcome means the dependency was reached and
+    answered, just not with anything usable (empty text, a malformed model output) — genuine
+    customer-facing ambiguity a clarification question can resolve. This exception means the
+    dependency itself was not reachable; retrying the same question would not help, and the
+    caller must not spend the customer's clarification budget on it.
+    """
+
+
 class Understanding(Protocol):
     """Turns one customer message into a typed understanding."""
 
     def understand(self, text: str, *, language_hint: Lang | None) -> NluResult:
-        """The understanding of ``text``, read with ``language_hint`` as a tie-breaker."""
+        """The understanding of ``text``, read with ``language_hint`` as a tie-breaker.
+
+        Raises
+        ------
+        UnderstandingUnavailable
+            The port's own dependency could not be reached after its bounded retries.
+        """
         ...
 
 
