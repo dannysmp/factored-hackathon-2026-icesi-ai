@@ -31,24 +31,29 @@ SIGNING_KEY = "s" * 40
 AGENT_SIGNING_KEY = "a" * 40
 DEMO_LOGIN = "/v1/auth/demo-sessions"
 AGENT_LOGIN = "/v1/auth/demo-agent-sessions"
+DEMO_PERSONAS = "/v1/auth/demo-personas"
 
 _PERSONAS = """
 version: 1
 customers:
   - slug: ana
+    display_name: Ana
     customer_id: CUST-1
     language: es
     scenario: eligible
   - slug: joao
+    display_name: João
     customer_id: CUST-2
     language: pt
     scenario: repeat_complainer
 agents:
   - slug: agent-beatriz
+    display_name: Beatriz
     agent_id: AGENT-1
     languages: [pt, es]
     specialty: null
   - slug: agent-diego
+    display_name: Diego
     agent_id: AGENT-2
     languages: [es]
     specialty: fraud
@@ -599,3 +604,107 @@ def test_the_agent_access_code_never_appears_in_the_audit_trail(
     for record in audit.records:
         for value in asdict(record).values():
             assert AGENT_ACCESS_CODE not in str(value)
+
+
+# -----------------------------------------------------------------------------
+# Persona directory
+# -----------------------------------------------------------------------------
+
+
+def test_the_persona_directory_lists_customer_personas_when_the_customer_broker_is_on(
+    client: TestClient,
+) -> None:
+    response = client.get(DEMO_PERSONAS)
+
+    assert response.status_code == 200
+    slugs = [persona["slug"] for persona in response.json()["personas"]]
+    assert slugs == ["ana", "joao"]
+
+
+def test_the_persona_directory_omits_agent_personas_when_only_the_customer_broker_is_on(
+    client: TestClient,
+) -> None:
+    response = client.get(DEMO_PERSONAS)
+
+    audiences = {persona["audience"] for persona in response.json()["personas"]}
+    assert audiences == {"customer"}
+
+
+def test_the_persona_directory_lists_both_audiences_when_both_brokers_are_on(
+    agent_client: TestClient,
+) -> None:
+    response = agent_client.get(DEMO_PERSONAS)
+
+    personas = response.json()["personas"]
+    slugs_by_audience = {
+        audience: sorted(p["slug"] for p in personas if p["audience"] == audience)
+        for audience in ("customer", "agent")
+    }
+    assert slugs_by_audience == {
+        "customer": ["ana", "joao"],
+        "agent": ["agent-beatriz", "agent-diego"],
+    }
+
+
+def test_the_persona_directory_carries_the_display_name_and_language_fields(
+    client: TestClient,
+) -> None:
+    response = client.get(DEMO_PERSONAS)
+
+    ana = next(p for p in response.json()["personas"] if p["slug"] == "ana")
+    assert ana == {"slug": "ana", "display_name": "Ana", "language": "es", "audience": "customer"}
+
+
+def test_an_agent_persona_shows_its_first_language_as_a_single_value(
+    agent_client: TestClient,
+) -> None:
+    """agent-beatriz speaks [pt, es]; the directory's language field is singular, one row per
+    persona, so it shows the first (primary) language rather than a row per language."""
+    response = agent_client.get(DEMO_PERSONAS)
+
+    beatriz = next(p for p in response.json()["personas"] if p["slug"] == "agent-beatriz")
+    assert beatriz["language"] == "pt"
+    assert sum(1 for p in response.json()["personas"] if p["slug"] == "agent-beatriz") == 1
+
+
+def test_the_persona_directory_is_absent_when_both_brokers_are_disabled(clock: Clock) -> None:
+    plain = TestClient(create_app(_settings(demo_signin_enabled=False), clock=clock))
+
+    response = plain.get(DEMO_PERSONAS)
+
+    _assert_problem(response, 401, "session_missing", reauth=True)
+
+
+def test_the_persona_directory_never_reveals_a_customer_or_agent_identifier(
+    agent_client: TestClient,
+) -> None:
+    body = agent_client.get(DEMO_PERSONAS).text
+
+    for leaked in (
+        "CUST-1",
+        "CUST-2",
+        "AGENT-1",
+        "AGENT-2",
+        "customer_id",
+        "agent_id",
+        "scenario",
+        "specialty",
+    ):
+        assert leaked not in body
+
+
+def test_the_persona_directory_needs_no_access_code(client: TestClient) -> None:
+    response = client.get(DEMO_PERSONAS)
+
+    assert response.status_code == 200
+
+
+def test_the_persona_directory_is_rate_limited_per_address(client: TestClient) -> None:
+    for _ in range(5):
+        response = client.get(DEMO_PERSONAS)
+        assert response.status_code == 200
+
+    limited = client.get(DEMO_PERSONAS)
+
+    assert limited.status_code == 429
+    assert limited.headers["retry-after"]
