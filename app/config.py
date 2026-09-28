@@ -85,10 +85,16 @@ class AppEnvironment(StrEnum):
 
 
 class LlmProvider(StrEnum):
-    """Providers selectable behind the LLM provider interface."""
+    """Providers selectable behind the LLM provider interface.
+
+    ``STUB`` makes no model call at all: the evaluation harness's smoke slice selects it so CI
+    exercises the real turns endpoint and dialogue controller without a network call or a
+    configured API key. It is never available in production (see ``Settings._stub_llm_rules``).
+    """
 
     ANTHROPIC = "anthropic"
     BEDROCK = "bedrock"
+    STUB = "stub"
 
 
 class LogLevel(StrEnum):
@@ -254,6 +260,14 @@ class Settings(BaseSettings):
             raise ValueError("TEST_IDENTITY_ENABLED is not allowed when APP_ENV=prod")
         if self.test_identity_enabled and self.test_identity_key is None:
             raise ValueError("TEST_IDENTITY_KEY is required when TEST_IDENTITY_ENABLED is true")
+        return self
+
+    @model_validator(mode="after")
+    def _stub_llm_rules(self) -> Settings:
+        """The stub LLM provider exists only to keep CI network-free; it can never run in
+        production, the same restriction the sandbox login carries and for the same reason."""
+        if self.llm_provider is LlmProvider.STUB and self.app_env is AppEnvironment.PROD:
+            raise ValueError("LLM_PROVIDER=stub is not allowed when APP_ENV=prod")
         return self
 
     @model_validator(mode="after")
