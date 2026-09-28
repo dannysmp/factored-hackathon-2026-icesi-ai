@@ -35,6 +35,9 @@ Design Principles
 - Never guesses on failure: a verifier rejection, a ``None`` from the model renderer, and an
   ineligible template all take the exact same path — render the already-built template envelope,
   unchanged.
+- Every outcome is logged (ineligible, a failed model call, a rejected candidate with its reasons,
+  or an accepted one), so a model-rendering degradation is visible without instrumenting every
+  caller of ``render_reply`` separately.
 
 Runtime Contract
 ----------------
@@ -44,12 +47,18 @@ Runtime Contract
 
 from __future__ import annotations
 
+# Standard libraries
+import logging  # Structured events about the model path's outcome, never print
+
 # Local modules
 from app.conversation.model_renderer import LlmRenderer
 from app.conversation.renderer import RenderedReply, reference_date_line, render
 from app.conversation.slot_values import slot_values_for
 from app.conversation.verifier import verify
+from app.security.middleware import current_request_id  # Correlates a log line to its request
 from contracts.service_v1.envelope import RenderEnvelope, TemplateId
+
+logger = logging.getLogger(__name__)
 
 # Every template eligible for model rendering. Deliberately excludes: NO_CASE_FOUND (the contract
 # itself refuses to build a zero-case dispute_status envelope in model mode at all, per
@@ -101,21 +110,53 @@ def render_reply(
         The model-backed renderer to try first; ``None`` disables model rendering entirely (the
         composition root's decision, from ``Settings.model_renderer_enabled``).
     """
+    session_id = template_envelope.session_id
     eligible = (
         model_renderer is not None and template_envelope.template_id in MODEL_ELIGIBLE_TEMPLATES
     )
-    if eligible:
-        assert model_renderer is not None  # noqa: S101 - guaranteed by `eligible` above
-        model_envelope = _model_sibling(template_envelope)
-        candidate = model_renderer.render(model_envelope)
-        if candidate is not None:
-            result = verify(model_envelope, candidate, slot_values_for(model_envelope))
-            if result.outcome == "accepted":
-                assert result.rendered_text is not None  # noqa: S101 - guaranteed when accepted
-                return RenderedReply(
-                    reply=result.rendered_text,
-                    reference_date_line=reference_date_line(
-                        template_envelope.domain_date, template_envelope.lang
-                    ),
-                )
+    if not eligible:
+        logger.debug(
+            "render_reply_ineligible session_id=%s template_id=%s request_id=%s",
+            session_id,
+            template_envelope.template_id,
+            current_request_id(),
+        )
+        return render(template_envelope)
+
+    assert model_renderer is not None  # noqa: S101 - guaranteed by `eligible` above
+    model_envelope = _model_sibling(template_envelope)
+    candidate = model_renderer.render(model_envelope)
+    if candidate is None:
+        logger.info(
+            "render_reply_fallback reason=model_unavailable session_id=%s template_id=%s "
+            "request_id=%s",
+            session_id,
+            template_envelope.template_id,
+            current_request_id(),
+        )
+        return render(template_envelope)
+
+    result = verify(model_envelope, candidate, slot_values_for(model_envelope))
+    if result.outcome == "accepted":
+        assert result.rendered_text is not None  # noqa: S101 - guaranteed when accepted
+        logger.info(
+            "render_reply_accepted session_id=%s template_id=%s request_id=%s",
+            session_id,
+            template_envelope.template_id,
+            current_request_id(),
+        )
+        return RenderedReply(
+            reply=result.rendered_text,
+            reference_date_line=reference_date_line(
+                template_envelope.domain_date, template_envelope.lang
+            ),
+        )
+
+    logger.info(
+        "render_reply_rejected session_id=%s template_id=%s reasons=%s request_id=%s",
+        session_id,
+        template_envelope.template_id,
+        ",".join(reason.value for reason in result.reasons),
+        current_request_id(),
+    )
     return render(template_envelope)

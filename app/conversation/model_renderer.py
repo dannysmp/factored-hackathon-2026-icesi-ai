@@ -30,6 +30,8 @@ Design Principles
   a safe default" discipline ``LlmNlu`` already uses for understanding.
 - Structured output only, matching the LLM port's own design: the model is forced to call
   ``write_reply``, never asked for free text directly.
+- Every call logs its own outcome (a failure, or the model and prompt version with whether the
+  reply parsed) so a model-rendering incident is visible without instrumenting the caller too.
 
 Runtime Contract
 ----------------
@@ -39,6 +41,7 @@ Runtime Contract
 from __future__ import annotations
 
 # Standard libraries
+import logging  # Structured events about the model call's outcome, never print
 from collections.abc import Mapping  # Type of the raw tool arguments
 
 # Third-party libraries
@@ -47,6 +50,7 @@ from pydantic import ValidationError  # The contract's own bound, enforced on co
 # Local modules
 from app.llm.client import CompletionRequest, LlmClient, LlmError, ToolSpec  # The port
 from app.llm.prompts import PromptTemplate, load_prompt  # Versioned prompt loading and filling
+from app.security.middleware import current_request_id  # Correlates a log line to its request
 from contracts.service_v1.envelope import (  # The allowed/required field vocabulary
     INTENT_ALLOWED_FIELDS,
     INTENT_REQUIRED_FIELDS,
@@ -54,6 +58,8 @@ from contracts.service_v1.envelope import (  # The allowed/required field vocabu
     RenderEnvelope,
 )
 from contracts.service_v1.verification import CandidateReply  # What this module produces
+
+logger = logging.getLogger(__name__)
 
 _PROMPT_NAME = "render_v1"
 _MAX_TEXT_LENGTH = 2000  # CandidateReply.raw_text's own bound; the one repair truncates to it.
@@ -144,5 +150,21 @@ class LlmRenderer:
         try:
             result = self._llm.complete(request)
         except LlmError:
+            logger.warning(
+                "model_render_call_failed model=%s prompt_version=%s intent=%s request_id=%s",
+                self._model,
+                self._prompt.version,
+                envelope.intent.value,
+                current_request_id(),
+            )
             return None
-        return _parse(result.tool_input)
+        candidate = _parse(result.tool_input)
+        logger.info(
+            "model_render_call model=%s prompt_version=%s intent=%s outcome=%s request_id=%s",
+            result.model,
+            result.prompt_version,
+            envelope.intent.value,
+            "parsed" if candidate is not None else "invalid",
+            current_request_id(),
+        )
+        return candidate
