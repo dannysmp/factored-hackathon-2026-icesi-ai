@@ -48,10 +48,12 @@ carries it, not a promise about a later one.
   exist yet. No evaluation report can be produced until they do.
 - **The human-agent console is not yet built.** The customer-facing chat exists; the read-only
   queue view a human agent would use to handle an escalated case does not.
-- **Structured, queryable logging is not yet built.** The system does not currently emit a
-  structured event when it refuses to start due to invalid configuration, or the other structured
-  events later monitoring will depend on; an operator watching only the process output would see
-  nothing at the moment a misconfiguration stops the service.
+- **Structured logging now runs across the service and every CLI entrypoint**: every line carries
+  a stable event name, the request's trace id and, once authenticated, its session id, with any
+  card-shaped digit run redacted before the line is written. **One start-up path is still not
+  covered**: configuration is loaded before logging is installed, so a configuration failure at
+  start-up still surfaces as an unstructured crash instead of a structured event; an operator
+  watching only the process output would see a traceback, not a queryable event, at that moment.
 
 ## Deployment
 
