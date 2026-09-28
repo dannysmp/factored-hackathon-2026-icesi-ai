@@ -52,6 +52,12 @@ Design Principles
   reply) has no tool call that isn't already safe to repeat, so it is simply recomputed.
 - **PII minimization.** No raw customer text reaches a store, a log or a handoff packet; a handoff
   names its category and reason codes, never a transcript.
+- **Per-turn cost is logged, not stored** (E9): a stable ``turn_completed`` log line reports the
+  real model cost (if any — ``FakeNlu`` turns log zero/``None``) and, once the session has one, its
+  case number, so cost per session or per case is computable from the log stream alone
+  (``app.observability.turn_metrics``). Logged once the model call already happened, before the
+  store save is attempted, since real spend occurred regardless of whether the save then replays
+  or conflicts.
 
 Runtime Contract
 ----------------
@@ -81,6 +87,7 @@ import hashlib  # Deterministic idempotency key derived from the turn id
 import logging  # Progress events, never print
 from collections.abc import Callable  # Type of one route's handler
 from datetime import date  # Domain date the controller was built with
+from decimal import Decimal  # Money is never a float
 from typing import Protocol  # The handoff outbox port this module depends on
 
 # Third-party libraries
@@ -93,8 +100,9 @@ from app.conversation.policy_answer import answer as policy_answer
 from app.conversation.renderer import RenderedReply, demo_notice, render
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DialogueStore, DuplicateTurn
-from app.conversation.understanding import Understanding
+from app.conversation.understanding import TurnAccounting, Understanding
 from app.domain.policy.models import DisputeCategory, Outcome, Policy, PolicyDecision, ReasonCode
+from app.llm.pricing import cost_usd  # E9: per-turn cost accounting
 from app.persistence.handoff_outbox import HandoffContent
 from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError
@@ -278,8 +286,9 @@ class DialogueController:
         if current is not None and current.last_turn_id == request.turn_id:
             return self._respond(current, self._replay_envelope(current))
 
-        state, expected_version, result = self._start_turn(current, request)
+        state, expected_version, result, accounting = self._start_turn(current, request)
         new_state, envelope = self._advance(state, result)
+        self._log_turn_completed(new_state, accounting)
 
         try:
             saved = self._store.save(
@@ -302,18 +311,21 @@ class DialogueController:
 
     def _start_turn(
         self, current: DialogueState | None, request: TurnRequest
-    ) -> tuple[DialogueState, int, NluResult]:
-        """The state to advance from, the version it was read at, and this message's understanding.
+    ) -> tuple[DialogueState, int, NluResult, TurnAccounting | None]:
+        """The state to advance from, the version it was read at, this message's understanding,
+        and what understanding it cost (``None`` for ``FakeNlu`` or a call that did not complete).
 
         A brand-new session starts at expected version 0 (a fresh insert, unconditional on it —
         ``DialogueStore.save``'s own documented behavior); its language is the first message's own,
         or Spanish when the message is too ambiguous to tell (AC: es and pt are both required).
         """
         if current is not None:
-            result = self._understanding.understand(request.text, language_hint=current.lang)
-            return current, current.version, result
+            result, accounting = self._understanding.understand(
+                request.text, language_hint=current.lang
+            )
+            return current, current.version, result, accounting
 
-        result = self._understanding.understand(request.text, language_hint=None)
+        result, accounting = self._understanding.understand(request.text, language_hint=None)
         lang: Lang = result.language if result.language is not None else "es"
         fresh = DialogueState(
             session_id=self._session_id(),
@@ -321,7 +333,44 @@ class DialogueController:
             phase=ConversationPhase.STARTED,
             updated_at=self._now(),
         )
-        return fresh, 0, result
+        return fresh, 0, result, accounting
+
+    def _log_turn_completed(self, state: DialogueState, accounting: TurnAccounting | None) -> None:
+        """One stable-shaped log line per real turn (E9): the real cost, if any, of understanding
+        it, and which case (if any, by this point) the session belongs to.
+
+        Emitted once the LLM call already happened, before the store save is attempted, so a real
+        model cost is always logged even if the save then replays or conflicts — the spend already
+        occurred regardless of what the client is told. Every field is present on every line,
+        ``FakeNlu`` turns included, so the shape a log consumer parses never varies; only the
+        values are zero/``None`` when no real call happened.
+        """
+        if accounting is None:
+            model: str | None = None
+            prompt_version: str | None = None
+            input_tokens = 0
+            output_tokens = 0
+            latency_ms = 0.0
+            cost = Decimal(0)
+        else:
+            model = accounting.model
+            prompt_version = accounting.prompt_version
+            input_tokens = accounting.input_tokens
+            output_tokens = accounting.output_tokens
+            latency_ms = accounting.latency_ms
+            cost = cost_usd(accounting.model, accounting.input_tokens, accounting.output_tokens)
+        logger.info(
+            "turn_completed session_id=%s case_number=%s model=%s prompt_version=%s "
+            "input_tokens=%s output_tokens=%s latency_ms=%s cost_usd=%s",
+            state.session_id,
+            state.last_case_number,
+            model,
+            prompt_version,
+            input_tokens,
+            output_tokens,
+            latency_ms,
+            cost,
+        )
 
     def _session_id(self) -> str:
         assert self._principal is not None  # noqa: S101 - set at the top of handle_turn
@@ -854,7 +903,11 @@ class DialogueController:
 
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
-        result = self._understanding.understand(request.text, language_hint=state.lang)
+        # A replay's own re-understanding is not a new turn (E9's per-turn accounting is scoped to
+        # handle_turn's own call in _start_turn); its accounting, if any, is not logged again here.
+        result, _replay_accounting = self._understanding.understand(
+            request.text, language_hint=state.lang
+        )
         _, envelope = self._advance(state, result)
         return envelope
 

@@ -35,7 +35,9 @@ Design Principles
 Runtime Contract
 ----------------
 ``LlmNlu(llm, *, model, prompt=None)`` implementing
-``app.conversation.understanding.Understanding``.
+``app.conversation.understanding.Understanding``: ``understand(...)`` returns the parsed
+``NluResult`` paired with a ``TurnAccounting`` built from the completion's own token/latency
+accounting, or ``(NluResult.unusable(), None)`` when the call itself did not complete.
 """
 
 from __future__ import annotations
@@ -47,9 +49,9 @@ from decimal import Decimal, InvalidOperation  # Money is never a float; malform
 # Third-party libraries
 from pydantic import BaseModel, ConfigDict, ValidationError  # Loose intermediate model
 
-from app.domain.policy.models import DisputeCategory  # Closed set of dispute categories
-
 # Local modules
+from app.conversation.understanding import TurnAccounting  # What this call cost, if it completed
+from app.domain.policy.models import DisputeCategory  # Closed set of dispute categories
 from app.llm.client import CompletionRequest, LlmClient, LlmError, ToolSpec  # The port
 from app.llm.masking import redact_pan  # The only egress path for the customer's own text
 from app.llm.prompts import PromptTemplate, load_prompt  # Versioned prompt loading and filling
@@ -247,14 +249,17 @@ class LlmNlu:
         self._model = model
         self._prompt = prompt or load_prompt(_PROMPT_NAME)
 
-    def understand(self, text: str, *, language_hint: Lang | None) -> NluResult:
+    def understand(
+        self, text: str, *, language_hint: Lang | None
+    ) -> tuple[NluResult, TurnAccounting | None]:
         """Understand ``text`` through the model, or return unusable understanding.
 
         Empty text and a failed or invalid call are both treated as unusable: the customer is
-        never shown a model or provider error, only asked again.
+        never shown a model or provider error, only asked again — and neither produces accounting,
+        since no real, priced call completed.
         """
         if not text.strip():
-            return NluResult.unusable()
+            return NluResult.unusable(), None
 
         masked = redact_pan(text).masked
         user_text = self._prompt.render_task(
@@ -271,5 +276,12 @@ class LlmNlu:
         try:
             result = self._llm.complete(request)
         except LlmError:
-            return NluResult.unusable()
-        return _parse(result.tool_input)
+            return NluResult.unusable(), None
+        accounting = TurnAccounting(
+            model=result.model,
+            prompt_version=result.prompt_version,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            latency_ms=result.latency_ms,
+        )
+        return _parse(result.tool_input), accounting

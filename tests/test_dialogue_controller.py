@@ -32,6 +32,7 @@ from app.conversation.controller import (
 from app.conversation.handoff import build_packet
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DuplicateTurn, InMemoryDialogueStore
+from app.conversation.understanding import TurnAccounting
 from app.domain.policy.loader import load_policy
 from app.domain.policy.models import (
     DisputeCategory,
@@ -161,14 +162,21 @@ def _decision(
 
 @dataclass
 class ScriptedNlu:
-    """Returns the same, pre-built understanding for every message this turn."""
+    """Returns the same, pre-built understanding for every message this turn.
+
+    ``accounting`` defaults to ``None`` (``FakeNlu``'s own behavior, and what nearly every test
+    here wants); a test proving the controller's own accounting-logging behavior sets it.
+    """
 
     result: NluResult
+    accounting: TurnAccounting | None = None
     calls: list[tuple[str, str | None]] = field(default_factory=list)
 
-    def understand(self, text: str, *, language_hint: str | None) -> NluResult:
+    def understand(
+        self, text: str, *, language_hint: str | None
+    ) -> tuple[NluResult, TurnAccounting | None]:
         self.calls.append((text, language_hint))
-        return self.result
+        return self.result, self.accounting
 
 
 _UNSET = object()  # A distinct sentinel from a deliberately-returned None override.
@@ -275,8 +283,9 @@ def _controller(
     policy: Policy,
     outbox: FakeHandoffOutbox,
     retriever: LexicalRetriever,
+    accounting: TurnAccounting | None = None,
 ) -> tuple[DialogueController, ScriptedNlu]:
-    nlu = ScriptedNlu(result)
+    nlu = ScriptedNlu(result, accounting)
     controller = DialogueController(
         nlu,
         store=store,
@@ -1355,3 +1364,112 @@ def test_list_dispute_cases_failure_hands_off(policy: Policy, retriever: Lexical
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert response.end_session
     assert outbox.packets[0].trigger.value == "tool_failure"
+
+
+# -----------------------------------------------------------------------------
+# Per-turn cost accounting (E9)
+# -----------------------------------------------------------------------------
+
+
+def test_a_turn_with_no_real_model_call_logs_zeroed_accounting(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The log line's shape never varies: a scripted (FakeNlu-like) turn logs zero/None values,
+    not a missing line."""
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+    with caplog.at_level(logging.INFO):
+        controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    logged = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(logged) == 1
+    message = logged[0].getMessage()
+    assert f"session_id={_SESSION_ID}" in message
+    assert "case_number=None" in message
+    assert "model=None" in message
+    assert "input_tokens=0" in message
+    assert "output_tokens=0" in message
+    assert "cost_usd=0" in message
+
+
+def test_a_turn_with_a_real_model_call_logs_its_accounting(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    accounting = TurnAccounting(
+        model="claude-haiku-4-5-20251001",
+        prompt_version="1",
+        input_tokens=100,
+        output_tokens=20,
+        latency_ms=250.0,
+    )
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        accounting=accounting,
+    )
+    with caplog.at_level(logging.INFO):
+        controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    logged = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(logged) == 1
+    message = logged[0].getMessage()
+    assert "model=claude-haiku-4-5-20251001" in message
+    assert "input_tokens=100" in message
+    assert "output_tokens=20" in message
+    assert "latency_ms=250.0" in message
+    # 100 * $1/M + 20 * $5/M = 0.0001 + 0.0001 = 0.0002
+    assert "cost_usd=0.0002" in message
+
+
+def test_a_turn_that_files_a_case_logs_its_case_number(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The filing turn's own log line already carries the new case number (E9's "per case" key),
+    mirroring ``test_no_confirmation_required_files_immediately``'s own filing flow."""
+    store = InMemoryDialogueStore()
+    case = _case("D-1")
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        cases=(case,),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=False
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+    )
+    controller, _ = _controller(
+        _file_dispute(transaction=TransactionHint(merchant="Amazon")),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+    with caplog.at_level(logging.INFO):
+        controller.handle_turn(_turn("turn-0001"), principal=_principal())
+    caplog.clear()  # only turn-0002's own log line is under test below
+    controller, _ = _controller(
+        _file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+
+    with caplog.at_level(logging.INFO):
+        response = controller.handle_turn(_turn("turn-0002"), principal=_principal())
+
+    assert "D-1" in response.reply
+    logged = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(logged) == 1
+    assert "case_number=D-1" in logged[0].getMessage()
