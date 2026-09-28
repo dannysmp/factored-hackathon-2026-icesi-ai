@@ -8,41 +8,43 @@ deliverable, made once the live conversation endpoint (not only recorded fixture
 Every line of dialogue quoted here is taken verbatim from `docs/demo-scripts.md`; this script adds
 only the narration between paths and the closing walk through the decision records.
 
-## Opening (narration, ~20 seconds)
+## Opening
 
-"This is a transaction-dispute intake system for a simulated bank. A customer describes a problem
-with a charge in Spanish, Portuguese or English; the system authenticates them, finds the
-transaction, decides what policy allows, and either files the case or brings in a person. The
-model understands and renders language. It never decides an outcome — that is the policy engine's
-job, and it is deterministic and tested on its own."
+Narration, about 20 seconds: "This is a transaction-dispute intake system for a simulated bank. A
+customer describes a problem with a charge in Spanish, Portuguese or English; the system
+authenticates them, finds the transaction, decides what policy allows, and either files the case or
+brings in a person. The model understands and renders language. It never decides an outcome — that
+is the policy engine's job, and it is deterministic and tested on its own."
 
 Show the demonstration banner and the reference-date line on screen; narrate: "Every screen states
 that this is a demonstration, and the date the data is current as of — June 18, 2026 throughout
 this recording."
 
-## Path 1 — Normal: filing an eligible dispute (~45 seconds)
+## Path 1: the normal path, filing an eligible dispute
 
-Play demo script 1 (Spanish) from `docs/demo-scripts.md`, turns 1 through 6, on screen in the
-customer chat interface. Narrate over the confirmation turn: "The system asks for explicit
-confirmation before it files anything, and reads the case number back afterward — it never tells
-the customer a write happened without first confirming the write is there."
+About 45 seconds. Play demo script 1 (Spanish) from `docs/demo-scripts.md`, turns 1 through 6, on
+screen in the customer chat interface. Narrate over the confirmation turn: "The system asks for
+explicit confirmation before it files anything, and reads the case number back afterward — it
+never tells the customer a write happened without first confirming the write is there."
 
-## Path 2 — Ambiguous or unsupported: a request outside the system's scope (~15 seconds)
+## Path 2: the ambiguous or unsupported path, a request outside the system's scope
 
-Play demo script 4 (Spanish), the single-turn card-block request and its refusal. Narrate: "A
-request the system cannot act on — blocking a card — is refused plainly, with a real next step,
-not guessed at."
+About 15 seconds. Play demo script 4 (Spanish), the single-turn credit-limit request and its
+refusal. Narrate: "A request the system cannot act on — raising a credit limit — is refused
+plainly, with a real next step, not guessed at."
 
-## Path 3 — Human-required: a fraud claim, with the handoff and the console (~40 seconds)
+## Path 3: the human-required path, a fraud claim with the handoff and the console
 
-Play demo script 6 (Spanish), the fraud claim and its escalation reply. Then switch to the
-human-agent console and show the resulting handoff ticket and its structured packet, with every
-identifier masked. Narrate: "A fraud claim always reaches a person, regardless of the amount or
-what a risk model would say about it. The console is a read-only viewer today, by decision, not
-because the write path is unfinished — an agent sees exactly what the customer said, masked, and
-the reasoning that led here."
+About 40 seconds. Play demo script 6 (Spanish), the fraud claim and its escalation reply. Then
+switch to the human-agent console and show the resulting handoff ticket and its structured packet,
+with every identifier masked. Narrate: "A fraud claim always reaches a person, regardless of the
+amount or what a risk model would say about it. The console is a read-only viewer today, by
+decision, not because the write path is unfinished — an agent sees exactly what the customer said,
+masked, and the reasoning that led here."
 
-## Decision records named (~40 seconds)
+## Decision records named
+
+About 40 seconds.
 
 Narrate each in one sentence, matching `plan/docs/architecture.md`:
 
@@ -64,9 +66,9 @@ Narrate each in one sentence, matching `plan/docs/architecture.md`:
   timelines across customers as its own authorization domain, and ships as a viewer first, with
   narrow audited writes as the next scheduled step, not as a missing feature.
 
-## Closing (~10 seconds)
+## Closing
 
-"The complete account of what is built, what is deliberately deferred, and what remains is in the
+About 10 seconds. "The complete account of what is built, what is deliberately deferred, and what remains is in the
 repository's limitations report and its technology evolution matrix — nothing in this recording
 claims more than the code behind it does."
 

@@ -27,7 +27,7 @@ does, these scripts are the demonstration's script, not yet its recording.
 
 ---
 
-## 1. Normal path — filing an eligible dispute (Spanish)
+## 1. Normal path in Spanish: filing an eligible dispute
 
 | Turn | Speaker | Line |
 |---|---|---|
@@ -52,7 +52,7 @@ dispute reason as a closed category, filing only after explicit confirmation, ve
 before reporting it (`D-2001` is read back, not merely echoed), and stating the concrete
 first-response date computed from policy, not invented by the model.
 
-## 2. Normal path — filing an eligible dispute (Portuguese)
+## 2. Normal path in Portuguese: filing an eligible dispute
 
 | Turn | Speaker | Line |
 |---|---|---|
@@ -76,7 +76,7 @@ Every turn also carries: `Data de referência dos dados: 18 de junho de 2026`.
 its own, independently written phrasing for every reply — Portuguese is a full reply language, not
 a translation applied at render time.
 
-## 3. Normal path — filing an eligible dispute (English)
+## 3. Normal path in English: filing an eligible dispute
 
 | Turn | Speaker | Line |
 |---|---|---|
@@ -99,28 +99,31 @@ Every turn also carries: `Reference date of the data: June 18, 2026`.
 grounding standard — the same case, the same case number, the same first-response date, in
 correct English (including the grammatical article before the category name).
 
-## 4. Ambiguous or unsupported path — a request outside the system's scope (Spanish)
+## 4. Ambiguous or unsupported path in Spanish: a request outside the system's scope
 
 | Turn | Speaker | Line |
 |---|---|---|
-| 1 | Customer | Quiero bloquear mi tarjeta, la perdí. |
+| 1 | Customer | Quiero aumentar el límite de mi tarjeta de crédito. |
 | 1 | System (`refuse` / `refuse_unsupported`) | Eso no lo puedo hacer aquí. Puedo ayudarle a disputar una transacción, consultar un caso o explicarle la política; para eso use la sección de tarjetas de la aplicación del banco, o la paso con un asesor. |
 
 **What this demonstrates:** a request the automation matrix names as never automated here
 (a card action, not a dispute) is refused plainly, in one reply, with a concrete alternative
-channel and the offer of a person — never a guess at how to block a card, and never a stall.
+channel and the offer of a person — never a guess at how to raise a credit limit, and never a
+stall. This line is unambiguous: it exercises only the system's unsupported-action classification,
+never the separate, more urgent lost-or-stolen-card path a customer reporting a lost card would
+reach instead.
 
-## 5. Ambiguous or unsupported path — a request outside the system's scope (Portuguese)
+## 5. Ambiguous or unsupported path in Portuguese: a request outside the system's scope
 
 | Turn | Speaker | Line |
 |---|---|---|
-| 1 | Customer | Quero bloquear meu cartão, eu o perdi. |
+| 1 | Customer | Quero aumentar o limite do meu cartão de crédito. |
 | 1 | System (`refuse` / `refuse_unsupported`) | Isso eu não posso fazer aqui. Posso ajudar a contestar uma transação, consultar um caso ou explicar a política; para isso use a seção de cartões do aplicativo do banco, ou encaminho você a um atendente. |
 
 **What this demonstrates:** the same refusal, correctly worded in Portuguese, with the same
 redirection and the same offer of a person.
 
-## 6. Human-required path — a fraud claim (Spanish)
+## 6. Human-required path in Spanish: a fraud claim
 
 | Turn | Speaker | Line |
 |---|---|---|
@@ -133,7 +136,7 @@ review, it never decides the outcome, and a fraud claim escalates by category al
 number is the handoff ticket a human agent will see in the console, not a case number, since no
 filing decision was made by the system here.
 
-## 7. Human-required path — a fraud claim (Portuguese)
+## 7. Human-required path in Portuguese: a fraud claim
 
 | Turn | Speaker | Line |
 |---|---|---|
