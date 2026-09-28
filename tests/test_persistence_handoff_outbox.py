@@ -1,0 +1,178 @@
+"""
+Postgres Handoff Outbox Tests
+==============================
+
+Component: ``app.persistence.handoff_outbox``. Needs a real, migrated Postgres; marked
+``integration``, skipped when ``DATABASE_URL`` is not set.
+"""
+
+from __future__ import annotations
+
+# Standard libraries
+import os
+import threading
+from datetime import UTC, date, datetime
+
+# Third-party libraries
+import psycopg
+import pytest
+
+# Local modules
+from app.domain.policy.models import ReasonCode
+from app.persistence.handoff_outbox import HandoffContent, PostgresHandoffOutbox
+from app.persistence.migrate import apply_migrations
+from contracts.service_v1.envelope import LocalizedTitle, Slot, SourceRef
+from contracts.service_v1.handoff import ActionRecord, HandoffTrigger, OpenQuestion
+
+_REFERENCE_DATE = date(2026, 6, 18)
+_CREATED_AT = datetime(2026, 6, 18, 15, 0, tzinfo=UTC)
+
+
+def _content(**changes: object) -> HandoffContent:
+    values: dict[str, object] = {
+        "reference_date": _REFERENCE_DATE,
+        "created_at": _CREATED_AT,
+        "language": "es",
+        "trigger": HandoffTrigger.CUSTOMER_REQUEST,
+        "first_name": "Ana",
+        "customer_id": "CLI-1234",
+        "request_summary": "Wants to speak with a person.",
+        "reason_codes": (ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
+        "policy_version": "2",
+    }
+    return HandoffContent(**{**values, **changes})  # type: ignore[arg-type]
+
+
+@pytest.fixture
+def outbox() -> PostgresHandoffOutbox:
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL is not set")
+    apply_migrations(dsn)
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "TRUNCATE TABLE handoff_actions, handoff_open_questions, handoff_reason_codes, "
+            "handoff_sources, handoff_outbox CASCADE"
+        )
+    return PostgresHandoffOutbox(dsn)
+
+
+@pytest.mark.integration
+def test_record_writes_a_retrievable_row(outbox: PostgresHandoffOutbox) -> None:
+    """A fresh handoff writes a row and returns a packet naming a real ticket."""
+    packet = outbox.record(_content(), session_id="s-1", customer_id="CLI-1234", turn_id="t-1")
+
+    assert packet.ticket_ref.startswith("T-20260618-")
+    assert packet.customer.masked_id == "****1234"
+
+
+@pytest.mark.integration
+def test_a_repeated_turn_id_returns_the_same_ticket(outbox: PostgresHandoffOutbox) -> None:
+    """A retried turn never mints a second ticket for one logical handoff."""
+    first = outbox.record(_content(), session_id="s-1", customer_id="CLI-1234", turn_id="t-1")
+
+    second = outbox.record(_content(), session_id="s-1", customer_id="CLI-1234", turn_id="t-1")
+
+    assert second.ticket_ref == first.ticket_ref
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn, conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM handoff_outbox WHERE session_id = 's-1'")
+        assert cur.fetchone()[0] == 1  # type: ignore[index]
+
+
+@pytest.mark.integration
+def test_a_different_turn_id_writes_a_second_row(outbox: PostgresHandoffOutbox) -> None:
+    """Two genuinely different turns are two tickets, even for the same session."""
+    first = outbox.record(_content(), session_id="s-1", customer_id="CLI-1234", turn_id="t-1")
+
+    second = outbox.record(_content(), session_id="s-1", customer_id="CLI-1234", turn_id="t-2")
+
+    assert second.ticket_ref != first.ticket_ref
+
+
+@pytest.mark.integration
+def test_child_rows_persist_actions_questions_reasons_and_sources(
+    outbox: PostgresHandoffOutbox,
+) -> None:
+    """Every bounded repeating part of the packet round-trips through its own child table."""
+    source = SourceRef(
+        section_id="filing-windows",
+        titles=(
+            LocalizedTitle(lang="es", text="Plazos"),
+            LocalizedTitle(lang="pt", text="Prazos"),
+            LocalizedTitle(lang="en", text="Windows"),
+        ),
+        corpus_version="2",
+    )
+    content = _content(
+        actions=(ActionRecord(action="looked_up_transaction", result="found"),),
+        open_questions=(OpenQuestion(slot=Slot.REASON, attempts=2),),
+        reason_codes=(ReasonCode.ESCALATE_FRAUD_CLAIM, ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE),
+        sources=(source,),
+    )
+
+    packet = outbox.record(content, session_id="s-1", customer_id="CLI-1234", turn_id="t-1")
+
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT action, result FROM handoff_actions WHERE ticket_ref = %s ORDER BY ord",
+            (packet.ticket_ref,),
+        )
+        assert cur.fetchall() == [("looked_up_transaction", "found")]
+        cur.execute(
+            "SELECT slot, attempts FROM handoff_open_questions WHERE ticket_ref = %s",
+            (packet.ticket_ref,),
+        )
+        assert cur.fetchall() == [("reason", 2)]
+        cur.execute(
+            "SELECT reason_code FROM handoff_reason_codes WHERE ticket_ref = %s ORDER BY ord",
+            (packet.ticket_ref,),
+        )
+        assert cur.fetchall() == [
+            ("escalate_fraud_claim",),
+            ("escalate_low_nlu_confidence",),
+        ]
+        cur.execute(
+            "SELECT section_id, corpus_version FROM handoff_sources WHERE ticket_ref = %s",
+            (packet.ticket_ref,),
+        )
+        assert cur.fetchall() == [("filing-windows", "2")]
+
+
+@pytest.mark.integration
+def test_a_genuine_race_resolves_to_one_ticket(outbox: PostgresHandoffOutbox) -> None:
+    """Two threads recording the same turn concurrently agree on exactly one ticket."""
+    barrier = threading.Barrier(2)
+    tickets: list[str] = []
+    lock = threading.Lock()
+
+    def _attempt() -> None:
+        barrier.wait()
+        packet = outbox.record(_content(), session_id="s-1", customer_id="CLI-1234", turn_id="t-1")
+        with lock:
+            tickets.append(packet.ticket_ref)
+
+    threads = [threading.Thread(target=_attempt) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(tickets) == 2
+    assert tickets[0] == tickets[1]
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn, conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM handoff_outbox WHERE session_id = 's-1'")
+        assert cur.fetchone()[0] == 1  # type: ignore[index]
+
+
+@pytest.mark.integration
+def test_a_store_failure_logs_before_propagating(caplog: pytest.LogCaptureFixture) -> None:
+    """A genuine store failure is logged, then still raised — never swallowed."""
+    outbox = PostgresHandoffOutbox("postgresql://nobody:nowhere@localhost:1/does_not_exist")
+
+    with (
+        caplog.at_level("WARNING", logger="app.persistence.handoff_outbox"),
+        pytest.raises(psycopg.Error),
+    ):
+        outbox.record(_content(), session_id="s-1", customer_id="CLI-1234", turn_id="t-1")
+
+    assert any("handoff_outbox_write_failed" in record.message for record in caplog.records)
