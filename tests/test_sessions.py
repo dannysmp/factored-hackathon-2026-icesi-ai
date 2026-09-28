@@ -312,16 +312,14 @@ def test_a_refused_attempt_is_not_counted_again() -> None:
     assert limiter.begin_attempt("a") == 0
 
 
-def test_clients_are_counted_separately_and_success_resets() -> None:
-    """One client's attempts never block another; a reset clears the count."""
+def test_clients_are_counted_separately() -> None:
+    """One client's attempts never block another."""
     limiter = AttemptLimiter(max_failures=2, window_seconds=60, clock=Clock())
     limiter.begin_attempt("a")
     limiter.begin_attempt("a")
 
     assert limiter.begin_attempt("a") > 0
     assert limiter.begin_attempt("b") == 0
-    limiter.reset("a")
-    assert limiter.begin_attempt("a") == 0
 
 
 def test_the_limiter_table_is_bounded() -> None:

@@ -61,12 +61,16 @@ routing:
   # Below this confidence in the understood request, a person takes over.
   nlu_confidence_floor: 0.60
   # From this transaction risk score, a person reviews the dispute. The score only routes.
+  # Inert while risk_routing_enabled is false below; kept as a placeholder since no threshold
+  # cleared the pre-registered floor (models/model_card.json).
   risk_score_threshold: 0.80
   escalate_repeat_complainer: true
   # The amount in US dollars is not always known; when it is not, a person decides.
   escalate_unknown_amount: true
-  # Off until a risk model clears its pre-registered precision floor: fraud claims still
-  # escalate by category regardless, so no fraud claim goes unreviewed while this is off.
+  # Off: no validation threshold reached the pre-registered precision floor while keeping the
+  # routed share within its cap (models/model_card.json, a negative, reported result). Fraud
+  # claims still escalate by category regardless, so no fraud claim goes unreviewed while this
+  # is off.
   risk_routing_enabled: false
   # Consecutive clarification attempts allowed on the same missing element before the request
   # is routed to a person with `escalate_low_nlu_confidence`.

@@ -206,6 +206,8 @@ def _decision(**overrides: object) -> PolicyDecision:
         "policy_version": "1",
         "requires_confirmation": True,
         "facts": (),
+        "transaction_ref": "TRX-1",
+        "category": DisputeCategory.UNRECOGNIZED_CHARGE,
     }
     fields.update(overrides)
     return PolicyDecision(**fields)
@@ -258,6 +260,33 @@ def test_a_refused_result_carries_no_case_number() -> None:
         CreateDisputeCaseResult(
             created=False, case_number="CASE-1", refusal=ToolRefusalCode.CONFIRMATION_REQUIRED
         )
+
+
+def test_a_duplicate_open_case_refusal_carries_the_existing_case_number() -> None:
+    """AC-E4-16: the customer is told which case is already on file for the transaction."""
+    result = CreateDisputeCaseResult(
+        created=False,
+        refusal=ToolRefusalCode.DUPLICATE_OPEN_CASE,
+        existing_case_number="CASE-1",
+    )
+
+    assert result.existing_case_number == "CASE-1"
+
+
+def test_only_a_duplicate_open_case_refusal_may_carry_an_existing_case_number() -> None:
+    """Any other refusal, or a created case, names no pre-existing case (nothing to name)."""
+    with pytest.raises(ValidationError, match="existing_case_number is present exactly"):
+        CreateDisputeCaseResult(
+            created=False,
+            refusal=ToolRefusalCode.CONFIRMATION_REQUIRED,
+            existing_case_number="CASE-1",
+        )
+
+
+def test_a_duplicate_open_case_refusal_requires_the_existing_case_number() -> None:
+    """The field is required, not merely allowed, once the refusal is duplicate_open_case."""
+    with pytest.raises(ValidationError, match="existing_case_number is present exactly"):
+        CreateDisputeCaseResult(created=False, refusal=ToolRefusalCode.DUPLICATE_OPEN_CASE)
 
 
 def test_evaluate_dispute_request_has_no_customer_field() -> None:

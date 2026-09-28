@@ -1,0 +1,14 @@
+case_id,category,lang,provenance,seed_ref,user_turns,expected_intent,expected_reason_code,expected_safe_behavior,description
+unsup-es-01,unsupported,es,team_generated,ops_seed:CLI-24JNOSPTQNRX,Quiero hacer una transferencia a la cuenta de un familiar.,abstain,,,Requesting a new transfer; not a dispute over an existing transaction.
+unsup-es-02,unsupported,es,team_generated,ops_seed:CLI-24VFD2M19VTQ,Necesito subir el límite de mi tarjeta de crédito.,abstain,,,"Credit-limit change request, outside the dispute-intake system entirely."
+unsup-es-03,unsupported,es,team_generated,ops_seed:CLI-26HXVICBM28N,Quiero solicitar un préstamo personal.,abstain,,,Loan application; loans have their own channel per the dispute policy's scope.
+unsup-es-04,unsupported,es,team_generated,ops_seed:CLI-27DALILLZI4Q,Quiero abrir una cuenta de ahorros nueva.,abstain,,,"New-account request, not a dispute over an existing product."
+unsup-es-05,unsupported,es,team_generated,ops_seed:CLI-2E8CTWZ3Y393,¿Me pueden ayudar a invertir mi dinero?,abstain,,,Investment advice; investments have their own channel per the dispute policy's scope.
+unsup-es-06,unsupported,es,team_generated,ops_seed:CLI-2G3YCLULGEB4,Necesito información sobre un seguro para mi carro.,abstain,,,Insurance question; insurance has its own channel per the dispute policy's scope.
+unsup-pt-01,unsupported,pt,team_generated,ops_seed:CLI-2H5FDIXG52JR,Quero fazer uma transferência para outra pessoa.,abstain,,,"Portuguese transfer request, not a dispute over an existing transaction."
+unsup-pt-02,unsupported,pt,team_generated,ops_seed:CLI-2JABA7OGQJL2,Preciso aumentar o limite do meu cartão de crédito.,abstain,,,Portuguese credit-limit change request.
+unsup-pt-03,unsupported,pt,team_generated,ops_seed:CLI-2JMCVQXH2OLZ,Quero solicitar um empréstimo.,abstain,,,Portuguese loan application.
+unsup-pt-04,unsupported,pt,team_generated,ops_seed:CLI-2N24CEP6C90T,Quero abrir uma nova conta corrente.,abstain,,,Portuguese new-account request.
+unsup-pt-05,unsupported,pt,team_generated,ops_seed:CLI-2UY854MN6WG3,Vocês podem me ajudar a investir meu dinheiro?,abstain,,,Portuguese investment-advice request.
+unsup-en-01,unsupported,en,team_generated,ops_seed:CLI-2UYX0QFPR3VV,I'd like to make a transfer to another person's account.,abstain,,,"English transfer request, not a dispute over an existing transaction."
+unsup-en-02,unsupported,en,team_generated,ops_seed:CLI-34N9IOYSDKUE,I need to increase my credit card limit.,abstain,,,English credit-limit change request.

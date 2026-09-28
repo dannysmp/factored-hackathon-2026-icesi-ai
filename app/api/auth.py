@@ -28,7 +28,9 @@ stands in for that provider:
   (AC-E4-47): the two are indistinguishable by response code, message or shape;
 - a customer the store does know always gets a session, whatever their status — the policy
   applies no status gate (AC-E4-48), and the login boundary does not invent one either;
-- failed attempts are limited per client address.
+- failed attempts are limited per client address; a correct key always proceeds regardless of
+  that address's recorded failures, and a success never clears them for another client sharing
+  the address.
 
 Runtime Contract
 ----------------
@@ -150,12 +152,21 @@ def build_auth_router(
             request: Request,
             x_test_login_key: Annotated[str | None, Header()] = None,
         ) -> None:
-            """Refuse the sandbox login unless the caller is limited-in and holds the secret.
+            """Refuse the sandbox login unless the caller holds the secret.
 
             Runs before the body is validated, so an unauthenticated caller learns nothing about
-            the body's shape. The attempt is counted first and cleared on success, which makes
-            the limit hold under concurrent attempts.
+            the body's shape. The supplied key is compared, in constant time, before anything is
+            counted: a correct key always proceeds, whatever this address's recorded failures
+            are, so a flood of wrong keys from a shared address can never lock out the client
+            that actually holds the secret. Only a wrong key counts as a failure, and counting is
+            atomic with the limit check, so a flood of wrong keys cannot slip more attempts past
+            the check than the limit allows under concurrency. A success never touches the
+            limiter: another client sharing this address keeps whatever failure count it has
+            already earned.
             """
+            supplied = (x_test_login_key or "").encode("utf-8")
+            if hmac.compare_digest(supplied, expected):
+                return
             client = request.client.host if request.client else "unknown"
             wait = limiter.begin_attempt(client)
             if wait:
@@ -167,16 +178,13 @@ def build_auth_router(
                     "Wait before trying again.",
                     headers={"Retry-After": str(wait)},
                 )
-            supplied = (x_test_login_key or "").encode("utf-8")
-            if not hmac.compare_digest(supplied, expected):
-                logger.warning("test_login_rejected request_id=%s", current_request_id())
-                raise ProblemError(
-                    ErrorCode.TEST_LOGIN_REJECTED,
-                    401,
-                    "Sign-in was refused",
-                    reauth_required=True,
-                )
-            limiter.reset(client)
+            logger.warning("test_login_rejected request_id=%s", current_request_id())
+            raise ProblemError(
+                ErrorCode.TEST_LOGIN_REJECTED,
+                401,
+                "Sign-in was refused",
+                reauth_required=True,
+            )
 
         @router.post(
             TEST_SESSIONS_PATH, status_code=201, dependencies=[Depends(authorize_test_client)]
