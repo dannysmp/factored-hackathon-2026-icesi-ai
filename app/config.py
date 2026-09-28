@@ -288,6 +288,34 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _demo_broker_secrets_never_collide(self) -> Settings:
+        """A copy-paste SSM mistake must not silently defeat the two-broker separation.
+
+        ADR-18's whole reason for two access codes is "a leaked customer code leaves the console
+        protected"; the same reasoning applies to the two signing keys. Checked only when both
+        values are actually configured, so one broker alone never trips this.
+        """
+        if (
+            self.demo_signin_access_code is not None
+            and self.demo_agent_access_code is not None
+            and self.demo_signin_access_code.get_secret_value()
+            == self.demo_agent_access_code.get_secret_value()
+        ):
+            raise ValueError(
+                "DEMO_SIGNIN_ACCESS_CODE and DEMO_AGENT_ACCESS_CODE must not be the same value"
+            )
+        if (
+            self.session_signing_key is not None
+            and self.agent_session_signing_key is not None
+            and self.session_signing_key.get_secret_value()
+            == self.agent_session_signing_key.get_secret_value()
+        ):
+            raise ValueError(
+                "SESSION_SIGNING_KEY and AGENT_SESSION_SIGNING_KEY must not be the same value"
+            )
+        return self
+
     def require_anthropic_key(self) -> SecretStr:
         """Return the Anthropic API key or fail with an actionable message.
 

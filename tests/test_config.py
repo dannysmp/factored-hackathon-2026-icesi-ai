@@ -461,6 +461,35 @@ def test_a_blank_agent_signing_key_is_treated_as_absent(monkeypatch: pytest.Monk
     assert load_settings(env_file=None).agent_session_signing_key is None
 
 
+def test_the_two_access_codes_must_not_be_the_same_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A copy-paste SSM mistake must not silently defeat the two-broker separation (ADR-18)."""
+    monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "shared-code-0123456789")
+    monkeypatch.setenv("DEMO_AGENT_SIGNIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_AGENT_ACCESS_CODE", "shared-code-0123456789")
+
+    with pytest.raises(ConfigError, match="must not be the same value"):
+        load_settings(env_file=None)
+
+
+def test_the_two_signing_keys_must_not_be_the_same_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "abcdefgh" * 4)
+    monkeypatch.setenv("AGENT_SESSION_SIGNING_KEY", "abcdefgh" * 4)
+
+    with pytest.raises(ConfigError, match="must not be the same value"):
+        load_settings(env_file=None)
+
+
+def test_the_two_signing_keys_may_differ(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "abcdefgh" * 4)
+    monkeypatch.setenv("AGENT_SESSION_SIGNING_KEY", "ponmlkji" * 4)
+
+    settings = load_settings(env_file=None)
+
+    assert settings.session_signing_key is not None
+    assert settings.agent_session_signing_key is not None
+
+
 # -----------------------------------------------------------------------------
 # Serving-store DSN
 # -----------------------------------------------------------------------------
