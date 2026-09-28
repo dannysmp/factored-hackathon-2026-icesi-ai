@@ -69,14 +69,18 @@ Every control's actual implementation status, not just its design intent, is tra
 [SECURITY.md](../SECURITY.md), which this document defers to rather than duplicating.
 
 - **A document number typed unprompted into a free-text message is not detected or redacted.**
-  The conversation never asks a customer for a document number, no field in the understanding
-  contract can carry one, and no reply ever echoes one back — the system has no path through which
-  a document number is solicited, stored or displayed. Unlike a card number, a document number
-  carries no checksum a detector could key on, so a content filter over free text would be a
-  length-only heuristic with an unmeasured false-positive cost against legitimate reference and
-  case numbers. The deliberate choice is to rely on never asking for, accepting or echoing the
-  value, not on scanning for and stripping it after the fact; a customer who volunteers one anyway
-  in free text is not protected against by any filter today.
+  The conversation never asks a customer for a document number, and no *structured* field the
+  understanding step routes or searches by (the transaction hint, the category, a confirmation)
+  can carry one — only two bounded free-text fields (the dispute detail, a policy question) can
+  hold whatever a customer types, and neither is ever echoed back to that or any other customer:
+  no reply, packet or console view states raw customer-typed text. Unlike a card number, a
+  document number carries no checksum a detector could key on, so a content filter over that free
+  text would be a length-only heuristic with an unmeasured false-positive cost against legitimate
+  reference and case numbers. The deliberate choice is to rely on never asking for, structurally
+  accepting or echoing the value, not on scanning for and stripping it after the fact; a customer
+  who volunteers one anyway in free text is not protected against by any content filter today —
+  the value still reaches the outbound model request unmasked, the way a card number's digits are
+  masked before that same request is sent.
 
 ## Not attempted
 
