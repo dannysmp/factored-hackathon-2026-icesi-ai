@@ -2,19 +2,22 @@
 Demo Persona Reset Tests
 =========================
 
-Component: ``app.persistence.reset_demo_personas``. Needs a real, migrated Postgres. Marked
-``integration``, skipped when ``DATABASE_URL`` is not set.
+Component: ``app.persistence.reset_demo_personas``. The command-line wiring is pure and hermetic.
+Deleting rows for real needs a Postgres database: those tests are marked ``integration`` and read
+the DSN from ``DATABASE_URL``, skipped when it is not set.
 """
 
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import psycopg
 import pytest
 
+from app.persistence import reset_demo_personas as reset_demo_personas_module
 from app.persistence.migrate import apply_migrations
-from app.persistence.reset_demo_personas import reset_demo_personas
+from app.persistence.reset_demo_personas import main, reset_demo_personas
 from app.security.demo_personas import CustomerPersona, PersonaList
 
 
@@ -73,6 +76,60 @@ def _persona_list(*customer_ids: str) -> PersonaList:
             for i, customer_id in enumerate(customer_ids)
         ),
     )
+
+
+def test_main_requires_a_dsn(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """With no --dsn and no DATABASE_URL, the command refuses rather than guessing.
+
+    Run from an empty directory: ``main`` loads settings with the default ``.env`` path, so a
+    real ``.env`` in the working directory must not supply a DSN this test means to be absent.
+    """
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit):
+        main([])
+
+
+def test_main_uses_the_dsn_argument_over_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit --dsn is used even when DATABASE_URL is also set."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://env-only")
+    monkeypatch.setattr(
+        reset_demo_personas_module, "load_personas", lambda: _persona_list("CUST-1")
+    )
+    seen: dict[str, object] = {}
+
+    def fake_reset(dsn: str, personas: PersonaList) -> int:
+        seen["dsn"] = dsn
+        seen["personas"] = personas
+        return 3
+
+    monkeypatch.setattr(reset_demo_personas_module, "reset_demo_personas", fake_reset)
+
+    exit_code = main(["--dsn", "postgresql://from-argument"])
+
+    assert exit_code == 0
+    assert seen["dsn"] == "postgresql://from-argument"
+
+
+def test_main_falls_back_to_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DATABASE_URL is used when --dsn is not given."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://env-only")
+    monkeypatch.setattr(
+        reset_demo_personas_module, "load_personas", lambda: _persona_list("CUST-1")
+    )
+    seen: dict[str, object] = {}
+
+    def fake_reset(dsn: str, personas: PersonaList) -> int:
+        seen["dsn"] = dsn
+        return 0
+
+    monkeypatch.setattr(reset_demo_personas_module, "reset_demo_personas", fake_reset)
+
+    exit_code = main([])
+
+    assert exit_code == 0
+    assert seen["dsn"] == "postgresql://env-only"
 
 
 @pytest.mark.integration
