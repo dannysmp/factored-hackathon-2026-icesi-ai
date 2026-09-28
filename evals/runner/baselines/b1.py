@@ -51,10 +51,9 @@ Runtime Contract
 -> (NaiveAgentClient, B1ToolDispatcher, str)`` — the client, the dispatcher, and the session id it
 minted. Raises ``ConfigError`` when ``settings.app_env`` is ``prod``.
 ``run_case(client, dispatcher, case, *, session_id, calendar) -> RunTranscript``.
-``run_cases(settings, dsn, cases, *, policy, retriever, calendar, clock, model)
--> tuple[CaseResult, ...]`` — resolves, builds fresh B1 dependencies for, drives and scores every
-case in order; one case's own customer id and language, never shared across cases the way the
-client and dispatcher are not either, since each case may need a different one of both.
+``run_cases(client, settings, dsn, cases, *, policy, retriever, calendar, clock)
+-> tuple[CaseResult, ...]`` — the caller's own ``client``, reused for every case; resolves,
+builds a fresh dispatcher and session id for, drives and scores each case in order.
 
 Limitations
 -----------
