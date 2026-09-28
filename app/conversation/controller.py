@@ -330,6 +330,11 @@ class DialogueController:
         """
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
+        logger.warning(
+            "llm_understanding_unavailable_handoff session_id=%s request_id=%s",
+            self._session_id(),
+            current_request_id(),
+        )
         base = current or DialogueState(
             session_id=self._session_id(),
             lang="es",
@@ -928,6 +933,11 @@ class DialogueController:
         try:
             result = self._understanding.understand(request.text, language_hint=state.lang)
         except UnderstandingUnavailable:
+            logger.warning(
+                "llm_understanding_unavailable_replay session_id=%s request_id=%s",
+                state.session_id,
+                current_request_id(),
+            )
             return self._envelope(
                 state, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
             )

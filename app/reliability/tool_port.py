@@ -22,6 +22,14 @@ Design Principles
   missing reference, refused by design, `retryable=False`); retrying the latter would be a bug, not
   a resilience improvement. A failure whose own ``cause`` is already ``"circuit_open"`` is never
   retried either — retrying the breaker's own signal would defeat it.
+- **Every outcome of an allowed call reports back to the breaker, not only a retried failure.** A
+  non-retryable ``ToolFailure`` (a permission refusal, a missing reference) means the store was
+  reached and answered — a reachability success for the breaker's own purpose, whatever it means
+  for the caller — so it records success too, exactly like a real value or ``None``. Recording
+  only the retried-failure type would leave a half-open trial call that resolves to a routine
+  business refusal permanently unresolved: ``allow()`` refuses every call after a half-open trial
+  until its outcome is recorded, so a store that is actually back up would stay wrongly tripped
+  open forever.
 - **One breaker for the whole port**, matching ``app.reliability.breaker``'s own design principle:
   a Postgres outage fails every method identically, so one shared instance is the only signal
   worth tracking, not six independent ones that would trip in lockstep anyway.
@@ -38,6 +46,7 @@ Runtime Contract
 from __future__ import annotations
 
 # Standard libraries
+import logging  # Retry attempts, matching the codebase's own structured-logging convention
 import time
 from collections.abc import Callable
 from typing import TypeVar
@@ -58,6 +67,8 @@ from contracts.service_v1.tools import (
     TransactionFilters,
     TransactionPage,
 )
+
+logger = logging.getLogger(__name__)
 
 _R = TypeVar("_R")
 
@@ -85,18 +96,27 @@ class RetriedToolPort:
         while True:
             attempt += 1
             result = call()
-            if (
+            retryable_failure = (
                 isinstance(result, ToolFailure)
                 and result.retryable
                 and result.cause != "circuit_open"
-            ):
+            )
+            if retryable_failure:
                 if attempt >= self._policy.max_attempts:
                     self._breaker.record_failure()
                     return result
+                logger.warning(
+                    "tool_retry_attempt tool=%s attempt=%s max_attempts=%s",
+                    tool.value,
+                    attempt,
+                    self._policy.max_attempts,
+                )
                 self._sleep(backoff_seconds(self._policy, attempt))
                 continue
-            if not isinstance(result, ToolFailure):
-                self._breaker.record_success()
+            # Any other outcome — a real value, ``None``, or a non-retryable ``ToolFailure`` —
+            # means the store was reached and answered, so it resolves the breaker just like a
+            # success would, even when the caller sees a business-level refusal.
+            self._breaker.record_success()
             return result
 
     def list_transactions(self, filters: TransactionFilters) -> TransactionPage | ToolFailure:

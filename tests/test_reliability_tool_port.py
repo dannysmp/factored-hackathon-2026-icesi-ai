@@ -8,11 +8,14 @@ breaker and the wrapped ``ToolPort`` are all fakes.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
 
+from app.reliability.breaker import CircuitBreaker, InMemoryCircuitBreaker
 from app.reliability.retry import RetryPolicy
 from app.reliability.tool_port import RetriedToolPort
 from contracts.service_v1.tools import Tool, ToolFailure, TransactionFilters, TransactionPage
@@ -74,7 +77,7 @@ class _ScriptedPort:
         raise NotImplementedError
 
 
-def _port(inner: _ScriptedPort, *, breaker: _FakeBreaker, max_attempts: int) -> RetriedToolPort:
+def _port(inner: _ScriptedPort, *, breaker: CircuitBreaker, max_attempts: int) -> RetriedToolPort:
     policy = RetryPolicy(max_attempts=max_attempts, base_delay_ms=10, max_delay_ms=20)
     return RetriedToolPort(inner, policy=policy, breaker=breaker, sleep=_no_sleep)  # type: ignore[arg-type]
 
@@ -124,8 +127,9 @@ def test_exhausting_every_attempt_returns_the_failure_and_records_it() -> None:
     assert len(_SLEEPS) == 2
 
 
-def test_a_non_retryable_failure_is_returned_immediately_and_never_touches_the_breaker() -> None:
-    """A permission or not-found refusal is a correctness outcome, not infrastructure noise."""
+def test_a_non_retryable_failure_is_returned_immediately_and_still_records_a_success() -> None:
+    """A permission or not-found refusal is a correctness outcome, not infrastructure noise — but
+    the store was reached and answered, so it resolves the breaker like any other success."""
     failure = ToolFailure(tool=Tool.LIST_TRANSACTIONS, cause="error", retryable=False)
     inner = _ScriptedPort(responses=[failure])
     breaker = _FakeBreaker()
@@ -135,14 +139,15 @@ def test_a_non_retryable_failure_is_returned_immediately_and_never_touches_the_b
 
     assert result is failure
     assert inner.calls == 1
-    assert breaker.successes == 0
+    assert breaker.successes == 1
     assert breaker.failures == 0
     assert _SLEEPS == []
 
 
 def test_a_circuit_open_failure_from_the_inner_port_is_never_retried_either() -> None:
     """Retrying the breaker's own signal would defeat it — even if the inner port somehow
-    returned one directly, it is passed straight through, not retried."""
+    returned one directly, it is passed straight through, not retried, and still recorded as a
+    success (the inner port did answer, it just echoed the same signal back)."""
     failure = ToolFailure(tool=Tool.LIST_TRANSACTIONS, cause="circuit_open")
     inner = _ScriptedPort(responses=[failure])
     breaker = _FakeBreaker()
@@ -152,7 +157,47 @@ def test_a_circuit_open_failure_from_the_inner_port_is_never_retried_either() ->
 
     assert result is failure
     assert inner.calls == 1
+    assert breaker.successes == 1
     assert _SLEEPS == []
+
+
+def test_a_half_open_trial_that_hits_a_non_retryable_failure_does_not_stay_wedged() -> None:
+    """Regression for a real bug: a half-open breaker allows exactly one trial call and then
+    refuses everything until that trial's own outcome is recorded. Composing the REAL breaker
+    (not the fake above) proves that a trial resolving to a routine business refusal — not an
+    outage — still resolves the breaker, rather than leaving it permanently half-open."""
+    start = datetime(2026, 1, 1)
+    clock = {"now": start}
+    breaker = InMemoryCircuitBreaker(1, 30, clock=lambda: clock["now"])
+    breaker.record_failure()  # opens the breaker
+    clock["now"] = start + timedelta(seconds=30)  # the reset window has now elapsed
+
+    failure = ToolFailure(tool=Tool.LIST_TRANSACTIONS, cause="error", retryable=False)
+    inner = _ScriptedPort(responses=[failure])
+    port = _port(inner, breaker=breaker, max_attempts=3)
+
+    # This call's own allow() consumes the one half-open trial.
+    result = port.list_transactions(_FILTERS)
+
+    assert result is failure
+    # If the trial's outcome had never been recorded, this would still refuse forever.
+    assert breaker.allow()
+
+
+def test_retrying_logs_a_warning_naming_the_tool_for_each_attempt(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    failure = ToolFailure(tool=Tool.LIST_TRANSACTIONS, cause="error")
+    inner = _ScriptedPort(responses=[failure, failure, _PAGE])
+    port = _port(inner, breaker=_FakeBreaker(), max_attempts=3)
+
+    with caplog.at_level(logging.WARNING, logger="app.reliability.tool_port"):
+        port.list_transactions(_FILTERS)
+
+    messages = [r.message for r in caplog.records if r.name == "app.reliability.tool_port"]
+    assert len(messages) == 2
+    assert "tool_retry_attempt tool=list_transactions attempt=1 max_attempts=3" in messages[0]
+    assert "tool_retry_attempt tool=list_transactions attempt=2 max_attempts=3" in messages[1]
 
 
 def test_an_open_breaker_refuses_before_any_attempt() -> None:

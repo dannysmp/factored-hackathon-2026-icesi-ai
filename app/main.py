@@ -243,10 +243,16 @@ def _controller_factory(
     every request would reset every request and could never trip.
     """
     llm_breaker = InMemoryCircuitBreaker(
-        settings.llm_breaker_failure_threshold, settings.llm_breaker_reset_seconds, clock=clock
+        settings.llm_breaker_failure_threshold,
+        settings.llm_breaker_reset_seconds,
+        clock=clock,
+        name="llm",
     )
     tool_breaker = InMemoryCircuitBreaker(
-        settings.tool_breaker_failure_threshold, settings.tool_breaker_reset_seconds, clock=clock
+        settings.tool_breaker_failure_threshold,
+        settings.tool_breaker_reset_seconds,
+        clock=clock,
+        name="tool",
     )
     llm_client: LlmClient = RetriedLlmClient(
         build_inner=lambda: _build_anthropic_client(settings),

@@ -2,13 +2,17 @@
 Bounded Retry Tests
 ====================
 
-Component: ``app.reliability.retry``. Hermetic: the sleep between attempts and the circuit
-breaker are both fakes; no real delay, no real dependency.
+Component: ``app.reliability.retry``. Hermetic: the sleep between attempts and (except where a
+test says otherwise) the circuit breaker are both fakes; no real delay, no real dependency.
 """
 
 from __future__ import annotations
 
+import logging
+import threading
+import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -22,6 +26,7 @@ from app.llm.client import (
     LlmUnavailable,
     ToolSpec,
 )
+from app.reliability.breaker import InMemoryCircuitBreaker
 from app.reliability.retry import RetriedLlmClient, RetryPolicy, backoff_seconds
 
 _TOOL = ToolSpec(name="t", description="d", input_schema={})
@@ -156,9 +161,11 @@ def test_exhausting_every_attempt_raises_and_records_a_failure() -> None:
 
 
 @pytest.mark.parametrize("error", [LlmRequestRejected("bad key"), LlmOutputInvalid("bad json")])
-def test_a_permanent_failure_is_never_retried_or_recorded_on_the_breaker(
+def test_a_permanent_failure_is_never_retried_but_still_records_a_success(
     error: LlmError,
 ) -> None:
+    """The provider answered — a rejection or unparsable output is not an outage — so the breaker
+    sees a reachability success, even though the caller still sees the original error raised."""
     inner = _ScriptedLlm(responses=[error])
     breaker = _FakeBreaker()
     client: LlmClient = _client(inner, breaker=breaker, max_attempts=3)
@@ -167,9 +174,86 @@ def test_a_permanent_failure_is_never_retried_or_recorded_on_the_breaker(
         client.complete(_REQUEST)
 
     assert inner.calls == 1
-    assert breaker.successes == 0
+    assert breaker.successes == 1
     assert breaker.failures == 0
     assert _SLEEPS == []
+
+
+@pytest.mark.parametrize("error", [LlmRequestRejected("bad key"), LlmOutputInvalid("bad json")])
+def test_a_half_open_trial_that_hits_a_permanent_failure_does_not_stay_wedged(
+    error: LlmError,
+) -> None:
+    """Regression for a real bug: a half-open breaker allows exactly one trial call and then
+    refuses everything until that trial's own outcome is recorded. Composing the REAL breaker
+    (not the fake above) with the real client proves that a trial resolving to a permanent LLM
+    failure still resolves the breaker, rather than leaving it permanently half-open."""
+    start = datetime(2026, 1, 1)
+    clock = {"now": start}
+    breaker = InMemoryCircuitBreaker(1, 30, clock=lambda: clock["now"])
+    breaker.record_failure()  # opens the breaker
+    clock["now"] = start + timedelta(seconds=30)  # the reset window has now elapsed
+
+    inner = _ScriptedLlm(responses=[error])
+    client: LlmClient = RetriedLlmClient(
+        build_inner=lambda: inner,
+        policy=RetryPolicy(max_attempts=3, base_delay_ms=1, max_delay_ms=1),
+        breaker=breaker,
+        sleep=_no_sleep,
+    )
+
+    # This call's own allow() consumes the one half-open trial.
+    with pytest.raises(type(error)):
+        client.complete(_REQUEST)
+
+    # If the trial's outcome had never been recorded, this would still refuse forever.
+    assert breaker.allow()
+
+
+def test_retrying_logs_a_warning_for_each_attempt(caplog: pytest.LogCaptureFixture) -> None:
+    inner = _ScriptedLlm(responses=[LlmUnavailable("a"), LlmUnavailable("b"), _RESULT])
+    client: LlmClient = _client(inner, breaker=_FakeBreaker(), max_attempts=3)
+
+    with caplog.at_level(logging.WARNING, logger="app.reliability.retry"):
+        client.complete(_REQUEST)
+
+    messages = [r.message for r in caplog.records if r.name == "app.reliability.retry"]
+    assert len(messages) == 2
+    assert "llm_retry_attempt attempt=1 max_attempts=3" in messages[0]
+    assert "llm_retry_attempt attempt=2 max_attempts=3" in messages[1]
+
+
+def test_the_inner_client_build_is_guarded_against_a_concurrent_race() -> None:
+    """The turns route is a sync handler FastAPI dispatches on its thread pool, so two requests'
+    first calls can race the lazy build; the lock must let exactly one build through."""
+    builds = 0
+    build_lock = threading.Lock()
+    start = threading.Barrier(8)
+
+    def build_inner() -> LlmClient:
+        nonlocal builds
+        time.sleep(0.01)  # widen the race window
+        with build_lock:
+            builds += 1
+        return _ScriptedLlm(responses=[_RESULT])
+
+    client = RetriedLlmClient(
+        build_inner=build_inner,
+        policy=RetryPolicy(max_attempts=1, base_delay_ms=1, max_delay_ms=1),
+        breaker=_FakeBreaker(),
+        sleep=_no_sleep,
+    )
+
+    def call() -> None:
+        start.wait()
+        client._inner_client()
+
+    threads = [threading.Thread(target=call) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert builds == 1
 
 
 def test_an_open_breaker_refuses_before_any_attempt() -> None:

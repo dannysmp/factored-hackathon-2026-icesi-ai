@@ -7,7 +7,10 @@ Component: ``app.reliability.breaker``. Hermetic: the clock is injected and move
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
+
+import pytest
 
 from app.reliability.breaker import InMemoryCircuitBreaker
 
@@ -135,3 +138,76 @@ def test_a_failed_trial_reopens_the_breaker_for_a_fresh_window() -> None:
     assert not breaker.allow()
     clock.now = _START + timedelta(seconds=60)
     assert breaker.allow()
+
+
+def test_a_healthy_closed_breaker_logs_nothing(caplog: pytest.LogCaptureFixture) -> None:
+    breaker = InMemoryCircuitBreaker(3, 30, clock=_Clock(), name="llm")
+
+    with caplog.at_level(logging.INFO, logger="app.reliability.breaker"):
+        breaker.record_success()
+        breaker.record_failure()
+        assert breaker.allow()
+
+    assert caplog.records == []
+
+
+def test_opening_logs_a_warning_naming_the_dependency_and_the_failure_count(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    breaker = InMemoryCircuitBreaker(2, 30, clock=_Clock(), name="llm")
+
+    with caplog.at_level(logging.INFO, logger="app.reliability.breaker"):
+        breaker.record_failure()
+        assert caplog.records == []  # below threshold: no transition yet
+        breaker.record_failure()
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelname == "WARNING"
+    assert "circuit_breaker_opened" in caplog.records[0].message
+    assert "dependency=llm" in caplog.records[0].message
+    assert "failures=2" in caplog.records[0].message
+
+
+def test_a_failed_trial_logs_a_reopened_warning(caplog: pytest.LogCaptureFixture) -> None:
+    clock = _Clock()
+    breaker = InMemoryCircuitBreaker(1, 30, clock=clock, name="tool")
+    breaker.record_failure()
+    clock.now = _START + timedelta(seconds=30)
+    assert breaker.allow()
+    caplog.clear()  # drop the opening warning logged above; only the reopen matters here
+
+    with caplog.at_level(logging.INFO, logger="app.reliability.breaker"):
+        breaker.record_failure()
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelname == "WARNING"
+    assert "circuit_breaker_reopened" in caplog.records[0].message
+    assert "dependency=tool" in caplog.records[0].message
+
+
+def test_a_successful_trial_logs_an_info_recovery(caplog: pytest.LogCaptureFixture) -> None:
+    clock = _Clock()
+    breaker = InMemoryCircuitBreaker(1, 30, clock=clock, name="tool")
+    breaker.record_failure()
+    clock.now = _START + timedelta(seconds=30)
+    assert breaker.allow()
+    caplog.clear()  # drop the opening warning logged above; only the recovery matters here
+
+    with caplog.at_level(logging.INFO, logger="app.reliability.breaker"):
+        breaker.record_success()
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelname == "INFO"
+    assert "circuit_breaker_closed" in caplog.records[0].message
+    assert "dependency=tool" in caplog.records[0].message
+
+
+def test_a_success_on_an_already_closed_breaker_logs_no_redundant_recovery(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    breaker = InMemoryCircuitBreaker(3, 30, clock=_Clock(), name="llm")
+
+    with caplog.at_level(logging.INFO, logger="app.reliability.breaker"):
+        breaker.record_success()
+
+    assert caplog.records == []
