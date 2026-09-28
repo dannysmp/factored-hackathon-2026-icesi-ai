@@ -29,7 +29,7 @@ from app.persistence.migrate import apply_migrations
 from app.retrieval.lexical import LexicalRetriever
 from contracts.service_v1.envelope import Intent, Slot
 from evals.models import Case, CaseCategory
-from evals.runner.baselines.b1 import build_b1_dependencies, run_case
+from evals.runner.baselines.b1 import _MAX_TOOL_ROUNDS, build_b1_dependencies, run_case
 from evals.runner.baselines.naive_agent_client import NaiveAgentClient
 from evals.scoring import score_case
 
@@ -136,11 +136,18 @@ def dsn() -> str:
 
 @pytest.mark.integration
 def test_run_case_answers_a_policy_question_via_one_tool_round(
-    dsn: str, retriever: LexicalRetriever
+    dsn: str, retriever: LexicalRetriever, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A single customer turn: the model calls get_policy once, then replies in text — the
     shortest real loop, exercising message construction, tool dispatch and the final
-    synthetic TurnResponse together."""
+    synthetic TurnResponse together. The clock NaiveAgentClient measures itself against is
+    controlled here so the turn's recorded latency can be pinned to the exact sum of both calls'
+    elapsed time, not merely asserted positive (a single hardcoded or last-call-only latency
+    would produce a different, wrong number)."""
+    ticks = iter([0.0, 0.1, 0.1, 0.35])
+    monkeypatch.setattr(
+        "evals.runner.baselines.naive_agent_client.time.monotonic", lambda: next(ticks)
+    )
     stub = _StubAnthropic(
         [
             _response(
@@ -184,7 +191,7 @@ def test_run_case_answers_a_policy_question_via_one_tool_round(
     assert reply.handoff_ticket is None
     assert reply.next_expected is None
     assert len(stub.messages.calls) == 2
-    assert transcript.latencies_seconds[0] > 0  # summed over 2 real send() calls, never zero
+    assert transcript.latencies_seconds[0] == pytest.approx(0.35)  # 0.1s + 0.25s, summed exactly
 
     result = score_case(dsn, transcript)
     assert result.correct_outcome is True
@@ -253,7 +260,6 @@ def test_run_case_tags_next_expected_when_a_turn_reaches_an_eligible_confirmable
     transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
 
     assert transcript.replies[0].next_expected is Slot.CONFIRMATION
-
 
 
 @pytest.mark.integration
@@ -325,3 +331,94 @@ def test_run_case_keeps_next_expected_through_an_unrelated_tool_call_in_a_later_
 
     assert len(stub.messages.calls) == 3
     assert transcript.replies[0].next_expected is Slot.CONFIRMATION
+
+
+@pytest.mark.integration
+def test_run_case_does_not_leak_a_handoff_ticket_into_a_later_unrelated_turn(
+    dsn: str, retriever: LexicalRetriever
+) -> None:
+    """A handoff ticket recorded in one turn does not carry into a later turn's synthetic reply
+    when that later turn never calls handoff itself — start_turn resets the dispatcher's own
+    ticket, the same way it already resets the reason-code list it also owns."""
+    stub = _StubAnthropic(
+        [
+            _response(
+                [_tool_use_block("handoff", {"trigger": "customer_request"}, block_id="t1")],
+                stop_reason="tool_use",
+            ),
+            _response([_text_block("La transfiero con una persona.")], stop_reason="end_turn"),
+            _response([_text_block("Con gusto, ¿en qué más le ayudo?")], stop_reason="end_turn"),
+        ]
+    )
+    settings = _settings(database_url=SecretStr(dsn))
+    calendar = DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING)
+    _real_client, dispatcher, session_id = build_b1_dependencies(
+        settings,
+        policy=load_policy(),
+        retriever=retriever,
+        calendar=calendar,
+        clock=lambda: _NOW,
+        customer_id="CLI-B1-LOOP",
+        lang="es",
+        model=_MODEL,
+    )
+    client = NaiveAgentClient(SecretStr("unused"), model=_MODEL, client=stub)  # type: ignore[arg-type]
+    case = Case(
+        case_id="b1-loop-04",
+        category=CaseCategory.NORMAL,
+        lang="es",
+        provenance="observed",
+        seed_ref="ops_seed:CLI-B1-LOOP",
+        user_turns=("Quiero hablar con una persona.", "¿Algo más en qué me pueda ayudar?"),
+        expected_intent=Intent.POLICY_ANSWER,
+    )
+
+    transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
+
+    assert transcript.replies[0].handoff_ticket is not None
+    assert transcript.replies[1].handoff_ticket is None
+
+
+@pytest.mark.integration
+def test_run_case_stops_after_max_tool_rounds_with_no_text_reply(
+    dsn: str, retriever: LexicalRetriever
+) -> None:
+    """A model that never stops calling tools is capped at _MAX_TOOL_ROUNDS: the turn ends with
+    no text reply and the stub is asked for exactly that many calls, never one more — the bound
+    that protects a real API budget from a pathological loop."""
+    outcomes: list[object] = [
+        _response(
+            [_tool_use_block("get_policy", {"query": "cualquier cosa"}, block_id=f"t{i}")],
+            stop_reason="tool_use",
+        )
+        for i in range(_MAX_TOOL_ROUNDS)
+    ]
+    stub = _StubAnthropic(outcomes)
+    settings = _settings(database_url=SecretStr(dsn))
+    calendar = DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING)
+    _real_client, dispatcher, session_id = build_b1_dependencies(
+        settings,
+        policy=load_policy(),
+        retriever=retriever,
+        calendar=calendar,
+        clock=lambda: _NOW,
+        customer_id="CLI-B1-LOOP",
+        lang="es",
+        model=_MODEL,
+    )
+    client = NaiveAgentClient(SecretStr("unused"), model=_MODEL, client=stub)  # type: ignore[arg-type]
+    case = Case(
+        case_id="b1-loop-05",
+        category=CaseCategory.NORMAL,
+        lang="es",
+        provenance="observed",
+        seed_ref="ops_seed:CLI-B1-LOOP",
+        user_turns=("¿Cuánto tiempo tengo para presentar una disputa?",),
+        expected_intent=Intent.POLICY_ANSWER,
+    )
+
+    transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
+
+    assert transcript.replies[0].reply == "(no reply)"
+    assert transcript.replies[0].next_expected is None
+    assert len(stub.messages.calls) == _MAX_TOOL_ROUNDS
