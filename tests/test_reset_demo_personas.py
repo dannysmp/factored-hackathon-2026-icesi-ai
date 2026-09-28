@@ -112,6 +112,38 @@ def test_main_uses_the_dsn_argument_over_the_environment(monkeypatch: pytest.Mon
     assert seen["dsn"] == "postgresql://from-argument"
 
 
+def test_main_refuses_when_settings_are_invalid_and_no_dsn_is_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without --dsn, a fully invalid settings load is refused too, not just a missing DSN."""
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "too-short")
+
+    with pytest.raises(SystemExit):
+        main([])
+
+
+def test_main_uses_the_dsn_argument_even_with_an_unrelated_invalid_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit --dsn must not be blocked by a setting that DSN resolution never reads."""
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "too-short")
+    monkeypatch.setattr(
+        reset_demo_personas_module, "load_personas", lambda: _persona_list("CUST-1")
+    )
+    seen: dict[str, object] = {}
+
+    def fake_reset(dsn: str, personas: PersonaList) -> int:
+        seen["dsn"] = dsn
+        return 3
+
+    monkeypatch.setattr(reset_demo_personas_module, "reset_demo_personas", fake_reset)
+
+    exit_code = main(["--dsn", "postgresql://from-argument"])
+
+    assert exit_code == 0
+    assert seen["dsn"] == "postgresql://from-argument"
+
+
 def test_main_falls_back_to_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """DATABASE_URL is used when --dsn is not given."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://env-only")
