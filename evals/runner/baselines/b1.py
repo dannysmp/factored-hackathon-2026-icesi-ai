@@ -38,10 +38,11 @@ Design Principles
   discipline, applied to the one system variant with no other bound on how many times it can call
   itself.
 - **``next_expected`` is inferred from what happened this turn, not asked of the model.** A turn
-  is tagged ``Slot.CONFIRMATION`` when its last tool call was an ``evaluate_dispute`` that returned
-  an eligible decision and no ``create_dispute_case`` followed it in the same turn — mirroring the
-  one structural signal ``evals.scoring``'s ``CONFIRM_FILING`` check already reads from P's own
-  replies, so the same scorer reads the same signal from all three systems.
+  is tagged ``Slot.CONFIRMATION`` when this turn's last ``evaluate_dispute`` call returned an
+  eligible decision and no ``create_dispute_case`` followed it in the same turn — regardless of
+  what other tools, if any, the model called in between — mirroring the one structural signal
+  ``evals.scoring``'s ``CONFIRM_FILING`` check already reads from P's own replies, so the same
+  scorer reads the same signal from all three systems.
 
 Runtime Contract
 -----------------
