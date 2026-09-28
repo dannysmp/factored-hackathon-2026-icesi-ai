@@ -321,9 +321,14 @@ def _language_offer(e: RenderEnvelope) -> str:
     }[e.lang]
 
 
+_MERCHANT_PREPOSITION: dict[Lang, str] = {"es": "en", "pt": "em", "en": "at"}
+
+
 def _present_one(e: RenderEnvelope) -> str:
     transaction = e.facts.transactions[0]
-    merchant = f" en {transaction.merchant}" if transaction.merchant else ""
+    merchant = (
+        f" {_MERCHANT_PREPOSITION[e.lang]} {transaction.merchant}" if transaction.merchant else ""
+    )
     amount = _amount_text(transaction.amount, e.lang)
     parts = {
         "es": (
@@ -378,6 +383,11 @@ def _not_found(e: RenderEnvelope) -> str:
     }[e.lang]
 
 
+def _english_article(noun_phrase: str) -> str:
+    """``"a"``/``"an"`` for an English noun phrase, by its first letter's sound."""
+    return "an" if noun_phrase[:1].lower() in "aeiou" else "a"
+
+
 def _confirm_filing(e: RenderEnvelope) -> str:
     facts = e.facts
     transaction = next(t for t in facts.transactions if t.ref == facts.selected_ref)
@@ -397,7 +407,7 @@ def _confirm_filing(e: RenderEnvelope) -> str:
             "não garante um resultado. Você confirma que quer apresentá-la?"
         ),
         "en": (
-            f"I'll file a {category} dispute for the charge of "
+            f"I'll file {_english_article(category)} {category} dispute for the charge of "
             f"{amount} on "
             f"{format_date(transaction.occurred_on, e.lang)}. A person will review it; this "
             "does not guarantee an outcome. Do you confirm you want to file it?"
