@@ -16,13 +16,17 @@ Out: business routes, the tool layer and the data behind them.
 Design Principles
 -----------------
 - ``create_app`` is a factory: ``uvicorn app.main:create_app --factory``.
-- Every path under ``/v1/`` requires a session by default; only the sandbox login is public.
+- Every path under ``/v1/`` requires a session by default; only the sign-in routes that are
+  actually enabled (the sandbox login, the customer demo broker) are public.
 - Every failure leaves the service as a problem document with a stable code and the request
   identifier; stack traces and request data never reach the client.
 - The service starts only with a signing key. In ``local`` a throw-away key is generated (sessions
   end when the process restarts); in ``dev`` and ``prod`` a missing key is a start-up error.
 - The service starts only with a resolved domain date (ADR-15): an explicit setting, the real date
   in the bank zone, or the loaded seed's own reference date; none of the three is a start-up error.
+- Structured JSON logging (``app.observability.logging``) is installed before anything else runs,
+  so every event this factory or a route logs, including a start-up failure, is already a JSON
+  line carrying the service's own identity and version.
 
 Runtime Contract
 ----------------
@@ -34,8 +38,9 @@ Authentication routes: see ``app.api.auth``.
 
 Limitations
 -----------
-Request logging, tracing and metrics are not implemented yet; the security events are logged with
-the request identifier.
+Tracing and per-turn cost/latency metrics are not implemented yet (later E9 slices); every log
+line already carries a trace id and, once authenticated, a session id
+(``app.observability.logging``).
 """
 
 from __future__ import annotations
@@ -66,6 +71,7 @@ from app.domain.calendar import (  # Domain date
     DomainCalendarError,
     resolve_domain_calendar,
 )
+from app.observability.logging import configure_logging  # Structured logging, installed once
 from app.persistence.customers import customer_status  # The sandbox login's existence check
 from app.persistence.ops_meta import read_data_as_of  # The seed's own reference date
 from app.persistence.signin_audit import PostgresSignInAuditSink  # The demo broker's audit store
@@ -244,6 +250,11 @@ def create_app(
     """
     # Resolve configuration once, failing fast before any route is registered
     resolved = settings if settings is not None else load_settings()
+    configure_logging(
+        resolved.log_level,
+        service_version=resolved.service_version,
+        environment=resolved.app_env.value,
+    )
     sessions = SessionService(
         {"customer": _signing_key(resolved)}, resolved.session_ttl_seconds, clock=clock
     )

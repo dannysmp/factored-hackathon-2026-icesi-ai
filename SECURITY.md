@@ -52,7 +52,7 @@ medium ≤ 30 days**; exceptions are documented with the compensating controls.
 | Per-customer authorization in the tool layer | Implemented |
 | One error format with stable codes and request identifiers; no stack traces or request data in responses | Implemented |
 | Deterministic policy engine with stable reason codes | Planned |
-| Structured logging with correlation identifiers and redaction filter | Planned |
+| Structured logging with correlation identifiers and redaction filter | Implemented (JSON logs with a stable event name, trace id and, once authenticated, session id on every line; card-shaped digit runs redacted before a line is written) |
 | Append-only audit records | Implemented |
 | Masking and redaction before model calls | Planned |
 | Confirmation, idempotency and read-back for state-changing operations | Implemented (the create tool: explicit confirmation matched against the decision, an idempotency key enforced at the store, and an audit record for every filing and refusal; the controller's read-back call before reporting success is stream 2's) |

@@ -50,7 +50,6 @@ import argparse  # Command line
 import hashlib  # Verifies each output against its manifest digest before loading
 import json  # Reading the seed's manifest
 import logging  # Progress events, never print
-import sys  # Log stream
 from collections.abc import Sequence  # Type of the parsed argv
 from dataclasses import dataclass  # Immutable result object
 from pathlib import Path  # Locations of the seed's output
@@ -62,6 +61,7 @@ import psycopg  # Serving-store driver
 
 # Local modules
 from app.config import ConfigError, load_settings  # The one validated source of DATABASE_URL
+from app.observability.logging import configure_logging  # Structured logging, installed once
 from pipelines.ops_seed import (  # The seed's own output names
     CUSTOMERS_NAME,
     MANIFEST_NAME,
@@ -225,14 +225,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--gold", type=Path, default=Path("data/gold/ops_seed"))
     parser.add_argument("--dsn", default=None, help="Postgres DSN (default: DATABASE_URL)")
     args = parser.parse_args(argv)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr
+    try:
+        settings = load_settings()
+    except ConfigError as exc:
+        parser.error(str(exc))
+    configure_logging(
+        settings.log_level,
+        service_version=settings.service_version,
+        environment=settings.app_env.value,
     )
     if args.dsn:
         dsn = args.dsn
     else:
         try:
-            dsn = load_settings().require_database_url().get_secret_value()
+            dsn = settings.require_database_url().get_secret_value()
         except ConfigError as exc:
             parser.error(str(exc))
     result = load_seed(dsn, args.gold)

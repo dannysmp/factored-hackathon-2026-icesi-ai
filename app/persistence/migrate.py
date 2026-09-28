@@ -45,7 +45,6 @@ from __future__ import annotations
 import argparse  # Command-line interface
 import hashlib  # Detects a migration file edited after it was applied
 import logging  # Progress events, never print
-import sys  # Log stream
 from collections.abc import Sequence  # Type of the parsed argv
 from pathlib import Path  # Locate migration files
 
@@ -54,6 +53,7 @@ import psycopg  # Serving-store driver
 
 # Local modules
 from app.config import ConfigError, load_settings  # The one validated source of DATABASE_URL
+from app.observability.logging import configure_logging  # Structured logging, installed once
 
 logger = logging.getLogger(__name__)
 
@@ -129,14 +129,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply pending serving-store migrations.")
     parser.add_argument("--dsn", default=None, help="Postgres DSN (default: DATABASE_URL)")
     args = parser.parse_args(argv)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr
+    try:
+        settings = load_settings()
+    except ConfigError as exc:
+        parser.error(str(exc))
+    configure_logging(
+        settings.log_level,
+        service_version=settings.service_version,
+        environment=settings.app_env.value,
     )
     if args.dsn:
         dsn = args.dsn
     else:
         try:
-            dsn = load_settings().require_database_url().get_secret_value()
+            dsn = settings.require_database_url().get_secret_value()
         except ConfigError as exc:
             parser.error(str(exc))
     applied = apply_migrations(dsn)
