@@ -11,11 +11,13 @@ only what a case *is*, never how one is run or scored.
 
 Scope
 -----
-In: ``Case``, its category and provenance labels, and the safe-behavior vocabulary adversarial
-cases are scored against.
-Out: running a case against a system variant (the runner, a later slice), the deterministic and
-judge checks that turn a run into a verdict (`evals.metrics.CaseResult`), and the corpus of 135
-authored cases itself (a following slice, delivered as generated data, not schema).
+In: ``Case``, its category and provenance labels, the safe-behavior vocabulary adversarial cases
+are scored against, and ``InjectedToolFailure``, the tool-failure condition a case declares for
+``evals.injector`` to apply.
+Out: running a case against a system variant (the runner, a later slice), actually failing a tool
+call (`evals.injector`), the deterministic and judge checks that turn a run into a verdict
+(`evals.metrics.CaseResult`), and the corpus of 135 authored cases itself (a following slice,
+delivered as generated data, not schema).
 
 Design Principles
 ------------------
@@ -34,7 +36,8 @@ Design Principles
 
 Runtime Contract
 -----------------
-``Case``, the enumerations ``CaseCategory`` and ``SafeBehavior``, and the ``Provenance`` literal.
+``Case``, ``InjectedToolFailure``, the enumerations ``CaseCategory`` and ``SafeBehavior``, and the
+``Provenance`` literal.
 
 Limitations
 -----------
@@ -55,6 +58,7 @@ from typing import Literal  # The provenance label
 # Local modules
 from app.domain.policy.models import ReasonCode  # Expected policy-engine reason, when applicable
 from contracts.service_v1.envelope import Intent, Lang  # Expected reply intent; case language
+from contracts.service_v1.tools import Tool  # Which tool an injected failure targets
 
 # -----------------------------------------------------------------------------
 # Vocabulary
@@ -88,6 +92,21 @@ class SafeBehavior(StrEnum):
 
 #: Whether a case reflects a real seeded row, team-authored wording, or an injected condition.
 Provenance = Literal["observed", "team_generated", "injected"]
+
+
+@dataclass(frozen=True, slots=True)
+class InjectedToolFailure:
+    """Which tool the runner's failure injector must fail for a case, and how.
+
+    Every call the case's run makes to `tool` fails with `cause`; every other tool call passes
+    through unchanged. A case with only one turn (every tool-failure case today) needs nothing
+    more specific than this; a future case needing a failure on only one of several calls to the
+    same tool is a reason to add that, not a reason to build it now.
+    """
+
+    tool: Tool
+    cause: Literal["timeout", "error", "circuit_open"] = "timeout"
+    retryable: bool = True
 
 
 # -----------------------------------------------------------------------------
@@ -128,6 +147,10 @@ class Case:
     expected_safe_behavior
         Required exactly when `category` is `ADVERSARIAL`, and forbidden otherwise (see
         `_exactly_adversarial_cases_declare_a_safe_behavior`).
+    injected_failure
+        Set only for a case whose scripted condition is a tool call failing mid-flow; the runner's
+        failure injector reads it to fail exactly that tool for this case's run. `None` for every
+        other case, adversarial or not.
     description
         One line of free text: what the case tests and why, for the generated case sheet and for
         a person reading a failure gallery.
@@ -142,6 +165,7 @@ class Case:
     expected_intent: Intent
     expected_reason_code: ReasonCode | None = None
     expected_safe_behavior: SafeBehavior | None = None
+    injected_failure: InjectedToolFailure | None = None
     description: str = ""
 
     def __post_init__(self) -> None:

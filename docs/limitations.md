@@ -48,10 +48,12 @@ carries it, not a promise about a later one.
   exist yet. No evaluation report can be produced until they do.
 - **The human-agent console is not yet built.** The customer-facing chat exists; the read-only
   queue view a human agent would use to handle an escalated case does not.
-- **Structured, queryable logging is not yet built.** The system does not currently emit a
-  structured event when it refuses to start due to invalid configuration, or the other structured
-  events later monitoring will depend on; an operator watching only the process output would see
-  nothing at the moment a misconfiguration stops the service.
+- **Structured logging now runs across the service and every CLI entrypoint**: every line carries
+  a stable event name, the request's trace id and, once authenticated, its session id, with any
+  card-shaped digit run redacted before the line is written. **One start-up path is still not
+  covered**: configuration is loaded before logging is installed, so a configuration failure at
+  start-up still surfaces as an unstructured crash instead of a structured event; an operator
+  watching only the process output would see a traceback, not a queryable event, at that moment.
 
 ## Deployment
 
@@ -67,6 +69,25 @@ carries it, not a promise about a later one.
 
 Every control's actual implementation status, not just its design intent, is tracked in
 [SECURITY.md](../SECURITY.md), which this document defers to rather than duplicating.
+
+- **A document number typed unprompted into a free-text message is not detected or redacted.**
+  The conversation never asks a customer for a document number. The understanding contract has
+  exactly three free-text fields with no restriction on what they hold — a transaction's merchant
+  as the customer describes it, the dispute detail, and a policy question — any of which can carry
+  a document number if a customer types one there; every other field (the category, a
+  confirmation, an amount, a date) is a closed enum or a narrowly patterned value that cannot.
+  None of the three free-text fields is ever echoed back to that or any other customer: the
+  merchant hint is used only to match against the customer's own real transactions, never
+  displayed itself (a reply always states the matched transaction's own stored merchant, not the
+  customer's typed hint); the dispute detail is not read anywhere; a policy question is used only
+  to retrieve a matching policy section, never quoted back. Unlike a card number, a document
+  number carries no checksum a detector could key on, so a content filter over free text would be
+  a length-only heuristic with an unmeasured false-positive cost against legitimate reference and
+  case numbers. The deliberate choice is to rely on never asking for or echoing the value, not on
+  scanning for and stripping it after the fact; a customer
+  who volunteers one anyway in free text is not protected against by any content filter today —
+  the value still reaches the outbound model request unmasked, the way a card number's digits are
+  masked before that same request is sent.
 
 ## Not attempted
 
