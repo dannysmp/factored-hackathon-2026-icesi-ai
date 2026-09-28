@@ -25,8 +25,9 @@ Design Principles
   case) so no spelling of a protected path escapes it.
 - **A valid token of the wrong audience is refused exactly like no session at all** (ADR-18): a
   path-prefix-to-audience map decides which audience a path requires, by longest matching prefix,
-  and a token whose own audience does not match is not distinguished from a missing one — a
-  customer token reaching an agent-only path learns nothing about what that path is.
+  and that audience picks which of ``SessionService``'s two verify methods is even attempted — a
+  customer token reaching an agent-only path is refused by ``verify_agent`` itself and learns
+  nothing about what that path is.
 - The failure says what the client can do: ``reauth_required`` is true for a missing, invalid,
   expired or revoked session.
 - A supplied request identifier is used only if it has a safe shape; otherwise a new one is
@@ -67,7 +68,12 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send  # ASGI proto
 
 # Local modules
 from app.security.errors import ErrorCode, ProblemError, problem_response  # Failure format
-from app.security.sessions import SessionRejected, SessionService  # Session verification
+from app.security.sessions import (  # Session verification
+    AgentPrincipal,
+    Principal,
+    SessionRejected,
+    SessionService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +272,13 @@ def _required_audience(path: str, audience_by_prefix: Mapping[str, str]) -> str 
 
 class SessionAuthMiddleware:
     """Requires a valid session of the right audience for ``/v1`` and everything under it that is
-    not public."""
+    not public.
+
+    Which audience a path requires decides which of ``SessionService``'s two audience-specific
+    verify methods is even attempted (ADR-18): a customer token presented on an agent-only path
+    is refused by ``verify_agent`` itself, exactly like a missing session, without a separate
+    after-the-fact audience comparison.
+    """
 
     def __init__(
         self,
@@ -280,6 +292,15 @@ class SessionAuthMiddleware:
         self._audience_by_prefix = dict(audience_by_prefix)
         self._public = frozenset(public_paths)
 
+    def _verify(self, audience: str, token: str) -> Principal | AgentPrincipal:
+        """Verify ``token`` against ``audience``'s own method; an unconfigured audience is a
+        deployment mistake, refused exactly like an invalid token rather than silently accepted."""
+        if audience == "customer":
+            return self._sessions.verify_customer(token)
+        if audience == "agent":
+            return self._sessions.verify_agent(token)
+        raise SessionRejected(ErrorCode.SESSION_INVALID)
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Handle one HTTP request or WebSocket connection; other scopes (lifespan) pass through."""
         kind = scope["type"]
@@ -289,11 +310,12 @@ class SessionAuthMiddleware:
             return
         required_audience = _required_audience(path, self._audience_by_prefix)
 
-        # Resolve the session or refuse with the standard problem document
+        # Resolve the session or refuse with the standard problem document. A protected path with
+        # no configured audience is refused the same way (fail closed), rather than accepted.
         try:
-            principal = self._sessions.verify(_bearer_token(scope))
-            if required_audience is not None and principal.audience != required_audience:
+            if required_audience is None:
                 raise SessionRejected(ErrorCode.SESSION_INVALID)
+            principal = self._verify(required_audience, _bearer_token(scope))
         except SessionRejected as rejected:
             problem = _rejection(rejected.code)
         except ProblemError as failure:

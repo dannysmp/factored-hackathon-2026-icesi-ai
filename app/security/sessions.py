@@ -37,7 +37,9 @@ Design Principles
 Runtime Contract
 ----------------
 ``SessionService.issue(subject, audience, ttl=None, *, demo=False) -> IssuedSession``
-``SessionService.verify(token) -> Principal`` raises ``SessionRejected`` with an ``ErrorCode``.
+``SessionService.verify_customer(token) -> Principal`` and
+``SessionService.verify_agent(token) -> AgentPrincipal`` each raise ``SessionRejected`` with an
+``ErrorCode`` — including when the token is validly signed but for the other audience.
 ``SessionService.revoke(principal)``
 
 Limitations
@@ -88,13 +90,26 @@ class SessionRejected(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Principal:
-    """The authenticated subject behind a request, and which audience its token belongs to."""
+    """The authenticated customer behind a request."""
 
     customer_id: str
     session_id: str
     issued_at: datetime
     expires_at: datetime
     audience: str
+    demo: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class AgentPrincipal:
+    """The authenticated agent behind a request — a distinct type from ``Principal`` (ADR-17,
+    ADR-18), so a customer-shaped field like ``customer_id`` can never hold an agent's identifier
+    and a route written against one type cannot silently accept the other."""
+
+    agent_id: str
+    session_id: str
+    issued_at: datetime
+    expires_at: datetime
     demo: bool = False
 
 
@@ -210,14 +225,40 @@ class SessionService:
         )
         return IssuedSession(token=token, session_id=session_id, expires_at=expires_at)
 
-    def verify(self, token: str) -> Principal:
-        """Return the principal a valid token identifies.
+    def verify_customer(self, token: str) -> Principal:
+        """Return the customer principal a valid, customer-audience token identifies.
 
         Raises
         ------
         SessionRejected
-            ``SESSION_INVALID`` for anything wrong with the token itself, ``SESSION_EXPIRED``
-            for a validly signed token past its expiry, ``SESSION_REVOKED`` after logout.
+            ``SESSION_INVALID`` for anything wrong with the token itself — including a validly
+            signed agent token, refused exactly like a malformed one — ``SESSION_EXPIRED`` for a
+            validly signed token past its expiry, ``SESSION_REVOKED`` after logout.
+        """
+        subject, session_id, issued_at, expires_at, demo = self._decode(token, "customer")
+        return Principal(subject, session_id, issued_at, expires_at, "customer", demo)
+
+    def verify_agent(self, token: str) -> AgentPrincipal:
+        """Return the agent principal a valid, agent-audience token identifies.
+
+        Raises
+        ------
+        SessionRejected
+            Same conditions as ``verify_customer``, for the ``agent`` audience.
+        """
+        subject, session_id, issued_at, expires_at, demo = self._decode(token, "agent")
+        return AgentPrincipal(subject, session_id, issued_at, expires_at, demo)
+
+    def _decode(
+        self, token: str, expected_audience: str
+    ) -> tuple[str, str, datetime, datetime, bool]:
+        """Decode and validate ``token``, refusing anything not for ``expected_audience``.
+
+        Shared by ``verify_customer`` and ``verify_agent``: the audience decides which key is
+        even attempted, so a token signed for the other audience never reaches this method at
+        all with a key that would verify it — this check exists only as defense in depth against
+        a future audience sharing a key by mistake, and returns the same refusal a bad signature
+        would.
         """
         # The header's key selector is untrusted: it only picks which key to try. If it names an
         # audience this service holds no key for, or the token is malformed, that is refused
@@ -227,7 +268,7 @@ class SessionService:
         except jwt.InvalidTokenError:
             raise SessionRejected(ErrorCode.SESSION_INVALID) from None
         kid = header.get("kid")
-        if not isinstance(kid, str) or kid not in self._keys:
+        if not isinstance(kid, str) or kid not in self._keys or kid != expected_audience:
             raise SessionRejected(ErrorCode.SESSION_INVALID)
 
         # Verify the signature with that key, and the algorithm, issuer, audience and the
@@ -250,12 +291,12 @@ class SessionService:
             raise SessionRejected(ErrorCode.SESSION_INVALID) from None
 
         # Check the claims' types and the identifier pattern before trusting any of them
-        customer_id, session_id = claims["sub"], claims["sid"]
+        subject, session_id = claims["sub"], claims["sid"]
         issued, expires = claims["iat"], claims["exp"]
         demo = claims.get("demo", False)
         valid = (
-            isinstance(customer_id, str)
-            and CUSTOMER_ID_PATTERN.fullmatch(customer_id)
+            isinstance(subject, str)
+            and CUSTOMER_ID_PATTERN.fullmatch(subject)
             and isinstance(session_id, str)
             and bool(session_id)
             and isinstance(demo, bool)
@@ -277,8 +318,8 @@ class SessionService:
             raise SessionRejected(ErrorCode.SESSION_EXPIRED)
         if self._revocations.is_revoked(session_id, now):
             raise SessionRejected(ErrorCode.SESSION_REVOKED)
-        return Principal(customer_id, session_id, issued_at, expires_at, kid, demo)
+        return subject, session_id, issued_at, expires_at, demo
 
-    def revoke(self, principal: Principal) -> None:
+    def revoke(self, principal: Principal | AgentPrincipal) -> None:
         """Revoke the session of ``principal`` until it would have expired."""
         self._revocations.revoke(principal.session_id, principal.expires_at, self._clock())
