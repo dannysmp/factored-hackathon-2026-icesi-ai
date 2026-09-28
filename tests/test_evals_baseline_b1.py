@@ -253,3 +253,75 @@ def test_run_case_tags_next_expected_when_a_turn_reaches_an_eligible_confirmable
     transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
 
     assert transcript.replies[0].next_expected is Slot.CONFIRMATION
+
+
+
+@pytest.mark.integration
+def test_run_case_keeps_next_expected_through_an_unrelated_tool_call_in_a_later_round(
+    dsn: str, retriever: LexicalRetriever
+) -> None:
+    """An eligible evaluate_dispute call still tags Slot.CONFIRMATION even when a later round in
+    the same turn calls an unrelated tool before the model finally replies in text — the
+    signal is this turn's LAST evaluate_dispute call, not whatever the most recent round's own
+    tool calls happened to be. create_dispute_case remains the only call that clears it."""
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO products (product_id, customer_id, product_type, last4, "
+            "product_status) VALUES ('PRD-B1-LOOP2', 'CLI-B1-LOOP', 'Cuenta Corriente', '5678', "
+            "'Active')"
+        )
+        cur.execute(
+            "INSERT INTO transactions (transaction_id, customer_id, product_id, "
+            "transaction_date, transaction_type, merchant_name, amount, currency, amount_usd, "
+            "amount_usd_provenance, transaction_status) VALUES "
+            "('TRX-B1-LOOP2', 'CLI-B1-LOOP', 'PRD-B1-LOOP2', '2026-06-08 09:00:00', 'Purchase', "
+            "'Another Merchant', 100.00, 'USD', 100.00, 'reported', 'Approved')"
+        )
+    stub = _StubAnthropic(
+        [
+            _response(
+                [
+                    _tool_use_block(
+                        "evaluate_dispute",
+                        {"transaction_ref": "TRX-B1-LOOP2", "category": "unrecognized_charge"},
+                        block_id="t1",
+                    )
+                ],
+                stop_reason="tool_use",
+            ),
+            _response(
+                [_tool_use_block("get_policy", {"query": "plazo"}, block_id="t2")],
+                stop_reason="tool_use",
+            ),
+            _response(
+                [_text_block("¿Confirma que desea presentar la disputa?")], stop_reason="end_turn"
+            ),
+        ]
+    )
+    settings = _settings(database_url=SecretStr(dsn))
+    calendar = DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING)
+    _real_client, dispatcher, session_id = build_b1_dependencies(
+        settings,
+        policy=load_policy(),
+        retriever=retriever,
+        calendar=calendar,
+        clock=lambda: _NOW,
+        customer_id="CLI-B1-LOOP",
+        lang="es",
+        model=_MODEL,
+    )
+    client = NaiveAgentClient(SecretStr("unused"), model=_MODEL, client=stub)  # type: ignore[arg-type]
+    case = Case(
+        case_id="b1-loop-03",
+        category=CaseCategory.NORMAL,
+        lang="es",
+        provenance="observed",
+        seed_ref="ops_seed:TRX-B1-LOOP2",
+        user_turns=("No reconozco un cargo en mi tarjeta.",),
+        expected_intent=Intent.CONFIRM_FILING,
+    )
+
+    transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
+
+    assert len(stub.messages.calls) == 3
+    assert transcript.replies[0].next_expected is Slot.CONFIRMATION
