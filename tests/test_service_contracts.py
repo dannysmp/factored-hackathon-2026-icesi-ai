@@ -49,6 +49,8 @@ from contracts.service_v1.console import (
 )
 from contracts.service_v1.envelope import (
     CUSTOMER_REASON_OF,
+    INTENT_ALLOWED_FIELDS,
+    INTENT_REQUIRED_FIELDS,
     TEMPLATE_INTENTS,
     AgentDecision,
     AgentOnly,
@@ -59,6 +61,7 @@ from contracts.service_v1.envelope import (
     Decision,
     DisputeFacts,
     Envelope,
+    GroundedField,
     Intent,
     Lang,
     LocalizedTitle,
@@ -88,6 +91,13 @@ from contracts.service_v1.nlu import (
     NluIntent,
     NluResult,
     TransactionHint,
+)
+from contracts.service_v1.verification import (
+    CandidateReply,
+    RejectionReason,
+    SlotValue,
+    SlotValues,
+    VerifierResult,
 )
 from tests.fixtures import scripted_flows
 
@@ -253,6 +263,29 @@ def test_template_mode_requires_a_template_and_model_mode_forbids_one() -> None:
     assert _envelope(render_mode="model", template_id=None).template_id is None
 
 
+def test_a_refusal_never_renders_from_the_model() -> None:
+    """A refusal always carries a fixed text; the model is never asked to phrase one."""
+    with pytest.raises(ValidationError, match="a refusal always renders"):
+        _envelope(intent=Intent.REFUSE, render_mode="model", template_id=None)
+
+    assert _envelope(intent=Intent.REFUSE, template_id=TemplateId.REFUSE_UNSUPPORTED)
+
+
+def test_every_intent_names_its_grounded_fields() -> None:
+    """An intent added without an entry in either table fails here, and required implies allowed."""
+    assert set(INTENT_ALLOWED_FIELDS) == set(Intent)
+    assert set(INTENT_REQUIRED_FIELDS) == set(Intent)
+    for intent in Intent:
+        assert INTENT_REQUIRED_FIELDS[intent] <= INTENT_ALLOWED_FIELDS[intent]
+        assert INTENT_ALLOWED_FIELDS[intent] <= set(GroundedField)
+
+
+def test_a_refused_intent_names_no_grounded_field() -> None:
+    """A refusal never renders from the model, so it names nothing to substitute either."""
+    assert INTENT_ALLOWED_FIELDS[Intent.REFUSE] == frozenset()
+    assert INTENT_REQUIRED_FIELDS[Intent.REFUSE] == frozenset()
+
+
 def test_present_transactions_needs_a_transaction() -> None:
     """An intent that lists transactions holds at least one."""
     facts = DisputeFacts(transactions=(_transaction(),), candidate_count=1)
@@ -384,6 +417,56 @@ def test_tool_unavailable_is_a_typed_result() -> None:
     assert result.retryable
     with pytest.raises(ValidationError):
         ToolUnavailable(tool="list_transactions", cause="boom")
+
+
+# -----------------------------------------------------------------------------
+# Verification
+# -----------------------------------------------------------------------------
+
+
+def test_a_candidate_reply_carries_only_the_models_raw_text() -> None:
+    """The candidate has no intent, fact or decision of its own to check anything against."""
+    candidate = CandidateReply(raw_text="I will file a dispute for {{amount}}.")
+
+    assert candidate.raw_text
+    with pytest.raises(ValidationError):
+        CandidateReply(raw_text="")
+    with pytest.raises(ValidationError):
+        CandidateReply(raw_text="ok", intent=Intent.CLARIFY)  # type: ignore[call-arg]
+
+
+def test_slot_values_hold_one_entry_per_citation_in_order() -> None:
+    """A field cited twice (two cases) is two entries, consumed in the order they are listed."""
+    values = SlotValues(
+        entries=(
+            SlotValue(field=GroundedField.CASE_NUMBER, value="D-1"),
+            SlotValue(field=GroundedField.CASE_NUMBER, value="D-2"),
+        )
+    )
+
+    assert [entry.value for entry in values.entries] == ["D-1", "D-2"]
+
+
+def test_a_verifier_result_agrees_with_its_own_outcome() -> None:
+    """Rejected names why and carries no text; accepted carries the text and names nothing."""
+    assert VerifierResult(outcome="accepted", rendered_text="ok")
+    assert VerifierResult(outcome="rejected", reasons=(RejectionReason.DIGIT_OUTSIDE_SLOT,))
+    with pytest.raises(ValidationError, match="names at least one reason"):
+        VerifierResult(outcome="rejected")
+    with pytest.raises(ValidationError, match="carries no rendered text"):
+        VerifierResult(
+            outcome="rejected",
+            rendered_text="ok",
+            reasons=(RejectionReason.DIGIT_OUTSIDE_SLOT,),
+        )
+    with pytest.raises(ValidationError, match="names no reason"):
+        VerifierResult(
+            outcome="accepted",
+            rendered_text="ok",
+            reasons=(RejectionReason.DIGIT_OUTSIDE_SLOT,),
+        )
+    with pytest.raises(ValidationError, match="carries the rendered text"):
+        VerifierResult(outcome="accepted")
 
 
 # -----------------------------------------------------------------------------
