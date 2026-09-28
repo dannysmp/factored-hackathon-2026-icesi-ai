@@ -32,6 +32,7 @@ from app.conversation.controller import (
 from app.conversation.handoff import build_packet
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DuplicateTurn, InMemoryDialogueStore
+from app.conversation.understanding import UnderstandingUnavailable
 from app.domain.policy.loader import load_policy
 from app.domain.policy.models import (
     DisputeCategory,
@@ -169,6 +170,14 @@ class ScriptedNlu:
     def understand(self, text: str, *, language_hint: str | None) -> NluResult:
         self.calls.append((text, language_hint))
         return self.result
+
+
+@dataclass
+class UnavailableNlu:
+    """An ``Understanding`` whose own dependency is never reachable (E9)."""
+
+    def understand(self, text: str, *, language_hint: str | None) -> NluResult:
+        raise UnderstandingUnavailable("the provider could not be reached")
 
 
 _UNSET = object()  # A distinct sentinel from a deliberately-returned None override.
@@ -1355,3 +1364,108 @@ def test_list_dispute_cases_failure_hands_off(policy: Policy, retriever: Lexical
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert response.end_session
     assert outbox.packets[0].trigger.value == "tool_failure"
+
+
+# -----------------------------------------------------------------------------
+# An unreachable understanding dependency (E9): never the customer's own ambiguity
+# -----------------------------------------------------------------------------
+
+
+def test_an_unreachable_understanding_dependency_hands_off_on_a_fresh_session(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    outbox = FakeHandoffOutbox()
+    controller = DialogueController(
+        UnavailableNlu(),
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        retriever=retriever,
+        policy=policy,
+        outbox=outbox,
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+    )
+
+    response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.end_session
+    assert len(outbox.packets) == 1
+    assert outbox.packets[0].trigger.value == "tool_failure"
+
+
+def test_an_unreachable_understanding_dependency_never_spends_the_clarification_budget(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The escalation bypasses ``_advance`` entirely: a session already partway through
+    clarification keeps its exact attempt count, proving the outage was never charged to the
+    customer's own ambiguity budget."""
+    store = InMemoryDialogueStore()
+    store.save(
+        DialogueState(
+            session_id=_SESSION_ID,
+            lang="es",
+            phase=ConversationPhase.CLARIFYING,
+            pending_slot=Slot.TRANSACTION,
+            clarification_attempts=1,
+            updated_at=_NOW,
+        ),
+        expected_version=0,
+        turn_id="turn-0000",
+        now=_NOW,
+    )
+    outbox = FakeHandoffOutbox()
+    controller = DialogueController(
+        UnavailableNlu(),
+        store=store,
+        tool_port=FakeToolPort(),
+        retriever=retriever,
+        policy=policy,
+        outbox=outbox,
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+    )
+
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    saved = store.get(_SESSION_ID)
+    assert saved is not None
+    assert saved.clarification_attempts == 1
+    assert saved.phase is ConversationPhase.HANDED_OFF
+
+
+def test_replaying_a_turn_whose_recompute_hits_an_unreachable_dependency_degrades_safely(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A replay that needs to recompute (nothing cached) but cannot reach the understanding
+    dependency renders a generic acknowledgment, touching neither persisted state nor the outbox —
+    a retried replay is free to try recomputing again once the outage clears."""
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    original, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=outbox,
+        retriever=retriever,
+    )
+    original.handle_turn(_turn("turn-0001"), principal=_principal())
+    before = store.get(_SESSION_ID)
+    assert before is not None
+
+    replay_controller = DialogueController(
+        UnavailableNlu(),
+        store=store,
+        tool_port=FakeToolPort(),
+        retriever=retriever,
+        policy=policy,
+        outbox=outbox,
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+    )
+
+    response = replay_controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.end_session
+    assert outbox.packets == []
+    assert store.get(_SESSION_ID) == before
