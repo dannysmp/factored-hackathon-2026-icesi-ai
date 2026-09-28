@@ -1399,7 +1399,7 @@ def test_list_dispute_cases_failure_hands_off(policy: Policy, retriever: Lexical
 
 
 # -----------------------------------------------------------------------------
-# Per-turn cost accounting (E9)
+# Per-turn cost accounting
 # -----------------------------------------------------------------------------
 
 
@@ -1463,10 +1463,79 @@ def test_a_turn_with_a_real_model_call_logs_its_accounting(
     assert "cost_usd=0.0002" in message
 
 
+def test_an_unpriced_model_never_aborts_the_turn(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A model missing from the price table must not turn a real customer outcome into a 500:
+    the turn still completes, its state is still saved, and only a warning names the gap."""
+    accounting = TurnAccounting(
+        model="claude-opus-4",  # not in app.llm.pricing's table
+        prompt_version="1",
+        input_tokens=100,
+        output_tokens=20,
+        latency_ms=250.0,
+    )
+    store = InMemoryDialogueStore()
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        accounting=accounting,
+    )
+
+    with caplog.at_level(logging.INFO):
+        response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.reply
+    assert store.get(_SESSION_ID) is not None  # the save ran; the turn's own state is persisted
+    warnings = [r for r in caplog.records if r.getMessage().startswith("turn_cost_unpriced")]
+    assert len(warnings) == 1
+    assert "model=claude-opus-4" in warnings[0].getMessage()
+    completed = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(completed) == 1
+    assert "cost_usd=None" in completed[0].getMessage()
+
+
+def test_an_exact_duplicate_turn_id_does_not_re_log_accounting(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The early exact-duplicate-turn-id path (the same client request retried) returns the
+    replayed envelope without a new understanding call, so it must not log a second
+    turn_completed line — the model was only ever called once."""
+    accounting = TurnAccounting(
+        model="claude-haiku-4-5-20251001",
+        prompt_version="1",
+        input_tokens=100,
+        output_tokens=20,
+        latency_ms=250.0,
+    )
+    store = InMemoryDialogueStore()
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        accounting=accounting,
+    )
+
+    with caplog.at_level(logging.INFO):
+        first = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+        second = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert first.reply == second.reply
+    logged = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(logged) == 1
+
+
 def test_a_turn_that_files_a_case_logs_its_case_number(
     policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The filing turn's own log line already carries the new case number (E9's "per case" key),
+    """The filing turn's own log line already carries the new case number (the "per case" key),
     mirroring ``test_no_confirmation_required_files_immediately``'s own filing flow."""
     store = InMemoryDialogueStore()
     case = _case("D-1")

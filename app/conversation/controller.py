@@ -52,7 +52,7 @@ Design Principles
   reply) has no tool call that isn't already safe to repeat, so it is simply recomputed.
 - **PII minimization.** No raw customer text reaches a store, a log or a handoff packet; a handoff
   names its category and reason codes, never a transcript.
-- **Per-turn cost is logged, not stored** (E9): a stable ``turn_completed`` log line reports the
+- **Per-turn cost is logged, not stored**: a stable ``turn_completed`` log line reports the
   real model cost (if any — ``FakeNlu`` turns log zero/``None``) and, once the session has one, its
   case number, so cost per session or per case is computable from the log stream alone
   (``app.observability.turn_metrics``). Logged once the model call already happened, before the
@@ -77,7 +77,13 @@ handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
-handoff packet: neither is available from the tools this module calls.
+handoff packet: neither is available from the tools this module calls. A genuine concurrent
+duplicate (two requests racing on the same new turn id, both reading no existing state) each run
+their own real model call and each log their own ``turn_completed`` line before either attempts to
+save; the loser's save then replays the winner's state, so one client-visible turn can log cost
+twice. This is an honest account of both calls' real spend, not a bug in the log line itself, but
+it means "one client-visible turn" and "one logged turn_completed line" are not always the same
+count under this specific race.
 """
 
 from __future__ import annotations
@@ -102,7 +108,7 @@ from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DialogueStore, DuplicateTurn
 from app.conversation.understanding import TurnAccounting, Understanding
 from app.domain.policy.models import DisputeCategory, Outcome, Policy, PolicyDecision, ReasonCode
-from app.llm.pricing import cost_usd  # E9: per-turn cost accounting
+from app.llm.pricing import cost_usd  # Per-turn cost accounting
 from app.persistence.handoff_outbox import HandoffContent
 from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError
@@ -336,14 +342,16 @@ class DialogueController:
         return fresh, 0, result, accounting
 
     def _log_turn_completed(self, state: DialogueState, accounting: TurnAccounting | None) -> None:
-        """One stable-shaped log line per real turn (E9): the real cost, if any, of understanding
+        """One stable-shaped log line per real turn: the real cost, if any, of understanding
         it, and which case (if any, by this point) the session belongs to.
 
         Emitted once the LLM call already happened, before the store save is attempted, so a real
         model cost is always logged even if the save then replays or conflicts — the spend already
         occurred regardless of what the client is told. Every field is present on every line,
         ``FakeNlu`` turns included, so the shape a log consumer parses never varies; only the
-        values are zero/``None`` when no real call happened.
+        values are zero/``None`` when no real call happened. A model the price table does not
+        know about never aborts the turn: ``cost_usd`` raising is caught, a warning names the
+        model, and this line logs ``cost_usd=None`` rather than propagating past the caller.
         """
         if accounting is None:
             model: str | None = None
@@ -351,14 +359,21 @@ class DialogueController:
             input_tokens = 0
             output_tokens = 0
             latency_ms = 0.0
-            cost = Decimal(0)
+            cost: Decimal | None = Decimal(0)
         else:
             model = accounting.model
             prompt_version = accounting.prompt_version
             input_tokens = accounting.input_tokens
             output_tokens = accounting.output_tokens
             latency_ms = accounting.latency_ms
-            cost = cost_usd(accounting.model, accounting.input_tokens, accounting.output_tokens)
+            try:
+                cost = cost_usd(accounting.model, accounting.input_tokens, accounting.output_tokens)
+            except KeyError:
+                # An unpriced model must never abort the turn: the customer's own outcome (a
+                # filed case, a handoff) does not depend on the cost log line completing. The
+                # warning is what an operator sees to add the missing price.
+                logger.warning("turn_cost_unpriced model=%s", accounting.model)
+                cost = None
         logger.info(
             "turn_completed session_id=%s case_number=%s model=%s prompt_version=%s "
             "input_tokens=%s output_tokens=%s latency_ms=%s cost_usd=%s",
@@ -903,7 +918,7 @@ class DialogueController:
 
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
-        # A replay's own re-understanding is not a new turn (E9's per-turn accounting is scoped to
+        # A replay's own re-understanding is not a new turn (per-turn accounting is scoped to
         # handle_turn's own call in _start_turn); its accounting, if any, is not logged again here.
         result, _replay_accounting = self._understanding.understand(
             request.text, language_hint=state.lang

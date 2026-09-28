@@ -3,7 +3,7 @@
 # 09-configure-error-alarm.sh — a CloudWatch metric filter and alarm on error-level log lines
 # =============================================================================
 # Purpose:
-#   Turns "log-based error alarms" (E9) into an actual CloudWatch resource: a
+#   Turns "log-based error alarms" into an actual CloudWatch resource: a
 #   metric filter counting every JSON log line whose "level" field is "error"
 #   in the application's log group, and an alarm that trips when more than a
 #   handful occur inside one evaluation window. The JSON log formatter

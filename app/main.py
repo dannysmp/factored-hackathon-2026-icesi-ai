@@ -41,9 +41,10 @@ Authentication routes: see ``app.api.auth``.
 
 Limitations
 -----------
-Tracing and per-turn cost/latency metrics are not implemented yet (later E9 slices); every log
-line already carries a trace id and, once authenticated, a session id
-(``app.observability.logging``).
+Tracing is not implemented yet; every log line already carries a trace id and, once
+authenticated, a session id (``app.observability.logging``), and per-turn cost and latency are
+already logged from the dialogue controller (``app.conversation.controller``,
+``app.observability.turn_metrics``).
 """
 
 from __future__ import annotations

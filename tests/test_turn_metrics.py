@@ -3,8 +3,7 @@ Turn Metrics Summary Tests
 ============================
 
 Component: ``app.observability.turn_metrics``. Hermetic: pure functions over plain dicts, no
-logging, no file I/O, no network — proves E9's "cost per case computable from logs alone"
-executably.
+logging, no file I/O, no network — proves "cost per case computable from logs alone" executably.
 """
 
 from __future__ import annotations

@@ -100,7 +100,7 @@ def test_an_error_carries_the_exception_text(log_buffer: io.StringIO) -> None:
 def test_an_error_lines_shape_matches_a_cloudwatch_metric_filter_pattern(
     log_buffer: io.StringIO,
 ) -> None:
-    """E9's "log-based error alarms": proves (rather than redesigns) that an ERROR line's own
+    """Log-based error alarms: proves (rather than redesigns) that an ERROR line's own
     shape is already what a CloudWatch metric filter pattern like ``{ $.level = "error" }`` would
     match — a plain top-level JSON key, never nested or renamed, and never absent on a WARNING or
     INFO line (a filter this loose-jointed would otherwise over- or under-count)."""

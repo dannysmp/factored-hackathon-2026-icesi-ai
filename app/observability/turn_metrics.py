@@ -4,11 +4,12 @@ Turn Metrics Summary
 
 Overview
 --------
-Proves E9's own acceptance bar — "cost per case computable from logs alone" — executably: takes
-already-parsed ``turn_completed`` JSON log records (``app.conversation.controller``) and computes
-latency percentiles and cost rollups, the same computation a CloudWatch Logs Insights query would
-run over the real log stream once deployed. Nothing here reads a log file, calls AWS, or holds any
-state between calls; it is a pure function over whatever records a caller already parsed.
+Proves the stated observability bar — "cost per case computable from logs alone" — executably:
+takes already-parsed ``turn_completed`` JSON log records (``app.conversation.controller``) and
+computes latency percentiles and cost rollups, the same computation a CloudWatch Logs Insights
+query would run over the real log stream once deployed. Nothing here reads a log file, calls AWS,
+or holds any state between calls; it is a pure function over whatever records a caller already
+parsed.
 
 Scope
 -----
@@ -22,9 +23,9 @@ export or anything else AWS-specific is out of scope too.
 
 Design Principles
 -----------------
-- Records, not a table: no Postgres, no new persisted state (E9's "persisted" means durable in the
-  log stream, not a second store — see the design consult's answer on this point). This function
-  exists so that claim is checked by a test, not just asserted.
+- Records, not a table: no Postgres, no new persisted state. "Persisted" is read here as durable
+  in the log stream, not a second store, matching what the acceptance bar itself asks for. This
+  function exists so that claim is checked by a test, not just asserted.
 - Money stays ``Decimal`` throughout the cost rollups; latency is plain ``float`` (not money).
 - Grouping key is ``session_id`` (present on every turn); ``case_number`` is attached to a
   session's rollup only once that session's own records show one, from the filing turn onward —
