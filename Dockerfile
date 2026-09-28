@@ -32,6 +32,12 @@ RUN uv sync --frozen --no-default-groups
 
 FROM python:3.11-slim AS runtime
 
+# The base image's own pip/setuptools/wheel bootstrap (never used at runtime: the venv below
+# carries every dependency the app actually imports) vendors older copies of themselves that pick
+# up their own CVEs over time; stripped here rather than patched piecemeal, since nothing running
+# in this container ever calls pip or setuptools again.
+RUN python3 -m pip uninstall --yes pip setuptools wheel
+
 RUN useradd --create-home --shell /usr/sbin/nologin app
 WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv .venv
