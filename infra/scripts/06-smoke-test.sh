@@ -25,7 +25,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source lib/common.sh
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
+if [[ $# -lt 1 || $# -gt 2 || ( $# -eq 2 && "$2" != "--dashboard" ) ]]; then
   log "usage: 06-smoke-test.sh <host-name> [--dashboard]"
   exit 1
 fi

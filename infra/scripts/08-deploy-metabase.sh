@@ -75,21 +75,34 @@ psql_exec() {
   docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U dispute_intake -d ${APP_DB_NAME} -tAc "\$1"
 }
 
-if [ -z "\$(psql_exec "SELECT 1 FROM pg_roles WHERE rolname = 'metabase_app'")" ]; then
+# Binds the password as a psql variable and lets psql's own \`:'pw'\` substitution apply SQL-literal
+# quoting, rather than splicing the value into the SQL text: a password containing a single quote
+# (an ordinary character in one) would otherwise break out of the string it was meant to sit inside.
+# Piped over stdin, not \`-c\`: psql only performs \`:'var'\` interpolation when reading a script,
+# never inside a \`-c\` argument (verified directly — \`-c\` sends the text to the server unprocessed).
+psql_set_password() {
+  echo "\$1" | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -v pw="\$2" -U dispute_intake -d ${APP_DB_NAME}
+}
+
+role_exists="\$(psql_exec "SELECT 1 FROM pg_roles WHERE rolname = 'metabase_app'")" \
+  || { echo "failed to check whether role metabase_app exists" >&2; exit 1; }
+if [ -z "\${role_exists}" ]; then
   echo "creating role metabase_app"
-  psql_exec "CREATE ROLE metabase_app LOGIN PASSWORD '\${db_password}'"
+  psql_set_password "CREATE ROLE metabase_app LOGIN PASSWORD :'pw'" "\${db_password}"
 else
   echo "role metabase_app already exists; reconciling its password"
-  psql_exec "ALTER ROLE metabase_app PASSWORD '\${db_password}'"
+  psql_set_password "ALTER ROLE metabase_app PASSWORD :'pw'" "\${db_password}"
 fi
 
-if [ -z "\$(psql_exec "SELECT 1 FROM pg_database WHERE datname = 'metabase'")" ]; then
+database_exists="\$(psql_exec "SELECT 1 FROM pg_database WHERE datname = 'metabase'")" \
+  || { echo "failed to check whether database metabase exists" >&2; exit 1; }
+if [ -z "\${database_exists}" ]; then
   echo "creating database metabase"
   psql_exec "CREATE DATABASE metabase OWNER metabase_app"
 fi
 
 echo "setting analytics_reader's password and enabling login"
-psql_exec "ALTER ROLE analytics_reader LOGIN PASSWORD '\${analytics_reader_password}'"
+psql_set_password "ALTER ROLE analytics_reader LOGIN PASSWORD :'pw'" "\${analytics_reader_password}"
 
 echo "starting the metabase container"
 export MB_DB_PASS="\${db_password}"
@@ -162,7 +175,12 @@ for _ in $(seq 1 60); do
     --command-id "${command_id}" --instance-id "${instance_id}" \
     --query "Status" --output text 2>/dev/null || echo "Pending")"
   case "${status}" in
-    Success) log "metabase provisioning succeeded"; exit 0 ;;
+    Success)
+      log "metabase provisioning succeeded; output follows (carries the memory-footprint reading)"
+      aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${instance_id}" \
+        --query "StandardOutputContent" --output text
+      exit 0
+      ;;
     Failed|Cancelled|TimedOut)
       log "metabase provisioning ${status}; output follows"
       aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${instance_id}" \

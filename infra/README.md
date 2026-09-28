@@ -54,6 +54,9 @@ written the same way, via `infra/scripts/put-secret.sh`:
 - `analytics-reader-password` — the password `08-deploy-metabase.sh` sets on the `analytics_reader`
   role migration 0004 already created `NOLOGIN` (`pipelines/analytics_load.py`'s own read side),
   and the credential Metabase's `analytics` connection authenticates with.
+- Migration 0004 must already be applied against the deployed database (`make migrate`, run with
+  `DATABASE_URL` pointed at it) before the first `08-deploy-metabase.sh` run: the script's `ALTER
+  ROLE analytics_reader ...` step assumes that role already exists.
 
 ## What is deliberately not here
 
