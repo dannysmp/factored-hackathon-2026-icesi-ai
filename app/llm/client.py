@@ -19,8 +19,9 @@ the port returns the tool call's raw arguments, not a validated ``NluResult``).
 Design Principles
 -----------------
 - Structured output only: a caller always forces exactly one tool and reads back its arguments.
-  Free-form text completion is not part of this port; nothing in the service renders free-form
-  model text today (the renderer is template-only until an output verifier exists).
+  Free-form text completion is not part of this port: even the model-rendered reply path
+  (``app.conversation.model_renderer``) forces a tool call and reads its arguments back, the model
+  never streams text directly into a reply.
 - The error hierarchy separates three cases a caller needs to tell apart: ``LlmUnavailable``
   (timeout, rate limit, a 5xx — safe to retry, the identical request may succeed later),
   ``LlmRequestRejected`` (the provider rejected the request itself — bad credentials, a malformed
