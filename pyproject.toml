@@ -76,6 +76,7 @@ ignore = ["PLR0913"]
 "pipelines/risk_features.py" = ["S608"]
 "pipelines/silver.py" = ["S608"]
 "pipelines/ops_seed.py" = ["S608"]
+"pipelines/eval_bank.py" = ["S608"]
 # Table and column names here come only from the fixed seed-output registry and the Parquet
 # files' own headers (written by pipelines.ops_seed, reviewed there), never from a request.
 "app/persistence/load_seed.py" = ["S608"]

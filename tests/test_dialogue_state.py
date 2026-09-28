@@ -83,6 +83,27 @@ def test_with_phase_changes_only_the_phase() -> None:
     assert handed_off.pending_slot is Slot.REASON
 
 
+def test_with_case_filed_closes_the_conversation_and_names_the_case() -> None:
+    """Filing a case moves to closed and records the number a replay re-reads from."""
+    state = _state().with_clarification(Slot.CONFIRMATION)
+
+    filed = state.with_case_filed("D-1")
+
+    assert filed.phase is ConversationPhase.CLOSED
+    assert filed.last_case_number == "D-1"
+    assert filed.pending_slot is Slot.CONFIRMATION
+
+
+def test_with_handed_off_moves_to_handed_off_and_names_the_ticket() -> None:
+    """A handoff records its ticket reference and moves to the handed-off phase."""
+    state = _state()
+
+    handed_off = state.with_handed_off("T-1")
+
+    assert handed_off.phase is ConversationPhase.HANDED_OFF
+    assert handed_off.last_ticket_ref == "T-1"
+
+
 def test_a_state_is_immutable() -> None:
     """Every transition returns a new object; the original is never mutated."""
     state = _state()

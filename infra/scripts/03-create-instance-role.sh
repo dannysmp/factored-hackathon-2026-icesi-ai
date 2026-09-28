@@ -5,8 +5,9 @@
 # Purpose:
 #   What the deployed host is allowed to do, and nothing more: be reached by
 #   Systems Manager (so CI can deploy without SSH keys), read the model API
-#   key and any other secret under this project's own SSM path prefix, and
-#   write its logs to CloudWatch. No S3 access: serving never queries the
+#   key and any other secret under this project's own SSM path prefix, pull
+#   this project's own two images from ECR (nothing else in the registry),
+#   and write its logs to CloudWatch. No S3 access: serving never queries the
 #   data lake (data-plan, "Source inventory and role in this workflow"), so
 #   this role does not need it; add it explicitly, with a named bucket, if
 #   that ever changes. Bedrock invoke is added the same way when adopted.
@@ -62,6 +63,18 @@ permissions_policy=$(cat <<JSON
       "Effect": "Allow",
       "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"],
       "Resource": "arn:aws:logs:${INFRA_REGION}:${account_id}:log-group:${LOG_GROUP}:*"
+    },
+    {
+      "Sid": "EcrAuth",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcrPull",
+      "Effect": "Allow",
+      "Action": ["ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"],
+      "Resource": "arn:aws:ecr:${INFRA_REGION}:${account_id}:repository/dispute-intake-*"
     }
   ]
 }

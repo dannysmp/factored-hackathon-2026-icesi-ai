@@ -377,6 +377,11 @@ def test_a_transaction_may_have_no_merchant_and_never_a_full_card_number() -> No
         ProductLabel(name="Visa Classic", last4="4111111111111111")
 
 
+def test_a_transaction_may_have_no_amount() -> None:
+    """An amount the source never gave stays absent, never invented."""
+    assert _transaction(amount=None).amount is None
+
+
 @pytest.mark.parametrize(
     "amount, currency",
     [

@@ -31,6 +31,7 @@ from contracts.service_v1.envelope import (
     DisputeFacts,
     Envelope,
     Intent,
+    Lang,
     LocalizedTitle,
     Money,
     PolicyValue,
@@ -350,6 +351,58 @@ def test_a_transaction_without_a_merchant_is_shown_without_inventing_one() -> No
         intent=Intent.PRESENT_TRANSACTIONS,
         template_id=TemplateId.PRESENT_ONE,
         facts=DisputeFacts(transactions=(_transaction(merchant=None),), candidate_count=1),
+    )
+
+    rendered = render(envelope)
+
+    assert "None" not in rendered.reply
+
+
+@pytest.mark.parametrize(
+    ("lang", "phrase"),
+    [
+        ("es", "monto no disponible"),
+        ("pt", "valor não disponível"),
+        ("en", "amount that isn't available"),
+    ],
+)
+def test_a_transaction_without_an_amount_states_it_plainly_in_every_language(
+    lang: Lang, phrase: str
+) -> None:
+    """A figure the source never gave is stated as absent, never invented, in each language."""
+    envelope = _envelope(
+        intent=Intent.PRESENT_TRANSACTIONS,
+        template_id=TemplateId.PRESENT_ONE,
+        lang=lang,
+        facts=DisputeFacts(transactions=(_transaction(amount=None),), candidate_count=1),
+    )
+
+    rendered = render(envelope)
+
+    assert "None" not in rendered.reply
+    assert phrase in rendered.reply
+
+
+def test_confirm_filing_states_a_missing_amount_plainly_too() -> None:
+    """The confirmation prompt is grounded the same way present_transactions is."""
+    facts = DisputeFacts(
+        transactions=(_transaction(amount=None),),
+        candidate_count=1,
+        selected_ref="tx-1001",
+        category=DisputeCategory.UNRECOGNIZED_CHARGE,
+    )
+    envelope = _envelope(
+        intent=Intent.CONFIRM_FILING,
+        template_id=TemplateId.CONFIRM_FILING,
+        facts=facts,
+        decisions=(
+            Decision(
+                outcome=Outcome.ELIGIBLE,
+                customer_reason=CustomerReason.ELIGIBLE,
+                policy_version="2",
+                requires_confirmation=True,
+            ),
+        ),
     )
 
     rendered = render(envelope)

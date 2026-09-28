@@ -14,8 +14,8 @@ validation, run when each module is authored.
 
 Scope
 -----
-In: reading the category modules' `CASES` tuples, rendering or comparing the per-group CSV files,
-the command line ``python -m evals.golden.case_sheet [--check]``.
+In: reading the category modules' `CASES` tuples, rendering or comparing the per-category CSV
+files, the command line ``python -m evals.golden.case_sheet [--check]``.
 Out: the cases themselves (one module per category); running or scoring a case.
 
 Design Principles
@@ -47,8 +47,8 @@ every case, in `CaseCategory`'s declared order. ``render_case_sheet(cases) -> st
 
 Limitations
 -----------
-Only the human-required category exists as of this slice; `ALL_CASES` holds 22 of the golden
-set's 135 cases until the remaining category modules land.
+Only the human-required, normal, ambiguous and unsupported categories exist as of this slice;
+`ALL_CASES` holds 93 of the golden set's 135 cases until the remaining category modules land.
 """
 
 from __future__ import annotations
@@ -63,7 +63,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 # Local modules
+from evals.golden.ambiguous import CASES as AMBIGUOUS_CASES  # Category group
 from evals.golden.human_required import CASES as HUMAN_REQUIRED_CASES  # Category group
+from evals.golden.normal import CASES as NORMAL_CASES  # Category group
+from evals.golden.unsupported import CASES as UNSUPPORTED_CASES  # Category group
 from evals.models import Case, CaseCategory  # The record shape and its category vocabulary
 
 logger = logging.getLogger(__name__)
@@ -74,6 +77,9 @@ DEFAULT_DIRECTORY = Path(__file__).parent / "cases"
 #: Adding a category is one import and one entry here, never a change to the functions below.
 CATEGORY_CASES: dict[CaseCategory, tuple[Case, ...]] = {
     CaseCategory.HUMAN_REQUIRED: HUMAN_REQUIRED_CASES,
+    CaseCategory.NORMAL: NORMAL_CASES,
+    CaseCategory.AMBIGUOUS: AMBIGUOUS_CASES,
+    CaseCategory.UNSUPPORTED: UNSUPPORTED_CASES,
 }
 
 #: Every authored case, in `CaseCategory`'s declared order (the golden set's mix-table row

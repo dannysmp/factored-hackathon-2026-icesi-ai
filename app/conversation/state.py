@@ -33,13 +33,16 @@ Design Principles
 
 Runtime Contract
 ----------------
-``DialogueState`` with ``with_clarification(slot)`` and ``with_slot_filled()``.
-``ConversationPhase`` names where the conversation stands.
+``DialogueState`` with ``with_clarification(slot)``, ``with_slot_filled()``, ``with_case_filed(
+case_number)`` and ``with_handed_off(ticket_ref)``. ``ConversationPhase`` names where the
+conversation stands.
 
 Limitations
 -----------
-Locating a transaction and filing a dispute are not yet phases below: they need the scoped tools
-the service layer provides, added when that dependency lands.
+``last_case_number``/``last_ticket_ref`` exist so a repeated turn id can be answered from the
+state alone (no cached reply text is stored, per the store's own idempotent-replay design): the
+caller re-derives the reply from the current record behind the identifier, never from a snapshot
+taken when it was first written.
 """
 
 from __future__ import annotations
@@ -82,6 +85,8 @@ class DialogueState(BaseModel):
     selected_ref: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     pending_disputes: Annotated[int, Field(ge=0, le=5)] = 0
     last_turn_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    last_case_number: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+    last_ticket_ref: Annotated[str, Field(min_length=1, max_length=32)] | None = None
     updated_at: AwareDatetime
 
     def with_clarification(self, slot: Slot) -> DialogueState:
@@ -111,3 +116,15 @@ class DialogueState(BaseModel):
     def with_phase(self, phase: ConversationPhase) -> DialogueState:
         """Move to ``phase`` without touching anything else."""
         return self.model_copy(update={"phase": phase})
+
+    def with_case_filed(self, case_number: str) -> DialogueState:
+        """A case was filed this turn: closed, with the case number a replay re-reads from."""
+        return self.model_copy(
+            update={"phase": ConversationPhase.CLOSED, "last_case_number": case_number}
+        )
+
+    def with_handed_off(self, ticket_ref: str) -> DialogueState:
+        """The conversation was handed to a person: nothing about the ticket changes on replay."""
+        return self.model_copy(
+            update={"phase": ConversationPhase.HANDED_OFF, "last_ticket_ref": ticket_ref}
+        )

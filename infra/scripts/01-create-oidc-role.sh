@@ -3,11 +3,13 @@
 # 01-create-oidc-role.sh — GitHub Actions OIDC provider and CI deploy role
 # =============================================================================
 # Purpose:
-#   The one role CI assumes to push images and trigger a deploy: no static AWS
-#   keys in the repository or in CI (ADR-13). Trust is scoped to this
-#   repository's own default branch, not any branch or pull request;
-#   permissions are scoped to ECR push and to SSM commands against instances
-#   tagged for this project, not "*".
+#   The one role CI assumes to push images and drive a deploy end to end: no
+#   static AWS keys in the repository or in CI (ADR-13). Trust is scoped to
+#   this repository's own default branch, not any branch or pull request;
+#   permissions are scoped to ECR push, to SSM commands against instances
+#   tagged for this project, to finding those tagged resources (the EC2
+#   Describe calls have no per-resource IAM scoping to give them), and to
+#   terminating or deleting them, gated by the same project tag — not "*".
 # Design:
 #   Idempotent: an existing provider or role with the same name is left as is,
 #   its policy document reconciled to match this script rather than
@@ -27,8 +29,8 @@ require_live_credentials
 
 readonly GITHUB_REPO="dannysmp/factored-hackathon-2026-icesi-ai"
 # The role is only ever assumable from a workflow run on this branch (deploy is CI-triggered off
-# it), not from any branch or pull request in the repository — a later slice that adds
-# environment-gated releases can widen this to a GitHub Environment condition instead.
+# it), not from any branch or pull request in the repository — adding environment-gated releases
+# later can widen this to a GitHub Environment condition instead.
 readonly GITHUB_DEFAULT_BRANCH="main"
 readonly OIDC_PROVIDER_URL="https://token.actions.githubusercontent.com"
 ## AWS validates a public-CA OIDC provider like GitHub's against its real certificate chain and
@@ -104,6 +106,30 @@ permissions_policy=$(cat <<JSON
       "Resource": [
         "arn:aws:ssm:${INFRA_REGION}::document/AWS-RunShellScript",
         "arn:aws:ec2:${INFRA_REGION}:${account_id}:instance/*"
+      ],
+      "Condition": {
+        "StringEquals": { "aws:ResourceTag/${INFRA_TAG_KEY}": "${INFRA_TAG_VALUE}" }
+      }
+    },
+    {
+      "Sid": "FindTaggedResources",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSecurityGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "TeardownTaggedResources",
+      "Effect": "Allow",
+      "Action": ["ec2:TerminateInstances", "ec2:ReleaseAddress", "ec2:DeleteSecurityGroup"],
+      "Resource": [
+        "arn:aws:ec2:${INFRA_REGION}:${account_id}:instance/*",
+        "arn:aws:ec2:${INFRA_REGION}:${account_id}:elastic-ip/*",
+        "arn:aws:ec2:${INFRA_REGION}:${account_id}:security-group/*"
       ],
       "Condition": {
         "StringEquals": { "aws:ResourceTag/${INFRA_TAG_KEY}": "${INFRA_TAG_VALUE}" }
