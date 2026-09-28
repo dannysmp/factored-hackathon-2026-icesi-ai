@@ -18,7 +18,7 @@ SILVER_DIR ?= data/silver
 .PHONY: help setup lint format test test-all secrets audit run clean \
         profile pipeline analyze features corpus corpus-check train evaluate up \
         db-up db-down migrate test-integration seed eval-bank load-seed load-analytics \
-        reset-demo-personas
+        reset-demo-personas seed-ci-smoke
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -107,10 +107,13 @@ train: ## Run the risk signal probe, the boosted-model comparison and calibratio
 	$(RUN) python -m models.boosted
 	$(RUN) python -m models.calibration
 
-# ---- Not yet implemented (fail loudly until they are) --------------------------
+evaluate: ## Run the evaluation harness: make evaluate SYSTEM={P|B0|B1} [SMOKE=1]
+	$(RUN) python -m evals.cli --system $(SYSTEM) $(if $(SMOKE),--smoke,)
 
-evaluate: ## Run the evaluation harness: make evaluate SYSTEM={P|B0|B1}
-	@echo "make evaluate is not implemented yet" >&2; exit 2
+seed-ci-smoke: ## Seed the CI-only synthetic data the smoke slice needs (needs DATABASE_URL, migrated)
+	$(RUN) python -m tests.fixtures.ci_smoke_seed
+
+# ---- Not yet implemented (fail loudly until it is) --------------------------
 
 up: ## Start the full stack with docker compose
 	@echo "make up is not implemented yet" >&2; exit 2
