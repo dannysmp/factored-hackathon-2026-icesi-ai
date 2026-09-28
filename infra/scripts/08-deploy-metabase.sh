@@ -75,11 +75,12 @@ psql_exec() {
   docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U dispute_intake -d ${APP_DB_NAME} -tAc "\$1"
 }
 
-# Binds the password as a psql variable and lets psql's own \`:'pw'\` substitution apply SQL-literal
+# Binds the password as a psql variable and lets psql apply \`:'pw'\` substitution for SQL-literal
 # quoting, rather than splicing the value into the SQL text: a password containing a single quote
-# (an ordinary character in one) would otherwise break out of the string it was meant to sit inside.
-# Piped over stdin, not \`-c\`: psql only performs \`:'var'\` interpolation when reading a script,
-# never inside a \`-c\` argument (verified directly — \`-c\` sends the text to the server unprocessed).
+# (an ordinary character in a password) would otherwise break out of the string it was meant to
+# sit inside. Piped over stdin, not \`-c\`: psql only performs \`:'var'\` interpolation when reading
+# a script, never inside a \`-c\` argument (verified directly — \`-c\` sends the text to the server
+# unprocessed).
 psql_set_password() {
   echo "\$1" | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -v pw="\$2" -U dispute_intake -d ${APP_DB_NAME}
 }
