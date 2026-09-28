@@ -2,12 +2,13 @@
 B1 Conversation Loop Tests
 ============================
 
-Component: ``evals.runner.baselines.b1``. ``build_b1_dependencies``'s prod guard is hermetic. The
-full loop needs a real, migrated Postgres for the tool dispatcher's own store calls; marked
-``integration``, skipped when ``DATABASE_URL`` is not set. No test in this file reaches the real
-Anthropic API: a sequenced stub stands in for ``anthropic.Anthropic().messages``, matching
-``tests.test_naive_agent_client``'s own convention, extended here to script more than one call in
-a row (this module's own loop, unlike a single ``NaiveAgentClient.send``, makes several).
+Component: ``evals.runner.baselines.b1``. ``build_b1_dependencies``'s and ``run_cases``'s prod
+guards are hermetic. The full loop and the batch runner need a real, migrated Postgres for the
+tool dispatcher's own store calls; marked ``integration``, skipped when ``DATABASE_URL`` is not
+set. No test in this file reaches the real Anthropic API: a sequenced stub stands in for
+``anthropic.Anthropic().messages``, matching ``tests.test_naive_agent_client``'s own convention,
+extended here to script more than one call in a row (this module's own loop, unlike a single
+``NaiveAgentClient.send``, makes several).
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from app.persistence.migrate import apply_migrations
 from app.retrieval.lexical import LexicalRetriever
 from contracts.service_v1.envelope import Intent, Slot
 from evals.models import Case, CaseCategory
-from evals.runner.baselines.b1 import _MAX_TOOL_ROUNDS, build_b1_dependencies, run_case
+from evals.runner.baselines.b1 import _MAX_TOOL_ROUNDS, build_b1_dependencies, run_case, run_cases
 from evals.runner.baselines.naive_agent_client import NaiveAgentClient
 from evals.scoring import score_case
 
@@ -422,3 +423,134 @@ def test_run_case_stops_after_max_tool_rounds_with_no_text_reply(
     assert transcript.replies[0].reply == "(no reply)"
     assert transcript.replies[0].next_expected is None
     assert len(stub.messages.calls) == _MAX_TOOL_ROUNDS
+
+
+# -----------------------------------------------------------------------------
+# run_cases — a batch, one shared client, a fresh dispatcher per case
+# -----------------------------------------------------------------------------
+
+
+def test_run_cases_refuses_when_app_env_is_prod() -> None:
+    settings = _settings(app_env=AppEnvironment.PROD, database_url=SecretStr("postgresql://unused"))
+    client = NaiveAgentClient(
+        SecretStr("unused"),
+        model=_MODEL,
+        client=_StubAnthropic([]),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ConfigError, match="not allowed when APP_ENV=prod"):
+        run_cases(
+            client,
+            settings,
+            "postgresql://unused",
+            (),
+            policy=load_policy(),
+            retriever=LexicalRetriever.from_corpus(),
+            calendar=DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING),
+            clock=lambda: _NOW,
+        )
+
+
+@pytest.mark.integration
+def test_run_cases_scopes_each_case_to_its_own_customers_data(
+    dsn: str, retriever: LexicalRetriever
+) -> None:
+    """run_cases reuses the same client for every case (matching evals.runner.runner.run_cases's
+    own httpx.Client reuse) while rebuilding a fresh, customer-scoped dispatcher and session per
+    case. Proven with a transaction only the SECOND customer owns: if the dispatcher were wrongly
+    reused across cases (the first case's customer leaking into the second), the second case's
+    evaluate_dispute would find no matching transaction for that customer instead of the eligible
+    decision it actually has, and correct_outcome would come back False."""
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO customers (customer_id, first_name, last_name, country, "
+            "customer_status) VALUES ('CLI-B1-LOOP-2', 'Second', 'Customer', 'México', 'Active')"
+        )
+        cur.execute(
+            "INSERT INTO products (product_id, customer_id, product_type, last4, "
+            "product_status) VALUES ('PRD-B1-CASES-1', 'CLI-B1-LOOP', 'Cuenta Corriente', "
+            "'1111', 'Active')"
+        )
+        cur.execute(
+            "INSERT INTO products (product_id, customer_id, product_type, last4, "
+            "product_status) VALUES ('PRD-B1-CASES-2', 'CLI-B1-LOOP-2', 'Cuenta Corriente', "
+            "'2222', 'Active')"
+        )
+        cur.execute(
+            "INSERT INTO transactions (transaction_id, customer_id, product_id, "
+            "transaction_date, transaction_type, merchant_name, amount, currency, amount_usd, "
+            "amount_usd_provenance, transaction_status) VALUES "
+            "('TRX-B1-CASES-1', 'CLI-B1-LOOP', 'PRD-B1-CASES-1', '2026-06-08 09:00:00', "
+            "'Purchase', 'Merchant One', 100.00, 'USD', 100.00, 'reported', 'Approved')"
+        )
+        cur.execute(
+            "INSERT INTO transactions (transaction_id, customer_id, product_id, "
+            "transaction_date, transaction_type, merchant_name, amount, currency, amount_usd, "
+            "amount_usd_provenance, transaction_status) VALUES "
+            "('TRX-B1-CASES-2', 'CLI-B1-LOOP-2', 'PRD-B1-CASES-2', '2026-06-09 09:00:00', "
+            "'Purchase', 'Merchant Two', 50.00, 'USD', 50.00, 'reported', 'Approved')"
+        )
+    stub = _StubAnthropic(
+        [
+            _response(
+                [
+                    _tool_use_block(
+                        "evaluate_dispute",
+                        {"transaction_ref": "TRX-B1-CASES-1", "category": "unrecognized_charge"},
+                        block_id="t1",
+                    )
+                ],
+                stop_reason="tool_use",
+            ),
+            _response([_text_block("¿Confirma la disputa?")], stop_reason="end_turn"),
+            _response(
+                [
+                    _tool_use_block(
+                        "evaluate_dispute",
+                        {"transaction_ref": "TRX-B1-CASES-2", "category": "unrecognized_charge"},
+                        block_id="t2",
+                    )
+                ],
+                stop_reason="tool_use",
+            ),
+            _response([_text_block("¿Confirma la disputa?")], stop_reason="end_turn"),
+        ]
+    )
+    client = NaiveAgentClient(SecretStr("unused"), model=_MODEL, client=stub)  # type: ignore[arg-type]
+    settings = _settings(database_url=SecretStr(dsn))
+    calendar = DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING)
+    cases = (
+        Case(
+            case_id="b1-cases-01",
+            category=CaseCategory.NORMAL,
+            lang="es",
+            provenance="observed",
+            seed_ref="ops_seed:TRX-B1-CASES-1",
+            user_turns=("No reconozco un cargo en mi tarjeta.",),
+            expected_intent=Intent.CONFIRM_FILING,
+        ),
+        Case(
+            case_id="b1-cases-02",
+            category=CaseCategory.NORMAL,
+            lang="es",
+            provenance="observed",
+            seed_ref="ops_seed:TRX-B1-CASES-2",
+            user_turns=("No reconozco un cargo en mi tarjeta.",),
+            expected_intent=Intent.CONFIRM_FILING,
+        ),
+    )
+
+    results = run_cases(
+        client,
+        settings,
+        dsn,
+        cases,
+        policy=load_policy(),
+        retriever=retriever,
+        calendar=calendar,
+        clock=lambda: _NOW,
+    )
+
+    assert [r.case_id for r in results] == ["b1-cases-01", "b1-cases-02"]
+    assert all(r.correct_outcome for r in results)
+    assert len(stub.messages.calls) == 4
