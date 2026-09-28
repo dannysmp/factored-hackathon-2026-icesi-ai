@@ -182,17 +182,14 @@ def _run_turn(
         ]
         messages.append({"role": "assistant", "content": content_blocks})
         results = []
-        reached_confirmable = False
         for call in turn.tool_calls:
             result_text = dispatcher.dispatch(
                 call, session_id=session_id, turn_id=turn_id, trace_id=session_id
             )
             results.append({"type": "tool_result", "tool_use_id": call.id, "content": result_text})
-            if call.name == "evaluate_dispute" and '"outcome":"eligible"' in result_text.replace(
-                " ", ""
-            ):
-                reached_confirmable = True
-            if call.name == "create_dispute_case":
+            if call.name == "evaluate_dispute":
+                reached_confirmable = '"outcome":"eligible"' in result_text.replace(" ", "")
+            elif call.name == "create_dispute_case":
                 reached_confirmable = False
         messages.append({"role": "user", "content": results})
     return "", reached_confirmable, latency_seconds
