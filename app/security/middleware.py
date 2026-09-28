@@ -4,14 +4,16 @@ Request Context and Authentication Middleware
 
 Overview
 --------
-Two pieces of ASGI middleware. The first gives every request an identifier that appears on the
-response and in the logs. The second resolves the session behind every request to the versioned
-API and refuses the request, in the standard error format, when there is no valid session.
+Three pieces of ASGI middleware, applied in order. The first gives every request an identifier
+that appears on the response and in the logs. The second refuses a request whose body is too
+large before anything downstream spends work on it. The third resolves the session behind every
+request to the versioned API and refuses the request, in the standard error format, when there is
+no valid session.
 
 Scope
 -----
-In: request identifiers, security headers, the bearer-token check and the principal handed to
-routes.
+In: request identifiers, security headers, the body-size cap, the bearer-token check and the
+principal handed to routes.
 Out: issuing tokens (``sessions``), the routes, and what a customer may do once authenticated.
 
 Design Principles
@@ -25,17 +27,24 @@ Design Principles
 - A supplied request identifier is used only if it has a safe shape; otherwise a new one is
   generated, so a client cannot inject text into the logs.
 - Nothing about the token is logged: only the reason code and the request identifier.
+- The body-size cap runs before session authentication: an oversized body is refused before a JWT
+  is ever verified, and it counts bytes actually read off the wire, never a client-stated
+  ``Content-Length`` alone.
 
 Runtime Contract
 ----------------
 ``RequestContextMiddleware(app)`` sets ``scope["state"]["request_id"]`` and the ``X-Request-ID``
 header.
+``BodySizeLimitMiddleware(app, max_bytes=MAX_BODY_BYTES)`` refuses a request body over the limit
+with ``PAYLOAD_TOO_LARGE`` (413).
 ``SessionAuthMiddleware(app, sessions, public_paths)`` sets ``scope["state"]["principal"]``.
 ``current_request_id()`` returns the identifier of the request being handled.
 
 Limitations
 -----------
-Only the ``Authorization: Bearer`` scheme is accepted; cookies are not read.
+Only the ``Authorization: Bearer`` scheme is accepted; cookies are not read. A request refused for
+an oversized body is not drained further before the response is sent; a client on a keep-alive
+connection may see it close rather than a clean pipelined reply to its next request.
 """
 
 from __future__ import annotations
@@ -60,6 +69,7 @@ REQUEST_ID_HEADER = "x-request-id"
 REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9._-]{8,64}")
 API_PREFIX = "/v1"
 MAX_TOKEN_LENGTH = 2048
+MAX_BODY_BYTES = 64 * 1024
 
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 
@@ -149,6 +159,63 @@ class RequestContextMiddleware:
             await self._app(scope, receive, send_with_headers)
         finally:
             _request_id.reset(token)
+
+
+class BodySizeLimitMiddleware:
+    """Refuses an HTTP request whose body exceeds ``MAX_BODY_BYTES``.
+
+    Counts bytes actually read off the wire, never a client-supplied ``Content-Length`` alone (a
+    header a client can omit or understate, notably under chunked transfer encoding). The whole
+    body is drained and buffered while counting, up to the limit; a request within it is replayed
+    to the rest of the application unchanged, so nothing downstream can tell this middleware ran.
+    Placed before session authentication (an oversized body is refused before a JWT is ever
+    verified), after the request-context middleware (so the refusal still carries a request id).
+    """
+
+    def __init__(self, app: ASGIApp, *, max_bytes: int = MAX_BODY_BYTES) -> None:
+        self._app = app
+        self._max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Handle one request; other scopes (WebSocket, lifespan) pass through unchanged."""
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        buffered: list[Message] = []
+        total = 0
+        while True:
+            message = await receive()
+            buffered.append(message)
+            if message["type"] != "http.request":
+                break
+            total += len(message.get("body", b""))
+            if total > self._max_bytes:
+                logger.warning("body_too_large request_id=%s", current_request_id())
+                problem = ProblemError(
+                    ErrorCode.PAYLOAD_TOO_LARGE,
+                    413,
+                    "The request body is too large",
+                    f"The body must be at most {self._max_bytes} bytes.",
+                )
+                request_id = str(_state(scope).get("request_id", "-"))
+                response = problem_response(problem, request_id)
+                await response(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+
+        index = 0
+
+        async def replay_receive() -> Message:
+            nonlocal index
+            if index < len(buffered):
+                message = buffered[index]
+                index += 1
+                return message
+            return await receive()
+
+        await self._app(scope, replay_receive, send)
 
 
 def _bearer_token(scope: Scope) -> str:

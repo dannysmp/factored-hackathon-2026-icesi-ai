@@ -58,6 +58,7 @@ class ErrorCode(StrEnum):
     SERVICE_UNAVAILABLE = "service_unavailable"
     INTERNAL_ERROR = "internal_error"
     TURN_CONFLICT = "turn_conflict"
+    PAYLOAD_TOO_LARGE = "payload_too_large"
 
 
 class ProblemError(Exception):

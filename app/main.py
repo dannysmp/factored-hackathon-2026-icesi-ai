@@ -23,6 +23,9 @@ Design Principles
   end when the process restarts); in ``dev`` and ``prod`` a missing key is a start-up error.
 - The service starts only with a resolved domain date (ADR-15): an explicit setting, the real date
   in the bank zone, or the loaded seed's own reference date; none of the three is a start-up error.
+- The turns route's own heavy dependencies (a database connection, an LLM provider key) are
+  resolved lazily, inside its per-request factory, never at start-up: an app that never calls
+  ``/v1/turns`` — most tests, a bare health check — never needs them configured.
 
 Runtime Contract
 ----------------
@@ -30,7 +33,7 @@ Runtime Contract
 ``GET /health/ready`` -> ``{"status": "ready", "service_version": str, "environment": str,
 "domain_date": str, "domain_date_origin": str}`` (ADR-15: ``domain_date_origin`` is one of
 ``setting``, ``seed``, ``system``).
-Authentication routes: see ``app.api.auth``.
+Authentication routes: see ``app.api.auth``. The turns route: see ``app.api.turns``.
 
 Limitations
 -----------
@@ -54,26 +57,45 @@ from starlette.responses import Response  # Handler return type
 
 # Local modules
 from app.api.auth import TEST_SESSIONS_PATH, CustomerLookup, build_auth_router  # Auth routes
+from app.api.turns import ControllerFactory, build_turns_router  # The turns route
 from app.config import (
     AppEnvironment,  # Environments with different key rules
     ConfigError,  # Missing signing key outside local
+    LlmProvider,  # Providers behind the LLM interface
     Settings,  # Validated configuration injected into the app
     load_settings,  # Loads configuration when none is injected
 )
+from app.conversation.controller import DialogueController, HandoffOutbox
+from app.conversation.llm_understanding import LlmNlu
+from app.conversation.understanding import Understanding
 from app.domain.calendar import (  # Domain date
     DomainCalendar,
     DomainCalendarError,
     resolve_domain_calendar,
 )
+from app.domain.policy.loader import load_policy
+from app.domain.policy.models import Policy
+from app.llm.anthropic_client import AnthropicLlmClient
+from app.persistence.audit import PostgresAuditSink
 from app.persistence.customers import customer_status  # The sandbox login's existence check
+from app.persistence.dialogue_store import PostgresDialogueStore
+from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.ops_meta import read_data_as_of  # The seed's own reference date
+from app.persistence.reads import PostgresToolPort
+from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError, problem_response  # Failure format
 from app.security.limits import AttemptLimiter  # Failed-login limit
 from app.security.middleware import (  # Cross-cutting request handling
+    BodySizeLimitMiddleware,
     RequestContextMiddleware,
     SessionAuthMiddleware,
 )
-from app.security.sessions import Clock, SessionService, utc_now  # Sessions and the clock
+from app.security.sessions import (  # Sessions and the clock
+    Clock,
+    Principal,
+    SessionService,
+    utc_now,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +150,68 @@ def _default_customer_lookup(settings: Settings) -> CustomerLookup:
     """
     dsn = settings.require_database_url().get_secret_value()
     return functools.partial(customer_status, dsn)
+
+
+def _understanding(settings: Settings) -> Understanding:
+    """The model-backed understanding port for one turn.
+
+    Raises
+    ------
+    ConfigError
+        The configured provider has no adapter yet, or its API key is not configured.
+    """
+    if settings.llm_provider is not LlmProvider.ANTHROPIC:
+        raise ConfigError(f"the '{settings.llm_provider.value}' LLM provider has no adapter yet")
+    llm = AnthropicLlmClient(settings.require_anthropic_key())
+    return LlmNlu(llm, model=settings.nlu_model)
+
+
+def _controller_factory(
+    settings: Settings,
+    *,
+    policy: Policy,
+    retriever: LexicalRetriever,
+    calendar: DomainCalendar,
+    clock: Clock,
+) -> ControllerFactory:
+    """Build the per-request factory the turns route calls with each request's own principal.
+
+    Every dependency that needs ``DATABASE_URL`` or an LLM provider key is resolved inside the
+    returned closure, not here (see the module's own Design Principles): building the factory
+    itself never requires them.
+    """
+
+    def build(principal: Principal) -> DialogueController:
+        dsn = settings.require_database_url().get_secret_value()
+        store = PostgresDialogueStore(dsn)
+        current = store.get(principal.session_id)
+        language = current.lang if current is not None else "es"
+        audit = PostgresAuditSink(dsn)
+        tool_port = PostgresToolPort(
+            dsn,
+            audit,
+            policy,
+            customer_id=principal.customer_id,
+            session_id=principal.session_id,
+            trace_id=principal.session_id,
+            domain_date=calendar.reference_date,
+            now=clock,
+            language=language,
+            case_create_session_cap=settings.case_create_session_cap,
+        )
+        outbox: HandoffOutbox = PostgresHandoffOutbox(dsn)
+        return DialogueController(
+            _understanding(settings),
+            store=store,
+            tool_port=tool_port,
+            retriever=retriever,
+            policy=policy,
+            outbox=outbox,
+            domain_date=calendar.reference_date,
+            now=clock,
+        )
+
+    return build
 
 
 def _request_id(request: Request) -> str:
@@ -198,6 +282,7 @@ def create_app(
     *,
     clock: Clock = utc_now,
     customer_lookup: CustomerLookup | None = None,
+    controller_factory: ControllerFactory | None = None,
 ) -> FastAPI:
     """Build the FastAPI application.
 
@@ -210,6 +295,11 @@ def create_app(
     customer_lookup : CustomerLookup | None
         The sandbox login's existence check (AC-E4-47); tests inject a fake one. When omitted and
         the sandbox login is enabled, the real, store-backed one is built from ``DATABASE_URL``.
+    controller_factory : ControllerFactory | None
+        Builds the dialogue controller for one turn; tests inject a fake one, hermetic and without
+        a real LLM provider. When omitted, the real one is built from ``DATABASE_URL`` and the
+        configured LLM provider, resolved lazily on the first call (see the module's own Design
+        Principles).
 
     Returns
     -------
@@ -229,6 +319,8 @@ def create_app(
     sessions = SessionService(_signing_key(resolved), resolved.session_ttl_seconds, clock=clock)
     limiter = AttemptLimiter(clock=clock)
     calendar = _domain_calendar(resolved, clock=clock)
+    policy = load_policy()
+    retriever = LexicalRetriever.from_corpus()
     app = FastAPI(title="Dispute Intake API", version=resolved.service_version)
 
     # The sandbox login is public only while it exists; otherwise its path is protected too
@@ -238,8 +330,11 @@ def create_app(
     if test_key is not None and lookup is None:
         lookup = _default_customer_lookup(resolved)
 
-    # Middleware: the last one added is the outermost, so the request context wraps the rest
+    # Middleware: the last one added is the outermost. The body-size cap runs after the request
+    # context (so its own refusal still carries a request id) and before session authentication
+    # (so an oversized body is refused before a JWT is ever verified).
     app.add_middleware(SessionAuthMiddleware, sessions=sessions, public_paths=public_paths)
+    app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(RequestContextMiddleware)
     _register_error_handlers(app)
 
@@ -266,6 +361,15 @@ def create_app(
             test_login_key=test_key,
             limiter=limiter,
             customer_lookup=lookup if lookup is not None else (lambda customer_id: None),
+        )
+    )
+    app.include_router(
+        build_turns_router(
+            controller_factory=controller_factory
+            if controller_factory is not None
+            else _controller_factory(
+                resolved, policy=policy, retriever=retriever, calendar=calendar, clock=clock
+            )
         )
     )
 
