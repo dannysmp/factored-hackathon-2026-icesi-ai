@@ -18,7 +18,7 @@ Out: the other five category groups (their own modules); running or scoring thes
 Design Principles
 -------------------
 - **What `lang` means here, ruled by the architect (2026-09-27) for this exact question, first
-  flagged as open when the case schema (PR #109) was reviewed.** `lang` names the language a
+  flagged as open when the case schema was reviewed.** `lang` names the language a
   correct reply must render in for the whole conversation — the conversation's sticky language,
   per `plan/docs/architecture.md`'s dialogue-state design (the controller persists one language
   per session, not per turn) and ADR-16's language-routing clause ("a miss abstains and offers
