@@ -46,6 +46,9 @@ with ``PAYLOAD_TOO_LARGE`` (413).
 ``SessionAuthMiddleware(app, sessions, audience_by_prefix, public_paths)`` sets
 ``scope["state"]["principal"]``.
 ``current_request_id()`` returns the identifier of the request being handled.
+``current_session_id()`` returns the authenticated principal's session id, or ``None`` outside an
+authenticated request — read by the structured-logging filter so every line carries it without
+every call site passing it explicitly.
 
 Limitations
 -----------
@@ -84,6 +87,7 @@ MAX_TOKEN_LENGTH = 2048
 MAX_BODY_BYTES = 64 * 1024
 
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
+_session_id: ContextVar[str | None] = ContextVar("session_id", default=None)
 
 _REJECTION_TITLES: dict[ErrorCode, str] = {
     ErrorCode.SESSION_MISSING: "Authentication is required",
@@ -114,6 +118,11 @@ def is_protected(path: str) -> bool:
 def current_request_id() -> str:
     """Identifier of the request being handled, or ``-`` outside a request."""
     return _request_id.get()
+
+
+def current_session_id() -> str | None:
+    """The authenticated principal's session id, or ``None`` outside an authenticated request."""
+    return _session_id.get()
 
 
 def _state(scope: Scope) -> MutableMapping[str, object]:
@@ -322,7 +331,11 @@ class SessionAuthMiddleware:
             problem = failure
         else:
             _state(scope)["principal"] = principal
-            await self._app(scope, receive, send)
+            token = _session_id.set(principal.session_id)
+            try:
+                await self._app(scope, receive, send)
+            finally:
+                _session_id.reset(token)
             return
 
         logger.warning(

@@ -19,16 +19,95 @@ import duckdb
 import psycopg
 import pytest
 
+from app.persistence import load_seed as load_seed_module
 from app.persistence.load_seed import (
     LoadResult,
     _read_reference_date,
     _read_table,
     _verify_output_digests,
     load_seed,
+    main,
 )
 from app.persistence.migrate import apply_migrations
 from pipelines import ops_seed
 from pipelines.ops_seed import CUSTOMERS_NAME, MANIFEST_NAME, PRODUCTS_NAME, TRANSACTIONS_NAME
+
+
+def test_main_requires_a_dsn(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """With no --dsn and no DATABASE_URL, the command refuses rather than guessing.
+
+    Run from an empty directory, matching the same isolation the other CLI entrypoints' own tests
+    use: ``main`` loads settings with the default ``.env`` path, so a real ``.env`` in the working
+    directory must not supply a DSN this test means to be absent.
+    """
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit):
+        main(["--gold", str(tmp_path)])
+
+
+def test_main_uses_the_dsn_argument_over_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit --dsn is used even when DATABASE_URL is also set."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://env-only")
+    seen: dict[str, object] = {}
+
+    def fake_load_seed(dsn: str, gold: Path) -> LoadResult:
+        seen["dsn"] = dsn
+        return LoadResult(rows={}, data_as_of="2026-06-18")
+
+    monkeypatch.setattr(load_seed_module, "load_seed", fake_load_seed)
+
+    exit_code = main(["--dsn", "postgresql://from-argument"])
+
+    assert exit_code == 0
+    assert seen["dsn"] == "postgresql://from-argument"
+
+
+def test_main_falls_back_to_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DATABASE_URL is used when --dsn is not given."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://env-only")
+    seen: dict[str, object] = {}
+
+    def fake_load_seed(dsn: str, gold: Path) -> LoadResult:
+        seen["dsn"] = dsn
+        return LoadResult(rows={}, data_as_of="2026-06-18")
+
+    monkeypatch.setattr(load_seed_module, "load_seed", fake_load_seed)
+
+    exit_code = main([])
+
+    assert exit_code == 0
+    assert seen["dsn"] == "postgresql://env-only"
+
+
+def test_main_refuses_when_settings_are_invalid_and_no_dsn_is_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without --dsn, a fully invalid settings load is refused too, not just a missing DSN."""
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "too-short")
+
+    with pytest.raises(SystemExit):
+        main([])
+
+
+def test_main_uses_the_dsn_argument_even_with_an_unrelated_invalid_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit --dsn must not be blocked by a setting that DSN resolution never reads."""
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "too-short")
+    seen: dict[str, object] = {}
+
+    def fake_load_seed(dsn: str, gold: Path) -> LoadResult:
+        seen["dsn"] = dsn
+        return LoadResult(rows={}, data_as_of="2026-06-18")
+
+    monkeypatch.setattr(load_seed_module, "load_seed", fake_load_seed)
+
+    exit_code = main(["--dsn", "postgresql://from-argument"])
+
+    assert exit_code == 0
+    assert seen["dsn"] == "postgresql://from-argument"
 
 
 def test_read_table_raises_when_the_seed_has_not_been_built(tmp_path: Path) -> None:

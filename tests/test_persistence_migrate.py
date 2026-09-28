@@ -60,6 +60,40 @@ def test_main_uses_the_dsn_argument_over_the_environment(monkeypatch: pytest.Mon
     assert seen["dsn"] == "postgresql://from-argument"
 
 
+def test_main_refuses_when_settings_are_invalid_and_no_dsn_is_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without --dsn, a fully invalid settings load is refused too, not just a missing DSN."""
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "too-short")
+
+    with pytest.raises(SystemExit):
+        main([])
+
+
+def test_main_uses_the_dsn_argument_even_with_an_unrelated_invalid_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit --dsn must not be blocked by a setting that DSN resolution never reads.
+
+    A malformed SESSION_SIGNING_KEY fails full settings validation; --dsn does not need full
+    settings to be valid, only DATABASE_URL resolution does, and that is skipped when --dsn is
+    given.
+    """
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "too-short")
+    seen: dict[str, str] = {}
+
+    def fake_apply(dsn: str, **_kwargs: object) -> tuple[str, ...]:
+        seen["dsn"] = dsn
+        return ()
+
+    monkeypatch.setattr(migrate_module, "apply_migrations", fake_apply)
+
+    exit_code = main(["--dsn", "postgresql://from-argument"])
+
+    assert exit_code == 0
+    assert seen["dsn"] == "postgresql://from-argument"
+
+
 def test_main_falls_back_to_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """DATABASE_URL is used when --dsn is not given."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://env-only")
