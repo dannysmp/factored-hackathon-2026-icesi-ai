@@ -167,6 +167,13 @@ class Settings(BaseSettings):
     tool_breaker_failure_threshold, tool_breaker_reset_seconds : int, float
         The tool-port circuit breaker (E9), shared by every tool method: the store is one
         dependency, not six, so one outage trips one breaker.
+    post_handoff_contact_days_priority, post_handoff_contact_days_default : int
+        The promised contact time after a handoff: 1 calendar day for a fraud report or a lost
+        or stolen card, 2 calendar days for every other trigger, counted
+        from the data reference date. A synthetic configuration value with its own provenance,
+        separate from ``Policy.first_response_days`` (which promises a response to a *filed
+        dispute*, a different lifecycle event a handoff ticket never reaches) and keyed by the
+        handoff's own trigger, never its dispute category.
     demo_signin_enabled : bool
         Turns on the demonstration sign-in broker for customers (ADR-18): a public, persona-based
         sign-in path meant for the deployed demonstration, unlike the sandbox login. Mutually
@@ -215,6 +222,8 @@ class Settings(BaseSettings):
     llm_breaker_reset_seconds: float = Field(default=30.0, ge=1, le=300)
     tool_breaker_failure_threshold: int = Field(default=5, ge=1, le=20)
     tool_breaker_reset_seconds: float = Field(default=10.0, ge=1, le=300)
+    post_handoff_contact_days_priority: int = Field(default=1, ge=0)
+    post_handoff_contact_days_default: int = Field(default=2, ge=0)
     demo_signin_enabled: bool = False
     demo_signin_access_code: SecretStr | None = None
     demo_agent_signin_enabled: bool = False
