@@ -38,10 +38,11 @@ function jsonResponse(body: unknown): Response {
 }
 
 function stubTheWholeFlow(): void {
+  // Every call this app makes passes a plain string path (never a Request or URL object), so the
+  // mock only needs to handle that one shape.
   vi.stubGlobal(
     'fetch',
-    vi.fn((input: RequestInfo | URL) => {
-      const url = String(input)
+    vi.fn((url: string) => {
       if (url === '/v1/auth/demo-personas') return Promise.resolve(jsonResponse(PERSONAS_BODY))
       if (url === '/v1/auth/demo-sessions') return Promise.resolve(jsonResponse(SESSION_BODY))
       if (url === '/v1/turns') return Promise.resolve(jsonResponse(TURN_BODY))

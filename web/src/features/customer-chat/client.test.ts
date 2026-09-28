@@ -59,6 +59,12 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
+/** The parsed body a mocked `fetch` call's `init.body` carried, typed as an unknown record
+ * rather than `JSON.parse`'s own `any`. */
+function requestBody(call: [string, RequestInit]): Record<string, unknown> {
+  return JSON.parse(call[1].body as string) as Record<string, unknown>
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -75,21 +81,26 @@ describe('LiveChatClient', () => {
     expect(url).toBe('/v1/turns')
     expect(init.method).toBe('POST')
     expect(init.headers).toMatchObject({ Authorization: 'Bearer tok' })
-    expect(JSON.parse(init.body as string).text).toBe('Hola')
+    expect(requestBody([url, init]).text).toBe('Hola')
   })
 
   it('uses a fresh turn id for every call, never reusing one', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(200, turnResponse())))
+    // A response body can only be read once: this test needs a fresh Response per call, so it
+    // cannot use `mockResolvedValue`'s single shared instance the way the other tests here do.
+    // The turn id sent on each call is captured as its own side effect, so reading it back never
+    // needs an unsafe or asserted array index into `mock.calls`.
+    const sentTurnIds: string[] = []
+    const fetchMock = vi.fn((url: string, init: RequestInit) => {
+      sentTurnIds.push(String(requestBody([url, init]).turn_id))
+      return Promise.resolve(jsonResponse(200, turnResponse()))
+    })
     vi.stubGlobal('fetch', fetchMock)
     const client: ChatClient = new LiveChatClient({ token: 'tok', lang: 'en' })
 
     await client.start()
     await client.sendTurn('a real message')
 
-    const firstId = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string)
-      .turn_id
-    const secondId = JSON.parse((fetchMock.mock.calls[1] as [string, RequestInit])[1].body as string)
-      .turn_id
+    const [firstId, secondId] = sentTurnIds
     expect(firstId).not.toBe(secondId)
     expect(firstId).toMatch(/^[A-Za-z0-9_-]{8,64}$/)
   })
@@ -101,7 +112,7 @@ describe('LiveChatClient', () => {
 
     await client.sendTurn('I have a problem with a charge')
 
-    const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string)
+    const body = requestBody(fetchMock.mock.calls[0] as [string, RequestInit])
     expect(body.text).toBe('I have a problem with a charge')
   })
 

@@ -27,7 +27,9 @@ describe('fetchCustomerPersonas', () => {
 
     const personas = await fetchCustomerPersonas()
 
-    expect(personas).toEqual([{ slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' }])
+    expect(personas).toEqual([
+      { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' },
+    ])
     expect(fetchMock).toHaveBeenCalledWith('/v1/auth/demo-personas')
   })
 
