@@ -2,7 +2,8 @@
 LLM Provider Selection Tests
 =============================
 
-Component: ``app.main._understanding``. Hermetic: no network, no database, no ``.env``.
+Component: ``app.main._understanding`` and ``app.main._model_renderer``. Hermetic: no network,
+no database, no ``.env``.
 """
 
 from __future__ import annotations
@@ -35,3 +36,17 @@ def test_a_provider_with_no_adapter_still_refuses(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(ConfigError, match="'bedrock' LLM provider has no adapter yet"):
         main_module._understanding(settings)
+
+
+def test_model_rendering_under_the_stub_provider_fails_closed_not_silently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_model_renderer`` has no stub branch: it still requires the Anthropic provider, so
+    enabling model rendering with ``LLM_PROVIDER=stub`` refuses loudly rather than doing nothing
+    or reaching a provider it was never told to call."""
+    monkeypatch.setenv("LLM_PROVIDER", "stub")
+    monkeypatch.setenv("MODEL_RENDERER_ENABLED", "true")
+    settings = load_settings(env_file=None)
+
+    with pytest.raises(ConfigError, match="'stub' LLM provider has no adapter yet"):
+        main_module._model_renderer(settings)
