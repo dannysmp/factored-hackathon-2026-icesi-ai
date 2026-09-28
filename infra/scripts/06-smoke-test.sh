@@ -4,10 +4,9 @@
 # =============================================================================
 # Purpose:
 #   Exercises the whole path the deploy just brought up: Caddy's automatic
-#   certificate for the sslip.io host name, the reverse proxy routing to the
-#   backend and to the web build (streams.md 3.12a: "the health endpoint, the
-#   web static page and the database"). Tests the deployment path itself, not
-#   functional completeness.
+#   certificate for the sslip.io host name, and the reverse proxy routing to
+#   the backend's health endpoint and to the web build's static page. Tests
+#   the deployment path itself, not functional completeness.
 # Design:
 #   Certificate issuance and the containers' own start-up both take a few
 #   seconds after `docker compose up -d` returns; retries with a fixed

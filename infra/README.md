@@ -24,9 +24,10 @@ each other, but `04` needs `03`'s instance profile to exist.
 `.github/workflows/deploy.yml`, triggered manually (`workflow_dispatch`) against `main`: builds
 both images, scans each with Trivy (fails the run on a fixable HIGH or CRITICAL finding), pushes
 to ECR, runs `05-deploy.sh` (over SSM, no SSH), then `06-smoke-test.sh`. The `teardown_after`
-input (default on) runs `07-teardown.sh` at the end, matching the early smoke exercise's own
-requirement (`plan/delivery/streams.md` 3.12a: "torn down after the run"); turn it off for a
-deployment meant to persist (the two later, full functional-deployment runs).
+input (default on) runs `07-teardown.sh` at the end — a run gated only by this input and whether
+the run was manually cancelled, never by whether an earlier step failed, since a failed deploy or
+smoke test is exactly when a host must not be left running unattended; turn it off for a
+deployment meant to persist.
 
 **One-time prerequisites, before the first run:**
 - Scripts `01`–`04` already run once against the account.
@@ -39,8 +40,7 @@ deployment meant to persist (the two later, full functional-deployment runs).
 ## What is deliberately not here
 
 - **Running the scripts against AWS by hand.** They are prepared and reviewed here; the deploy
-  workflow and the two clean-account provisioning runs (`plan/delivery/streams.md` 3.12) are what
-  actually invoke them.
+  workflow is what actually invokes them.
 - **Metabase**: its own compose service and provisioning script are a later slice (3.6b).
 - **The demonstration sign-in access codes** and the Metabase administrator credentials: created
   under the same `/transaction-disputes/prod/*` SSM prefix by whichever slice first needs them,

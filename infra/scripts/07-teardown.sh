@@ -3,11 +3,11 @@
 # 07-teardown.sh — remove the host, its Elastic IP and its security group
 # =============================================================================
 # Purpose:
-#   Reverses 04-launch-instance.sh, for the early smoke exercise (3.12a,
-#   streams.md: "torn down after the run") and for tearing down between the
-#   two scheduled clean-account runs. Never touches the IAM roles, the ECR
-#   repositories or the OIDC provider (01-03): those are provisioning, meant
-#   to persist across runs, not part of what a single deploy cycle owns.
+#   Reverses 04-launch-instance.sh: torn down after a one-off smoke exercise,
+#   or between separate deployment runs. Never touches the IAM roles, the
+#   ECR repositories or the OIDC provider (01-03): those are provisioning,
+#   meant to persist across runs, not part of what a single deploy cycle
+#   owns.
 # Design:
 #   Idempotent: each resource is looked up by the project tag first; already
 #   gone is success, not an error. Order matters — the instance is terminated

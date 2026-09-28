@@ -33,7 +33,14 @@ require_profile() {
     log "refusing: AWS_REGION is '${AWS_REGION}', not '${INFRA_REGION}'"
     exit 1
   fi
-  export AWS_PROFILE="${INFRA_PROFILE}"
+  # A caller that already identifies its own credentials directly (AWS_ACCESS_KEY_ID, set this
+  # way by an assumed role's temporary credentials — a CI job, never a human at a terminal) must
+  # not have AWS_PROFILE forced on top: the CLI would then look up that named profile instead of
+  # using the credentials already given, and fail when no such profile exists on that machine.
+  # A human running these scripts locally has no such variable set, so the default still applies.
+  if [[ -z "${AWS_ACCESS_KEY_ID:-}" ]]; then
+    export AWS_PROFILE="${INFRA_PROFILE}"
+  fi
   export AWS_REGION="${INFRA_REGION}"
 }
 
