@@ -9,8 +9,11 @@ real provider.
 
 from __future__ import annotations
 
+import pytest
+
 from app.conversation.llm_understanding import LlmNlu
-from app.llm.client import FakeLlm, LlmUnavailable
+from app.conversation.understanding import UnderstandingUnavailable
+from app.llm.client import FakeLlm, LlmRequestRejected, LlmUnavailable
 from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult
 
 _MODEL = "claude-haiku-4-5-20251001"
@@ -55,9 +58,20 @@ def test_empty_text_is_unusable_without_calling_the_model() -> None:
     assert llm.requests == []
 
 
-def test_a_port_failure_becomes_unusable_understanding() -> None:
-    """A provider failure is never shown to the customer as an error."""
+def test_a_transient_port_failure_raises_understanding_unavailable() -> None:
+    """A transient failure (E9) is not the customer's own ambiguity: it is raised, not folded
+    into ``unusable()``, so the caller never spends a clarification-budget attempt on an outage."""
     llm = FakeLlm(responses=[LlmUnavailable("timed out")])
+    nlu = LlmNlu(llm, model=_MODEL)
+
+    with pytest.raises(UnderstandingUnavailable):
+        nlu.understand("hola", language_hint=None)
+
+
+def test_a_permanent_port_failure_still_becomes_unusable_understanding() -> None:
+    """A permanent failure (bad credentials, a malformed request) is never worth retrying and is
+    still never shown to the customer as an error — it degrades exactly as it always has."""
+    llm = FakeLlm(responses=[LlmRequestRejected("bad credentials")])
     nlu = LlmNlu(llm, model=_MODEL)
 
     result = nlu.understand("hola", language_hint=None)
