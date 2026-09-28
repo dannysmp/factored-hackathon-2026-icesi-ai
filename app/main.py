@@ -82,7 +82,7 @@ from app.config import (
 from app.conversation.controller import DialogueController, HandoffOutbox
 from app.conversation.llm_understanding import LlmNlu
 from app.conversation.model_renderer import LlmRenderer
-from app.conversation.understanding import Understanding
+from app.conversation.understanding import FakeNlu, Understanding
 from app.domain.calendar import (  # Domain date
     DomainCalendar,
     DomainCalendarError,
@@ -208,13 +208,15 @@ def _default_customer_lookup(settings: Settings) -> CustomerLookup:
 
 
 def _understanding(settings: Settings) -> Understanding:
-    """The model-backed understanding port for one turn.
+    """The understanding port for one turn: model-backed, or the stub CI selects.
 
     Raises
     ------
     ConfigError
         The configured provider has no adapter yet, or its API key is not configured.
     """
+    if settings.llm_provider is LlmProvider.STUB:
+        return FakeNlu()
     if settings.llm_provider is not LlmProvider.ANTHROPIC:
         raise ConfigError(f"the '{settings.llm_provider.value}' LLM provider has no adapter yet")
     llm = AnthropicLlmClient(settings.require_anthropic_key())
