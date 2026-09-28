@@ -47,8 +47,8 @@ every case, in `CaseCategory`'s declared order. ``render_case_sheet(cases) -> st
 
 Limitations
 -----------
-Only the human-required, normal and ambiguous categories exist as of this slice; `ALL_CASES`
-holds 80 of the golden set's 135 cases until the remaining category modules land.
+Only the human-required, normal, ambiguous and unsupported categories exist as of this slice;
+`ALL_CASES` holds 93 of the golden set's 135 cases until the remaining category modules land.
 """
 
 from __future__ import annotations
@@ -66,6 +66,7 @@ from pathlib import Path
 from evals.golden.ambiguous import CASES as AMBIGUOUS_CASES  # Category group
 from evals.golden.human_required import CASES as HUMAN_REQUIRED_CASES  # Category group
 from evals.golden.normal import CASES as NORMAL_CASES  # Category group
+from evals.golden.unsupported import CASES as UNSUPPORTED_CASES  # Category group
 from evals.models import Case, CaseCategory  # The record shape and its category vocabulary
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ CATEGORY_CASES: dict[CaseCategory, tuple[Case, ...]] = {
     CaseCategory.HUMAN_REQUIRED: HUMAN_REQUIRED_CASES,
     CaseCategory.NORMAL: NORMAL_CASES,
     CaseCategory.AMBIGUOUS: AMBIGUOUS_CASES,
+    CaseCategory.UNSUPPORTED: UNSUPPORTED_CASES,
 }
 
 #: Every authored case, in `CaseCategory`'s declared order (the golden set's mix-table row
