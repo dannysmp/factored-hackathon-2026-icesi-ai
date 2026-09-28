@@ -8,10 +8,10 @@ carries it, not a promise about a later one.
 
 - **The source data is Spanish-only.** No Portuguese or English customer text exists anywhere in
   the provided dataset, and the call transcripts carry no dispute-related language at all. Every
-  Portuguese and English scripted case, demo script and policy-corpus document in this project is
-  therefore team-generated, never observed, and is labeled as such wherever it appears.
+  Portuguese and English scripted case and policy-corpus document in this project is therefore
+  team-generated, never observed, and is labeled as such wherever it appears.
 - **No native Portuguese speaker reviewed the Portuguese wording.** A reviewer agent, briefed in
-  Portuguese, Spanish and English, flags unnatural or ambiguous phrasing for a pull-request fix
+  Portuguese, Spanish and English, flags unnatural or ambiguous phrasing for the team to correct
   instead. It never assigns the labels the system is scored against. This is a real limitation,
   not a formality, and is disclosed next to every Portuguese result, not only here.
 - **The repeat-complainer signal is not yet wired to a live data source.** The rule itself (a

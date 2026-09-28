@@ -154,9 +154,9 @@ so a reader never has to guess:
 | Class | What it means | Examples in this repository |
 |---|---|---|
 | **Real** | An actual record from the provided source dataset, unmodified in substance | `data/raw` and `data/silver`; `data/gold/ops_seed`'s stratified sample of customers, products and transactions |
-| **De-identified** | A real record with direct identifiers masked or removed before use | `ops_seed`'s masked email and phone columns; a document number is checked at authentication but never stored, logged or carried into any downstream file |
-| **Synthetic** | Fabricated data standing in for a condition the real data cannot hold, or a parameter set written for this project rather than sourced from any institution | `data/gold/eval_bank`'s frozen adversarial scenarios (an orphan transaction, a poisoned field, an unconvertible amount); the dispute policy's own thresholds and windows (`policy/dispute_policy_v1.yaml`), which state their own synthetic provenance |
-| **Team-generated** | Natural-language content the team wrote, because the source data carries no conversational or dispute-related text at all | the golden set's scripted customer turns (`evals/golden/`); the multilingual policy corpus (`policy/corpus/`); demo scripts; the intent-labeling utterances |
+| **De-identified** | A real record with direct identifiers masked or removed before use | `ops_seed`'s masked email and phone columns. A document number a customer types is refused, not accepted, as proof of identity, and is never stored, logged or carried into any downstream file |
+| **Synthetic** | Fabricated data standing in for a condition the real data cannot hold, or a parameter set written for this project rather than sourced from any institution | the frozen adversarial scenarios defined as literals for the evaluation harness (an orphan transaction, a poisoned field, an unconvertible amount); the dispute policy's own thresholds and windows (`policy/dispute_policy_v1.yaml`), which state their own synthetic provenance |
+| **Team-generated** | Natural-language content the team wrote, because the source data carries no conversational or dispute-related text at all | the golden set's scripted customer turns (`evals/golden/`); the multilingual policy corpus (`policy/corpus/`) |
 
 A case, a case sheet or a report states its own provenance inline wherever more than one class could
 plausibly apply to the same row.
