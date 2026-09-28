@@ -58,16 +58,23 @@ from contracts.service_v1.handoff import (  # The packet this module builds
 
 _MASK_PREFIX = "****"
 _MASK_VISIBLE_CHARS = 4
+_MASK_MIN_VISIBLE_CHARS = 2
 
 
 def mask_customer_id(customer_id: str) -> str:
     """``customer_id`` as an agent may see it: four asterisks, then up to its last four characters.
 
     Only alphanumeric characters are kept, matching ``CustomerLabel.masked_id``'s own pattern; a
-    hyphen or another separator in the source identifier is dropped rather than masked.
+    hyphen or another separator in the source identifier is dropped rather than masked. The
+    session identifier pattern (``app.security.sessions``) allows an identifier with fewer than
+    two alphanumeric characters (for example ``"_-"``); padding with ``"0"`` on the left — never a
+    real digit of the identifier — guarantees the two-to-four-character result the contract
+    requires holds for every identifier the session layer accepts, not only the common ones a
+    handful of examples happen to cover.
     """
     alnum = re.sub(r"[^A-Za-z0-9]", "", customer_id)
-    return _MASK_PREFIX + alnum[-_MASK_VISIBLE_CHARS:]
+    visible = alnum[-_MASK_VISIBLE_CHARS:].rjust(_MASK_MIN_VISIBLE_CHARS, "0")
+    return _MASK_PREFIX + visible
 
 
 def build_packet(

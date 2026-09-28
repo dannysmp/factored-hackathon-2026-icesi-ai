@@ -8,8 +8,12 @@ Component: ``app.conversation.handoff``. Hermetic and pure: no store, no clock, 
 from __future__ import annotations
 
 # Standard libraries
+import re
 from datetime import UTC, date, datetime
 from typing import Any
+
+# Third-party libraries
+import pytest
 
 # Local modules
 from app.conversation.handoff import build_packet, mask_customer_id
@@ -41,6 +45,15 @@ def test_mask_customer_id_keeps_only_the_last_four_alphanumeric_characters() -> 
     """A masked identifier never shows more than four characters of the original."""
     assert mask_customer_id("CLI-1234") == "****1234"
     assert mask_customer_id("customer-99") == "****er99"
+
+
+@pytest.mark.parametrize("customer_id", ["9", "_-", "", "a", "____"])
+def test_mask_customer_id_pads_to_the_contracts_minimum_length(customer_id: str) -> None:
+    """An identifier with fewer than two alphanumeric characters still satisfies the pattern
+    CustomerLabel.masked_id requires, rather than raising when build_packet validates it."""
+    masked = mask_customer_id(customer_id)
+
+    assert re.fullmatch(r"\*{4}[A-Za-z0-9]{2,4}", masked)
 
 
 def test_build_packet_produces_a_valid_handoff_packet() -> None:
