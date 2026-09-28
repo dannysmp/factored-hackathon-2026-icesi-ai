@@ -151,18 +151,20 @@ def _run_turn(
     *,
     session_id: str,
     turn_id: str,
-) -> tuple[str, bool]:
+) -> tuple[str, bool, float]:
     """Run tool-call rounds for one customer turn until the model replies in text.
 
     Returns
     -------
-    tuple[str, bool]
-        The model's final text, and whether this turn's last ``evaluate_dispute`` call left an
+    tuple[str, bool, float]
+        The model's final text; whether this turn's last ``evaluate_dispute`` call left an
         eligible decision with no ``create_dispute_case`` call after it (the ``next_expected``
-        signal).
+        signal); and the turn's total latency in seconds, summed over every ``NaiveAgentClient``
+        call this turn made (a turn with several tool-call rounds makes several calls).
     """
     dispatcher.start_turn()
     reached_confirmable = False
+    latency_seconds = 0.0
     for _round in range(_MAX_TOOL_ROUNDS):
         turn = client.send(
             messages,
@@ -171,8 +173,9 @@ def _run_turn(
             max_tokens=_MAX_TOKENS,
             timeout_seconds=_TIMEOUT_SECONDS,
         )
+        latency_seconds += turn.latency_ms / 1000
         if not turn.tool_calls:
-            return turn.text, reached_confirmable
+            return turn.text, reached_confirmable, latency_seconds
         content_blocks = [
             {"type": "tool_use", "id": call.id, "name": call.name, "input": dict(call.input)}
             for call in turn.tool_calls
@@ -192,7 +195,7 @@ def _run_turn(
             if call.name == "create_dispute_case":
                 reached_confirmable = False
         messages.append({"role": "user", "content": results})
-    return "", reached_confirmable
+    return "", reached_confirmable, latency_seconds
 
 
 def run_case(
@@ -210,7 +213,7 @@ def run_case(
     for index, text in enumerate(case.user_turns):
         messages.append({"role": "user", "content": text})
         turn_id = f"{case.case_id}-t{index:03d}"
-        reply_text, reached_confirmable = _run_turn(
+        reply_text, reached_confirmable, latency_seconds = _run_turn(
             client, dispatcher, messages, session_id=session_id, turn_id=turn_id
         )
         if reply_text:
@@ -228,7 +231,7 @@ def run_case(
                 handoff_ticket=dispatcher.handoff_ticket,
             )
         )
-        latencies.append(0.0)
+        latencies.append(latency_seconds)
     return RunTranscript(
         case=case, session_id=session_id, replies=tuple(replies), latencies_seconds=tuple(latencies)
     )
