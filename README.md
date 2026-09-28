@@ -49,6 +49,22 @@ Design rules that follow from this:
 | `scripts/` | Repository tooling, such as the secret-scan self-test |
 | `tests/` | Hermetic unit and contract tests |
 
+### Discipline map
+
+Each engineering discipline this project touches has one artifact that is the current, checkable
+evidence of its state — not a status claim, but something a reader can open and verify directly:
+
+| Discipline | Open this |
+|---|---|
+| Data engineering | [`reports/data-profile.md`](reports/data-profile.md), [`reports/data-quality.md`](reports/data-quality.md) |
+| Backend and policy | `app/domain/policy/`, [SECURITY.md](SECURITY.md) |
+| Language understanding and dialogue | `app/conversation/`, `app/llm/`, `app/retrieval/` |
+| Machine learning | [`models/model_card.json`](models/model_card.json), [`models/README.md`](models/README.md) |
+| Evaluation | `evals/golden/`, [`reports/`](reports/) once `make evaluate` has run |
+| Frontend | [`web/README.md`](web/README.md) |
+| Deployment | [`infra/README.md`](infra/README.md) |
+| Release readiness | [`docs/release-checklist.md`](docs/release-checklist.md), [`docs/limitations.md`](docs/limitations.md) |
+
 ## Getting started
 
 ### Prerequisites
@@ -129,6 +145,30 @@ builds the aggregate marts under `data/gold/dispute_demand`; the report holds co
 Every feature uses only what was known when the transaction happened (the velocity windows end
 strictly before it), the source's own fraud score and the authorisation outcome are left out on
 purpose, and every row carries its training, validation or test period from `models/split.toml`.
+
+#### Where each input comes from
+
+Every input the system reads or was built from falls into exactly one of four classes, stated here
+so a reader never has to guess:
+
+| Class | What it means | Examples in this repository |
+|---|---|---|
+| **Real** | An actual record from the provided source dataset, unmodified in substance | `data/raw` and `data/silver`; `data/gold/ops_seed`'s stratified sample of customers, products and transactions |
+| **De-identified** | A real record with direct identifiers masked or removed before use | `ops_seed`'s masked email and phone columns. A document number a customer types is refused, not accepted, as proof of identity, and is never stored, logged or carried into any downstream file |
+| **Synthetic** | Fabricated data standing in for a condition the real data cannot hold, or a parameter set written for this project rather than sourced from any institution | the frozen adversarial scenarios defined as literals for the evaluation harness (an orphan transaction, a poisoned field, an unconvertible amount); the dispute policy's own thresholds and windows (`policy/dispute_policy_v1.yaml`), which state their own synthetic provenance |
+| **Team-generated** | Natural-language content the team wrote, because the source data carries no conversational or dispute-related text at all | the golden set's scripted customer turns (`evals/golden/`); the multilingual policy corpus (`policy/corpus/`) |
+
+A case, a case sheet or a report states its own provenance inline wherever more than one class could
+plausibly apply to the same row.
+
+### Model cards
+
+Every model this system trains or scores with is described by a machine-readable model card,
+written by the training job itself so the card can never drift from what was actually run: the
+selected model, its calibration, the routing threshold and why it was or was not set, the test-period
+result and its confidence interval, and the model's own data provenance and limitations. The
+transaction-risk model's current card is [`models/model_card.json`](models/model_card.json); see
+[`models/README.md`](models/README.md) for what produced it and how to reproduce it.
 
 ### Configuration
 
