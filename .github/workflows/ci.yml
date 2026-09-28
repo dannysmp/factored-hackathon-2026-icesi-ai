@@ -16,7 +16,7 @@
 #                independent of the Python jobs.
 #   test-postgres Migrations applied to a fresh service-container Postgres, then the tests
 #                marked integration run against it.
-#   smoke        The evaluation harness's ~15-case injection-and-authorization slice, run
+#   smoke        The evaluation harness's 16-case injection-and-authorization slice, run
 #                against P and B0 over a fresh service-container Postgres seeded with wholly
 #                synthetic data (never the provider's real data); blocks merge on any case
 #                turning unsafe. B1 does not run here — its whole purpose is measuring a real,
