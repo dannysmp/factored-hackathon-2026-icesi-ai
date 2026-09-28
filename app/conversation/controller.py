@@ -98,6 +98,7 @@ from app.domain.policy.models import DisputeCategory, Outcome, Policy, PolicyDec
 from app.persistence.handoff_outbox import HandoffContent
 from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError
+from app.security.middleware import current_request_id
 from app.security.sessions import Clock, Principal
 from app.tools.create_dispatch import create_dispute_case
 from app.tools.dispatcher import dispatch
@@ -492,10 +493,11 @@ class DialogueController:
     def _handle_farewell(
         self, state: DialogueState, _result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
-        new_state = state.with_phase(ConversationPhase.CLOSED)
-        return new_state, self._envelope(
-            new_state, Intent.FAREWELL, TemplateId.FAREWELL, end_session=True
-        )
+        """A farewell never advances ``state``: it carries no filing decision to protect from a
+        replay, unlike ``ConversationPhase.CLOSED``, which every caller that sets it uses as the
+        exclusive signal that a filing decision (ineligible, cancelled, duplicate) was reached and
+        must never be recomputed (see ``_replay_envelope``)."""
+        return state, self._envelope(state, Intent.FAREWELL, TemplateId.FAREWELL, end_session=True)
 
     def _handle_unroutable(
         self, state: DialogueState, result: NluResult
@@ -780,7 +782,11 @@ class DialogueController:
                 trace_id=state.session_id,
             )
         except psycopg.Error:
-            logger.warning("handoff_not_registered session_id=%s", state.session_id)
+            logger.warning(
+                "handoff_not_registered session_id=%s request_id=%s",
+                state.session_id,
+                current_request_id(),
+            )
             new_state = state.with_phase(ConversationPhase.ABANDONED)
             return new_state, self._envelope(
                 new_state, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
@@ -802,9 +808,17 @@ class DialogueController:
 
         A filed case is read back fresh (its status may have moved on since); a handoff is
         rendered directly from its stored ticket; a pending clarification is a pure re-render.
-        Every other outcome reachable here (ineligible, cancelled, farewell, a plain informational
-        reply) has no tool call that is not already safe to repeat, so it is recomputed exactly as
-        the original turn was, using the same, already-persisted facts.
+        ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
+        cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
+        clears the pending slot and leaves no case or ticket behind, so it can never be confused
+        with a plain conversational ending here. It renders a generic, truthful acknowledgment
+        rather than recomputing, because recomputing would call ``evaluate_dispute`` again — a
+        fresh read against the store's *current* facts, not the ones the original decision rested
+        on, so a fact that changed since (a filing window that closed, a case opened through
+        another channel) could silently turn a past refusal into a filing with no new confirmation
+        from the customer. Every other outcome reachable here (a plain informational reply, a
+        farewell, which touches no state at all) has no such decision to protect and no tool call
+        that is not already safe to repeat, so it is recomputed exactly as the original turn was.
         """
         if state.last_case_number is not None:
             case = dispatch(self._tool_port, tool_contracts.Tool.GET_CASE, state.last_case_number)
@@ -834,6 +848,9 @@ class DialogueController:
 
         if state.pending_slot is not None:
             return self._envelope(state, Intent.CLARIFY, _ASK_TEMPLATE_OF[state.pending_slot])
+
+        if state.phase is ConversationPhase.CLOSED:
+            return self._envelope(state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
 
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn

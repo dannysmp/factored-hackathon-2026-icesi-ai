@@ -11,6 +11,7 @@ matching ``tests/test_policy_answer.py``'s own fixtures.
 from __future__ import annotations
 
 # Standard libraries
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -181,6 +182,7 @@ class FakeToolPort:
     list_cases_result: tuple[CaseRecord, ...] | ToolFailure | None = None
     get_case_result: object = _UNSET
     get_transaction_result: object = _UNSET
+    create_calls: int = 0
 
     def list_transactions(self, filters: TransactionFilters) -> TransactionPage | ToolFailure:
         if self.list_transactions_result is not None:
@@ -213,6 +215,7 @@ class FakeToolPort:
         return self.evaluate_result
 
     def create_dispute_case(self, request: object) -> CreateDisputeCaseResult | ToolFailure:
+        self.create_calls += 1
         assert self.create_result is not None
         return self.create_result
 
@@ -605,6 +608,62 @@ def test_ineligible_decision_states_the_reason(policy: Policy, retriever: Lexica
     response = controller.handle_turn(_turn("turn-0002"), principal=_principal())
     assert not response.end_session
     assert response.next_expected is None
+
+
+def test_replaying_an_ineligible_turn_never_re_evaluates_or_files(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A retried turn that originally read as ineligible must not be recomputed: `evaluate_dispute`
+    reads the store's current facts, not the ones the original decision rested on, so a fact that
+    changed since (here: the same port now answering eligible, with no confirmation required)
+    could otherwise turn a past refusal into a filing with no new confirmation from the customer."""
+    store = InMemoryDialogueStore()
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(Outcome.INELIGIBLE, ReasonCode.FILING_WINDOW_EXPIRED),
+    )
+    controller, _ = _controller(
+        _file_dispute(transaction=TransactionHint(merchant="Amazon")),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+    controller, _ = _controller(
+        _file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+    original = controller.handle_turn(_turn("turn-0002"), principal=_principal())
+
+    # The world moved on: the same transaction and category would now be filed outright.
+    port.evaluate_result = _decision(
+        Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=False
+    )
+    port.create_result = CreateDisputeCaseResult(created=True, case_number="D-999")
+
+    controller, _ = _controller(
+        _file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+    replay = controller.handle_turn(_turn("turn-0002"), principal=_principal())
+
+    # No re-filing happened, whatever the reply says: a decision that carried no case or ticket
+    # is replayed with a generic, still-truthful acknowledgment rather than recomputed, precisely
+    # because recomputing is what would have refiled it here.
+    assert port.create_calls == 0
+    assert store.get(_SESSION_ID).last_case_number is None  # type: ignore[union-attr]
+    assert not replay.end_session
+    assert replay.state_version == original.state_version
 
 
 @pytest.mark.parametrize(
@@ -1061,7 +1120,7 @@ def test_a_concurrent_conflict_raises_turn_conflict(
 
 
 def test_handoff_not_registered_when_the_outbox_fails(
-    policy: Policy, retriever: LexicalRetriever
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
 ) -> None:
     store = InMemoryDialogueStore()
     controller, _ = _controller(
@@ -1072,9 +1131,13 @@ def test_handoff_not_registered_when_the_outbox_fails(
         outbox=FakeHandoffOutbox(fail=True),
         retriever=retriever,
     )
-    response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+    with caplog.at_level(logging.WARNING):
+        response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert response.end_session
     assert response.handoff_ticket is None
+    logged = [r for r in caplog.records if "handoff_not_registered" in r.getMessage()]
+    assert logged
+    assert "request_id=" in logged[0].getMessage()
 
 
 def test_a_save_time_race_replays_the_winning_state(
