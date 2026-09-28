@@ -85,7 +85,7 @@ class _FakeBreaker:
 class _ScriptedLlm:
     """Raises or returns exactly what was queued, in order."""
 
-    responses: list[LlmError | CompletionResult] = field(default_factory=list)
+    responses: list[LlmError | CompletionResult | Exception] = field(default_factory=list)
     calls: int = 0
 
     def complete(self, request: CompletionRequest) -> CompletionResult:
@@ -177,6 +177,53 @@ def test_a_permanent_failure_is_never_retried_but_still_records_a_success(
     assert breaker.successes == 1
     assert breaker.failures == 0
     assert _SLEEPS == []
+
+
+def test_an_exception_outside_the_llmerror_contract_records_a_failure_and_propagates() -> None:
+    """Defensive backstop: the inner client's own contract says it never raises outside
+    ``LlmError``, but if a bug or a future implementation ever did, that must still resolve the
+    breaker before propagating, exactly like any other outcome, and is not itself retried."""
+    error = RuntimeError("unexpected bug in the inner client")
+    inner = _ScriptedLlm(responses=[error])
+    breaker = _FakeBreaker()
+    client: LlmClient = _client(inner, breaker=breaker, max_attempts=3)
+
+    with pytest.raises(RuntimeError):
+        client.complete(_REQUEST)
+
+    assert inner.calls == 1
+    assert breaker.failures == 1
+    assert breaker.successes == 0
+    assert _SLEEPS == []
+
+
+def test_a_half_open_trial_that_raises_an_unexpected_exception_reopens_but_does_not_wedge() -> None:
+    """Regression for a real bug: a half-open breaker allows exactly one trial call and then
+    refuses everything until that trial's own outcome is recorded. A genuine failure correctly
+    reopens the breaker for a fresh, bounded window — the bug this guards against is a PERMANENT
+    refusal that no amount of waiting would ever clear, not this normal, bounded reopening."""
+    start = datetime(2026, 1, 1)
+    clock = {"now": start}
+    breaker = InMemoryCircuitBreaker(1, 30, clock=lambda: clock["now"])
+    breaker.record_failure()  # opens the breaker
+    clock["now"] = start + timedelta(seconds=30)  # the reset window has now elapsed
+
+    inner = _ScriptedLlm(responses=[RuntimeError("unexpected bug in the inner client")])
+    client: LlmClient = RetriedLlmClient(
+        build_inner=lambda: inner,
+        policy=RetryPolicy(max_attempts=3, base_delay_ms=1, max_delay_ms=1),
+        breaker=breaker,
+        sleep=_no_sleep,
+    )
+
+    # This call's own allow() consumes the one half-open trial.
+    with pytest.raises(RuntimeError):
+        client.complete(_REQUEST)
+
+    # Correctly reopened, not wedged: refused now, but only for a fresh, bounded window.
+    assert not breaker.allow()
+    clock["now"] = clock["now"] + timedelta(seconds=30)
+    assert breaker.allow()
 
 
 @pytest.mark.parametrize("error", [LlmRequestRejected("bad key"), LlmOutputInvalid("bad json")])

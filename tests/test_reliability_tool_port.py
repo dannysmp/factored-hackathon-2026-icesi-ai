@@ -52,14 +52,17 @@ class _FakeBreaker:
 
 @dataclass
 class _ScriptedPort:
-    """Returns exactly what was queued for ``list_transactions``, in order."""
+    """Returns or raises exactly what was queued for ``list_transactions``, in order."""
 
-    responses: list[TransactionPage | ToolFailure] = field(default_factory=list)
+    responses: list[TransactionPage | ToolFailure | Exception] = field(default_factory=list)
     calls: int = 0
 
     def list_transactions(self, filters: TransactionFilters) -> TransactionPage | ToolFailure:
         self.calls += 1
-        return self.responses[self.calls - 1]
+        outcome = self.responses[self.calls - 1]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
     def get_transaction(self, ref: str) -> None:
         raise NotImplementedError
@@ -125,6 +128,48 @@ def test_exhausting_every_attempt_returns_the_failure_and_records_it() -> None:
     assert breaker.failures == 1
     assert breaker.successes == 0
     assert len(_SLEEPS) == 2
+
+
+def test_a_raised_exception_records_a_failure_and_propagates_without_retrying() -> None:
+    """``PostgresToolPort`` raises directly (never returns a ``ToolFailure``) when its fail-closed
+    audit write fails; that must still resolve the breaker, exactly like any other outcome, and is
+    not itself retried — only the value-based ``ToolFailure`` signal is."""
+    error = RuntimeError("audit write failed")
+    inner = _ScriptedPort(responses=[error])
+    breaker = _FakeBreaker()
+    port = _port(inner, breaker=breaker, max_attempts=3)
+
+    with pytest.raises(RuntimeError):
+        port.list_transactions(_FILTERS)
+
+    assert inner.calls == 1
+    assert breaker.failures == 1
+    assert breaker.successes == 0
+    assert _SLEEPS == []
+
+
+def test_a_half_open_trial_that_raises_reopens_but_does_not_wedge() -> None:
+    """Regression for a real bug: a half-open breaker allows exactly one trial call and then
+    refuses everything until that trial's own outcome is recorded. A genuine failure correctly
+    reopens the breaker for a fresh, bounded window — the bug this guards against is a PERMANENT
+    refusal that no amount of waiting would ever clear, not this normal, bounded reopening."""
+    start = datetime(2026, 1, 1)
+    clock = {"now": start}
+    breaker = InMemoryCircuitBreaker(1, 30, clock=lambda: clock["now"])
+    breaker.record_failure()  # opens the breaker
+    clock["now"] = start + timedelta(seconds=30)  # the reset window has now elapsed
+
+    inner = _ScriptedPort(responses=[RuntimeError("audit write failed")])
+    port = _port(inner, breaker=breaker, max_attempts=3)
+
+    # This call's own allow() consumes the one half-open trial.
+    with pytest.raises(RuntimeError):
+        port.list_transactions(_FILTERS)
+
+    # Correctly reopened, not wedged: refused now, but only for a fresh, bounded window.
+    assert not breaker.allow()
+    clock["now"] = clock["now"] + timedelta(seconds=30)
+    assert breaker.allow()
 
 
 def test_a_non_retryable_failure_is_returned_immediately_and_still_records_a_success() -> None:

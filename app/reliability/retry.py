@@ -24,10 +24,13 @@ Design Principles
 - **Every outcome of an allowed call reports back to the breaker, not only a retried failure.**
   ``LlmRequestRejected``/``LlmOutputInvalid`` mean the provider was reached and answered — a
   reachability success for the breaker's own purpose, whatever it means for the caller — so both
-  record success too. Recording only the retried-failure type would leave a half-open trial call
-  that resolves to either of these permanently unresolved: ``allow()`` refuses every call after a
-  half-open trial until its outcome is recorded, so a dependency that is actually back up would
-  stay wrongly tripped open forever.
+  record success too. Any OTHER exception the inner client raises — one outside its own documented
+  ``LlmError`` contract, a defensive backstop rather than an expected path — still records a
+  failure before propagating, for the identical reason: recording nothing at all would leave a
+  half-open trial call permanently unresolved just as surely as recording nothing for a known
+  outcome would. ``allow()`` refuses every call after a half-open trial until its outcome is
+  recorded one way or the other, so a dependency that is actually back up (or actually down) must
+  never be left un-adjudicated.
 - **The inner client is built lazily, once, under a lock.** Deferring construction (and the
   ``ConfigError`` a missing provider key raises) to the first actual call keeps the composition
   root's own lazy-resolution guarantee: this wrapper can be built at start-up, unconditionally,
@@ -128,6 +131,11 @@ class RetriedLlmClient:
                 # The provider was reached and answered — a rejection or unparsable output is
                 # not an outage, so this still resolves an in-flight half-open trial as success.
                 self.breaker.record_success()
+                raise
+            except Exception:
+                # Outside the inner client's own documented contract: still resolve the breaker
+                # before propagating, or a half-open trial that hits this could stay wedged.
+                self.breaker.record_failure()
                 raise
             self.breaker.record_success()
             return result

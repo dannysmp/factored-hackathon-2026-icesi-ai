@@ -25,11 +25,14 @@ Design Principles
 - **Every outcome of an allowed call reports back to the breaker, not only a retried failure.** A
   non-retryable ``ToolFailure`` (a permission refusal, a missing reference) means the store was
   reached and answered — a reachability success for the breaker's own purpose, whatever it means
-  for the caller — so it records success too, exactly like a real value or ``None``. Recording
-  only the retried-failure type would leave a half-open trial call that resolves to a routine
-  business refusal permanently unresolved: ``allow()`` refuses every call after a half-open trial
-  until its outcome is recorded, so a store that is actually back up would stay wrongly tripped
-  open forever.
+  for the caller — so it records success too, exactly like a real value or ``None``. The wrapped
+  port can also raise directly rather than return a ``ToolFailure`` — ``PostgresToolPort`` does
+  this for an audit-write failure, by design (fail closed) — and that outcome records a failure
+  before propagating, for the identical reason: recording nothing at all would leave a half-open
+  trial call permanently unresolved just as surely as recording nothing for a known outcome would.
+  ``allow()`` refuses every call after a half-open trial until its outcome is recorded one way or
+  the other, so a store that is actually back up (or actually down) must never be left
+  un-adjudicated.
 - **One breaker for the whole port**, matching ``app.reliability.breaker``'s own design principle:
   a Postgres outage fails every method identically, so one shared instance is the only signal
   worth tracking, not six independent ones that would trip in lockstep anyway.
@@ -95,7 +98,15 @@ class RetriedToolPort:
         attempt = 0
         while True:
             attempt += 1
-            result = call()
+            try:
+                result = call()
+            except Exception:
+                # The wrapped port raised directly instead of returning a ``ToolFailure`` (for
+                # example ``PostgresToolPort``'s fail-closed audit write): still resolve the
+                # breaker before propagating, or a half-open trial that hits this could stay
+                # wedged just like an unresolved return value would.
+                self._breaker.record_failure()
+                raise
             retryable_failure = (
                 isinstance(result, ToolFailure)
                 and result.retryable
