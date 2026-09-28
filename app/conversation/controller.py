@@ -81,12 +81,13 @@ A duplicate turn's handoff replay always uses the generic reviewing wording, whi
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
 handoff packet: neither is available from the tools this module calls. A genuine concurrent
-duplicate (two requests racing on the same new turn id, both reading no existing state) each run
-their own real model call and each log their own ``turn_completed`` line before either attempts to
-save; the loser's save then replays the winner's state, so one client-visible turn can log cost
-twice. This is an honest account of both calls' real spend, not a bug in the log line itself, but
-it means "one client-visible turn" and "one logged turn_completed line" are not always the same
-count under this specific race.
+duplicate (two requests racing on the same turn id, whether the session is brand new or already
+has prior turns) each read the same starting state, each run their own real model call, and each
+log their own ``turn_completed`` line before either attempts to save; the loser's save then
+replays the winner's state, so one client-visible turn can log cost twice. This is an honest
+account of both calls' real spend, not a bug in the log line itself, but it means "one
+client-visible turn" and "one logged turn_completed line" are not always the same count under this
+specific race.
 """
 
 from __future__ import annotations
