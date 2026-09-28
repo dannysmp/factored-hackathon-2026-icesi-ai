@@ -62,8 +62,11 @@ Design Principles
 Runtime Contract
 ----------------
 ``DialogueController(understanding, store, tool_port, retriever, policy, outbox, *, domain_date,
-now)`` with ``handle_turn(request: TurnRequest, *, principal: Principal) -> TurnResponse``.
-``HandoffOutbox`` (protocol): the port this module writes a handoff through.
+now, model_renderer=None)`` with ``handle_turn(request: TurnRequest, *, principal: Principal) ->
+TurnResponse``. ``HandoffOutbox`` (protocol): the port this module writes a handoff through.
+``model_renderer`` is ``None`` by default (the fixed-wording template path only); passing an
+``LlmRenderer`` lets eligible replies render through the model path instead, verified, with the
+template as its own deterministic fallback (``app.conversation.reply.render_reply``).
 
 Limitations
 -----------
@@ -102,8 +105,10 @@ import psycopg  # Distinguishing an outbox write failure from every other outcom
 # Local modules
 from app.conversation.facts import to_envelope_case, to_envelope_transaction
 from app.conversation.guard import required_slot
+from app.conversation.model_renderer import LlmRenderer
 from app.conversation.policy_answer import answer as policy_answer
-from app.conversation.renderer import RenderedReply, demo_notice, render
+from app.conversation.renderer import RenderedReply, demo_notice
+from app.conversation.reply import render_reply
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DialogueStore, DuplicateTurn
 from app.conversation.understanding import TurnAccounting, Understanding
@@ -256,6 +261,7 @@ class DialogueController:
         outbox: HandoffOutbox,
         domain_date: date,
         now: Clock,
+        model_renderer: LlmRenderer | None = None,
     ) -> None:
         self._understanding = understanding
         self._store = store
@@ -265,6 +271,7 @@ class DialogueController:
         self._outbox = outbox
         self._domain_date = domain_date
         self._now = now
+        self._model_renderer = model_renderer
         # Set once per call, at the top of handle_turn: every private helper below reads the
         # current turn's own request and principal from here rather than threading them through
         # every method signature. Safe because one instance ever handles exactly one turn.
@@ -956,7 +963,7 @@ class DialogueController:
         )
 
     def _respond(self, state: DialogueState, envelope: RenderEnvelope) -> TurnResponse:
-        rendered: RenderedReply = render(envelope)
+        rendered: RenderedReply = render_reply(envelope, model_renderer=self._model_renderer)
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
         return TurnResponse(
