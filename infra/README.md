@@ -13,7 +13,7 @@ AWS provisioning for the deployed stack (ADR-13: one EC2 host, ECR, docker compo
 | `scripts/05-deploy.sh` | Brings the compose stack up on the tagged host over SSM (no SSH): embeds the current `docker-compose.yml`, `docker-compose.prod.yml` and `infra/Caddyfile` in the command; the host reads its own two secrets from SSM with its own role. Prints the sslip.io host name on success. |
 | `scripts/06-smoke-test.sh` | Proves the deployed path answers over HTTPS: the health endpoint and the web static page, retrying while Caddy's certificate issuance and the containers' own start-up catch up. Its `--dashboard` flag additionally proves the `dashboard.` subdomain reaches Metabase. |
 | `scripts/07-teardown.sh` | Reverses `04-launch-instance.sh`: terminates the tagged instance, releases its Elastic IP, deletes its security group. Leaves the OIDC role, the instance role and the ECR repositories in place. |
-| `scripts/08-deploy-metabase.sh` | Creates Metabase's own database and role, sets `analytics_reader`'s password, brings up the `metabase` service, completes its first-run admin setup and connects the `analytics` schema — then swaps in the Caddyfile that routes the `dashboard.` subdomain to it, only once all of that has succeeded (ADR-11). Idempotent: re-running it against an already-provisioned deployment reconciles credentials and the Caddy config without repeating setup. |
+| `scripts/08-deploy-metabase.sh` | Creates Metabase's own database and role, sets `analytics_reader`'s password, brings up the `metabase` service, completes its first-run admin setup and connects the `analytics` schema — then swaps in the Caddyfile that routes the `dashboard.` subdomain to it, only once all of that has succeeded (ADR-11). Idempotent: re-running it against an already-provisioned deployment reconciles credentials and the Caddy config without repeating setup. Once Metabase is healthy, it also captures and logs a `docker stats --no-stream` reading of all five services sharing the host (ADR-11's own capacity requirement). |
 
 Every script is idempotent (safe to re-run; an existing resource with the right name is left as
 is or reconciled, never duplicated) and refuses to run against any profile or region but
@@ -95,6 +95,20 @@ the same way, by `08-deploy-metabase.sh`.
 `infra/Caddyfile.with-metabase` is the Caddyfile that also routes the dashboard subdomain; it
 replaces the plain `infra/Caddyfile` on the host only once Metabase's first-run setup has
 succeeded (ADR-11), never before — see `08-deploy-metabase.sh`'s own header for why.
+
+## Capacity
+
+Metabase and its heap share the `t3.large` host with the backend, web, Postgres and the reverse
+proxy — no cheaper-instance lever exists, so the memory footprint of all five is measured and
+recorded (ADR-11). `08-deploy-metabase.sh` captures a `docker stats --no-stream` reading once
+Metabase is healthy and logs it as part of its own run; the first real reading is recorded here
+once a deployment with `deploy_metabase` enabled has actually run against the account:
+
+- *(not yet run against the account — record the reading here after the first such deployment)*
+
+A base deployment that later disables `deploy_metabase` still carries the dashboard route only if
+`08-deploy-metabase.sh` has run since the last `05-deploy.sh`: that script always writes the plain
+`infra/Caddyfile`, which would otherwise silently drop the `dashboard.` route until `08` runs again.
 
 ## Images
 

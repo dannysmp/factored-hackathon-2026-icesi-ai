@@ -24,7 +24,9 @@
 #   the container, verified directly against a real local instance while
 #   building this script — which is exactly why the container's port is
 #   loopback-only and Caddy never routes to it until setup has already
-#   claimed that token.
+#   claimed that token. Once Metabase is healthy, the script also captures
+#   and logs the memory footprint of the five services now sharing the
+#   host, per ADR-11's own capacity requirement.
 # Usage:
 #   infra/scripts/08-deploy-metabase.sh
 #   (needs 05-deploy.sh already run, and the SSM parameters this script
@@ -104,6 +106,9 @@ if [ "\$code" != "200" ]; then
   echo "metabase did not become healthy in time" >&2
   exit 1
 fi
+
+echo "memory footprint of the five services on the host:"
+docker stats --no-stream --format '{{.Name}}: {{.MemUsage}}'
 
 has_user_setup="\$(curl -s http://localhost:3000/api/session/properties | python3 -c 'import json,sys; print(json.load(sys.stdin)["has-user-setup"])')"
 if [ "\$has_user_setup" = "True" ]; then
