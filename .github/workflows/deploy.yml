@@ -189,15 +189,3 @@ jobs:
           aws-region: us-east-1
       - name: Tear down the host, its Elastic IP and its security group
         run: infra/scripts/07-teardown.sh
-
-  oidc-debug:
-    name: oidc-debug
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: TEMP DEBUG decode the OIDC token's actual claims
-        run: |
-          token="$(curl -sH "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
-          payload="$(echo "${token}" | cut -d. -f2)"
-          padded="${payload}$(printf '%0.s=' $(seq 1 $(( (4 - ${#payload} % 4) % 4 ))))"
-          echo "${padded}" | tr '_-' '/+' | base64 -d | python3 -m json.tool
