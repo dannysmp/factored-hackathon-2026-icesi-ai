@@ -33,10 +33,19 @@ Design Principles
   as a plain ``str`` instead of the ``LlmProvider`` member ``app.main._understanding``'s identity
   check requires — the exact bug found and fixed while building the runner
   (``evals.runner.runner``). This module passes the enum member itself.
+- **The prod restriction is re-asserted here, not only trusted from validation.** ``Settings``'s
+  own ``_stub_llm_rules`` model validator refuses ``llm_provider=stub`` when ``app_env=prod`` — but
+  only when ``Settings`` is actually constructed through validation. ``model_copy`` never
+  validates, so a caller that already holds a ``Settings`` object with ``app_env=prod`` (however it
+  was built) could otherwise sail straight through this function into a working B0 application in
+  a production environment, defeating the very restriction that setting exists to enforce. This
+  function checks ``app_env`` itself, before ever touching ``llm_provider``, so the restriction
+  holds regardless of what ``model_copy`` does or does not revalidate.
 
 Runtime Contract
 -----------------
-``build_b0_app(settings) -> FastAPI``.
+``build_b0_app(settings) -> FastAPI``. Raises ``ConfigError`` when ``settings.app_env`` is
+``prod``.
 
 Limitations
 -----------
@@ -54,7 +63,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 # Local modules
-from app.config import LlmProvider, Settings  # The provider value that selects FakeNlu
+from app.config import AppEnvironment, ConfigError, LlmProvider, Settings  # Provider and env
 from app.main import create_app  # The one application both P and B0 are built from
 
 
@@ -64,6 +73,15 @@ def build_b0_app(settings: Settings) -> FastAPI:
 
     Every other setting is passed through unchanged: the same store, the same tool port
     construction, the same policy, the same retriever, the same handoff outbox.
+
+    Raises
+    ------
+    ConfigError
+        ``settings.app_env`` is ``prod``. B0 is an evaluation-only variant; it is refused in
+        production for the same reason ``Settings`` itself refuses ``llm_provider=stub`` there,
+        re-asserted here because ``model_copy`` does not revalidate that rule.
     """
+    if settings.app_env is AppEnvironment.PROD:
+        raise ConfigError("the B0 baseline is not allowed when APP_ENV=prod")
     b0_settings = settings.model_copy(update={"llm_provider": LlmProvider.STUB})
     return create_app(b0_settings)
