@@ -1,0 +1,138 @@
+# =============================================================================
+# Deploy — build, scan, push, deploy over SSM, smoke test, optional teardown
+# =============================================================================
+# Purpose:
+#   The deploy pipeline streams.md's 3.12 asks for: build both images, scan
+#   them, push to ECR, bring the compose stack up on the tagged host over
+#   SSM (no SSH), and prove the deployed path answers over HTTPS. 3.12a (the
+#   early smoke exercise) runs this once against whatever is on main today,
+#   with no sign-in enabled, and tears down after — the default input below.
+#
+# Security posture:
+#   No static AWS keys: the job assumes infra/scripts/01-create-oidc-role.sh's
+#   role through GitHub's own OIDC token, scoped to workflow runs on `main`.
+#   That role can push to this project's two ECR repositories and send an
+#   SSM command to an instance tagged for this project — nothing else. The
+#   two application secrets are read on the host by its own instance role;
+#   this workflow never sees either value.
+#
+# Pinned actions:
+#   actions/checkout                11d5960a326750d5838078e36cf38b85af677262   release v4
+#   aws-actions/configure-aws-credentials  e1253824e5c10ff9df46874f81ed3ec929e19cfd  release v6.3.0
+#   aquasecurity/trivy-action        ed142fd0673e97e23eac54620cfb913e5ce36c25   release v0.36.0
+#
+# Usage:
+#   Manual only (workflow_dispatch): the account must already be provisioned
+#   by infra/scripts/01-04 and carry the `anthropic-api-key` and
+#   `session-signing-key` SSM parameters (infra/scripts/put-secret.sh) before
+#   the first run.
+# =============================================================================
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      teardown_after:
+        description: "Tear down the host, its Elastic IP and its security group after the smoke test (3.12a's early smoke exercise; leave enabled for that, disable for a functional deployment meant to persist)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  build-scan-push:
+    name: build-scan-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+      ecr_registry: ${{ steps.registry.outputs.ecr_registry }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Compute the image tag from this commit
+        id: tag
+        run: echo "image_tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Assume the CI deploy role via OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/dispute-intake-ci-deploy
+          aws-region: us-east-1
+
+      - name: Resolve the account's own ECR registry host
+        id: registry
+        run: |
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          echo "ecr_registry=${account_id}.dkr.ecr.us-east-1.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      - name: Build the backend image
+        run: docker build -t dispute-intake-backend:${{ steps.tag.outputs.image_tag }} -f Dockerfile .
+
+      - name: Build the web image
+        run: docker build -t dispute-intake-web:${{ steps.tag.outputs.image_tag }} -f web/Dockerfile web
+
+      - name: Scan the backend image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: dispute-intake-backend:${{ steps.tag.outputs.image_tag }}
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Scan the web image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: dispute-intake-web:${{ steps.tag.outputs.image_tag }}
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Log in to this account's ECR
+        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "${{ steps.registry.outputs.ecr_registry }}"
+
+      - name: Tag and push both images
+        run: |
+          for name in backend web; do
+            docker tag "dispute-intake-${name}:${{ steps.tag.outputs.image_tag }}" \
+              "${{ steps.registry.outputs.ecr_registry }}/dispute-intake-${name}:${{ steps.tag.outputs.image_tag }}"
+            docker push "${{ steps.registry.outputs.ecr_registry }}/dispute-intake-${name}:${{ steps.tag.outputs.image_tag }}"
+          done
+
+  deploy-and-smoke-test:
+    name: deploy-and-smoke-test
+    needs: build-scan-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Assume the CI deploy role via OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/dispute-intake-ci-deploy
+          aws-region: us-east-1
+
+      - name: Bring the compose stack up on the host, over SSM
+        id: deploy
+        env:
+          ECR_REGISTRY: ${{ needs.build-scan-push.outputs.ecr_registry }}
+          IMAGE_TAG: ${{ needs.build-scan-push.outputs.image_tag }}
+        run: |
+          host_name="$(infra/scripts/05-deploy.sh)"
+          echo "host_name=${host_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test the deployed path over HTTPS
+        run: infra/scripts/06-smoke-test.sh "${{ steps.deploy.outputs.host_name }}"
+
+      - name: Tear down the host, its Elastic IP and its security group
+        if: ${{ inputs.teardown_after }}
+        run: infra/scripts/07-teardown.sh

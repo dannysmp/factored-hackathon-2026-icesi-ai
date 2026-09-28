@@ -16,11 +16,14 @@
 # =============================================================================
 
 {$HOST_NAME} {
-	# The web build's static files, served by the web container.
-	handle /api/* {
+	# The backend's own routes and its health endpoints (app/main.py registers
+	# /health/live and /health/ready at the root, not under /api): both patterns route here.
+	@backend path /api/* /health/*
+	handle @backend {
 		reverse_proxy backend:8000
 	}
 
+	# The web build's static files, served by the web container.
 	handle {
 		reverse_proxy web:80
 	}
