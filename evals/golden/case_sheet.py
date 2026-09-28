@@ -47,9 +47,7 @@ every case, in `CaseCategory`'s declared order. ``render_case_sheet(cases) -> st
 
 Limitations
 -----------
-Only the human-required, normal, ambiguous, unsupported and multilingual categories exist as of
-this slice; `ALL_CASES` holds 103 of the golden set's 135 cases until the adversarial category
-lands.
+All six categories now exist; `ALL_CASES` holds the golden set's full 135 cases.
 """
 
 from __future__ import annotations
@@ -64,6 +62,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 # Local modules
+from evals.golden.adversarial import CASES as ADVERSARIAL_CASES  # Category group
 from evals.golden.ambiguous import CASES as AMBIGUOUS_CASES  # Category group
 from evals.golden.human_required import CASES as HUMAN_REQUIRED_CASES  # Category group
 from evals.golden.multilingual import CASES as MULTILINGUAL_CASES  # Category group
@@ -83,6 +82,7 @@ CATEGORY_CASES: dict[CaseCategory, tuple[Case, ...]] = {
     CaseCategory.AMBIGUOUS: AMBIGUOUS_CASES,
     CaseCategory.UNSUPPORTED: UNSUPPORTED_CASES,
     CaseCategory.MULTILINGUAL: MULTILINGUAL_CASES,
+    CaseCategory.ADVERSARIAL: ADVERSARIAL_CASES,
 }
 
 #: Every authored case, in `CaseCategory`'s declared order (the golden set's mix-table row

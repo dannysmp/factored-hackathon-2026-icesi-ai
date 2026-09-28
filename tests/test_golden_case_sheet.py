@@ -66,8 +66,11 @@ def test_all_cases_has_no_duplicate_case_ids() -> None:
     assert len(ids) == len(set(ids))
 
 
-def test_all_cases_has_no_duplicate_seed_refs() -> None:
-    refs = [case.seed_ref for case in ALL_CASES]
+def test_all_cases_has_no_duplicate_ops_seed_refs() -> None:
+    # eval_bank refs may legitimately repeat (evals.golden.adversarial shares its four scenarios
+    # across ten cases; see that module's own test for the exact count), but every ops_seed ref
+    # anchors exactly one case across the whole golden set.
+    refs = [case.seed_ref for case in ALL_CASES if case.seed_ref.startswith("ops_seed:")]
     assert len(refs) == len(set(refs))
 
 
