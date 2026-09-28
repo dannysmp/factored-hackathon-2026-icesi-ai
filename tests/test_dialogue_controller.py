@@ -1140,6 +1140,38 @@ def test_a_concurrent_conflict_raises_turn_conflict(
     assert excinfo.value.code is ErrorCode.TURN_CONFLICT
 
 
+def test_a_conflicted_turns_real_model_cost_is_still_logged(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The LLM call already happened and cost real money before the save was even attempted; a
+    409 tells the client to retry, but it must not silently undercount that spend."""
+    accounting = TurnAccounting(
+        model="claude-haiku-4-5-20251001",
+        prompt_version="1",
+        input_tokens=50,
+        output_tokens=10,
+        latency_ms=120.0,
+    )
+    store = _AlwaysConflictStore(InMemoryDialogueStore())
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=store,  # type: ignore[arg-type]
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        accounting=accounting,
+    )
+
+    with caplog.at_level(logging.INFO), pytest.raises(ProblemError):
+        controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    logged = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(logged) == 1
+    assert "model=claude-haiku-4-5-20251001" in logged[0].getMessage()
+    assert "input_tokens=50" in logged[0].getMessage()
+
+
 def test_handoff_not_registered_when_the_outbox_fails(
     policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
 ) -> None:

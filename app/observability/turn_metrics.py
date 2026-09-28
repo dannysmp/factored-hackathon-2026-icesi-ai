@@ -13,8 +13,12 @@ state between calls; it is a pure function over whatever records a caller alread
 Scope
 -----
 In: ``summarize_turns`` and the percentile it uses.
-Out: parsing a raw JSON log line into a record (``json.loads`` is enough — the caller's job),
-reading a log file or a CloudWatch export, anything AWS-specific.
+Out: turning a raw JSON log line into one of the records this function reads. ``json.loads`` only
+gets as far as the line's own ``message`` string (the repository-wide logging convention puts
+``session_id``, ``case_number`` and the rest inside it as ``key=value`` pairs, not as separate
+top-level JSON keys); extracting those — by a CloudWatch Logs Insights ``parse`` pattern, or an
+equivalent regex — is the caller's job, untested here, and reading a log file, a CloudWatch
+export or anything else AWS-specific is out of scope too.
 
 Design Principles
 -----------------
