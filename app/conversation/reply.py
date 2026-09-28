@@ -58,8 +58,11 @@ from contracts.service_v1.envelope import RenderEnvelope, TemplateId
 # model-rendered sentence can't distinguish from HANDOFF_REVIEW's own, since RenderEnvelope carries
 # nothing that would tell them apart once template_id is stripped for model mode); REFUSE_* (the
 # contract's own _wording_matches_the_mode forbids a refusal from ever rendering in model mode);
-# and every purely procedural template (a greeting, a clarification, a farewell, a cancellation)
-# with no grounded content to gain from model wording.
+# ABSTAIN_POLICY (Intent.ABSTAIN has no required grounded field at all — the verifier only rejects
+# a digit, a malformed placeholder or a missing *required* field, so nothing would force a
+# model-rendered reply to actually state the ADR-16-mandated abstention sentence rather than any
+# other digit-free text); and every purely procedural template (a greeting, a clarification, a
+# farewell, a cancellation) with no grounded content to gain from model wording.
 MODEL_ELIGIBLE_TEMPLATES = frozenset(
     {
         TemplateId.PRESENT_ONE,
@@ -70,7 +73,6 @@ MODEL_ELIGIBLE_TEMPLATES = frozenset(
         TemplateId.INELIGIBLE,
         TemplateId.DISPUTE_STATUS,
         TemplateId.POLICY_ANSWER,
-        TemplateId.ABSTAIN_POLICY,
         TemplateId.HANDOFF_REVIEW,
         TemplateId.HANDOFF_FRAUD,
     }
