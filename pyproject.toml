@@ -80,6 +80,9 @@ ignore = ["PLR0913"]
 # Table and column names here come only from the fixed seed-output registry and the Parquet
 # files' own headers (written by pipelines.ops_seed, reviewed there), never from a request.
 "app/persistence/load_seed.py" = ["S608"]
+# Same reason: table names come only from pipelines.gold's own fixed MART_NAMES, column names
+# only from the gold marts' own Parquet headers (written by pipelines.gold, reviewed there).
+"pipelines/analytics_load.py" = ["S608"]
 # Same reason: the shared amount expressions are static, reviewed SQL text, not built from input.
 "tests/test_amounts.py" = ["S608"]
 
