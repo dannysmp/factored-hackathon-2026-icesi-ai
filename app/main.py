@@ -27,6 +27,9 @@ Design Principles
   error.
 - The service starts only with a resolved domain date (ADR-15): an explicit setting, the real date
   in the bank zone, or the loaded seed's own reference date; none of the three is a start-up error.
+- The turns route's own heavy dependencies (a database connection, an LLM provider key) are
+  resolved lazily, inside its per-request factory, never at start-up: an app that never calls
+  ``/v1/turns`` — most tests, a bare health check — never needs them configured.
 - Structured JSON logging (``app.observability.logging``) is installed before anything else runs,
   so every event this factory or a route logs, including a start-up failure, is already a JSON
   line carrying the service's own identity and version.
@@ -37,7 +40,7 @@ Runtime Contract
 ``GET /health/ready`` -> ``{"status": "ready", "service_version": str, "environment": str,
 "domain_date": str, "domain_date_origin": str}`` (ADR-15: ``domain_date_origin`` is one of
 ``setting``, ``seed``, ``system``).
-Authentication routes: see ``app.api.auth``.
+Authentication routes: see ``app.api.auth``. The turns route: see ``app.api.turns``.
 
 Limitations
 -----------
@@ -68,21 +71,35 @@ from app.api.demo_signin import (  # Demo broker routes
     build_demo_agent_signin_router,
     build_demo_signin_router,
 )
+from app.api.turns import ControllerFactory, build_turns_router  # The turns route
 from app.config import (
     AppEnvironment,  # Environments with different key rules
     ConfigError,  # Missing signing key outside local
+    LlmProvider,  # Providers behind the LLM interface
     Settings,  # Validated configuration injected into the app
     load_settings,  # Loads configuration when none is injected
 )
+from app.conversation.controller import DialogueController, HandoffOutbox
+from app.conversation.llm_understanding import LlmNlu
+from app.conversation.model_renderer import LlmRenderer
+from app.conversation.understanding import Understanding
 from app.domain.calendar import (  # Domain date
     DomainCalendar,
     DomainCalendarError,
     resolve_domain_calendar,
 )
+from app.domain.policy.loader import load_policy
+from app.domain.policy.models import Policy
+from app.llm.anthropic_client import AnthropicLlmClient
 from app.observability.logging import configure_logging  # Structured logging, installed once
+from app.persistence.audit import PostgresAuditSink
 from app.persistence.customers import customer_status  # The sandbox login's existence check
+from app.persistence.dialogue_store import PostgresDialogueStore
+from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.ops_meta import read_data_as_of  # The seed's own reference date
+from app.persistence.reads import PostgresToolPort
 from app.persistence.signin_audit import PostgresSignInAuditSink  # The demo broker's audit store
+from app.retrieval.lexical import LexicalRetriever
 from app.security.demo_personas import (  # The demo broker's persona list
     PersonaList,
     load_personas,
@@ -92,10 +109,16 @@ from app.security.errors import ErrorCode, ProblemError, problem_response  # Fai
 from app.security.issuance_limits import IssuanceLimiter  # Concurrent-session caps
 from app.security.limits import AttemptLimiter  # Failed-login limit
 from app.security.middleware import (  # Cross-cutting request handling
+    BodySizeLimitMiddleware,
     RequestContextMiddleware,
     SessionAuthMiddleware,
 )
-from app.security.sessions import Clock, SessionService, utc_now  # Sessions and the clock
+from app.security.sessions import (  # Sessions and the clock
+    Clock,
+    Principal,
+    SessionService,
+    utc_now,
+)
 from app.security.signin_audit import SignInAuditSink  # The demo broker's audit sink interface
 
 logger = logging.getLogger(__name__)
@@ -184,6 +207,83 @@ def _default_customer_lookup(settings: Settings) -> CustomerLookup:
     return functools.partial(customer_status, dsn)
 
 
+def _understanding(settings: Settings) -> Understanding:
+    """The model-backed understanding port for one turn.
+
+    Raises
+    ------
+    ConfigError
+        The configured provider has no adapter yet, or its API key is not configured.
+    """
+    if settings.llm_provider is not LlmProvider.ANTHROPIC:
+        raise ConfigError(f"the '{settings.llm_provider.value}' LLM provider has no adapter yet")
+    llm = AnthropicLlmClient(settings.require_anthropic_key())
+    return LlmNlu(llm, model=settings.nlu_model)
+
+
+def _model_renderer(settings: Settings) -> LlmRenderer:
+    """The model-backed reply renderer for one turn; only built when the feature is enabled.
+
+    Raises
+    ------
+    ConfigError
+        The configured provider has no adapter yet, or its API key is not configured.
+    """
+    if settings.llm_provider is not LlmProvider.ANTHROPIC:
+        raise ConfigError(f"the '{settings.llm_provider.value}' LLM provider has no adapter yet")
+    llm = AnthropicLlmClient(settings.require_anthropic_key())
+    return LlmRenderer(llm, model=settings.render_model)
+
+
+def _controller_factory(
+    settings: Settings,
+    *,
+    policy: Policy,
+    retriever: LexicalRetriever,
+    calendar: DomainCalendar,
+    clock: Clock,
+) -> ControllerFactory:
+    """Build the per-request factory the turns route calls with each request's own principal.
+
+    Every dependency that needs ``DATABASE_URL`` or an LLM provider key is resolved inside the
+    returned closure, not here (see the module's own Design Principles): building the factory
+    itself never requires them.
+    """
+
+    def build(principal: Principal) -> DialogueController:
+        dsn = settings.require_database_url().get_secret_value()
+        store = PostgresDialogueStore(dsn)
+        current = store.get(principal.session_id)
+        language = current.lang if current is not None else "es"
+        audit = PostgresAuditSink(dsn)
+        tool_port = PostgresToolPort(
+            dsn,
+            audit,
+            policy,
+            customer_id=principal.customer_id,
+            session_id=principal.session_id,
+            trace_id=principal.session_id,
+            domain_date=calendar.reference_date,
+            now=clock,
+            language=language,
+            case_create_session_cap=settings.case_create_session_cap,
+        )
+        outbox: HandoffOutbox = PostgresHandoffOutbox(dsn)
+        return DialogueController(
+            _understanding(settings),
+            store=store,
+            tool_port=tool_port,
+            retriever=retriever,
+            policy=policy,
+            outbox=outbox,
+            domain_date=calendar.reference_date,
+            now=clock,
+            model_renderer=_model_renderer(settings) if settings.model_renderer_enabled else None,
+        )
+
+    return build
+
+
 def _request_id(request: Request) -> str:
     """The identifier assigned to the request by the context middleware."""
     return str(getattr(request.state, "request_id", "-"))
@@ -252,6 +352,7 @@ def create_app(
     *,
     clock: Clock = utc_now,
     customer_lookup: CustomerLookup | None = None,
+    controller_factory: ControllerFactory | None = None,
     signin_audit: SignInAuditSink | None = None,
 ) -> FastAPI:
     """Build the FastAPI application.
@@ -267,6 +368,11 @@ def create_app(
         persona list against the seed (ADR-18) when it is enabled instead; tests inject a fake
         one. When omitted and either sign-in path is enabled, the real, store-backed one is built
         from ``DATABASE_URL``.
+    controller_factory : ControllerFactory | None
+        Builds the dialogue controller for one turn; tests inject a fake one, hermetic and without
+        a real LLM provider. When omitted, the real one is built from ``DATABASE_URL`` and the
+        configured LLM provider, resolved lazily on the first call (see the module's own Design
+        Principles).
     signin_audit : SignInAuditSink | None
         Where either demo broker records every sign-in attempt, customer and agent alike; tests
         inject a fake one. When omitted and either broker is enabled, the real, store-backed one
@@ -302,6 +408,8 @@ def create_app(
     sessions = SessionService(signing_keys, resolved.session_ttl_seconds, clock=clock)
     limiter = AttemptLimiter(clock=clock)
     calendar = _domain_calendar(resolved, clock=clock)
+    policy = load_policy()
+    retriever = LexicalRetriever.from_corpus()
     app = FastAPI(title="Dispute Intake API", version=resolved.service_version)
 
     # The sandbox login is public only while it exists; otherwise its path is protected too
@@ -340,13 +448,16 @@ def create_app(
                 issuance_limiter=IssuanceLimiter(clock=clock),
             )
 
-    # Middleware: the last one added is the outermost, so the request context wraps the rest
+    # Middleware: the last one added is the outermost. The body-size cap runs after the request
+    # context (so its own refusal still carries a request id) and before session authentication
+    # (so an oversized body is refused before a JWT is ever verified).
     app.add_middleware(
         SessionAuthMiddleware,
         sessions=sessions,
         audience_by_prefix={"/v1": "customer"},
         public_paths=public_paths,
     )
+    app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(RequestContextMiddleware)
     _register_error_handlers(app)
 
@@ -373,6 +484,15 @@ def create_app(
             test_login_key=test_key,
             limiter=limiter,
             customer_lookup=lookup if lookup is not None else (lambda customer_id: None),
+        )
+    )
+    app.include_router(
+        build_turns_router(
+            controller_factory=controller_factory
+            if controller_factory is not None
+            else _controller_factory(
+                resolved, policy=policy, retriever=retriever, calendar=calendar, clock=clock
+            )
         )
     )
 
