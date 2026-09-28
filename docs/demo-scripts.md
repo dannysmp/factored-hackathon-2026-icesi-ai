@@ -21,9 +21,8 @@ to `app/conversation/renderer.py` and confirm it was not written by hand for thi
 This is a first version. The customer's lines are authored to be natural and to drive the
 conversation through the same sequence of intents the scripted-flow fixtures record; the system's
 lines are the renderer's real, unedited output. A browser recording that plays out these same
-paths against a running conversation endpoint is a later deliverable — the customer-chat interface
-today runs only against recorded fixtures, and the live endpoint has not shipped yet. Until it
-does, these scripts are the demonstration's script, not yet its recording.
+paths against the customer chat's live turn endpoint is a later deliverable — until it exists,
+these scripts are the demonstration's script, not yet its recording.
 
 ---
 
