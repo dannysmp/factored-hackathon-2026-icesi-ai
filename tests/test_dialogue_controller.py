@@ -355,6 +355,14 @@ def test_matches_hint_falls_back_to_description_when_merchant_is_absent() -> Non
     assert _matches_hint(fact, TransactionHint(merchant="amzn"))
 
 
+def test_matches_hint_is_accent_and_case_insensitive() -> None:
+    """Spanish and Portuguese merchant names carry accents the customer may not retype."""
+    fact = _transaction(merchant="Café Colombia")
+    assert _matches_hint(fact, TransactionHint(merchant="café"))
+    assert _matches_hint(fact, TransactionHint(merchant="CAFÉ"))
+    assert _matches_hint(fact, TransactionHint(merchant="colombia"))
+
+
 def test_matches_hint_never_matches_an_unknown_amount_against_a_stated_one() -> None:
     fact = _transaction(amount=None)
     assert not _matches_hint(fact, TransactionHint(amount=Decimal("10.00")))
