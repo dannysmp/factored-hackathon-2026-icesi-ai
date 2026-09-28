@@ -24,8 +24,9 @@ Design Principles
   numeric routing inputs, the risk evidence and the NLU confidence exist only in ``agent_only``,
   so a renderer, a prompt or a customer reply cannot carry what the type never held. The customer
   side of a decision is a plain reason from a closed set, and every escalation shares one of them.
-- Every fact is typed and masked: an amount always has its currency, a date is always absolute,
-  a product shows its last four digits only and a merchant may be absent, never invented.
+- Every fact is typed and masked: an amount, when present, always has its currency, a date is
+  always absolute, a product shows its last four digits only, and a merchant or an amount may be
+  absent, never invented.
 - Closed sets are enumerations. Values are added, never renamed; an addition is compatible, any
   other change is a new contract package.
 - An envelope that contradicts itself does not build: an outcome and its plain reason agree, a
@@ -247,12 +248,16 @@ class ProductLabel(ContractModel):
 
 
 class TransactionFact(ContractModel):
-    """One of the customer's transactions as the reply may describe it."""
+    """One of the customer's transactions as the reply may describe it.
+
+    An amount is absent only when the source data itself carries none and no same-day conversion
+    exists (rare); a reply states that plainly rather than inventing a figure.
+    """
 
     ref: Annotated[str, Field(pattern=REF_PATTERN)]
     occurred_on: date
     merchant: Annotated[SafeText, Field(min_length=1, max_length=80)] | None
-    amount: Money
+    amount: Money | None
     product: ProductLabel
     status: TransactionStatus
 

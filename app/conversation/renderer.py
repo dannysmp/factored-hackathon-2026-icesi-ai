@@ -195,6 +195,19 @@ _CATEGORY_NAMES: dict[Lang, dict[DisputeCategory, str]] = {
     },
 }
 
+# What a reply states in place of a figure it does not have, rather than inventing one.
+_AMOUNT_UNKNOWN: dict[Lang, str] = {
+    "es": "un monto no disponible",
+    "pt": "um valor não disponível",
+    "en": "an amount that isn't available",
+}
+
+
+def _amount_text(amount: Money | None, lang: Lang) -> str:
+    """``amount`` formatted in ``lang``, or the fixed phrase for one the source never gave."""
+    return format_money(amount, lang) if amount is not None else _AMOUNT_UNKNOWN[lang]
+
+
 # The plain wording for each ineligible reason; ELIGIBLE and NEEDS_REVIEW are handled elsewhere.
 _INELIGIBLE_TEXT: dict[Lang, dict[CustomerReason, str]] = {
     "es": {
@@ -311,19 +324,20 @@ def _language_offer(e: RenderEnvelope) -> str:
 def _present_one(e: RenderEnvelope) -> str:
     transaction = e.facts.transactions[0]
     merchant = f" en {transaction.merchant}" if transaction.merchant else ""
+    amount = _amount_text(transaction.amount, e.lang)
     parts = {
         "es": (
-            f"Encontré una transacción de {format_money(transaction.amount, e.lang)}{merchant} "
+            f"Encontré una transacción de {amount}{merchant} "
             f"el {format_date(transaction.occurred_on, e.lang)}. ¿Es esta la que quiere "
             "disputar?"
         ),
         "pt": (
-            f"Encontrei uma transação de {format_money(transaction.amount, e.lang)}{merchant} "
+            f"Encontrei uma transação de {amount}{merchant} "
             f"em {format_date(transaction.occurred_on, e.lang)}. É esta que você quer "
             "contestar?"
         ),
         "en": (
-            f"I found a transaction of {format_money(transaction.amount, e.lang)}{merchant} on "
+            f"I found a transaction of {amount}{merchant} on "
             f"{format_date(transaction.occurred_on, e.lang)}. Is this the one you want to "
             "dispute?"
         ),
@@ -368,22 +382,23 @@ def _confirm_filing(e: RenderEnvelope) -> str:
     facts = e.facts
     transaction = next(t for t in facts.transactions if t.ref == facts.selected_ref)
     category = _CATEGORY_NAMES[e.lang][facts.category] if facts.category else ""
+    amount = _amount_text(transaction.amount, e.lang)
     parts = {
         "es": (
             f"Voy a presentar una disputa por {category} sobre el cargo de "
-            f"{format_money(transaction.amount, e.lang)} del "
+            f"{amount} del "
             f"{format_date(transaction.occurred_on, e.lang)}. Un asesor la revisará; esto no "
             "garantiza un resultado. ¿Confirma que desea presentarla?"
         ),
         "pt": (
             f"Vou apresentar uma contestação por {category} sobre a cobrança de "
-            f"{format_money(transaction.amount, e.lang)} de "
+            f"{amount} de "
             f"{format_date(transaction.occurred_on, e.lang)}. Um atendente vai analisar; isso "
             "não garante um resultado. Você confirma que quer apresentá-la?"
         ),
         "en": (
             f"I'll file a {category} dispute for the charge of "
-            f"{format_money(transaction.amount, e.lang)} on "
+            f"{amount} on "
             f"{format_date(transaction.occurred_on, e.lang)}. A person will review it; this "
             "does not guarantee an outcome. Do you confirm you want to file it?"
         ),
