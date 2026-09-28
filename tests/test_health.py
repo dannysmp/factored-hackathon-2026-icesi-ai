@@ -15,7 +15,7 @@ from pydantic import SecretStr  # DSN values, which the settings type requires
 
 # Local modules
 import app.main as main_module
-from app.config import ConfigError, load_settings
+from app.config import ConfigError, LlmProvider, load_settings
 from app.main import create_app
 
 
@@ -77,6 +77,15 @@ def test_factory_refuses_to_start_with_no_domain_date_source(
 
     with pytest.raises(ConfigError, match="No domain date resolves"):
         create_app(settings)
+
+
+def test_building_the_anthropic_client_refuses_an_unadapted_provider() -> None:
+    """Bedrock has no adapter yet: building the client fails closed with a clear message,
+    matching every other "no adapter yet" refusal in this codebase."""
+    settings = load_settings(env_file=None).model_copy(update={"llm_provider": LlmProvider.BEDROCK})
+
+    with pytest.raises(ConfigError, match="bedrock"):
+        main_module._build_anthropic_client(settings)
 
 
 def test_factory_refuses_to_start_when_the_seed_has_no_reference_date(
