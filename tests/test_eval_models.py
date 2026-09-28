@@ -17,7 +17,8 @@ import pytest
 
 # Local modules
 from contracts.service_v1.envelope import Intent
-from evals.models import Case, CaseCategory, SafeBehavior
+from contracts.service_v1.tools import Tool
+from evals.models import Case, CaseCategory, InjectedToolFailure, SafeBehavior
 
 
 def _case(**overrides: Any) -> Case:
@@ -98,3 +99,15 @@ def test_expected_reason_code_defaults_to_none_for_a_non_decision_case() -> None
 def test_description_defaults_to_the_empty_string() -> None:
     case = _case()
     assert case.description == ""
+
+
+def test_injected_failure_defaults_to_none() -> None:
+    case = _case()
+    assert case.injected_failure is None
+
+
+def test_injected_failure_states_its_tool_cause_and_retryability() -> None:
+    case = _case(injected_failure=InjectedToolFailure(tool=Tool.LIST_TRANSACTIONS, cause="timeout"))
+    assert case.injected_failure == InjectedToolFailure(
+        tool=Tool.LIST_TRANSACTIONS, cause="timeout", retryable=True
+    )
