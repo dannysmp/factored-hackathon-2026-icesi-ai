@@ -84,6 +84,7 @@ class CustomerPersona(_Frozen):
     """One customer the demo broker may sign in, by slug."""
 
     slug: str
+    display_name: Annotated[str, Field(min_length=1, max_length=80)]
     customer_id: Annotated[str, Field(pattern=_ANCHORED_CUSTOMER_ID)]
     language: Literal["es", "pt", "en"]
     scenario: str
@@ -93,6 +94,7 @@ class AgentPersona(_Frozen):
     """One agent the agent demo broker may sign in."""
 
     slug: str
+    display_name: Annotated[str, Field(min_length=1, max_length=80)]
     # The same shape as a customer's subject identifier: both are signed as a JWT ``sub`` claim,
     # and ``SessionService.issue`` validates any subject against this one pattern regardless of
     # audience (app.security.sessions.CUSTOMER_ID_PATTERN).
