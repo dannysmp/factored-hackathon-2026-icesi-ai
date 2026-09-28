@@ -29,8 +29,8 @@ require_live_credentials
 
 readonly GITHUB_REPO="dannysmp/factored-hackathon-2026-icesi-ai"
 # The role is only ever assumable from a workflow run on this branch (deploy is CI-triggered off
-# it), not from any branch or pull request in the repository — a later slice that adds
-# environment-gated releases can widen this to a GitHub Environment condition instead.
+# it), not from any branch or pull request in the repository — adding environment-gated releases
+# later can widen this to a GitHub Environment condition instead.
 readonly GITHUB_DEFAULT_BRANCH="main"
 readonly OIDC_PROVIDER_URL="https://token.actions.githubusercontent.com"
 ## AWS validates a public-CA OIDC provider like GitHub's against its real certificate chain and

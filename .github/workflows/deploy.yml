@@ -140,9 +140,11 @@ jobs:
     # Runs whenever the run was not cancelled, regardless of whether build-scan-push or
     # deploy-and-smoke-test failed: a failed deploy or a failed smoke test is exactly when a
     # host must not be left running unattended, so teardown_after's own true/false is the only
-    # thing that should gate it here, never the earlier jobs' success/failure.
+    # thing that should gate it here, never the earlier jobs' success/failure. Still restricted
+    # to main, matching build-scan-push's own guard: a dispatch off any other ref does nothing
+    # upstream (both jobs are skipped, not failed), and must not tear down a host anyway.
     needs: [build-scan-push, deploy-and-smoke-test]
-    if: ${{ !cancelled() && inputs.teardown_after }}
+    if: ${{ !cancelled() && inputs.teardown_after && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

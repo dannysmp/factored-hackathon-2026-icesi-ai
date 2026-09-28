@@ -41,10 +41,10 @@ deployment meant to persist.
 
 - **Running the scripts against AWS by hand.** They are prepared and reviewed here; the deploy
   workflow is what actually invokes them.
-- **Metabase**: its own compose service and provisioning script are a later slice (3.6b).
+- **Metabase**: its own compose service and provisioning script are added separately.
 - **The demonstration sign-in access codes** and the Metabase administrator credentials: created
-  under the same `/transaction-disputes/prod/*` SSM prefix by whichever slice first needs them,
-  following the same `put-secret.sh` pattern — never in this repo.
+  under the same `/transaction-disputes/prod/*` SSM prefix, the same way, when each is first
+  needed — never in this repo.
 
 ## The host name
 
