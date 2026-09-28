@@ -25,7 +25,9 @@ Design Principles
 Runtime Contract
 ----------------
 ``flows(lang) -> dict[str, list[dict]]`` and ``python -m tests.fixtures.scripted_flows`` to
-rewrite the files.
+rewrite the files. ``all_envelopes()`` reads the three committed files back and yields every step
+as a validated ``Envelope``, the one entry point other code (the model-renderer smoke test, a
+future evaluation harness) should use rather than re-parsing the JSON files by hand.
 
 Limitations
 -----------
@@ -36,6 +38,7 @@ from __future__ import annotations
 
 # Standard libraries
 import json  # Fixture files
+from collections.abc import Iterator  # Type of the committed-file reader
 from datetime import date  # Absolute dates
 from decimal import Decimal  # Money
 from pathlib import Path  # Output location
@@ -267,6 +270,20 @@ def render(lang: Lang) -> str:
 def path_for(lang: Lang) -> Path:
     """Where the fixture file of ``lang`` lives."""
     return _DIRECTORY / f"scripted_flows.{lang}.json"
+
+
+def all_envelopes() -> Iterator[tuple[Lang, str, Envelope]]:
+    """Every step of every committed flow, as ``(language, flow name, envelope)``.
+
+    Reads the committed JSON files back rather than the in-memory builders, so a caller also
+    exercises the same file the "one source" check pins against — the same file a client, an
+    evaluation harness or another stream would read.
+    """
+    for lang in LANGUAGES:
+        flows_in_lang = json.loads(path_for(lang).read_text(encoding="utf-8"))
+        for name, steps in flows_in_lang.items():
+            for step in steps:
+                yield lang, name, Envelope.model_validate(step)
 
 
 def main() -> None:

@@ -34,7 +34,10 @@ Design Principles
 Runtime Contract
 ----------------
 ``render(envelope) -> RenderedReply``. ``reference_date_line(domain_date, lang)``.
-``demo_notice(lang)``.
+``demo_notice(lang)``. ``format_money``/``format_date``/``amount_text``/``CATEGORY_NAMES``/
+``INELIGIBLE_TEXT`` are exported so the model-rendered path's own slot values
+(``app.conversation.slot_values``) format a figure identically to the template path, rather than
+a second, independently maintained copy.
 
 Limitations
 -----------
@@ -171,7 +174,7 @@ _URGENT_CHANNEL: dict[Lang, str] = {
 # Category and reason wording
 # -----------------------------------------------------------------------------
 
-_CATEGORY_NAMES: dict[Lang, dict[DisputeCategory, str]] = {
+CATEGORY_NAMES: dict[Lang, dict[DisputeCategory, str]] = {
     "es": {
         DisputeCategory.UNRECOGNIZED_CHARGE: "cargo no reconocido",
         DisputeCategory.DUPLICATE_CHARGE: "cargo duplicado",
@@ -203,13 +206,13 @@ _AMOUNT_UNKNOWN: dict[Lang, str] = {
 }
 
 
-def _amount_text(amount: Money | None, lang: Lang) -> str:
+def amount_text(amount: Money | None, lang: Lang) -> str:
     """``amount`` formatted in ``lang``, or the fixed phrase for one the source never gave."""
     return format_money(amount, lang) if amount is not None else _AMOUNT_UNKNOWN[lang]
 
 
 # The plain wording for each ineligible reason; ELIGIBLE and NEEDS_REVIEW are handled elsewhere.
-_INELIGIBLE_TEXT: dict[Lang, dict[CustomerReason, str]] = {
+INELIGIBLE_TEXT: dict[Lang, dict[CustomerReason, str]] = {
     "es": {
         CustomerReason.WINDOW_EXPIRED: "El plazo para presentar esta disputa ya venció.",
         CustomerReason.PENDING: "La transacción todavía está pendiente; podrá disputarla "
@@ -329,7 +332,7 @@ def _present_one(e: RenderEnvelope) -> str:
     merchant = (
         f" {_MERCHANT_PREPOSITION[e.lang]} {transaction.merchant}" if transaction.merchant else ""
     )
-    amount = _amount_text(transaction.amount, e.lang)
+    amount = amount_text(transaction.amount, e.lang)
     parts = {
         "es": (
             f"Encontré una transacción de {amount}{merchant} "
@@ -391,8 +394,8 @@ def _english_article(noun_phrase: str) -> str:
 def _confirm_filing(e: RenderEnvelope) -> str:
     facts = e.facts
     transaction = next(t for t in facts.transactions if t.ref == facts.selected_ref)
-    category = _CATEGORY_NAMES[e.lang][facts.category] if facts.category else ""
-    amount = _amount_text(transaction.amount, e.lang)
+    category = CATEGORY_NAMES[e.lang][facts.category] if facts.category else ""
+    amount = amount_text(transaction.amount, e.lang)
     parts = {
         "es": (
             f"Voy a presentar una disputa por {category} sobre el cargo de "
@@ -457,7 +460,7 @@ def _filing_cancelled(e: RenderEnvelope) -> str:
 
 def _ineligible(e: RenderEnvelope) -> str:
     decision = next(d for d in e.decisions if d.outcome is Outcome.INELIGIBLE)
-    return _INELIGIBLE_TEXT[e.lang][decision.customer_reason]
+    return INELIGIBLE_TEXT[e.lang][decision.customer_reason]
 
 
 def _dispute_status(e: RenderEnvelope) -> str:

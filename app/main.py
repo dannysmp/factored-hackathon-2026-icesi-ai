@@ -77,6 +77,7 @@ from app.config import (
 )
 from app.conversation.controller import DialogueController, HandoffOutbox
 from app.conversation.llm_understanding import LlmNlu
+from app.conversation.model_renderer import LlmRenderer
 from app.conversation.understanding import Understanding
 from app.domain.calendar import (  # Domain date
     DomainCalendar,
@@ -215,6 +216,20 @@ def _understanding(settings: Settings) -> Understanding:
     return LlmNlu(llm, model=settings.nlu_model)
 
 
+def _model_renderer(settings: Settings) -> LlmRenderer:
+    """The model-backed reply renderer for one turn; only built when the feature is enabled.
+
+    Raises
+    ------
+    ConfigError
+        The configured provider has no adapter yet, or its API key is not configured.
+    """
+    if settings.llm_provider is not LlmProvider.ANTHROPIC:
+        raise ConfigError(f"the '{settings.llm_provider.value}' LLM provider has no adapter yet")
+    llm = AnthropicLlmClient(settings.require_anthropic_key())
+    return LlmRenderer(llm, model=settings.render_model)
+
+
 def _controller_factory(
     settings: Settings,
     *,
@@ -258,6 +273,7 @@ def _controller_factory(
             outbox=outbox,
             domain_date=calendar.reference_date,
             now=clock,
+            model_renderer=_model_renderer(settings) if settings.model_renderer_enabled else None,
         )
 
     return build
