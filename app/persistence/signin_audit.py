@@ -36,9 +36,9 @@ _CONNECT_TIMEOUT_SECONDS = 5
 
 _INSERT_SQL = """
 INSERT INTO signin_audit (
-    trace_id, occurred_at_utc, audience, persona_slug, resolved_customer_id,
+    trace_id, occurred_at_utc, audience, persona_slug, resolved_customer_id, resolved_agent_id,
     client_address_hash, outcome, reason_code, session_id
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 
@@ -68,6 +68,7 @@ class PostgresSignInAuditSink:
                     entry.audience.value,
                     entry.persona_slug,
                     entry.resolved_customer_id,
+                    entry.resolved_agent_id,
                     entry.client_address_hash,
                     entry.outcome.value,
                     entry.reason_code.value,

@@ -3,8 +3,9 @@ Sign-In Audit Store Tests
 ==========================
 
 Component: ``app.persistence.signin_audit``. Needs a real, migrated Postgres: append-only is a
-store guarantee (migration 0006's trigger), not something a fake could prove. Marked
-``integration``, skipped when ``DATABASE_URL`` is not set.
+store guarantee (migration 0006's trigger), and the resolved-id/audience pairing is a store
+guarantee too (migration 0007's check constraint) — neither is something a fake could prove.
+Marked ``integration``, skipped when ``DATABASE_URL`` is not set.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ def _record(
     client_address_hash: str = "0" * 64,
     persona_slug: str | None = None,
     resolved_customer_id: str | None = None,
+    resolved_agent_id: str | None = None,
     session_id: str | None = None,
 ) -> SignInAuditRecord:
     return SignInAuditRecord(
@@ -48,6 +50,7 @@ def _record(
         client_address_hash=client_address_hash,
         persona_slug=persona_slug,
         resolved_customer_id=resolved_customer_id,
+        resolved_agent_id=resolved_agent_id,
         session_id=session_id,
     )
 
@@ -95,6 +98,61 @@ def test_an_issued_attempt_carries_the_persona_customer_and_session(dsn: str) ->
         cur.execute("SELECT persona_slug, resolved_customer_id, session_id FROM signin_audit")
         rows = cur.fetchall()
     assert rows == [("ana", "CLI-1", "SESSION-1")]
+
+
+@pytest.mark.integration
+def test_an_issued_agent_attempt_carries_the_persona_agent_and_session(dsn: str) -> None:
+    sink = PostgresSignInAuditSink(dsn)
+
+    sink.record(
+        _record(
+            audience=SignInAudience.AGENT,
+            outcome=SignInOutcome.ISSUED,
+            reason_code=SignInReasonCode.ISSUED,
+            persona_slug="agent-beatriz",
+            resolved_agent_id="AGENT-1",
+            session_id="SESSION-1",
+        )
+    )
+
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT persona_slug, resolved_customer_id, resolved_agent_id, session_id "
+            "FROM signin_audit"
+        )
+        rows = cur.fetchall()
+    assert rows == [("agent-beatriz", None, "AGENT-1", "SESSION-1")]
+
+
+@pytest.mark.integration
+def test_the_store_rejects_a_customer_attempt_carrying_an_agent_id(dsn: str) -> None:
+    """The resolved-id fields are mutually exclusive with the record's own audience (0007)."""
+    with (
+        pytest.raises(psycopg.errors.CheckViolation),
+        psycopg.connect(dsn, autocommit=True) as conn,
+        conn.cursor() as cur,
+    ):
+        cur.execute(
+            "INSERT INTO signin_audit (trace_id, occurred_at_utc, audience, "
+            "resolved_agent_id, client_address_hash, outcome, reason_code) VALUES "
+            "('TRACE-1', now(), 'customer', 'AGENT-1', %s, 'refused', 'invalid_access_code')",
+            ("0" * 64,),
+        )
+
+
+@pytest.mark.integration
+def test_the_store_rejects_an_agent_attempt_carrying_a_customer_id(dsn: str) -> None:
+    with (
+        pytest.raises(psycopg.errors.CheckViolation),
+        psycopg.connect(dsn, autocommit=True) as conn,
+        conn.cursor() as cur,
+    ):
+        cur.execute(
+            "INSERT INTO signin_audit (trace_id, occurred_at_utc, audience, "
+            "resolved_customer_id, client_address_hash, outcome, reason_code) VALUES "
+            "('TRACE-1', now(), 'agent', 'CUST-1', %s, 'refused', 'invalid_access_code')",
+            ("0" * 64,),
+        )
 
 
 @pytest.mark.integration

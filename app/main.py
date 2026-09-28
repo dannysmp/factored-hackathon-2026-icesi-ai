@@ -16,11 +16,15 @@ Out: business routes, the tool layer and the data behind them.
 Design Principles
 -----------------
 - ``create_app`` is a factory: ``uvicorn app.main:create_app --factory``.
-- Every path under ``/v1/`` requires a session by default; only the sandbox login is public.
+- Every path under ``/v1/`` requires a session by default; only the sign-in routes that are
+  actually enabled (the sandbox login, the customer demo broker, the agent demo broker) are
+  public.
 - Every failure leaves the service as a problem document with a stable code and the request
   identifier; stack traces and request data never reach the client.
-- The service starts only with a signing key. In ``local`` a throw-away key is generated (sessions
-  end when the process restarts); in ``dev`` and ``prod`` a missing key is a start-up error.
+- The service starts only with a signing key for every audience it will issue (customer always;
+  agent only when its broker is enabled). In ``local`` a throw-away key is generated per audience
+  (sessions end when the process restarts); in ``dev`` and ``prod`` a missing key is a start-up
+  error.
 - The service starts only with a resolved domain date (ADR-15): an explicit setting, the real date
   in the bank zone, or the loaded seed's own reference date; none of the three is a start-up error.
 
@@ -54,7 +58,12 @@ from starlette.responses import Response  # Handler return type
 
 # Local modules
 from app.api.auth import TEST_SESSIONS_PATH, CustomerLookup, build_auth_router  # Auth routes
-from app.api.demo_signin import DEMO_SESSIONS_PATH, build_demo_signin_router  # Demo broker route
+from app.api.demo_signin import (  # Demo broker routes
+    AGENT_SESSIONS_PATH,
+    DEMO_SESSIONS_PATH,
+    build_demo_agent_signin_router,
+    build_demo_signin_router,
+)
 from app.config import (
     AppEnvironment,  # Environments with different key rules
     ConfigError,  # Missing signing key outside local
@@ -70,6 +79,7 @@ from app.persistence.customers import customer_status  # The sandbox login's exi
 from app.persistence.ops_meta import read_data_as_of  # The seed's own reference date
 from app.persistence.signin_audit import PostgresSignInAuditSink  # The demo broker's audit store
 from app.security.demo_personas import (  # The demo broker's persona list
+    PersonaList,
     load_personas,
     validate_active_customers,
 )
@@ -104,6 +114,37 @@ def _signing_key(settings: Settings) -> SecretStr:
         logger.warning("session_key_ephemeral sessions end when the process restarts")
         return SecretStr(secrets.token_urlsafe(48))
     raise ConfigError("SESSION_SIGNING_KEY is required when APP_ENV is dev or prod")
+
+
+def _agent_signing_key(settings: Settings) -> SecretStr:
+    """The key that signs agent-audience sessions; never the customer key (ADR-18).
+
+    Raises
+    ------
+    ConfigError
+        When no key is configured outside ``local``.
+    """
+    if settings.agent_session_signing_key is not None:
+        return settings.agent_session_signing_key
+    if settings.app_env is AppEnvironment.LOCAL:
+        logger.warning("agent_session_key_ephemeral sessions end when the process restarts")
+        return SecretStr(secrets.token_urlsafe(48))
+    raise ConfigError("AGENT_SESSION_SIGNING_KEY is required when APP_ENV is dev or prod")
+
+
+def _load_demo_state(
+    settings: Settings, signin_audit: SignInAuditSink | None
+) -> tuple[PersonaList, SignInAuditSink]:
+    """The persona list and audit sink shared by both demo brokers, loaded once.
+
+    ``signin_audit`` is returned unchanged when given (tests inject a fake one); otherwise the
+    real, store-backed sink is built from ``DATABASE_URL``.
+    """
+    personas = load_personas()
+    audit = signin_audit
+    if audit is None:
+        audit = PostgresSignInAuditSink(settings.require_database_url().get_secret_value())
+    return personas, audit
 
 
 def _domain_calendar(settings: Settings, *, clock: Clock) -> DomainCalendar:
@@ -222,9 +263,9 @@ def create_app(
         one. When omitted and either sign-in path is enabled, the real, store-backed one is built
         from ``DATABASE_URL``.
     signin_audit : SignInAuditSink | None
-        Where the demo broker records every sign-in attempt; tests inject a fake one. When
-        omitted and the demo broker is enabled, the real, store-backed one is built from
-        ``DATABASE_URL``.
+        Where either demo broker records every sign-in attempt, customer and agent alike; tests
+        inject a fake one. When omitted and either broker is enabled, the real, store-backed one
+        is built from ``DATABASE_URL``.
 
     Returns
     -------
@@ -235,18 +276,20 @@ def create_app(
     Raises
     ------
     ConfigError
-        When no settings are given and the environment is invalid, when a signing key is required
-        and missing, when no domain date resolves (ADR-15), or when a sign-in path is enabled, no
-        ``customer_lookup``/``signin_audit`` was injected, and ``DATABASE_URL`` is not configured.
+        When no settings are given and the environment is invalid, when a signing key (customer or
+        agent) is required and missing, when no domain date resolves (ADR-15), or when a sign-in
+        path is enabled, no ``customer_lookup``/``signin_audit`` was injected, and
+        ``DATABASE_URL`` is not configured.
     PersonaError
-        The demo broker is enabled and its persona file is missing, malformed, or names a persona
+        Either demo broker is enabled and its persona file is missing, malformed, or names a persona
         that does not resolve to an Active seeded customer.
     """
     # Resolve configuration once, failing fast before any route is registered
     resolved = settings if settings is not None else load_settings()
-    sessions = SessionService(
-        {"customer": _signing_key(resolved)}, resolved.session_ttl_seconds, clock=clock
-    )
+    signing_keys = {"customer": _signing_key(resolved)}
+    if resolved.demo_agent_signin_enabled:
+        signing_keys["agent"] = _agent_signing_key(resolved)
+    sessions = SessionService(signing_keys, resolved.session_ttl_seconds, clock=clock)
     limiter = AttemptLimiter(clock=clock)
     calendar = _domain_calendar(resolved, clock=clock)
     app = FastAPI(title="Dispute Intake API", version=resolved.service_version)
@@ -258,22 +301,34 @@ def create_app(
     if (test_key is not None or resolved.demo_signin_enabled) and lookup is None:
         lookup = _default_customer_lookup(resolved)
 
+    # Both demo brokers share one persona load and one audit sink, built at most once
     demo_router: APIRouter | None = None
-    if resolved.demo_signin_enabled:
-        demo_personas = load_personas()
-        validate_active_customers(demo_personas, lookup if lookup is not None else (lambda _: None))
-        demo_audit = signin_audit
-        if demo_audit is None:
-            demo_audit = PostgresSignInAuditSink(resolved.require_database_url().get_secret_value())
-        public_paths.append(DEMO_SESSIONS_PATH)
-        demo_router = build_demo_signin_router(
-            sessions=sessions,
-            demo_access_code=resolved.require_demo_signin_access_code(),
-            personas=demo_personas,
-            audit=demo_audit,
-            attempt_limiter=AttemptLimiter(clock=clock),
-            issuance_limiter=IssuanceLimiter(clock=clock),
-        )
+    agent_demo_router: APIRouter | None = None
+    if resolved.demo_signin_enabled or resolved.demo_agent_signin_enabled:
+        demo_personas, demo_audit = _load_demo_state(resolved, signin_audit)
+        if resolved.demo_signin_enabled:
+            validate_active_customers(
+                demo_personas, lookup if lookup is not None else (lambda _: None)
+            )
+            public_paths.append(DEMO_SESSIONS_PATH)
+            demo_router = build_demo_signin_router(
+                sessions=sessions,
+                demo_access_code=resolved.require_demo_signin_access_code(),
+                personas=demo_personas,
+                audit=demo_audit,
+                attempt_limiter=AttemptLimiter(clock=clock),
+                issuance_limiter=IssuanceLimiter(clock=clock),
+            )
+        if resolved.demo_agent_signin_enabled:
+            public_paths.append(AGENT_SESSIONS_PATH)
+            agent_demo_router = build_demo_agent_signin_router(
+                sessions=sessions,
+                demo_access_code=resolved.require_demo_agent_signin_access_code(),
+                personas=demo_personas,
+                audit=demo_audit,
+                attempt_limiter=AttemptLimiter(clock=clock),
+                issuance_limiter=IssuanceLimiter(clock=clock),
+            )
 
     # Middleware: the last one added is the outermost, so the request context wraps the rest
     app.add_middleware(
@@ -311,8 +366,10 @@ def create_app(
         )
     )
 
-    # The demo broker is registered only when it is enabled
+    # Each demo broker is registered only when it is enabled
     if demo_router is not None:
         app.include_router(demo_router)
+    if agent_demo_router is not None:
+        app.include_router(agent_demo_router)
 
     return app

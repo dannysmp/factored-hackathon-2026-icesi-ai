@@ -13,9 +13,10 @@ resolves to a real, active, seeded customer.
 Scope
 -----
 In: reading and validating ``personas/demo_personas_v1.yaml``, the start-up check against the
-seed, and looking a slug up by name.
-Out: the demo broker route itself (which calls this module), the agent audience's consumer (1.5b
-wires ``PersonaList.agents``; this slice only validates and looks up ``customers``).
+seed, and looking a slug up by name, for both customer and agent personas.
+Out: the demo broker routes themselves (``app.api.demo_signin``, which call this module). Agent
+personas are never checked against a seed: unlike customers, they resolve to no row anywhere, so
+there is nothing to validate at start-up beyond the persona list's own shape.
 
 Design Principles
 ------------------
@@ -32,7 +33,8 @@ Runtime Contract
 -----------------
 ``PersonaList``, ``CustomerPersona``, ``AgentPersona``; ``load_personas(path) -> PersonaList``
 raises ``PersonaError``; ``validate_active_customers(personas, lookup) -> None`` raises
-``PersonaError``; ``DEFAULT_PERSONAS_PATH``.
+``PersonaError``; ``PersonaList.customer_by_slug(slug)``, ``PersonaList.agent_by_slug(slug)``;
+``DEFAULT_PERSONAS_PATH``.
 
 Limitations
 -----------
@@ -88,10 +90,13 @@ class CustomerPersona(_Frozen):
 
 
 class AgentPersona(_Frozen):
-    """One agent the demo broker may sign in (1.5b wires this; this slice only carries it)."""
+    """One agent the agent demo broker may sign in."""
 
     slug: str
-    agent_id: str
+    # The same shape as a customer's subject identifier: both are signed as a JWT ``sub`` claim,
+    # and ``SessionService.issue`` validates any subject against this one pattern regardless of
+    # audience (app.security.sessions.CUSTOMER_ID_PATTERN).
+    agent_id: Annotated[str, Field(pattern=_ANCHORED_CUSTOMER_ID)]
     languages: tuple[str, ...]
     specialty: str | None = None
 
@@ -124,6 +129,10 @@ class PersonaList(_Frozen):
     def customer_by_slug(self, slug: str) -> CustomerPersona | None:
         """The customer persona named ``slug``, or ``None`` if there is no such slug."""
         return next((persona for persona in self.customers if persona.slug == slug), None)
+
+    def agent_by_slug(self, slug: str) -> AgentPersona | None:
+        """The agent persona named ``slug``, or ``None`` if there is no such slug."""
+        return next((persona for persona in self.agents if persona.slug == slug), None)
 
 
 class PersonaError(Exception):
