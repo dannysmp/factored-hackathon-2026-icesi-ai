@@ -30,6 +30,9 @@ Design Principles
 - The turns route's own heavy dependencies (a database connection, an LLM provider key) are
   resolved lazily, inside its per-request factory, never at start-up: an app that never calls
   ``/v1/turns`` — most tests, a bare health check — never needs them configured.
+- Structured JSON logging (``app.observability.logging``) is installed before anything else runs,
+  so every event this factory or a route logs, including a start-up failure, is already a JSON
+  line carrying the service's own identity and version.
 
 Runtime Contract
 ----------------
@@ -41,8 +44,9 @@ Authentication routes: see ``app.api.auth``. The turns route: see ``app.api.turn
 
 Limitations
 -----------
-Request logging, tracing and metrics are not implemented yet; the security events are logged with
-the request identifier.
+Tracing and per-turn cost/latency metrics are not implemented yet (later E9 slices); every log
+line already carries a trace id and, once authenticated, a session id
+(``app.observability.logging``).
 """
 
 from __future__ import annotations
@@ -86,6 +90,7 @@ from app.domain.calendar import (  # Domain date
 from app.domain.policy.loader import load_policy
 from app.domain.policy.models import Policy
 from app.llm.anthropic_client import AnthropicLlmClient
+from app.observability.logging import configure_logging  # Structured logging, installed once
 from app.persistence.audit import PostgresAuditSink
 from app.persistence.customers import customer_status  # The sandbox login's existence check
 from app.persistence.dialogue_store import PostgresDialogueStore
@@ -376,6 +381,11 @@ def create_app(
     """
     # Resolve configuration once, failing fast before any route is registered
     resolved = settings if settings is not None else load_settings()
+    configure_logging(
+        resolved.log_level,
+        service_version=resolved.service_version,
+        environment=resolved.app_env.value,
+    )
     signing_keys = {"customer": _signing_key(resolved)}
     if resolved.demo_agent_signin_enabled:
         signing_keys["agent"] = _agent_signing_key(resolved)
