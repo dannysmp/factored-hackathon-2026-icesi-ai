@@ -5,7 +5,7 @@ import { FixtureQueueClient } from './features/console/client'
 import { DEMO_QUEUE } from './features/console/fixtures'
 import { SignInScreen } from './features/sign-in/SignInScreen'
 
-// Built once, at module scope: a client is a resource (frontend standard, section 3). The
+// Built once, at module scope: a client is a resource (frontend standard, section 5). The
 // queue's own read route (`GET /v1/agent/queue`) is not wired into the running application yet
 // (its `ConsoleAuditSink` dependency has no real implementation) — see `app/api/agent.py`'s own
 // docstring — so a live client has nothing to call. This fixture is the queue screen's data
