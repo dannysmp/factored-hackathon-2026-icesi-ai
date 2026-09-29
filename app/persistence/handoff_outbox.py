@@ -12,7 +12,8 @@ the ordinary replay and the table's own unique constraint as the true race's saf
 
 Scope
 -----
-In: ``HandoffOutbox`` (the port), ``PostgresHandoffOutbox``.
+In: ``HandoffOutbox`` (the port), ``PostgresHandoffOutbox``, ``content_fingerprint`` (the replay
+comparison's own digest, over a ``HandoffContent``).
 Out: ``HandoffContent`` and building the packet's *content* (both
 ``app.conversation.handoff``, the conversation layer this module depends on for the shape of what
 it writes — imported here only to validate what is written), deciding when a handoff is warranted
@@ -27,16 +28,17 @@ Design Principles
   race path distinguishes that constraint from the ``ticket_ref`` primary key by name
   (``exc.diag.constraint_name``, the same idiom ``reads.py`` uses): only the former is an ordinary
   replay to reclassify, the latter is a genuine, loggable failure.
-- **A replay never trusts the caller's fresh content over what is on file.** Every persisted,
-  content-bearing field — the outbox row's own scalar columns and all four child tables — is read
-  back and checked against ``content`` before a replay is treated as ordinary; a disagreement
-  raises ``HandoffReplayMismatch`` rather than silently returning a packet built from the new
-  call's content, which could permanently disagree with the row a later reader (the console) reads
-  directly. Only identity and timing fields are excluded (see ``_existing_row``'s own docstring for
-  exactly which, and why). A full ``TransactionFact``/localized ``SourceRef`` title is not part of
-  the comparison, since neither is stored in full (only ``verified_transaction_ref`` and
-  ``section_id``/``corpus_version`` are, by this module's own re-hydrate-elsewhere design) — the
-  identifiers that are stored are what's compared.
+- **A replay never trusts the caller's fresh content over what is on file.** A disagreement raises
+  ``HandoffReplayMismatch`` rather than silently returning a packet built from the new call's
+  content, which could permanently disagree with the row a later reader (the console) reads
+  directly. The comparison is a single stored digest (``content_fingerprint``, migration 0009) over
+  every field ``HandoffContent`` carries except identity and timing fields (see
+  ``content_fingerprint``'s own docstring for exactly which, and why) — not a hand-enumerated list
+  of columns and child tables kept in sync by hand as ``HandoffContent`` grows, which had already
+  drifted out of sync once. Computing the digest from ``content`` itself, not from what happens to
+  be persisted in a column, also means it covers a field's full value even where only part of it is
+  stored (a full ``TransactionFact``, not just the ``verified_transaction_ref`` column that survives
+  it) — a stronger comparison than the one it replaces, not just a shorter one.
 - **One raw identifier, one masked label, one source.** ``content.customer_id`` is the only
   customer identifier ``record`` reads: the row's own identity column and the packet's masked
   label are both derived from it, so the two can never name different customers the way two
@@ -55,19 +57,23 @@ Design Principles
 
 Runtime Contract
 ----------------
-``HandoffReplayMismatch``, ``PostgresHandoffOutbox(dsn)``.
+``HandoffReplayMismatch``, ``PostgresHandoffOutbox(dsn)``, ``content_fingerprint(content) -> str``.
 """
 
 from __future__ import annotations
 
 # Standard libraries
+import hashlib  # The stored content fingerprint
+import json  # Canonical serialization the fingerprint is computed over
 import logging  # Progress events, never print
 import secrets  # Unguessable suffix of a generated ticket reference
+from dataclasses import fields  # Every HandoffContent field, without naming them by hand
 from datetime import date  # The reference date the packet used
 
 # Third-party libraries
 import psycopg  # Serving-store driver
 import psycopg.errors  # Distinguishing a unique-constraint race from any other store failure
+from pydantic import BaseModel  # Every nested contract value HandoffContent can hold
 
 # Local modules
 from app.conversation.handoff import HandoffContent, build_packet, mask_customer_id
@@ -79,9 +85,50 @@ logger = logging.getLogger(__name__)
 _CONNECT_TIMEOUT_SECONDS = 5
 _SESSION_TURN_CONSTRAINT = "handoff_outbox_session_turn_unique"
 
+# Fields identity or timing describes, not the handoff itself: excluded from the fingerprint the
+# same way _existing_row's predecessor excluded the matching columns. reference_date and created_at
+# are expected to vary slightly between an original call and a genuine retry's freshly-read clock,
+# which a byte-for-byte comparison would wrongly flag; customer_id's masked label stands in for the
+# raw identifier, the same substitution the stored row itself makes.
+_FINGERPRINT_EXCLUDED_FIELDS = frozenset({"reference_date", "created_at", "customer_id"})
+
 
 class HandoffReplayMismatch(Exception):
     """A repeated (session_id, turn_id) was given content that disagrees with what is on file."""
+
+
+def _fingerprint_default(value: object) -> object:
+    """A JSON-safe form for a value ``json.dumps`` cannot serialize on its own.
+
+    Covers every shape a fingerprinted field holds today that isn't already natively
+    JSON-serializable — a nested contract model, directly or inside a tuple — generically, by type
+    rather than by field name, so a field added later needs a new case here only if it introduces a
+    genuinely new kind of value. Anything else raises rather than silently degrading to a string
+    representation that could hide a real difference between two otherwise-distinct values.
+    """
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    raise TypeError(f"cannot fingerprint a {type(value).__name__} value")
+
+
+def content_fingerprint(content: HandoffContent) -> str:
+    """A stable digest over every field ``content`` carries, except identity and timing fields.
+
+    Iterates ``HandoffContent``'s own fields (``dataclasses.fields``) rather than naming each one,
+    so a field added to ``HandoffContent`` later is covered automatically here with no matching
+    edit — closing the obligation the hand-enumerated column list this replaces used to carry, and
+    already drifted out of sync once. ``json.dumps(..., sort_keys=True)`` gives one canonical
+    ordering regardless of ``HandoffContent``'s own field declaration order, so the digest is
+    stable even if that order ever changes.
+    """
+    payload = {
+        f.name: getattr(content, f.name)
+        for f in fields(content)
+        if f.name not in _FINGERPRINT_EXCLUDED_FIELDS
+    }
+    payload["customer_id"] = mask_customer_id(content.customer_id)
+    canonical = json.dumps(payload, sort_keys=True, default=_fingerprint_default)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _new_ticket_ref(reference_date: date) -> str:
@@ -116,76 +163,22 @@ class PostgresHandoffOutbox:
 
     def _existing_row(
         self, cur: psycopg.Cursor, session_id: str, turn_id: str
-    ) -> tuple[str, tuple[object, ...]] | None:
-        """The existing row's ticket and every persisted, content-bearing field, or ``None``.
+    ) -> tuple[str, str | None] | None:
+        """The existing row's ticket and stored content fingerprint, or ``None``.
 
-        Covers every column ``_insert`` writes except identity and timing fields
-        (``session_id``, ``turn_id``, ``customer_id``, ``trace_id``, ``reference_date``,
-        ``created_at_utc``, ``ticket_ref`` itself): those either identify the row rather than
-        describe the handoff, or are expected to vary slightly between an original call and a
-        genuine retry's freshly-read clock, which a byte-for-byte comparison would wrongly flag.
-        A field added to ``HandoffContent``/``_insert`` later needs adding here too, the same
-        obligation ``_insert`` itself already carries for a new column.
+        The fingerprint itself is ``None`` for a row written before migration 0009 added the
+        column: nothing here backfills one, since it would cover fields this table never persisted
+        in the first place (see ``content_fingerprint``'s own docstring).
         """
         cur.execute(
-            "SELECT ticket_ref, trigger, request_summary, policy_version, category, "
-            "customer_first_name, customer_masked_id, language, verified_transaction_ref, "
-            "attempted_action_action, attempted_action_result, existing_case_number, "
-            "risk_score, risk_interval_low, risk_interval_high, risk_base_rate "
-            "FROM handoff_outbox WHERE session_id = %s AND turn_id = %s",
+            "SELECT ticket_ref, content_fingerprint FROM handoff_outbox "
+            "WHERE session_id = %s AND turn_id = %s",
             (session_id, turn_id),
         )
         row = cur.fetchone()
         if row is None:
             return None
-        ticket_ref = str(row[0])
-        cur.execute(
-            "SELECT action, result FROM handoff_actions WHERE ticket_ref = %s ORDER BY ord",
-            (ticket_ref,),
-        )
-        actions = tuple(cur.fetchall())
-        cur.execute(
-            "SELECT slot, attempts FROM handoff_open_questions WHERE ticket_ref = %s",
-            (ticket_ref,),
-        )
-        open_questions = frozenset(cur.fetchall())
-        cur.execute(
-            "SELECT reason_code FROM handoff_reason_codes WHERE ticket_ref = %s ORDER BY ord",
-            (ticket_ref,),
-        )
-        reason_codes = tuple(code for (code,) in cur.fetchall())
-        cur.execute(
-            "SELECT section_id, corpus_version FROM handoff_sources "
-            "WHERE ticket_ref = %s ORDER BY ord",
-            (ticket_ref,),
-        )
-        sources = tuple(cur.fetchall())
-        return ticket_ref, (*row[1:], actions, open_questions, reason_codes, sources)
-
-    def _comparable_fields(self, content: HandoffContent) -> tuple[object, ...]:
-        """``content``'s own values, in the same order ``_existing_row`` reads them back."""
-        risk = content.risk
-        return (
-            content.trigger.value,
-            content.request_summary,
-            content.policy_version,
-            content.category.value if content.category is not None else None,
-            content.first_name,
-            mask_customer_id(content.customer_id),
-            content.language,
-            content.verified_facts[0].ref if content.verified_facts else None,
-            content.attempted_action.action if content.attempted_action is not None else None,
-            content.attempted_action.result if content.attempted_action is not None else None,
-            content.existing_case_number,
-            risk.score if risk is not None else None,
-            risk.interval_low if risk is not None else None,
-            risk.interval_high if risk is not None else None,
-            risk.base_rate if risk is not None else None,
-            tuple((action.action, action.result) for action in content.actions),
-            frozenset((q.slot.value, q.attempts) for q in content.open_questions),
-            tuple(code.value for code in content.reason_codes),
-            tuple((source.section_id, source.corpus_version) for source in content.sources),
-        )
+        return str(row[0]), (str(row[1]) if row[1] is not None else None)
 
     def _replay_or_mismatch(
         self,
@@ -195,15 +188,22 @@ class PostgresHandoffOutbox:
         turn_id: str,
         trace_id: str,
         ticket_ref: str,
-        stored: tuple[object, ...],
+        stored_fingerprint: str | None,
     ) -> HandoffPacket:
         """The replay's packet, or ``HandoffReplayMismatch`` if ``content`` disagrees with it.
 
-        Never trusts ``content`` over what is on file: a repeated id pair whose stored fields
-        differ from this call's own is refused rather than silently answered with the new call's
-        version, which could permanently disagree with the row a later reader reads directly.
+        Never trusts ``content`` over what is on file: a repeated id pair whose stored fingerprint
+        differs from this call's own is refused rather than silently answered with the new call's
+        version, which could permanently disagree with the row a later reader reads directly. A
+        ``None`` stored fingerprint (a row that predates migration 0009) is unverifiable, never
+        trusted as an ordinary replay either — it raises the same way, with its own message.
         """
-        if stored != self._comparable_fields(content):
+        if stored_fingerprint is None:
+            raise HandoffReplayMismatch(
+                f"session {session_id} turn {turn_id} already recorded ticket {ticket_ref} "
+                "with no stored fingerprint to verify against"
+            )
+        if stored_fingerprint != content_fingerprint(content):
             raise HandoffReplayMismatch(
                 f"session {session_id} turn {turn_id} already recorded ticket {ticket_ref} "
                 "with different content"
@@ -232,14 +232,14 @@ class PostgresHandoffOutbox:
             ):
                 existing = self._existing_row(cur, session_id, turn_id)
                 if existing is not None:
-                    ticket_ref, stored = existing
+                    ticket_ref, stored_fingerprint = existing
                     return self._replay_or_mismatch(
                         content,
                         session_id=session_id,
                         turn_id=turn_id,
                         trace_id=trace_id,
                         ticket_ref=ticket_ref,
-                        stored=stored,
+                        stored_fingerprint=stored_fingerprint,
                     )
 
                 ticket_ref = _new_ticket_ref(content.reference_date)
@@ -251,6 +251,7 @@ class PostgresHandoffOutbox:
                     customer_id=content.customer_id,
                     trace_id=trace_id,
                     turn_id=turn_id,
+                    fingerprint=content_fingerprint(content),
                 )
                 return packet
         except psycopg.errors.UniqueViolation as exc:
@@ -271,14 +272,14 @@ class PostgresHandoffOutbox:
                 # guarantees a matching (session_id, turn_id) row exists.
                 self._log_failure("handoff_outbox_write_failed", session_id, trace_id)
                 raise
-            ticket_ref, stored = raced
+            ticket_ref, stored_fingerprint = raced
             return self._replay_or_mismatch(
                 content,
                 session_id=session_id,
                 turn_id=turn_id,
                 trace_id=trace_id,
                 ticket_ref=ticket_ref,
-                stored=stored,
+                stored_fingerprint=stored_fingerprint,
             )
         except psycopg.Error:
             self._log_failure("handoff_outbox_write_failed", session_id, trace_id)
@@ -315,6 +316,7 @@ class PostgresHandoffOutbox:
         customer_id: str,
         trace_id: str,
         turn_id: str,
+        fingerprint: str,
     ) -> None:
         risk = packet.evidence.risk
         cur.execute(
@@ -324,13 +326,14 @@ class PostgresHandoffOutbox:
                 created_at_utc, language, trigger, customer_first_name, customer_masked_id,
                 category, request_summary, verified_transaction_ref, attempted_action_action,
                 attempted_action_result, existing_case_number, policy_version, risk_score,
-                risk_interval_low, risk_interval_high, risk_base_rate
+                risk_interval_low, risk_interval_high, risk_base_rate, content_fingerprint
             ) VALUES (
                 %(ticket_ref)s, %(customer_id)s, %(session_id)s, %(trace_id)s, %(turn_id)s,
                 %(reference_date)s, %(created_at)s, %(language)s, %(trigger)s, %(first_name)s,
                 %(masked_id)s, %(category)s, %(request_summary)s, %(verified_transaction_ref)s,
                 %(attempted_action)s, %(attempted_result)s, %(existing_case_number)s,
-                %(policy_version)s, %(risk_score)s, %(risk_low)s, %(risk_high)s, %(risk_base)s
+                %(policy_version)s, %(risk_score)s, %(risk_low)s, %(risk_high)s, %(risk_base)s,
+                %(fingerprint)s
             )
             """,
             {
@@ -362,6 +365,7 @@ class PostgresHandoffOutbox:
                 "risk_low": risk.interval_low if risk is not None else None,
                 "risk_high": risk.interval_high if risk is not None else None,
                 "risk_base": risk.base_rate if risk is not None else None,
+                "fingerprint": fingerprint,
             },
         )
         for ordinal, action in enumerate(packet.actions):
