@@ -53,8 +53,8 @@ def test_find_by_name_returns_none_for_an_unknown_name() -> None:
 
 def test_series_settings_maps_each_column_to_its_hex_value() -> None:
     series = {
-        "cases": ("--color-accent", "#1c5fd6"),
-        "sla_breached_cases": ("--color-warning", "#8a5a00"),
+        "cases": theme.SeriesColor("--color-accent", "#1c5fd6"),
+        "sla_breached_cases": theme.SeriesColor("--color-warning", "#8a5a00"),
     }
 
     assert theme._series_settings(series) == {

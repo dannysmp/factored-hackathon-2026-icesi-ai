@@ -31,17 +31,35 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from typing import Any, NamedTuple, TypedDict
+
+JSON = dict[str, Any]
+
+
+class SeriesColor(NamedTuple):
+    token: str
+    hex: str
+
+
+class Panel(TypedDict):
+    name: str
+    mart: str
+    question: str
+    query: str
+    display: str
+    series: dict[str, SeriesColor]
+
 
 DASHBOARD_NAME = "Operations"
 
 # Token name and its light-mode hex value, from web/src/styles/tokens.css: Metabase has one fixed
 # (light) theme, so the light-mode side of each token's light-dark() pair is what applies here.
-TOKEN_ACCENT = ("--color-accent", "#1c5fd6")
-TOKEN_WARNING = ("--color-warning", "#8a5a00")
-TOKEN_ERROR = ("--color-error", "#b3251f")
-TOKEN_SUCCESS = ("--color-success", "#1a7f4b")
+TOKEN_ACCENT = SeriesColor("--color-accent", "#1c5fd6")
+TOKEN_WARNING = SeriesColor("--color-warning", "#8a5a00")
+TOKEN_ERROR = SeriesColor("--color-error", "#b3251f")
+TOKEN_SUCCESS = SeriesColor("--color-success", "#1a7f4b")
 
-PANELS = [
+PANELS: list[Panel] = [
     {
         "name": "Dispute volume by month",
         "mart": "dispute_cases_monthly",
@@ -97,8 +115,8 @@ def _request(
     *,
     session_id: str | None,
     method: str = "GET",
-    body: dict | None = None,
-):
+    body: JSON | None = None,
+) -> Any:
     url = f"{base_url}{path}"
     if not url.startswith(("http://", "https://")):
         raise ValueError(f"refusing a non-HTTP(S) URL: {url}")
@@ -116,6 +134,12 @@ def _request(
     return json.loads(raw) if raw else None
 
 
+def _as_list(response: Any) -> list[JSON]:
+    """Metabase answers some list endpoints as a bare array, others as ``{"data": [...]}``."""
+    rows: list[JSON] = response if isinstance(response, list) else response.get("data", [])
+    return rows
+
+
 def _sign_in(base_url: str, email: str, password: str) -> str:
     response = _request(
         base_url,
@@ -124,27 +148,27 @@ def _sign_in(base_url: str, email: str, password: str) -> str:
         method="POST",
         body={"username": email, "password": password},
     )
-    return response["id"]
+    session_id: str = response["id"]
+    return session_id
 
 
-def _find_by_name(rows: list[dict], name: str) -> dict | None:
+def _find_by_name(rows: list[JSON], name: str) -> JSON | None:
     for row in rows:
         if row.get("name") == name:
             return row
     return None
 
 
-def _series_settings(series: dict[str, tuple[str, str]]) -> dict[str, dict[str, str]]:
-    return {column: {"color": hex_value} for column, (_token, hex_value) in series.items()}
+def _series_settings(series: dict[str, SeriesColor]) -> dict[str, dict[str, str]]:
+    return {column: {"color": color.hex} for column, color in series.items()}
 
 
-def _upsert_card(base_url: str, session_id: str, database_id: int, panel: dict) -> dict:
+def _upsert_card(base_url: str, session_id: str, database_id: int, panel: Panel) -> JSON:
     """Creates or updates the panel's chart card; returns it as the API now has it."""
-    response = _request(base_url, "/api/card", session_id=session_id)
-    existing_cards = response if isinstance(response, list) else response.get("data", [])
+    existing_cards = _as_list(_request(base_url, "/api/card", session_id=session_id))
     existing = _find_by_name(existing_cards, panel["name"])
 
-    body = {
+    body: JSON = {
         "name": panel["name"],
         "dataset_query": {
             "database": database_id,
@@ -155,27 +179,31 @@ def _upsert_card(base_url: str, session_id: str, database_id: int, panel: dict) 
         "visualization_settings": {"series_settings": _series_settings(panel["series"])},
     }
     if existing is None:
-        return _request(base_url, "/api/card", session_id=session_id, method="POST", body=body)
-    return _request(
+        card: JSON = _request(
+            base_url, "/api/card", session_id=session_id, method="POST", body=body
+        )
+        return card
+    updated: JSON = _request(
         base_url, f"/api/card/{existing['id']}", session_id=session_id, method="PUT", body=body
     )
+    return updated
 
 
 def _find_analytics_database_id(base_url: str, session_id: str) -> int:
-    response = _request(base_url, "/api/database", session_id=session_id)
-    databases = response if isinstance(response, list) else response.get("data", [])
+    databases = _as_list(_request(base_url, "/api/database", session_id=session_id))
     for database in databases:
         if database.get("name") == "analytics":
-            return database["id"]
+            database_id: int = database["id"]
+            return database_id
     raise RuntimeError("no 'analytics' database connected in Metabase yet")
 
 
 def _upsert_dashboard(base_url: str, session_id: str) -> int:
-    existing = _request(base_url, "/api/dashboard", session_id=session_id)
-    existing = existing if isinstance(existing, list) else existing.get("data", [])
+    existing = _as_list(_request(base_url, "/api/dashboard", session_id=session_id))
     found = _find_by_name(existing, DASHBOARD_NAME)
     if found is not None:
-        return found["id"]
+        found_id: int = found["id"]
+        return found_id
     created = _request(
         base_url,
         "/api/dashboard",
@@ -183,18 +211,18 @@ def _upsert_dashboard(base_url: str, session_id: str) -> int:
         method="POST",
         body={"name": DASHBOARD_NAME},
     )
-    return created["id"]
+    created_id: int = created["id"]
+    return created_id
 
 
 def _text_dashcard(
-    existing_dashcards: list[dict], row: int, text: str, placeholder_id: int
-) -> dict:
+    existing_dashcards: list[JSON], row: int, text: str, placeholder_id: int
+) -> JSON:
+    dashcard_id: int = placeholder_id
     for dashcard in existing_dashcards:
         if dashcard["card_id"] is None and dashcard["row"] == row and dashcard["col"] == 0:
             dashcard_id = dashcard["id"]
             break
-    else:
-        dashcard_id = placeholder_id
     return {
         "id": dashcard_id,
         "card_id": None,
@@ -207,14 +235,13 @@ def _text_dashcard(
 
 
 def _chart_dashcard(
-    existing_dashcards: list[dict], row: int, card_id: int, placeholder_id: int
-) -> dict:
+    existing_dashcards: list[JSON], row: int, card_id: int, placeholder_id: int
+) -> JSON:
+    dashcard_id: int = placeholder_id
     for dashcard in existing_dashcards:
         if dashcard["card_id"] == card_id:
             dashcard_id = dashcard["id"]
             break
-    else:
-        dashcard_id = placeholder_id
     return {
         "id": dashcard_id,
         "card_id": card_id,
@@ -226,7 +253,7 @@ def _chart_dashcard(
     }
 
 
-def _checklist(cards_by_panel: dict[str, dict]) -> str:
+def _checklist(cards_by_panel: dict[str, JSON]) -> str:
     lines = [
         "# Dashboard theme checklist",
         "",
@@ -241,14 +268,12 @@ def _checklist(cards_by_panel: dict[str, dict]) -> str:
     for panel in PANELS:
         card = cards_by_panel[panel["name"]]
         confirmed_series = card.get("visualization_settings", {}).get("series_settings", {})
-        for column, (token, expected_hex) in panel["series"].items():
+        for column, color in panel["series"].items():
             confirmed_hex = confirmed_series.get(column, {}).get("color", "MISSING")
-            status = (
-                confirmed_hex if confirmed_hex == expected_hex else f"MISMATCH ({confirmed_hex})"
-            )
+            status = confirmed_hex if confirmed_hex == color.hex else f"MISMATCH ({confirmed_hex})"
             lines.append(
                 f"| {panel['name']} | {panel['mart']} | {panel['question']} | "
-                f"{panel['display']} | {column} | `{token}` | {status} |"
+                f"{panel['display']} | {column} | `{color.token}` | {status} |"
             )
     return "\n".join(lines) + "\n"
 
@@ -261,15 +286,15 @@ def main() -> None:
     session_id = _sign_in(base_url, admin_email, admin_password)
     database_id = _find_analytics_database_id(base_url, session_id)
 
-    cards_by_panel: dict[str, dict] = {}
+    cards_by_panel: dict[str, JSON] = {}
     for panel in PANELS:
         cards_by_panel[panel["name"]] = _upsert_card(base_url, session_id, database_id, panel)
 
     dashboard_id = _upsert_dashboard(base_url, session_id)
     current = _request(base_url, f"/api/dashboard/{dashboard_id}", session_id=session_id)
-    existing_dashcards = current["dashcards"]
+    existing_dashcards: list[JSON] = current["dashcards"]
 
-    dashcards = []
+    dashcards: list[JSON] = []
     placeholder = -1
     for index, panel in enumerate(PANELS):
         text_row = index * (_ROW_HEIGHT_TEXT + _ROW_HEIGHT_CHART)
@@ -295,7 +320,7 @@ def main() -> None:
 
     # Read back every card fresh (not the create/update response) so the checklist reflects what
     # the API now actually has, the same "prove what was shown" rule the audit trail follows.
-    refreshed_cards = {}
+    refreshed_cards: dict[str, JSON] = {}
     for panel in PANELS:
         card_id = cards_by_panel[panel["name"]]["id"]
         refreshed_cards[panel["name"]] = _request(
