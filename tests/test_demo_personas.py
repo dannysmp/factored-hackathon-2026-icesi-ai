@@ -3,15 +3,22 @@ Demo Persona Tests
 ===================
 
 Component: ``app.security.demo_personas``. Hermetic: personas are read from temporary files, and
-the customer lookup is a fake, exactly like the sandbox login's own tests.
+the customer lookup is a fake, exactly like the sandbox login's own tests. One test loads the
+real shipped persona file against a real, seeded Postgres — the same check ``app.main`` runs at
+start-up — and is marked ``integration``, skipped when ``DATABASE_URL`` is not set.
 """
 
 from __future__ import annotations
 
+import functools
+import os
 from pathlib import Path
 
 import pytest
 
+from app.persistence.customers import customer_status
+from app.persistence.load_seed import load_seed
+from app.persistence.migrate import apply_migrations
 from app.security.demo_personas import (
     DEFAULT_PERSONAS_PATH,
     PersonaError,
@@ -49,11 +56,27 @@ def _write(tmp_path: Path, text: str) -> Path:
 
 
 def test_the_shipped_persona_file_loads_and_validates_structurally() -> None:
-    """The file this repository ships parses; its placeholder customer_ids are a seed question,
-    not a loader question (proven separately by the validate_active_customers tests below)."""
+    """The file this repository ships parses; whether each customer_id actually resolves to a
+    seeded customer is a separate, store-backed question (see the integration test below)."""
     personas = load_personas(DEFAULT_PERSONAS_PATH)
 
     assert len(personas.customers) >= 1
+
+
+@pytest.mark.integration
+def test_every_shipped_persona_resolves_to_an_active_seeded_customer() -> None:
+    """The real regression this file's customer_id values must never reintroduce: a placeholder
+    or a stale identifier fails exactly this check inside ``app.main``'s own start-up path, before
+    ``DEMO_SIGNIN_ENABLED`` can ever serve a request."""
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL is not set")
+    apply_migrations(dsn)
+    load_seed(dsn, Path("data/gold/ops_seed"))
+
+    personas = load_personas(DEFAULT_PERSONAS_PATH)
+
+    validate_active_customers(personas, functools.partial(customer_status, dsn))
 
 
 def test_a_valid_persona_file_loads(tmp_path: Path) -> None:
