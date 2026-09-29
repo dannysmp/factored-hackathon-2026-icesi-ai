@@ -59,6 +59,30 @@
       {
         "title": "README",
         "source": "README.md"
+      },
+      {
+        "title": "Policy corpus: feature definition",
+        "source": "plan/product/features/E3-policy-corpus.md"
+      },
+      {
+        "title": "Secure service layer: feature definitions",
+        "source": "plan/product/features/E4-secure-service-layer.md"
+      },
+      {
+        "title": "Conversation layer: feature definitions",
+        "source": "plan/product/features/E5-conversation-layer.md"
+      },
+      {
+        "title": "Learned components: feature definitions",
+        "source": "plan/product/features/E6-learned-components.md"
+      },
+      {
+        "title": "Agent console: feature definition",
+        "source": "plan/product/features/E10-agent-console.md"
+      },
+      {
+        "title": "UX quality bar: visual hierarchy, states, microcopy, responsiveness, dashboard charts",
+        "source": "plan/product/features/E10-E2-ux-quality-bar.md"
       }
     ]
   }
