@@ -8,9 +8,18 @@
 # Design:
 #   Every image reference and every secret is an environment variable, never
 #   a literal in this file: `ECR_REGISTRY` (the account-specific registry
-#   host), `IMAGE_TAG`, `ANTHROPIC_API_KEY` and `SESSION_SIGNING_KEY` (read
-#   from SSM Parameter Store by the deploy step, never written to disk here)
-#   and `HOST_NAME` (the sslip.io address, or a real domain later).
+#   host), `IMAGE_TAG`, `ANTHROPIC_API_KEY`, `SESSION_SIGNING_KEY` and
+#   `POSTGRES_PASSWORD` (read from SSM Parameter Store by the deploy step,
+#   never written to disk here) and `HOST_NAME` (the sslip.io address, or a
+#   real domain later).
+#   `POSTGRES_PASSWORD` has no `:-` default here, deliberately (issue #149):
+#   the base compose file's own `POSTGRES_PASSWORD:-dispute_intake` default
+#   exists only so plain local development works with nothing SSM-backed
+#   exported; a deployed stack must never silently fall through to that
+#   value, so this file requires the real one to already be in the
+#   environment, exactly like the two secrets above it — `05-deploy.sh`
+#   fails before ever running `docker compose up` if the SSM parameter
+#   doesn't exist, rather than deploying with a hardcoded default password.
 #   `DATA_AS_OF_DATE` defaults to the evaluation period's own reference date
 #   (ADR-15): the deployed database starts empty, with no `ops_meta` seed row
 #   for the domain calendar to fall back on, and the service refuses to start
@@ -36,7 +45,7 @@ services:
     environment:
       APP_ENV: prod
       SERVICE_VERSION: ${IMAGE_TAG:-dev}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-dispute_intake}:${POSTGRES_PASSWORD:-dispute_intake}@postgres:5432/${POSTGRES_DB:-dispute_intake}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dispute_intake}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dispute_intake}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       SESSION_SIGNING_KEY: ${SESSION_SIGNING_KEY}
       DATA_AS_OF_DATE: ${DATA_AS_OF_DATE:-2026-06-18}
