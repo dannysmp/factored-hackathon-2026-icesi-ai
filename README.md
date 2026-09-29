@@ -60,7 +60,7 @@ evidence of its state — not a status claim, but something a reader can open an
 | Backend and policy | `app/domain/policy/`, [SECURITY.md](SECURITY.md) |
 | Language understanding and dialogue | `app/conversation/`, `app/llm/`, `app/retrieval/` |
 | Machine learning | [`models/model_card.json`](models/model_card.json), [`models/README.md`](models/README.md) |
-| Evaluation | `evals/golden/`, [`reports/`](reports/) once `make evaluate` has run |
+| Evaluation | `evals/golden/`, structured metrics logged by `make evaluate`; the generated [`reports/evaluation.md`](reports/) awaits the judge |
 | Frontend | [`web/README.md`](web/README.md) |
 | Deployment | [`infra/README.md`](infra/README.md) |
 | Release readiness | [`docs/release-checklist.md`](docs/release-checklist.md), [`docs/limitations.md`](docs/limitations.md) |
@@ -224,4 +224,4 @@ requirements, and which controls exist today, are in [SECURITY.md](SECURITY.md).
 | `make analyze` exits non-zero | Run `make pipeline` first: the analysis reads the cleaned layer. Any earlier `reports/workflow-analysis.md` is removed rather than left stale, so its absence is expected; `analysis_failed` in the log names a handled reason, otherwise check the traceback |
 | The service exits with `SESSION_SIGNING_KEY is required` | Set `SESSION_SIGNING_KEY` in `.env` (32 or more characters); only `APP_ENV=local` may start without it |
 | Every request answers `401` with `session_expired` | Sessions last `SESSION_TTL_SECONDS` (default 15 minutes); sign in again |
-| `make train`, `evaluate` or `up` exits with code 2 | The target is not implemented yet |
+| `make up` exits with code 2 | The target is not implemented yet |
