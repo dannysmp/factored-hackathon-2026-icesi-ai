@@ -13,6 +13,7 @@ different letter case and with surrounding spaces.
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import UTC, date, datetime
 
@@ -366,6 +367,26 @@ def test_a_merchant_name_over_the_contracts_bound_is_truncated_not_a_crash(dsn: 
     assert not isinstance(fact, ToolFailure)
     assert fact is not None
     assert fact.merchant == "A" * 80
+
+
+@pytest.mark.integration
+def test_a_truncation_logs_a_warning_naming_only_the_lengths(
+    dsn: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The value itself must never appear in the log line (PII minimization applies regardless of
+    why a merchant name is long); only the lengths involved."""
+    overlong = "A" * 150
+    _insert_transaction_with_merchant(dsn, "TRX-A-WARN", overlong)
+    port = _port(dsn, _RecordingSink(dsn), customer_id="CLI-A")
+
+    with caplog.at_level(logging.WARNING):
+        port.get_transaction("TRX-A-WARN")
+
+    warnings = [r for r in caplog.records if r.message.startswith("merchant_name_truncated")]
+    assert len(warnings) == 1
+    assert "original_length=150" in warnings[0].message
+    assert "kept_length=80" in warnings[0].message
+    assert overlong not in warnings[0].message
 
 
 @pytest.mark.integration
