@@ -41,6 +41,11 @@ The `deploy_metabase` input (default off) adds a job on top of the base deployme
 - Scripts `01`–`04` already run once against the account.
 - The `session-signing-key` SSM parameter exists: `openssl rand -hex 32 |
   infra/scripts/put-secret.sh session-signing-key` (`anthropic-api-key` already does).
+- The `postgres-password` SSM parameter exists: `openssl rand -hex 32 |
+  infra/scripts/put-secret.sh postgres-password`. Mandatory, the same way as the two secrets
+  above — `05-deploy.sh` fails before bringing the stack up if it's missing, rather than falling
+  through to the base compose file's own local-development default (issue #149: a deployed
+  Postgres must never run on a hardcoded, publicly-known password).
 - A GitHub Actions repository secret named `AWS_ACCOUNT_ID` holds the account's plain numeric ID,
   so the workflow can compose the CI deploy role's ARN without ever writing the number into this
   repository.
@@ -109,12 +114,13 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compos
   up -d metabase   # 08-deploy-metabase.sh runs this, after creating its database and role
 ```
 
-`ECR_REGISTRY`, `IMAGE_TAG`, `ANTHROPIC_API_KEY`, `SESSION_SIGNING_KEY`, `DEMO_SIGNIN_ACCESS_CODE`,
-`DEMO_AGENT_ACCESS_CODE`, `AGENT_SESSION_SIGNING_KEY` and `HOST_NAME` are read from the
-environment; the deploy pipeline sets them (each secret by reading its SSM parameter by name,
-never printing its value — the three demo sign-in ones resolve to an empty string when their
-parameter doesn't exist yet, not an error). Metabase's own `MB_DB_PASS` and `MB_SESSION_SECRET_KEY`
-are read the same way, by `08-deploy-metabase.sh`.
+`ECR_REGISTRY`, `IMAGE_TAG`, `ANTHROPIC_API_KEY`, `SESSION_SIGNING_KEY`, `POSTGRES_PASSWORD`,
+`DEMO_SIGNIN_ACCESS_CODE`, `DEMO_AGENT_ACCESS_CODE`, `AGENT_SESSION_SIGNING_KEY` and `HOST_NAME`
+are read from the environment; the deploy pipeline sets them (each secret by reading its SSM
+parameter by name, never printing its value — `POSTGRES_PASSWORD` is mandatory, the same as
+`ANTHROPIC_API_KEY`/`SESSION_SIGNING_KEY`; only the three demo sign-in ones resolve to an empty
+string when their parameter doesn't exist yet, not an error). Metabase's own `MB_DB_PASS` and
+`MB_SESSION_SECRET_KEY` are read the same way, by `08-deploy-metabase.sh`.
 
 `infra/Caddyfile.with-metabase` is the Caddyfile that also routes the dashboard subdomain; it
 replaces the plain `infra/Caddyfile` on the host only once Metabase's first-run setup has

@@ -12,11 +12,17 @@
 #   host; this script base64-encodes their current content and embeds it in
 #   the SSM command, so the host never needs git, a checkout or a token to
 #   fetch them. Every application secret (the model API key, the session-
-#   signing key, and — when present — the demo sign-in access codes and the
-#   agent session-signing key) is read on the host itself, by the host's own
-#   instance role (03-create-instance-role.sh) — this script and the CI role
-#   that calls it never see any of their values, matching PII/secret
-#   minimization.
+#   signing key, the Postgres password, and — when present — the demo
+#   sign-in access codes and the agent session-signing key) is read on the
+#   host itself, by the host's own instance role (03-create-instance-role.sh)
+#   — this script and the CI role that calls it never see any of their
+#   values, matching PII/secret minimization.
+#   `postgres-password` is mandatory, the same way anthropic-api-key and
+#   session-signing-key already are (issue #149: the base compose file's own
+#   `POSTGRES_PASSWORD:-dispute_intake` default exists only for local
+#   development with nothing SSM-backed exported; a deployed stack must never
+#   fall through to it, so this script fails loudly, before ever running
+#   `docker compose up`, if the parameter doesn't exist).
 #   The three demo sign-in parameters (ADR-18) are optional: a deployment
 #   where the maintainer hasn't created them yet (the smoke-only path) gets
 #   an empty value for each and sign-in stays disabled, exactly as before
@@ -89,6 +95,7 @@ export IMAGE_TAG='${IMAGE_TAG}'
 export HOST_NAME='${HOST_NAME}'
 export ANTHROPIC_API_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/anthropic-api-key --with-decryption --query Parameter.Value --output text)"
 export SESSION_SIGNING_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/session-signing-key --with-decryption --query Parameter.Value --output text)"
+export POSTGRES_PASSWORD="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/postgres-password --with-decryption --query Parameter.Value --output text)"
 export DEMO_SIGNIN_ACCESS_CODE="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/demo-signin-access-code --with-decryption --query Parameter.Value --output text 2>/dev/null || echo '')"
 export DEMO_AGENT_ACCESS_CODE="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/demo-agent-access-code --with-decryption --query Parameter.Value --output text 2>/dev/null || echo '')"
 export AGENT_SESSION_SIGNING_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/agent-session-signing-key --with-decryption --query Parameter.Value --output text 2>/dev/null || echo '')"
