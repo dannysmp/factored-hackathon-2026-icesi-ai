@@ -71,9 +71,10 @@ file itself.
 - **The harness can now run a case, not only define and score one.** Every piece a full report
   needs exists: the scoring formulas, an independent oracle that recomputes the policy decision for
   a stored case, the runner, both baseline systems (B0, B1), the failure injector, and the LLM
-  judge with its human-validated agreement sample. A 16-case adversarial slice runs on every change
-  and blocks merge on any case turning unsafe; the full 32-case adversarial set can also run
-  outside CI, against real, loaded data.
+  judge with its agreement-computation code — tested today against a disclosed synthetic
+  placeholder sample, pending the real human-rated sample two raters return (due 2026-10-04). A
+  16-case adversarial slice runs on every change and blocks merge on any case turning unsafe; the
+  full 32-case adversarial set can also run outside CI, against real, loaded data.
 - Consequence for this slide: **no evaluation report exists yet**, and this slide states that
   plainly rather than showing a number that was not measured — every piece exists, but the first
   full run against the complete 135-case golden set has not been executed. The report this slide
@@ -96,10 +97,10 @@ file itself.
   - Filing windows are counted on the bank's single operating time zone (America/Bogota), not each
     customer's own local calendar date — a customer elsewhere could see a slightly different day
     count near a deadline.
-  - A document number a customer types unprompted into free text is not detected or redacted — a
-    deliberate by-design choice, since a document number carries no check digit a detector could
-    key on, not an oversight; every other field the system reads is a closed enum or a narrowly
-    patterned value that cannot carry one.
+  - A document number a customer types unprompted into free text is not detected or redacted, and
+    still reaches the outbound model request unmasked — a deliberate by-design choice, since a
+    document number carries no check digit a detector could key on, not an oversight; every other
+    field the system reads is a closed enum or a narrowly patterned value that cannot carry one.
   - The human-agent console is a viewer; narrow audited writes are the first work scheduled after
     this release.
 - The route to operation is the technology evolution matrix (`plan/docs/architecture.md`): every
