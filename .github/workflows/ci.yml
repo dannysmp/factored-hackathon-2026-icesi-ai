@@ -21,6 +21,11 @@
 #                synthetic data (never the provider's real data); blocks merge on any case
 #                turning unsafe. B1 does not run here — its whole purpose is measuring a real,
 #                unsupervised LLM, so a stubbed run of it would be a no-op, not a smoke test.
+#   docker-build-check  Builds the backend image for real and imports, from inside a running
+#                container, every top-level directory the app reads from disk at serving time
+#                (personas/, prompts/) — the other jobs here all run against the checkout
+#                directly, so none of them would ever catch a file the Dockerfile or
+#                .dockerignore forgot to carry into the image itself.
 #   semgrep      Static analysis (security-audit, OWASP Top 10, secrets rule packs), blocking
 #                on ERROR-severity findings only.
 #
@@ -45,6 +50,10 @@
 #   For test-postgres: make db-up migrate test-integration (needs docker and DATABASE_URL set)
 #   For smoke: make db-up migrate seed-ci-smoke, then
 #     LLM_PROVIDER=stub make evaluate SYSTEM=P SMOKE=1 && LLM_PROVIDER=stub make evaluate SYSTEM=B0 SMOKE=1
+#   For docker-build-check: docker build -t dispute-intake-backend:ci -f Dockerfile . && docker
+#     run --rm dispute-intake-backend:ci python -c "from app.security.demo_personas import
+#     load_personas; from app.llm.prompts import load_prompt; load_personas();
+#     [load_prompt(n) for n in ('nlu_v1', 'render_v1', 'judge_v1')]"
 # =============================================================================
 
 name: CI
@@ -256,6 +265,32 @@ jobs:
         run: make evaluate SYSTEM=P SMOKE=1
       - name: Run the smoke slice against B0
         run: make evaluate SYSTEM=B0 SMOKE=1
+
+  # ---------------------------------------------------------------------------
+  # Backend image
+  # ---------------------------------------------------------------------------
+  docker-build-check:
+    name: docker-build-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Build the backend image
+        run: docker build -t dispute-intake-backend:ci -f Dockerfile .
+      - name: Confirm every runtime-read directory actually reached the image
+        # Catches the class of bug the Dockerfile/.dockerignore's own allow-list already missed
+        # twice (personas/, then prompts/): a file the app reads from disk at serving time,
+        # never exercised by the other jobs here since they all run against the source tree
+        # directly, not this image. Import from inside a real container, not the checkout.
+        run: |
+          docker run --rm dispute-intake-backend:ci python -c "
+          from app.security.demo_personas import load_personas
+          from app.llm.prompts import load_prompt
+          load_personas()
+          for name in ('nlu_v1', 'render_v1', 'judge_v1'):
+              load_prompt(name)
+          print('every runtime-read file loaded from inside the built image')
+          "
 
   # ---------------------------------------------------------------------------
   # Static analysis
