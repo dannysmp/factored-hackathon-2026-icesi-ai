@@ -87,12 +87,32 @@ def test_a_normal_case_without_a_safe_behavior_is_valid() -> None:
 
 
 # -----------------------------------------------------------------------------
+# The policy-answer / section pairing rule
+# -----------------------------------------------------------------------------
+
+
+def test_a_policy_answer_case_requires_a_section() -> None:
+    with pytest.raises(ValueError, match="policy-answer case must declare"):
+        _case(expected_intent=Intent.POLICY_ANSWER)
+
+
+def test_a_non_policy_answer_case_forbids_a_section() -> None:
+    with pytest.raises(ValueError, match="policy-answer-only"):
+        _case(expected_policy_section_id="filing-windows")
+
+
+def test_a_policy_answer_case_with_a_section_is_valid() -> None:
+    case = _case(expected_intent=Intent.POLICY_ANSWER, expected_policy_section_id="filing-windows")
+    assert case.expected_policy_section_id == "filing-windows"
+
+
+# -----------------------------------------------------------------------------
 # Optional fields
 # -----------------------------------------------------------------------------
 
 
 def test_expected_reason_code_defaults_to_none_for_a_non_decision_case() -> None:
-    case = _case(expected_intent=Intent.POLICY_ANSWER)
+    case = _case(expected_intent=Intent.POLICY_ANSWER, expected_policy_section_id="filing-windows")
     assert case.expected_reason_code is None
 
 

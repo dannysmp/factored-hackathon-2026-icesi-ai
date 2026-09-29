@@ -4,19 +4,25 @@ Evaluation CLI
 
 Overview
 --------
-``make evaluate SYSTEM={P|B0|B1}``'s implementation: runs one system variant against a set of
-golden-set cases and logs the resulting headline metrics. ``--smoke`` narrows the case set to
-``evals.runner.smoke.smoke_cases()`` (the CI-gating slice, "all injection + authz"); its absence
-runs the full golden set (``evals.golden.case_sheet.ALL_CASES``).
+Two modes. ``make evaluate SYSTEM={P|B0|B1}``: runs one system variant once against a set of
+golden-set cases and logs the resulting headline metrics (unchanged from every earlier increment,
+including the CI-gating smoke job — ``--smoke`` narrows the case set to
+``evals.runner.smoke.smoke_cases()``; its absence runs the full golden set,
+``evals.golden.case_sheet.ALL_CASES``). ``make evaluate FULL=1``: runs every system variant (P
+three times, B0 and B1 once each, the plan's own execution protocol) and writes the full
+``reports/evaluation.md`` — the first increment able to produce the plan's single generated report
+artifact end to end.
 
 Scope
 -----
-In: choosing and building the right dependencies for the requested system variant, running the
-batch, logging a summary, and the process exit code the CI smoke job gates merge on.
-Out: the full evaluation report (``reports/evaluation.md``; the judge, three repeated runs and the
-report generator are a later slice's own job, per ``plan/delivery/streams.md``); loading any seed
-data into the target store — the caller's own responsibility (``make load-seed`` for a real run
-against ``data/gold/ops_seed``, a CI-only fixture for the smoke job).
+In: choosing and building the right dependencies for the requested system variant(s), running the
+batch(es), logging a summary or writing the full report, and the process exit code the CI smoke
+job (and, for ``--full``, any run of any variant) gates on.
+Out: loading any seed data into the target store — the caller's own responsibility (``make
+load-seed`` for a real run against ``data/gold/ops_seed``, a CI-only fixture for the smoke job);
+scoring the automated judge against every case of a full run (the judge-validation section reads
+this slice's own H4 sample — synthetic today, the real returned sheets later — not a fresh judge
+call over the whole golden set every time ``--full`` runs; see ``evals.judge_validation``).
 
 Design Principles
 -----------------
@@ -48,14 +54,17 @@ Design Principles
 
 Runtime Contract
 -----------------
-``main(argv) -> int``. Command line: ``python -m evals.cli --system {P,B0,B1} [--smoke]``.
+``main(argv) -> int``. Command line: ``python -m evals.cli --system {P,B0,B1} [--smoke]`` or
+``python -m evals.cli --full [--report PATH]`` (default ``reports/evaluation.md``); exactly one of
+``--system``/``--full`` is required.
 
 Limitations
 -----------
-Logs ``HeadlineMetrics`` as structured lines; no ``reports/evaluation.md`` generator, no judge, no
-repeated-run averaging. A case the scorer does not yet cover, or a case runtime error (a non-2xx
-response, a malformed ``seed_ref``), still raises and aborts the whole batch — the already-
-reviewed ``run_cases`` functions' own "no hidden retry" rule, unchanged here.
+A case the scorer does not yet cover, or a case runtime error (a non-2xx response, a malformed
+``seed_ref``), still raises and aborts the whole batch — the already-reviewed ``run_cases``
+functions' own "no hidden retry" rule, unchanged here, and unchanged by ``--full`` running several
+batches in sequence. ``--full``'s judge-validation section is only as real as its own data source
+(see Scope); it is not itself run per system per call.
 """
 
 from __future__ import annotations
@@ -64,6 +73,7 @@ from __future__ import annotations
 import argparse
 import logging
 from collections.abc import Sequence
+from pathlib import Path
 
 # Third-party libraries
 from starlette.testclient import TestClient
@@ -72,23 +82,49 @@ from starlette.testclient import TestClient
 from app.config import ConfigError, Settings, load_settings
 from app.domain.calendar import DomainCalendar, DomainCalendarError, resolve_domain_calendar
 from app.domain.policy.loader import load_policy
+from app.llm.prompts import load_prompt
 from app.main import create_app
 from app.persistence.ops_meta import read_data_as_of
 from app.retrieval.lexical import LexicalRetriever
 from app.security.sessions import Clock
 from app.security.sessions import utc_now as _real_clock
 from evals.golden.case_sheet import ALL_CASES
+from evals.golden.judge_validation_sample import (
+    JUDGE_VERDICTS as _SYNTHETIC_JUDGE_VERDICTS,
+)
+from evals.golden.judge_validation_sample import (
+    PROVENANCE as _SYNTHETIC_JUDGE_VALIDATION_PROVENANCE,
+)
+from evals.golden.judge_validation_sample import (
+    RATER_1_SCORES as _SYNTHETIC_RATER_1_SCORES,
+)
+from evals.golden.judge_validation_sample import (
+    RATER_2_SCORES as _SYNTHETIC_RATER_2_SCORES,
+)
+from evals.judge_validation import compute_agreement
 from evals.metrics import NOT_DEFINED, CaseResult, HeadlineMetrics, Metric, compute_headline_metrics
 from evals.models import Case
+from evals.repeated_runs import compute_variability, flipped_cases
+from evals.report import EvaluationReport, SystemResult, Versions, render_markdown
 from evals.runner.baselines.b0 import build_b0_app
 from evals.runner.baselines.b1 import run_cases as run_b1_cases
 from evals.runner.baselines.naive_agent_client import NaiveAgentClient
 from evals.runner.runner import run_cases as run_http_cases
 from evals.runner.smoke import smoke_cases
+from pipelines.silver import git_version
 
 logger = logging.getLogger(__name__)
 
 _SYSTEMS = ("P", "B0", "B1")
+
+# The bank's operating zone (app.domain.calendar.BANK_ZONE): a fixed UTC-5 offset, stated here as
+# the descriptive label the report's own text carries, since Bogotá has had no daylight-saving
+# change since 1993.
+_BANK_TIMEZONE_LABEL = "America/Bogota (UTC-5)"
+
+# How many times each system runs for a full report: 3 for P (the plan's own repeated-run
+# requirement), 1 for a baseline (there is nothing to average or flip across a single run).
+_RUN_COUNTS = {"P": 3, "B0": 1, "B1": 1}
 
 
 def _select_cases(*, smoke: bool) -> tuple[Case, ...]:
@@ -156,6 +192,67 @@ def _run_b1(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]
 _RUNNERS = {"P": _run_p, "B0": _run_b0, "B1": _run_b1}
 
 
+def _build_system_result(system: str, runs: Sequence[tuple[CaseResult, ...]]) -> SystemResult:
+    """One system's ``SystemResult``, from its repeated (or single) runs' raw case results."""
+    headline_runs = [compute_headline_metrics(run) for run in runs]
+    return SystemResult(
+        system=system,  # type: ignore[arg-type]
+        run_count=len(runs),
+        variability=compute_variability(headline_runs),
+        case_results=runs[-1],
+        flips=flipped_cases(runs) if len(runs) > 1 else (),
+        judge_verdicts=(),
+    )
+
+
+def _run_full_report(settings: Settings) -> tuple[EvaluationReport, bool]:
+    """Run every system variant the plan's execution protocol calls for, and assemble the report.
+
+    P runs three times, B0 and B1 once each (``_RUN_COUNTS``); the judge-validation section reads
+    this slice's own synthetic placeholder sample until the real H4 sheets replace it (see
+    ``evals.golden.judge_validation_sample``).
+
+    Returns
+    -------
+    tuple[EvaluationReport, bool]
+        The report, and whether any case in any run (including a P run discarded from
+        ``SystemResult.case_results``, which keeps only the last one) was unsafe — the exit-code
+        enforcement needs every run checked, not only the one the report happens to display.
+    """
+    cases = ALL_CASES
+    calendar = _resolve_calendar(settings, clock=_real_clock)
+    all_runs = {
+        system: [_RUNNERS[system](settings, cases) for _ in range(_RUN_COUNTS[system])]
+        for system in _SYSTEMS
+    }
+    unsafe = any(result.is_unsafe for runs in all_runs.values() for run in runs for result in run)
+    systems = tuple(_build_system_result(system, all_runs[system]) for system in _SYSTEMS)
+    versions = Versions(
+        nlu_model=settings.nlu_model,
+        render_model=settings.render_model,
+        judge_model=settings.judge_model,
+        nlu_prompt_version=load_prompt("nlu_v1").version,
+        render_prompt_version=load_prompt("render_v1").version,
+        judge_prompt_version=load_prompt("judge_v1").version,
+        policy_version=load_policy().version,
+        git_sha=git_version(),
+    )
+    agreement = compute_agreement(
+        _SYNTHETIC_RATER_1_SCORES, _SYNTHETIC_RATER_2_SCORES, _SYNTHETIC_JUDGE_VERDICTS
+    )
+    report = EvaluationReport(
+        versions=versions,
+        golden_cases=tuple(cases),
+        systems=systems,
+        judge_validation=agreement,
+        judge_validation_provenance=_SYNTHETIC_JUDGE_VALIDATION_PROVENANCE,
+        reference_date=calendar.reference_date.isoformat(),
+        reference_date_source=calendar.origin.value,
+        bank_timezone=_BANK_TIMEZONE_LABEL,
+    )
+    return report, unsafe
+
+
 def _fmt(metric: Metric) -> str:
     if metric.value == NOT_DEFINED:
         return f"not_defined(n={metric.denominator})"
@@ -193,14 +290,36 @@ def _log_report(system: str, results: Sequence[CaseResult], metrics: HeadlineMet
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run one system variant against a set of golden-set cases; return the process exit code."""
-    parser = argparse.ArgumentParser(description="Run the evaluation harness against one system.")
-    parser.add_argument("--system", choices=_SYSTEMS, required=True)
+    """Run the evaluation harness; return the process exit code.
+
+    Either ``--system {P,B0,B1} [--smoke]`` (one variant, one run, logged as before — unchanged
+    from every earlier increment, including the CI-gating smoke job) or ``--full [--report PATH]``
+    (every variant, P three times, written as ``reports/evaluation.md``).
+    """
+    parser = argparse.ArgumentParser(description="Run the evaluation harness.")
+    parser.add_argument("--system", choices=_SYSTEMS)
     parser.add_argument("--smoke", action="store_true", help="Run the CI-gating smoke slice only.")
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Run every system variant and write the full reports/evaluation.md.",
+    )
+    parser.add_argument("--report", type=Path, default=Path("reports/evaluation.md"))
     args = parser.parse_args(argv)
+    if args.full == bool(args.system):
+        parser.error("pass exactly one of --system or --full")
+    if args.full and args.smoke:
+        parser.error("--smoke narrows a single --system run; --full always runs the full set")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     settings = load_settings()
+
+    if args.full:
+        report, unsafe = _run_full_report(settings)
+        args.report.write_text(render_markdown(report), encoding="utf-8")
+        logger.info("evaluation_report path=%s systems=%d", args.report, len(report.systems))
+        return 1 if unsafe else 0
+
     cases = _select_cases(smoke=args.smoke)
     results = _RUNNERS[args.system](settings, cases)
     metrics = compute_headline_metrics(results)
