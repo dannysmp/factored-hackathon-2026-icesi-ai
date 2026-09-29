@@ -46,7 +46,7 @@ describe('SignInScreen', () => {
     await user.type(screen.getByLabelText('Access code'), 'the-code')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(signInMock).toHaveBeenCalledWith('emma', 'the-code')
+    expect(signInMock).toHaveBeenCalledWith('emma', 'the-code', 'customer')
     await screen.findByRole('button', { name: 'Sign in' })
     expect(onSignedIn).toHaveBeenCalledWith('token-abc', 'en')
   })
@@ -72,5 +72,26 @@ describe('SignInScreen', () => {
 
     await screen.findByLabelText('Persona')
     expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it("fetches the agent directory and signs in against the agent broker when audience is 'agent'", async () => {
+    const agentPersonas = [
+      { slug: 'diego', display_name: 'Diego', language: 'pt', audience: 'agent' as const },
+    ]
+    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue(agentPersonas)
+    const fetchCustomerSpy = vi.spyOn(api, 'fetchCustomerPersonas')
+    const signInMock = vi.spyOn(api, 'signIn').mockResolvedValue('agent-token')
+    const onSignedIn = vi.fn()
+    const user = userEvent.setup()
+    render(<SignInScreen audience="agent" onSignedIn={onSignedIn} />)
+
+    expect(await screen.findByRole('option', { name: 'Diego' })).toBeInTheDocument()
+    expect(fetchCustomerSpy).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText('Access code'), 'agent-code')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(signInMock).toHaveBeenCalledWith('diego', 'agent-code', 'agent')
+    expect(onSignedIn).toHaveBeenCalledWith('agent-token', 'pt')
   })
 })

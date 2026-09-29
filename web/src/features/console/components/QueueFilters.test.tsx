@@ -1,0 +1,50 @@
+/** Component test: `QueueFilters`' language select and trigger tabs. */
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
+import { QueueFilters } from './QueueFilters'
+import type { TriggerView } from './QueueFilters'
+
+function renderFilters(triggerView: TriggerView, onTriggerViewChange = vi.fn()) {
+  const onLanguageChange = vi.fn()
+  render(
+    <QueueFilters
+      language={undefined}
+      onLanguageChange={onLanguageChange}
+      triggerView={triggerView}
+      onTriggerViewChange={onTriggerViewChange}
+      renderTable={(view) => <p>Table for {view}</p>}
+    />,
+  )
+  return { onLanguageChange, onTriggerViewChange }
+}
+
+describe('QueueFilters', () => {
+  it('reports the chosen language, and undefined for "all languages"', async () => {
+    const user = userEvent.setup()
+    const { onLanguageChange } = renderFilters('all')
+
+    await user.selectOptions(screen.getByLabelText('Idioma'), 'pt')
+    expect(onLanguageChange).toHaveBeenLastCalledWith('pt')
+
+    await user.selectOptions(screen.getByLabelText('Idioma'), 'all')
+    expect(onLanguageChange).toHaveBeenLastCalledWith(undefined)
+  })
+
+  it('renders only the active trigger view’s table', () => {
+    renderFilters('priority')
+
+    expect(screen.getByText('Table for priority')).toBeInTheDocument()
+    expect(screen.queryByText('Table for all')).not.toBeInTheDocument()
+    expect(screen.queryByText('Table for other')).not.toBeInTheDocument()
+  })
+
+  it('reports the newly selected trigger view on click', async () => {
+    const user = userEvent.setup()
+    const { onTriggerViewChange } = renderFilters('all')
+
+    await user.click(screen.getByRole('tab', { name: 'Fraude y pérdida de tarjeta' }))
+
+    expect(onTriggerViewChange).toHaveBeenCalledWith('priority')
+  })
+})

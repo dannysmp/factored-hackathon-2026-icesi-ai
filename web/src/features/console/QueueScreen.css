@@ -1,0 +1,99 @@
+/* The queue screen (AC-E10-01, AC-E10-17): the fraud/card-loss-first table is the visually
+   dominant element on this screen — every other control (filters, banner) reads smaller and in
+   the subtle text color, tokens throughout (ADR-19), nothing hardcoded. */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A class, not an `aria-label` selector: the accessible name is Spanish copy (D91) and must stay
+   free to change without silently detaching this layout — a plain "1440px-wide content flush to
+   the left edge" bug this very selector caused once, caught only by looking at a screenshot. */
+.queue-screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--space-4);
+}
+
+.queue-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-6);
+}
+
+.queue-language-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-subtle);
+}
+
+.queue-language-field select {
+  font: inherit;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+}
+
+.queue-table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  white-space: nowrap;
+}
+
+caption {
+  text-align: left;
+}
+
+th,
+td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border-bottom: var(--border-width-thin) solid var(--color-border);
+  font-size: var(--font-size-base);
+}
+
+thead th {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-emphasis);
+  color: var(--color-text-subtle);
+}
+
+/* The user-agent stylesheet bolds every `<th>` by default; without this reset every row would
+   look identical to a priority row, which defeats the point of `.queue-row-priority` below. */
+tbody th[scope='row'] {
+  font-weight: var(--font-weight-body);
+}
+
+.queue-row-priority th[scope='row'] {
+  font-weight: var(--font-weight-emphasis);
+}
+
+.queue-overdue-flag {
+  color: var(--color-error);
+  font-weight: var(--font-weight-emphasis);
+}
