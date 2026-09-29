@@ -57,7 +57,7 @@ class _FakeUnderstanding:
     ``tests.test_turns_api``'s own fixture: no tool call is ever needed to reach a reply."""
 
     def understand(
-        self, text: str, *, language_hint: str | None
+        self, text: str, *, language_hint: str | None, reference_date: date
     ) -> tuple[NluResult, TurnAccounting | None]:
         return NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, language="es"), None
 

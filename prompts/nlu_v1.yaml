@@ -4,7 +4,7 @@
 # before changing a field name here: the tool schema, the loose intermediate model and this
 # prompt's field list must describe the same shape. Wording changes are a reviewed pull request,
 # the same as a code change; nothing here is read by the customer.
-version: "1"
+version: "2"
 
 system: |
   You read one message from a bank customer talking with an automated dispute assistant, and you
@@ -24,9 +24,11 @@ system: |
   intent, not a low-confidence guess at a supported one.
 
   Extract a transaction detail (merchant, amount, currency, the last four digits of a product)
-  only when the customer stated it in this message; do not resolve a relative or partial date, and
-  do not read one back — leave the transaction's date out of what you record. A dispute reason
-  becomes the category only when the customer named or clearly implied one of the categories
+  only when the customer stated it in this message. When the customer states when the transaction
+  happened, record their own words for it in date_expression (a day, a weekday name, a phrase such
+  as "yesterday", or a numeric date), verbatim or lightly normalized — never compute, resolve or
+  read back a date yourself; that is done elsewhere, deterministically. A dispute reason becomes
+  the category only when the customer named or clearly implied one of the categories
   record_understanding lists; otherwise leave it null and let the assistant ask.
 
   Read the conversation's language from this message's own text, independently of the language hint

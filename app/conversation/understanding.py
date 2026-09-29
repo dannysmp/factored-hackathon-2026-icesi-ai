@@ -34,8 +34,12 @@ Design Principles
 
 Runtime Contract
 ----------------
-``Understanding`` (protocol): ``understand(text, *, language_hint) -> tuple[NluResult,
-TurnAccounting | None]``, or raises ``UnderstandingUnavailable`` instead of returning at all.
+``Understanding`` (protocol): ``understand(text, *, language_hint, reference_date) ->
+tuple[NluResult, TurnAccounting | None]``, or raises ``UnderstandingUnavailable`` instead of
+returning at all. ``reference_date`` is the domain calendar's own reference date (never the wall
+clock), read by an implementation that resolves a customer-stated transaction date against it
+(AC-E5-16); ``FakeNlu`` accepts it for the same signature every ``Understanding`` shares, but does
+not itself resolve any date.
 ``TurnAccounting(model, prompt_version, input_tokens, output_tokens, latency_ms)``.
 ``UnderstandingUnavailable``: raised instead of returning a result when the port could not reach
 its own dependency after its bounded retries — distinct from ``NluResult.unusable()``, which
@@ -51,6 +55,7 @@ from __future__ import annotations
 import re  # Keyword and pattern matching
 from collections.abc import Callable  # Type of a rule's match test and result builder
 from dataclasses import dataclass  # Immutable accounting record
+from datetime import date  # The domain calendar's own reference date
 from typing import Protocol  # The understanding port
 
 # Local modules
@@ -96,11 +101,13 @@ class Understanding(Protocol):
     """Turns one customer message into a typed understanding."""
 
     def understand(
-        self, text: str, *, language_hint: Lang | None
+        self, text: str, *, language_hint: Lang | None, reference_date: date
     ) -> tuple[NluResult, TurnAccounting | None]:
         """The understanding of ``text`` and, when a real model call produced it, its accounting.
 
-        ``language_hint`` is a tie-breaker; the accounting half is ``None`` whenever no real,
+        ``language_hint`` is a tie-breaker; ``reference_date`` is the domain calendar's own
+        reference date, used to resolve a transaction date the customer expressed relative to it
+        (AC-E5-16) — never the wall clock. The accounting half is ``None`` whenever no real,
         priced model call happened (``FakeNlu``, always; a real call the port could not complete).
 
         Raises
@@ -294,7 +301,12 @@ class FakeNlu:
     """A deterministic, keyword-based ``Understanding``; no network, no model."""
 
     def understand(
-        self, text: str, *, language_hint: Lang | None
+        self, text: str, *, language_hint: Lang | None, reference_date: date
     ) -> tuple[NluResult, TurnAccounting | None]:
-        """Classify ``text`` by keyword and pattern matching; never produces accounting."""
+        """Classify ``text`` by keyword and pattern matching; never produces accounting.
+
+        ``reference_date`` is accepted for the same signature every ``Understanding`` shares; this
+        fake never resolves a transaction date (its own ``_file_dispute`` rule always returns an
+        empty ``TransactionHint``), so it is otherwise unused here.
+        """
         return _classify(text, language_hint=language_hint), None

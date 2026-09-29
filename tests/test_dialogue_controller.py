@@ -171,12 +171,12 @@ class ScriptedNlu:
 
     result: NluResult
     accounting: TurnAccounting | None = None
-    calls: list[tuple[str, str | None]] = field(default_factory=list)
+    calls: list[tuple[str, str | None, date]] = field(default_factory=list)
 
     def understand(
-        self, text: str, *, language_hint: str | None
+        self, text: str, *, language_hint: str | None, reference_date: date
     ) -> tuple[NluResult, TurnAccounting | None]:
-        self.calls.append((text, language_hint))
+        self.calls.append((text, language_hint, reference_date))
         return self.result, self.accounting
 
 
@@ -185,7 +185,7 @@ class UnavailableNlu:
     """An ``Understanding`` whose own dependency is never reachable."""
 
     def understand(
-        self, text: str, *, language_hint: str | None
+        self, text: str, *, language_hint: str | None, reference_date: date
     ) -> tuple[NluResult, TurnAccounting | None]:
         raise UnderstandingUnavailable("the provider could not be reached")
 
@@ -433,6 +433,24 @@ def test_ambiguous_first_message_offers_both_languages() -> None:
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert response.lang == "es"
     assert "español" in response.reply.lower() or "espanhol" in response.reply.lower()
+
+
+def test_the_controller_passes_its_own_domain_date_as_the_understanding_reference_date() -> None:
+    """AC-E5-16: a customer-stated transaction date is resolved against the domain calendar's own
+    reference date, never the wall clock — proven by reading back exactly what the controller
+    itself passed into ``understand``, not by trusting it silently matches."""
+    store = InMemoryDialogueStore()
+    controller, nlu = _controller(
+        _plain(NluIntent.UNCLEAR, language=None),
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=load_policy(),
+        outbox=FakeHandoffOutbox(),
+        retriever=LexicalRetriever.from_corpus(),
+    )
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert nlu.calls[-1][2] == _DOMAIN_DATE
 
 
 def test_switch_language_updates_the_conversation_language() -> None:
