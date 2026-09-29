@@ -16,11 +16,19 @@
 #                independent of the Python jobs.
 #   test-postgres Migrations applied to a fresh service-container Postgres, then the tests
 #                marked integration run against it.
+#   semgrep      Static analysis (security-audit, OWASP Top 10, secrets rule packs), blocking
+#                on ERROR-severity findings only.
 #
 # Security posture:
 #   The workflow token is read-only and no cloud credentials are configured. Third-party
 #   actions are pinned to full commit SHAs, and the gitleaks release is pinned by version and
-#   verified against its published checksum before it is installed.
+#   verified against its published checksum before it is installed. Semgrep runs a curated set
+#   of rule packs pinned to a fixed Semgrep version (make semgrep, SEMGREP_VERSION in the
+#   Makefile) rather than the full community "auto" registry: this codebase uses raw psycopg
+#   and duckdb, never SQLAlchemy, and the broader registry's SQLAlchemy-specific and generic
+#   formatted-SQL rules produce 59 false positives against this project's own established
+#   escaping convention (quote_literal/quote_identifier for DuckDB DDL, parameterized queries
+#   for psycopg) — verified case by case before choosing the curated packs.
 #
 # Pinned actions:
 #   actions/checkout       11d5960a326750d5838078e36cf38b85af677262   release v4
@@ -28,7 +36,7 @@
 #   actions/setup-node     820762786026740c76f36085b0efc47a31fe5020   release v7.0.0
 #
 # Usage:
-#   Runs automatically. To reproduce locally: make lint test audit secrets
+#   Runs automatically. To reproduce locally: make lint test audit secrets semgrep
 #   For test-postgres: make db-up migrate test-integration (needs docker and DATABASE_URL set)
 # =============================================================================
 
@@ -193,3 +201,19 @@ jobs:
         run: make migrate
       - name: Run the tests that need a real Postgres
         run: make test-integration
+
+  # ---------------------------------------------------------------------------
+  # Static analysis
+  # ---------------------------------------------------------------------------
+  semgrep:
+    name: semgrep
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install uv with dependency caching
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          enable-cache: true
+      - name: Run static analysis, blocking on ERROR-severity findings
+        run: make semgrep

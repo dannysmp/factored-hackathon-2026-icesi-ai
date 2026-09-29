@@ -14,8 +14,9 @@ SHELL := /bin/bash
 RUN := uv run
 DATA_DIR ?= data/raw
 SILVER_DIR ?= data/silver
+SEMGREP_VERSION := 1.178.0
 
-.PHONY: help setup lint format test test-all secrets audit run clean \
+.PHONY: help setup lint format test test-all secrets semgrep audit run clean \
         profile pipeline analyze features corpus corpus-check train evaluate up \
         db-up db-down migrate test-integration seed eval-bank load-seed load-analytics \
         reset-demo-personas
@@ -73,6 +74,10 @@ secrets: ## Scan history + staged changes (NOT unstaged/untracked files), then r
 	gitleaks git . --config .gitleaks.toml --no-banner --redact
 	gitleaks git . --config .gitleaks.toml --no-banner --redact --pre-commit --staged
 	bash scripts/verify_secret_scan.sh
+
+semgrep: ## Static analysis (security-audit, OWASP Top 10, secrets); blocks on ERROR-severity findings only
+	uvx semgrep==$(SEMGREP_VERSION) scan --config p/security-audit --config p/owasp-top-ten \
+		--config p/secrets --severity ERROR --error .
 
 audit: ## Dependency vulnerability scan
 	$(RUN) pip-audit
