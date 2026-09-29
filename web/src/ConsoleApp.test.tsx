@@ -23,26 +23,25 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status })
 }
 
-function stubTheWholeFlow(): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((url: string) => {
-      if (url === '/v1/auth/demo-personas') {
-        return Promise.resolve(jsonResponse(200, PERSONAS_BODY))
-      }
-      if (url === '/v1/auth/demo-agent-sessions') {
-        return Promise.resolve(jsonResponse(201, SESSION_BODY))
-      }
-      if (url === '/v1/agent/queue') {
-        return Promise.resolve(jsonResponse(200, DEMO_QUEUE))
-      }
-      const [firstDetail] = DEMO_TICKET_DETAILS
-      if (firstDetail !== undefined && url === `/v1/agent/tickets/${firstDetail.item.ticket_ref}`) {
-        return Promise.resolve(jsonResponse(200, firstDetail))
-      }
-      throw new Error(`unexpected fetch: ${url}`)
-    }),
-  )
+function stubTheWholeFlow() {
+  const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>((url) => {
+    if (url === '/v1/auth/demo-personas') {
+      return Promise.resolve(jsonResponse(200, PERSONAS_BODY))
+    }
+    if (url === '/v1/auth/demo-agent-sessions') {
+      return Promise.resolve(jsonResponse(201, SESSION_BODY))
+    }
+    if (url === '/v1/agent/queue') {
+      return Promise.resolve(jsonResponse(200, DEMO_QUEUE))
+    }
+    const [firstDetail] = DEMO_TICKET_DETAILS
+    if (firstDetail !== undefined && url === `/v1/agent/tickets/${firstDetail.item.ticket_ref}`) {
+      return Promise.resolve(jsonResponse(200, firstDetail))
+    }
+    throw new Error(`unexpected fetch: ${url}`)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
 }
 
 afterEach(() => {
@@ -60,8 +59,8 @@ describe('ConsoleApp', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows the real queue once the agent signs in', async () => {
-    stubTheWholeFlow()
+  it('shows the real queue once the agent signs in, fetched through the live route', async () => {
+    const fetchMock = stubTheWholeFlow()
     const user = userEvent.setup()
     render(<ConsoleApp />)
 
@@ -72,10 +71,17 @@ describe('ConsoleApp', () => {
     const [firstItem] = DEMO_QUEUE.items
     expect(firstItem).toBeDefined()
     expect(await screen.findByText(firstItem?.ticket_ref ?? '')).toBeInTheDocument()
+
+    const queueCall = fetchMock.mock.calls.find(([url]) => url === '/v1/agent/queue')
+    if (queueCall === undefined) {
+      throw new Error('expected the console to fetch /v1/agent/queue through LiveQueueClient')
+    }
+    const [, init] = queueCall
+    expect(init?.headers).toMatchObject({ Authorization: 'Bearer agent-token' })
   })
 
-  it('shows a ticket’s real detail once its reference is clicked, then returns to the queue', async () => {
-    stubTheWholeFlow()
+  it('shows a ticket’s real detail once its reference is clicked, fetched through the live route, then returns to the queue', async () => {
+    const fetchMock = stubTheWholeFlow()
     const user = userEvent.setup()
     render(<ConsoleApp />)
 
@@ -91,12 +97,25 @@ describe('ConsoleApp', () => {
     await user.click(firstTicketRefButton)
 
     const [firstDetail] = DEMO_TICKET_DETAILS
-    expect(firstDetail).toBeDefined()
+    if (firstDetail === undefined) {
+      throw new Error('fixture setup: DEMO_TICKET_DETAILS needs at least one entry for this test')
+    }
     expect(await screen.findByRole('region', { name: 'Detalle del ticket' })).toBeInTheDocument()
-    expect(await screen.findByText(firstDetail?.packet.request_summary ?? '')).toBeInTheDocument()
+    expect(await screen.findByText(firstDetail.packet.request_summary)).toBeInTheDocument()
     expect(
       screen.queryByRole('region', { name: 'Cola de casos escalados' }),
     ).not.toBeInTheDocument()
+
+    const detailCall = fetchMock.mock.calls.find(
+      ([url]) => url === `/v1/agent/tickets/${firstDetail.item.ticket_ref}`,
+    )
+    if (detailCall === undefined) {
+      throw new Error(
+        'expected the console to fetch /v1/agent/tickets/{ref} through LiveTicketDetailClient',
+      )
+    }
+    const [, init] = detailCall
+    expect(init?.headers).toMatchObject({ Authorization: 'Bearer agent-token' })
 
     await user.click(screen.getByRole('button', { name: 'Volver a la cola' }))
 

@@ -100,4 +100,28 @@ describe('LiveQueueClient', () => {
     })
     await expect(client.fetchQueue({})).rejects.toBeInstanceOf(AgentRequestError)
   })
+
+  it('falls back to the response status text when the problem body has no title', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 500 })),
+    )
+    const client = new LiveQueueClient({ token: 'agent-token' })
+
+    await expect(client.fetchQueue({})).rejects.toMatchObject({
+      name: 'AgentRequestError',
+      status: 500,
+    })
+  })
+
+  it('falls back to a generic message when the response body is not JSON at all', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not json', { status: 502 })))
+    const client = new LiveQueueClient({ token: 'agent-token' })
+
+    await expect(client.fetchQueue({})).rejects.toMatchObject({
+      name: 'AgentRequestError',
+      status: 502,
+      message: 'the request failed',
+    })
+  })
 })
