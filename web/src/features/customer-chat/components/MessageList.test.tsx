@@ -4,7 +4,7 @@ import { MessageList } from './MessageList'
 
 describe('MessageList', () => {
   it('shows a purpose-built empty state when there are no messages yet', () => {
-    render(<MessageList messages={[]} />)
+    render(<MessageList messages={[]} lang="en" />)
     expect(screen.getByText('No messages yet.')).toBeInTheDocument()
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
   })
@@ -16,6 +16,7 @@ describe('MessageList', () => {
           { id: 'a', from: 'assistant', text: 'Hi there' },
           { id: 'b', from: 'customer', text: 'Hello' },
         ]}
+        lang="en"
       />,
     )
     expect(screen.queryByText('No messages yet.')).not.toBeInTheDocument()
@@ -25,5 +26,11 @@ describe('MessageList', () => {
     expect(
       screen.getByText((_content, element) => element?.textContent === 'You: Hello'),
     ).toBeInTheDocument()
+  })
+
+  it('reads its copy from the catalog matching lang, not a hardcoded English string', () => {
+    render(<MessageList messages={[]} lang="es" />)
+    expect(screen.getByText('Aún no hay mensajes.')).toBeInTheDocument()
+    expect(screen.queryByText('No messages yet.')).not.toBeInTheDocument()
   })
 })

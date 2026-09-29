@@ -1,5 +1,7 @@
 import type { JSX } from 'react'
 import { CONFIRMATION_TEXT } from '../contracts'
+import { useT } from '../../../i18n/useT'
+import type { Lang } from '../../../i18n/lang'
 import styles from './ConfirmationPrompt.module.css'
 
 /**
@@ -13,10 +15,13 @@ import styles from './ConfirmationPrompt.module.css'
 export function ConfirmationPrompt({
   onConfirm,
   disabled,
+  lang,
 }: {
   onConfirm: (text: string) => void
   disabled: boolean
+  lang: Lang
 }): JSX.Element {
+  const t = useT(lang)
   return (
     <button
       type="button"
@@ -26,7 +31,7 @@ export function ConfirmationPrompt({
         onConfirm(CONFIRMATION_TEXT)
       }}
     >
-      Confirm
+      {t('chat.confirm')}
     </button>
   )
 }

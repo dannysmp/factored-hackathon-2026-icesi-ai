@@ -1,5 +1,7 @@
 import type { JSX } from 'react'
 import type { Message } from '../useConversation'
+import { useT } from '../../../i18n/useT'
+import type { Lang } from '../../../i18n/lang'
 import styles from './MessageList.module.css'
 
 /**
@@ -12,11 +14,19 @@ import styles from './MessageList.module.css'
  * list) when nothing has arrived yet, so this component reads correctly on its own regardless of
  * whatever loading text a caller shows alongside it.
  */
-export function MessageList({ messages }: { messages: readonly Message[] }): JSX.Element {
+export function MessageList({
+  messages,
+  lang,
+}: {
+  messages: readonly Message[]
+  lang: Lang
+}): JSX.Element {
+  const t = useT(lang)
+
   if (messages.length === 0) {
     return (
       <p className={styles.empty} aria-live="polite">
-        No messages yet.
+        {t('chat.noMessagesYet')}
       </p>
     )
   }
@@ -25,7 +35,7 @@ export function MessageList({ messages }: { messages: readonly Message[] }): JSX
       {messages.map((message) => (
         <li key={message.id} className={styles.message}>
           <span className={styles.from}>
-            {message.from === 'assistant' ? 'Assistant: ' : 'You: '}
+            {message.from === 'assistant' ? t('chat.assistantLabel') : t('chat.customerLabel')}{' '}
           </span>
           {message.text}
         </li>

@@ -23,9 +23,10 @@ import { SignInScreen } from './features/sign-in/SignInScreen'
  * client for it is correct, not wasteful — the same rule the customer chat's own `LiveChatClient`
  * follows in `App.tsx`.
  *
- * The heading is fixed Spanish (D91: the console stays fixed-Spanish); `SignInScreen` itself is
- * not yet on the trilingual `useT` hook chat and sign-in are moving to (a separate, already-
- * assigned slice) — see Known Gaps.
+ * The heading is fixed Spanish (D91: the console stays fixed-Spanish). `SignInScreen` reads its
+ * copy from the trilingual `useT` hook, but only for the customer audience — passing
+ * `audience="agent"` here keeps this screen's own sign-in fixed-Spanish too, regardless of which
+ * agent persona is selected, matching the rest of the console.
  */
 export function ConsoleApp(): JSX.Element {
   const { session, setSession, selectedTicketRef, setSelectedTicketRef } = useConsoleNavigation()

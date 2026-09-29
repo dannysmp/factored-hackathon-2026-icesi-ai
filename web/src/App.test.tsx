@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
+import { es } from './i18n/es'
 
 const PERSONAS_BODY = {
   personas: [{ slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' }],
@@ -60,7 +61,7 @@ describe('App', () => {
     stubTheWholeFlow()
     render(<App />)
 
-    expect(await screen.findByLabelText('Persona')).toBeInTheDocument()
+    expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Customer chat' })).not.toBeInTheDocument()
   })
 
@@ -69,9 +70,9 @@ describe('App', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await screen.findByLabelText('Persona')
-    await user.type(screen.getByLabelText('Access code'), 'the-code')
-    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    await screen.findByLabelText(es['signin.personaLabel'])
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
 
     expect(await screen.findByRole('region', { name: 'Customer chat' })).toBeInTheDocument()
     expect(await screen.findByText('Hola, ¿en qué puedo ayudarle?')).toBeInTheDocument()
@@ -81,7 +82,7 @@ describe('App', () => {
     stubTheWholeFlow()
     const { container } = render(<App />)
 
-    await screen.findByLabelText('Persona')
+    await screen.findByLabelText(es['signin.personaLabel'])
     expect(await axe(container)).toHaveNoViolations()
   })
 })
