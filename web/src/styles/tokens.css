@@ -1,0 +1,96 @@
+/**
+ * Design tokens (ADR-19): the one source for every color, type size, spacing value, radius,
+ * shadow and focus ring across the chat, the console and the sign-in screen. Nothing outside
+ * this file declares a raw hex color, pixel spacing value or font size; every surface reads a
+ * token, directly or through a class that resolves to one. A palette or scale change is a
+ * one-file edit.
+ *
+ * Categories match ADR-19 exactly (color, type scale, spacing, radius, shadow, focus ring), one
+ * custom property per concern, named by category so a later consumer (a build tool's theme, a
+ * new component) can alias to these without a rename pass.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ---------------------------------------------------------------------------------------
+   * Color: a restrained neutral ramp carries the interface; one accent hue for primary actions
+   * and links; a small semantic set for status only. No gradients, no decorative color.
+   * --------------------------------------------------------------------------------------- */
+  --color-bg: light-dark(#ffffff, #0f1115);
+  --color-bg-subtle: light-dark(#f6f7f9, #171a20);
+  --color-border: light-dark(#d7dbe0, #2c313a);
+  --color-text: light-dark(#14161a, #eef0f3);
+  --color-text-subtle: light-dark(#565d68, #a7adb8);
+
+  --color-accent: light-dark(#1c5fd6, #6ea1ff);
+  --color-accent-contrast: light-dark(#ffffff, #0f1115);
+
+  --color-success: light-dark(#1a7f4b, #4fd08a);
+  --color-warning: light-dark(#8a5a00, #f0b429);
+  --color-error: light-dark(#b3251f, #ff6b64);
+  --color-info: light-dark(#1c5fd6, #6ea1ff);
+
+  /* ---------------------------------------------------------------------------------------
+   * Typography: one system font stack (matching the previous global default so no font is
+   * downloaded), a fixed scale of five sizes, one weight for emphasis and one for body text.
+   * --------------------------------------------------------------------------------------- */
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-family-tabular: var(--font-family);
+
+  --font-size-sm: 0.8125rem; /* 13px */
+  --font-size-base: 1rem; /* 16px */
+  --font-size-md: 1.125rem; /* 18px */
+  --font-size-lg: 1.5rem; /* 24px */
+  --font-size-xl: 2rem; /* 32px */
+
+  --font-weight-body: 400;
+  --font-weight-emphasis: 600;
+
+  --line-height-base: 1.5;
+
+  /* ---------------------------------------------------------------------------------------
+   * Spacing: an 8px scale, used for every margin, padding and gap, so density stays uniform
+   * across the chat and the console's queue.
+   * --------------------------------------------------------------------------------------- */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem; /* 8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem; /* 16px */
+  --space-6: 1.5rem; /* 24px */
+  --space-8: 2rem; /* 32px */
+  --space-12: 3rem; /* 48px */
+  --space-16: 4rem; /* 64px */
+
+  /* ---------------------------------------------------------------------------------------
+   * Radius and shadow: restrained, used for interactive surfaces (cards, panels, tabs).
+   * --------------------------------------------------------------------------------------- */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  --shadow-sm: 0 1px 2px light-dark(rgb(20 22 26 / 8%), rgb(0 0 0 / 40%));
+  --shadow-md: 0 4px 12px light-dark(rgb(20 22 26 / 12%), rgb(0 0 0 / 50%));
+
+  /* ---------------------------------------------------------------------------------------
+   * Focus ring: always visible, never suppressed for aesthetics (ADR-19's trust principle).
+   * --------------------------------------------------------------------------------------- */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: var(--color-accent);
+
+  /* ---------------------------------------------------------------------------------------
+   * Motion: communicates a state change only; nothing animates to decorate.
+   * --------------------------------------------------------------------------------------- */
+  --motion-duration-fast: 120ms;
+  --motion-easing: ease;
+}
+
+/**
+ * One shared focus-visible treatment so a focused control always gets the same ring, on every
+ * surface, whatever element it is — the trust principle applies uniformly, not per component.
+ */
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
