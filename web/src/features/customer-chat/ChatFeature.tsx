@@ -43,7 +43,7 @@ export function ChatFeature({ client }: { client: ChatClient }): JSX.Element {
           Starting the conversation…
         </p>
       )}
-      <MessageList messages={conversation.messages} />
+      {latest !== null && <MessageList messages={conversation.messages} />}
       {conversation.status === 'error' && (
         <p role="alert" className={styles.error}>
           Your last message could not be sent. Please try again.

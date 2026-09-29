@@ -13,6 +13,17 @@ function renderChat(): ReturnType<typeof render> {
 }
 
 describe('ChatFeature', () => {
+  it('shows only its own loading text while starting, never MessageList’s empty state too', () => {
+    const pending = (): Promise<never> =>
+      new Promise(() => {
+        // never resolves: simulates the chat still starting
+      })
+    const client: ChatClient = { start: pending, sendTurn: pending }
+    render(<ChatFeature client={client} />)
+    expect(screen.getByText('Starting the conversation…')).toBeInTheDocument()
+    expect(screen.queryByText('No messages yet.')).not.toBeInTheDocument()
+  })
+
   it('shows the reference-date line and the demonstration notice', async () => {
     renderChat()
     expect(await screen.findByText('Today is Thursday, 18 June 2026.')).toBeInTheDocument()
