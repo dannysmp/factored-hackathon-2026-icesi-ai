@@ -11,7 +11,10 @@ and replaced with a fixed placeholder; nothing else in the text is touched.
 
 Scope
 -----
-In: the digit-run detector and the redaction it applies.
+In: the digit-run detector and the redaction it applies; ``safe_hex_suffix``, generating a
+reference-number suffix guaranteed never to combine with the digits before it into something this
+detector would itself flag — the one other place in this project that needs to reason about the
+same digit-run rule, not a second implementation of it.
 Out: what a caller does with masked text (the LLM port), and masking of any other field kind
 (none exists yet: this slice's only outbound free text is the customer's message to the NLU
 adapter; a future caller that sends another masked field, for example a name or a contact detail,
@@ -47,6 +50,8 @@ Runtime Contract
 ----------------
 ``redact_pan(text) -> PanRedaction`` with ``masked`` (the text to send) and ``found`` (whether
 anything was redacted, for the request-capture fixture and for accounting).
+``safe_hex_suffix(nbytes=4, *, preceding_digits=0) -> str``, an uppercase hex string of
+``2 * nbytes`` characters.
 
 Limitations
 -----------
@@ -61,6 +66,7 @@ from __future__ import annotations
 
 # Standard libraries
 import re  # Locating maximal digit-and-separator runs
+import secrets  # Generating a reference suffix that cannot look card-shaped
 from dataclasses import dataclass  # Immutable result
 
 PLACEHOLDER = "[card-number-redacted]"
@@ -185,3 +191,25 @@ def redact_pan(text: str) -> PanRedaction:
         cursor = end
     pieces.append(text[cursor:])
     return PanRedaction(masked="".join(pieces), found=True)
+
+
+def safe_hex_suffix(nbytes: int = 4, *, preceding_digits: int = 0) -> str:
+    """An uppercase random hex string that cannot combine with ``preceding_digits`` digits
+    immediately before it into a card-shaped run.
+
+    A customer-facing reference number built as ``<preceding-digits>-<this suffix>`` (this
+    project's ``T-YYYYMMDD-XXXXXXXX`` handoff tickets and ``CASE-YYYYMMDD-XXXXXXXX`` case numbers)
+    joins the two halves with a hyphen — a character :func:`redact_pan`'s own digit-run detector
+    also treats as joining. A hex suffix whose leading characters happen to all be digits (no
+    ``A``-``F``) then combines with the digits before it into one run; once that run reaches this
+    module's own ``_MIN_PAN_DIGITS`` floor, it is occasionally Luhn-valid purely by chance, and a
+    plain reference number gets treated as a leaked card number. This is regenerated until its
+    leading digit run is short enough that no combination with ``preceding_digits`` reaches that
+    floor, rather than trusting a probability this project has already seen fail in practice.
+    """
+    max_leading_digits = max(0, _MIN_PAN_DIGITS - preceding_digits - 1)
+    while True:
+        candidate = secrets.token_hex(nbytes).upper()
+        leading_digits = len(candidate) - len(candidate.lstrip("0123456789"))
+        if leading_digits <= max_leading_digits:
+            return candidate

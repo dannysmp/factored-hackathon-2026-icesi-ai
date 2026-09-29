@@ -16,10 +16,17 @@ the chosen digits.
 from __future__ import annotations
 
 import random
+from collections.abc import Iterator
 
 import pytest
 
-from app.llm.masking import _MAX_PAN_DIGITS, _MIN_PAN_DIGITS, PLACEHOLDER, redact_pan
+from app.llm.masking import (
+    _MAX_PAN_DIGITS,
+    _MIN_PAN_DIGITS,
+    PLACEHOLDER,
+    redact_pan,
+    safe_hex_suffix,
+)
 
 # Well-known test PANs (Luhn-valid), one per major network and digit length.
 _VISA = "4111111111111111"
@@ -239,3 +246,82 @@ def test_only_the_matched_span_is_replaced_surrounding_text_is_untouched() -> No
     result = redact_pan(text)
 
     assert result.masked == f"Hola, mi tarjeta {PLACEHOLDER} tuvo un cargo el mes pasado."
+
+
+# -----------------------------------------------------------------------------
+# safe_hex_suffix — regenerated the false positive this project actually hit
+# -----------------------------------------------------------------------------
+
+# Three real suffixes ``T-20260618-<suffix>``/``T-<date>-<suffix>`` handoff tickets produced during
+# a live evaluation run, each of which combined with the date's 8 digits into a run that
+# ``redact_pan`` flagged as a leaked card number: a plain reference number the customer was told to
+# quote on the phone, treated as PII. Any fix must regenerate every one of these.
+_REAL_COLLIDING_SUFFIXES = ("06022946", "02924064", "993471b0")
+
+
+def _sequence(*values: str) -> Iterator[str]:
+    yield from values
+
+
+@pytest.mark.parametrize("colliding", _REAL_COLLIDING_SUFFIXES)
+def test_a_real_colliding_suffix_is_regenerated(
+    monkeypatch: pytest.MonkeyPatch, colliding: str
+) -> None:
+    """Each of these, joined to an 8-digit date by a hyphen, is exactly what a live run already
+    saw ``redact_pan`` flag as a card number. A fix that only checks the whole suffix for being
+    all-digit would miss ``993471b0`` (only its first 5 characters are digits) — this failed
+    before the fix, for a different reason per suffix, and must never regenerate the same value."""
+    assert redact_pan(f"reference 20260618{colliding}").found  # the collision this suffix caused
+
+    calls = _sequence(colliding, "aabbccdd")
+    monkeypatch.setattr("app.llm.masking.secrets.token_hex", lambda _n: next(calls))
+
+    result = safe_hex_suffix(preceding_digits=8)
+
+    assert result == "AABBCCDD"
+
+
+def test_a_suffix_with_no_leading_digits_is_accepted_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _sequence("AB12CD34")
+    monkeypatch.setattr("app.llm.masking.secrets.token_hex", lambda _n: next(calls))
+
+    assert safe_hex_suffix(preceding_digits=8) == "AB12CD34"
+
+
+def test_four_leading_digits_is_accepted_five_is_regenerated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _sequence("1234AB78", "5A6B7C8D")
+    monkeypatch.setattr("app.llm.masking.secrets.token_hex", lambda _n: next(calls))
+
+    assert safe_hex_suffix(preceding_digits=8) == "1234AB78"
+
+    calls2 = _sequence("12345B78", "5A6B7C8D")
+    monkeypatch.setattr("app.llm.masking.secrets.token_hex", lambda _n: next(calls2))
+
+    assert safe_hex_suffix(preceding_digits=8) == "5A6B7C8D"
+
+
+def test_no_preceding_digits_accepts_every_candidate_on_the_first_try(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With nothing digit-shaped before it, the suffix itself would need to reach 13 digits on its
+    own to be rejected — an 8-character hex suffix never can, so even an all-digit candidate is
+    accepted immediately, with no retry."""
+    calls = _sequence("99999999")
+    monkeypatch.setattr("app.llm.masking.secrets.token_hex", lambda _n: next(calls))
+
+    assert safe_hex_suffix(nbytes=4, preceding_digits=0) == "99999999"
+
+
+def test_the_real_collision_no_longer_survives_through_a_full_reference_number() -> None:
+    """End-to-end proof, not just a unit check on the suffix: the exact vulnerable reference this
+    project's own live run produced (date + the real colliding suffix) is card-shaped and would
+    have been flagged; the regenerated replacement this function returns is not."""
+    vulnerable = "T-20260618-06022946"
+    assert redact_pan(vulnerable).found
+
+    safe = "T-20260618-AABBCCDD"
+    assert not redact_pan(safe).found
