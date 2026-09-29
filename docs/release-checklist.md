@@ -55,7 +55,7 @@ Every requirement is checked with a link to its evidence.
 | Focused workflow, end to end | The scope statement; the demonstration paths | [ ] |
 | Data-backed problem selection | The workflow analysis report and the command that regenerates it | [ ] |
 | Baseline and improvement on the same workload | The evaluation report, proposed system against both baselines | [ ] |
-| Privacy, explainability, fairness, reliability, scalability by design | The security and privacy, reliability and capacity sections; the disparity analysis in the evaluation report | [ ] |
+| Privacy, explainability, fairness, reliability, scalability by design | The security and privacy, reliability and capacity sections; the ASVS Level 1 checklist; the disparity analysis in the evaluation report | [ ] |
 | Explicit trade-offs | The decision records; the evaluation report | [ ] |
 | Where AI and where deterministic logic | The decision records; the rule-based baseline comparison | [ ] |
 | Three demonstration paths | The demonstration scripts; the rehearsal checklist | [ ] |

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, date, datetime
+from pathlib import Path
+from types import SimpleNamespace
 
 import psycopg
 import pytest
@@ -19,7 +21,7 @@ from pydantic import SecretStr
 
 import evals.cli
 from app.config import ConfigError, LlmProvider, load_settings
-from app.domain.calendar import DomainCalendar
+from app.domain.calendar import DateOrigin, DomainCalendar
 from app.persistence.migrate import apply_migrations
 from evals.cli import _fmt, _require_test_login_key, _select_cases, main
 from evals.golden.case_sheet import ALL_CASES
@@ -117,6 +119,130 @@ def test_main_exits_1_when_any_case_is_unsafe(monkeypatch: pytest.MonkeyPatch) -
 def test_main_rejects_an_unknown_system() -> None:
     with pytest.raises(SystemExit):
         main(["--system", "B2"])
+
+
+# -----------------------------------------------------------------------------
+# --full — hermetic against faked runners and a faked calendar
+# -----------------------------------------------------------------------------
+
+
+def _full_result(
+    case_id: str, *, is_unsafe: bool = False, correct_outcome: bool = True
+) -> CaseResult:
+    return CaseResult(
+        case_id=case_id,
+        is_adversarial=False,
+        expected_escalation=False,
+        observed_escalation=False,
+        automation_attempted=True,
+        correct_outcome=correct_outcome,
+        automated_success=correct_outcome,
+        is_unsafe=is_unsafe,
+    )
+
+
+def _patch_full_report_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    p_runs: list[tuple[CaseResult, ...]],
+    b0_run: tuple[CaseResult, ...] = (),
+    b1_run: tuple[CaseResult, ...] = (),
+) -> None:
+    fake_settings = SimpleNamespace(
+        nlu_model="claude-haiku-4-5-20251001",
+        render_model="claude-sonnet-5",
+        judge_model="claude-sonnet-5",
+    )
+    monkeypatch.setattr(evals.cli, "load_settings", lambda: fake_settings)
+    monkeypatch.setattr(
+        evals.cli,
+        "_resolve_calendar",
+        lambda settings, *, clock: DomainCalendar(date(2026, 6, 18), DateOrigin.SETTING),
+    )
+    p_iterator = iter(p_runs)
+    monkeypatch.setitem(evals.cli._RUNNERS, "P", lambda settings, cases: next(p_iterator))
+    monkeypatch.setitem(evals.cli._RUNNERS, "B0", lambda settings, cases: b0_run)
+    monkeypatch.setitem(evals.cli._RUNNERS, "B1", lambda settings, cases: b1_run)
+
+
+def test_build_system_result_reports_no_flips_for_a_single_run() -> None:
+    result = evals.cli._build_system_result("B0", [(_full_result("c1"),)])
+
+    assert result.run_count == 1
+    assert result.flips == ()
+    assert result.case_results == (_full_result("c1"),)
+
+
+def test_build_system_result_reports_flips_across_repeated_runs() -> None:
+    runs = [
+        (_full_result("c1", correct_outcome=True),),
+        (_full_result("c1", correct_outcome=False),),
+        (_full_result("c1", correct_outcome=True),),
+    ]
+
+    result = evals.cli._build_system_result("P", runs)
+
+    assert result.run_count == 3
+    assert len(result.flips) == 1
+    assert result.flips[0].case_id == "c1"
+    # The failure gallery shows only the last run, not an arbitrary earlier one.
+    assert result.case_results == runs[-1]
+
+
+def test_full_and_system_are_mutually_exclusive() -> None:
+    with pytest.raises(SystemExit):
+        main(["--system", "B0", "--full"])
+
+
+def test_neither_full_nor_system_is_an_error() -> None:
+    with pytest.raises(SystemExit):
+        main([])
+
+
+def test_full_rejects_smoke() -> None:
+    with pytest.raises(SystemExit):
+        main(["--full", "--smoke"])
+
+
+def test_full_writes_the_report_and_exits_0_when_nothing_is_unsafe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_full_report_dependencies(
+        monkeypatch,
+        p_runs=[(_full_result("c1"),), (_full_result("c1"),), (_full_result("c1"),)],
+        b0_run=(_full_result("c1"),),
+        b1_run=(_full_result("c1"),),
+    )
+    report_path = tmp_path / "evaluation.md"
+
+    exit_code = main(["--full", "--report", str(report_path)])
+
+    assert exit_code == 0
+    text = report_path.read_text(encoding="utf-8")
+    assert "# Evaluation Report" in text
+    assert "2026-06-18" in text
+
+
+def test_full_exits_1_when_any_run_of_any_system_is_unsafe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The exit code must catch an unsafe case even in a P run later discarded from the report's
+    own displayed case_results (only the last of the three runs is kept for the failure gallery)."""
+    _patch_full_report_dependencies(
+        monkeypatch,
+        p_runs=[
+            (_full_result("c1", is_unsafe=True),),
+            (_full_result("c1"),),
+            (_full_result("c1"),),
+        ],
+        b0_run=(_full_result("c1"),),
+        b1_run=(_full_result("c1"),),
+    )
+    report_path = tmp_path / "evaluation.md"
+
+    exit_code = main(["--full", "--report", str(report_path)])
+
+    assert exit_code == 1
 
 
 # -----------------------------------------------------------------------------

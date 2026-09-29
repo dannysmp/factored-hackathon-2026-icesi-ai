@@ -19,7 +19,7 @@
   font-size: var(--font-size-base);
   text-align: left;
   cursor: pointer;
-  transition: background var(--motion-duration) var(--motion-easing);
+  transition: background var(--motion-duration-fast) var(--motion-easing);
 }
 
 .choice:hover:not(:disabled) {

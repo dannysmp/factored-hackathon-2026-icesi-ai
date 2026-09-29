@@ -129,8 +129,10 @@ class Settings(BaseSettings):
         Build identifier reported by the readiness endpoint.
     llm_provider : LlmProvider
         Provider behind the LLM interface.
-    nlu_model, render_model : str
-        Pinned model ids for understanding and rendering; must be in ``ALLOWED_MODELS``.
+    nlu_model, render_model, judge_model : str
+        Pinned model ids for understanding, rendering and the evaluation harness's LLM judge;
+        must be in ``ALLOWED_MODELS``. ``judge_model`` is read only by the evaluation harness,
+        never by a request path this service serves to a customer.
     anthropic_api_key : SecretStr | None
         Anthropic API key; optional until an LLM call needs it.
     session_signing_key : SecretStr | None
@@ -212,6 +214,7 @@ class Settings(BaseSettings):
     llm_provider: LlmProvider = LlmProvider.ANTHROPIC
     nlu_model: str = "claude-haiku-4-5-20251001"
     render_model: str = "claude-sonnet-5"
+    judge_model: str = "claude-sonnet-5"
     anthropic_api_key: SecretStr | None = None
     session_signing_key: SecretStr | None = None
     session_ttl_seconds: int = Field(default=900, ge=60, le=3600)
@@ -239,7 +242,7 @@ class Settings(BaseSettings):
     demo_agent_access_code: SecretStr | None = None
     agent_session_signing_key: SecretStr | None = None
 
-    @field_validator("nlu_model", "render_model")
+    @field_validator("nlu_model", "render_model", "judge_model")
     @classmethod
     def _model_must_be_allow_listed(cls, value: str) -> str:
         """Reject any model id that is not in the reviewed allow-list."""

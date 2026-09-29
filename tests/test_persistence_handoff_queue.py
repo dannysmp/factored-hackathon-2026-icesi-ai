@@ -283,3 +283,43 @@ def test_an_in_review_ticket_still_appears_in_the_queue(
 
     assert len(response.items) == 1
     assert response.items[0].status is TicketStatus.IN_REVIEW
+
+
+@pytest.mark.integration
+def test_get_ticket_answers_a_single_open_ticket(
+    outbox: PostgresHandoffOutbox, queue: PostgresHandoffQueue
+) -> None:
+    ticket_ref = _record(
+        outbox,
+        _content(trigger=HandoffTrigger.FRAUD_REPORT, language="pt"),
+        turn_id="t-1",
+    )
+
+    item = queue.get_ticket(ticket_ref, calendar=_TODAY)
+
+    assert item is not None
+    assert item.ticket_ref == ticket_ref
+    assert item.language == "pt"
+    assert item.priority is True
+
+
+@pytest.mark.integration
+def test_get_ticket_answers_none_for_an_unknown_reference(queue: PostgresHandoffQueue) -> None:
+    assert queue.get_ticket("T-20260618-DEADBEEF", calendar=_TODAY) is None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("status", ["resolved", "rejected"])
+def test_get_ticket_still_answers_a_closed_ticket_unlike_list_tickets(
+    outbox: PostgresHandoffOutbox, queue: PostgresHandoffQueue, dsn: str, status: str
+) -> None:
+    """AC-E10-08: an agent's already-selected ticket must still resolve even after it leaves the
+    open queue — the one place this reader intentionally does not mirror ``list_tickets``'
+    exclusion."""
+    ticket_ref = _record(outbox, _content(), turn_id="t-1")
+    _set_status(dsn, ticket_ref, status)
+
+    item = queue.get_ticket(ticket_ref, calendar=_TODAY)
+
+    assert item is not None
+    assert item.status.value == status

@@ -60,7 +60,12 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr  # Validated models
 from app.security.errors import ErrorCode, ProblemError  # Failure format
 from app.security.limits import AttemptLimiter  # Failed-attempt limit
 from app.security.middleware import current_request_id  # Request identifier for logs
-from app.security.sessions import CUSTOMER_ID_PATTERN, Principal, SessionService  # Sessions
+from app.security.sessions import (  # Sessions
+    CUSTOMER_ID_PATTERN,
+    AgentPrincipal,
+    Principal,
+    SessionService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +121,32 @@ def principal_of(request: Request) -> Principal:
     """
     principal = getattr(request.state, "principal", None)
     if not isinstance(principal, Principal):
+        raise ProblemError(
+            ErrorCode.SESSION_MISSING,
+            401,
+            "Authentication is required",
+            "Sign in again to continue.",
+            reauth_required=True,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return principal
+
+
+def agent_principal_of(request: Request) -> AgentPrincipal:
+    """The agent principal the authentication middleware attached to the request.
+
+    A route protected by an ``"agent"``-audience path prefix never reaches this with a customer
+    ``Principal`` instead (``SessionAuthMiddleware`` refuses the wrong audience before the route
+    is ever called, ADR-18); this only guards the same wiring mistake ``principal_of`` guards
+    against for the customer side.
+
+    Raises
+    ------
+    ProblemError
+        ``session_missing`` when a route is reached without one (a wiring mistake, refused).
+    """
+    principal = getattr(request.state, "principal", None)
+    if not isinstance(principal, AgentPrincipal):
         raise ProblemError(
             ErrorCode.SESSION_MISSING,
             401,

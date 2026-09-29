@@ -5,7 +5,7 @@
 }
 
 .status {
-  color: var(--color-text-muted);
+  color: var(--color-text-subtle);
   font-size: var(--font-size-sm);
 }
 

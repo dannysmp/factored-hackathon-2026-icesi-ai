@@ -8,14 +8,14 @@
   border: none;
   border-radius: var(--radius-md);
   background: var(--color-accent);
-  color: var(--color-accent-text);
+  color: var(--color-accent-contrast);
   font-family: var(--font-family);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-emphasis);
   cursor: pointer;
   transition:
-    background var(--motion-duration) var(--motion-easing),
-    opacity var(--motion-duration) var(--motion-easing);
+    background var(--motion-duration-fast) var(--motion-easing),
+    opacity var(--motion-duration-fast) var(--motion-easing);
 }
 
 .confirm:hover:not(:disabled) {

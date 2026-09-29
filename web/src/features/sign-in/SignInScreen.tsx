@@ -2,7 +2,8 @@ import { useEffect, useId, useState } from 'react'
 import type { JSX, SyntheticEvent } from 'react'
 import type { DemoPersonaSummary } from './contracts'
 import type { Lang } from '../customer-chat/contracts'
-import { fetchCustomerPersonas, signIn } from './api'
+import type { SignInAudience } from './api'
+import { fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
 import styles from './SignInScreen.module.css'
 
 type DirectoryStatus = 'loading' | 'ready' | 'error'
@@ -12,14 +13,20 @@ type DirectoryStatus = 'loading' | 'ready' | 'error'
  * (never a hardcoded copy — `GET /v1/auth/demo-personas`) plus the access code, distributed
  * out-of-band to whoever runs the demonstration, never baked into this bundle.
  *
+ * `audience` (AC-E10-14: "the screen asks for the access code of its own audience") selects the
+ * persona list and the broker this screen signs into — `'customer'`, the only caller before the
+ * console existed, is the default so every earlier call site is unchanged.
+ *
  * `onSignedIn` receives the session token and the chosen persona's language, so the caller can
  * hand both to `LiveChatClient` — the token is this component's own state, held only for the
  * moment it takes to pass it up; nothing here ever writes it to storage (ADR-18: "the token held
  * in memory only").
  */
 export function SignInScreen({
+  audience = 'customer',
   onSignedIn,
 }: {
+  audience?: SignInAudience
   onSignedIn: (token: string, lang: Lang) => void
 }): JSX.Element {
   const [directoryStatus, setDirectoryStatus] = useState<DirectoryStatus>('loading')
@@ -33,7 +40,8 @@ export function SignInScreen({
 
   useEffect(() => {
     let cancelled = false
-    fetchCustomerPersonas().then(
+    const fetchPersonas = audience === 'agent' ? fetchAgentPersonas : fetchCustomerPersonas
+    fetchPersonas().then(
       (fetched) => {
         if (cancelled) return
         setPersonas(fetched)
@@ -48,7 +56,7 @@ export function SignInScreen({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [audience])
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault()
@@ -58,7 +66,7 @@ export function SignInScreen({
     }
     setSubmitting(true)
     setSignInError(null)
-    signIn(persona.slug, accessCode).then(
+    signIn(persona.slug, accessCode, audience).then(
       (token) => {
         onSignedIn(token, persona.language as Lang)
       },

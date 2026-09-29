@@ -14,7 +14,7 @@
 
 .label {
   font-size: var(--font-size-sm);
-  color: var(--color-text-muted);
+  color: var(--color-text-subtle);
 }
 
 .input {
@@ -36,7 +36,7 @@
   font-family: var(--font-family);
   font-size: var(--font-size-base);
   cursor: pointer;
-  transition: background var(--motion-duration) var(--motion-easing);
+  transition: background var(--motion-duration-fast) var(--motion-easing);
 }
 
 .submit:hover:not(:disabled) {

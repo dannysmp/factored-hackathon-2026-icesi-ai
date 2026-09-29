@@ -20,6 +20,6 @@
 
 .empty {
   margin: var(--space-4) 0;
-  color: var(--color-text-muted);
+  color: var(--color-text-subtle);
   font-size: var(--font-size-sm);
 }

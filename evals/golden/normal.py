@@ -525,6 +525,7 @@ _POLICY_ANSWER_CASES = (
         seed_ref="ops_seed:CLI-007Q2YBOSD9N",
         user_turns=("¿Cuántos días tengo para reportar un cargo que no reconozco en mi tarjeta?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
         description="Grounded in the filing-windows section (unrecognized charge, 120 days).",
     ),
     Case(
@@ -537,6 +538,7 @@ _POLICY_ANSWER_CASES = (
             "Si presento una disputa por monto incorrecto, ¿en cuánto tiempo me responden?",
         ),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="response-time",
         description="Grounded in the response-time section (wrong amount, 3 days).",
     ),
     Case(
@@ -549,6 +551,7 @@ _POLICY_ANSWER_CASES = (
             "¿Qué necesito tener listo si quiero reportar que no recibí un servicio que pagué?",
         ),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="evidence",
         description="Grounded in the evidence section (service not received).",
     ),
     Case(
@@ -559,6 +562,7 @@ _POLICY_ANSWER_CASES = (
         seed_ref="ops_seed:CLI-06GRSSYAZ5KU",
         user_turns=("¿Puedo disputar una transferencia que hice desde mi cuenta de ahorros?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="who-can-dispute",
         description="Grounded in the who-can-dispute section.",
     ),
     Case(
@@ -569,6 +573,7 @@ _POLICY_ANSWER_CASES = (
         seed_ref="ops_seed:CLI-07FTORND6GLN",
         user_turns=("¿Cuándo revisa una persona mi solicitud de disputa en vez del sistema?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="human-review",
         description=(
             "Grounded in the human-review section, stated qualitatively per ADR conventions."
         ),
@@ -581,6 +586,7 @@ _POLICY_ANSWER_CASES = (
         seed_ref="ops_seed:CLI-09F7FO0LRYUI",
         user_turns=("¿Cuánto tiempo tengo para reportar un fraude en mi cuenta?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="fraud-claims",
         description="Grounded in the fraud-claims section (180 days).",
     ),
     Case(
@@ -591,6 +597,7 @@ _POLICY_ANSWER_CASES = (
         seed_ref="ops_seed:CLI-0G4O4TLXL2F0",
         user_turns=("Posso contestar uma compra feita com meu cartão de débito?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="who-can-dispute",
         description="Portuguese case grounded in the who-can-dispute section.",
     ),
     Case(
@@ -601,6 +608,7 @@ _POLICY_ANSWER_CASES = (
         seed_ref="ops_seed:CLI-0G4V8R44OD74",
         user_turns=("Quantos dias tenho para contestar uma cobrança duplicada?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
         description=(
             "Portuguese case grounded in the filing-windows section (duplicate charge, 60 days)."
         ),
@@ -613,6 +621,7 @@ _POLICY_ANSWER_CASES = (
         seed_ref="ops_seed:CLI-0MSSRHGAKBF0",
         user_turns=("O que preciso ter em mãos para contestar um valor incorreto?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="evidence",
         description="Portuguese case grounded in the evidence section (wrong amount).",
     ),
     Case(
@@ -623,6 +632,7 @@ _POLICY_ANSWER_CASES = (
         seed_ref="ops_seed:CLI-0MTYLP24AUUJ",
         user_turns=("Antes de apresentar a contestação, o que vocês confirmam comigo?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="confirmation",
         description="Portuguese case grounded in the confirmation section.",
     ),
     Case(
@@ -635,6 +645,7 @@ _POLICY_ANSWER_CASES = (
             "How soon will I hear back after I file a dispute for an unrecognized charge?",
         ),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="response-time",
         description=(
             "English case grounded in the response-time section (unrecognized charge, 3 days)."
         ),
@@ -647,6 +658,7 @@ _POLICY_ANSWER_CASES = (
         seed_ref="ops_seed:CLI-0VJ9H0AQO8S2",
         user_turns=("When does a person review my dispute instead of the system deciding?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="human-review",
         description="English case grounded in the human-review section.",
     ),
 )

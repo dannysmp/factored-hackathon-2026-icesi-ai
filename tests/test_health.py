@@ -68,6 +68,28 @@ def test_factory_fails_fast_on_invalid_environment(monkeypatch: pytest.MonkeyPat
         create_app()
 
 
+def test_a_configuration_failure_emits_a_critical_event_naming_the_setting_not_its_value(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No structured logging is installed yet at this point; the factory must install a fallback
+    logger before the failure, or an operator sees an unstructured traceback and no queryable
+    event. ``caplog`` cannot observe this: ``configure_logging`` replaces the root logger's
+    handlers, including pytest's own, so the emitted line is asserted on the stream it is actually
+    written to instead."""
+    monkeypatch.setenv("LOG_LEVEL", "not-a-real-level")
+
+    with pytest.raises(ConfigError):
+        create_app()
+
+    lines = [
+        line for line in capsys.readouterr().err.splitlines() if '"event": "config_invalid"' in line
+    ]
+    assert len(lines) == 1
+    assert '"level": "critical"' in lines[0]
+    assert "LOG_LEVEL" in lines[0]
+    assert "not-a-real-level" not in lines[0]
+
+
 def test_factory_refuses_to_start_with_no_domain_date_source(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
