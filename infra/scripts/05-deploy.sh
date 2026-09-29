@@ -22,7 +22,16 @@
 #   `POSTGRES_PASSWORD:-dispute_intake` default exists only for local
 #   development with nothing SSM-backed exported; a deployed stack must never
 #   fall through to it, so this script fails loudly, before ever running
-#   `docker compose up`, if the parameter doesn't exist).
+#   `docker compose up`, if the parameter doesn't exist). `POSTGRES_PASSWORD`
+#   only takes effect on Postgres's own first init of an empty data
+#   directory — on a redeploy against an already-initialized volume (any
+#   `teardown_after: false` run, which is exactly what a persisting preview
+#   or evaluation deployment is), the official image silently ignores it, so
+#   this script also rotates the live role's real password after the stack
+#   is up, the same `psql -v pw=... ALTER ROLE ... PASSWORD :'pw'` pattern
+#   08-deploy-metabase.sh already established for the Metabase-side roles —
+#   piped over stdin, never `-c`, since `:'var'` substitution only takes
+#   effect that way (verified against a real Postgres server, not assumed).
 #   The three demo sign-in parameters (ADR-18) are optional: a deployment
 #   where the maintainer hasn't created them yet (the smoke-only path) gets
 #   an empty value for each and sign-in stays disabled, exactly as before
@@ -106,6 +115,12 @@ if [ -n "\${DEMO_AGENT_ACCESS_CODE}" ] && [ -n "\${AGENT_SESSION_SIGNING_KEY}" ]
 aws ecr get-login-password --region ${INFRA_REGION} | docker login --username AWS --password-stdin "\${ECR_REGISTRY}"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+for _ in \$(seq 1 10); do
+  docker compose exec -T postgres pg_isready -U dispute_intake >/dev/null 2>&1 && break
+  sleep 3
+done
+echo "ALTER ROLE dispute_intake PASSWORD :'pw'" | docker compose exec -T postgres \
+  psql -v ON_ERROR_STOP=1 -v pw="\${POSTGRES_PASSWORD}" -U dispute_intake -d dispute_intake
 SCRIPT
 )"
 
