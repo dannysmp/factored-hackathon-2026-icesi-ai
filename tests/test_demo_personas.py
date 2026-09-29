@@ -24,15 +24,18 @@ _VALID_DOCUMENT = """
 version: 1
 customers:
   - slug: ana
+    display_name: Ana
     customer_id: CUST-1
     language: es
     scenario: eligible
   - slug: joao
+    display_name: João
     customer_id: CUST-2
     language: pt
     scenario: repeat_complainer
 agents:
   - slug: agent-beatriz
+    display_name: Beatriz
     agent_id: AGENT-1
     languages: [pt, es]
     specialty: null
@@ -136,6 +139,7 @@ def test_personas_are_immutable() -> None:
         customers=(
             {
                 "slug": "ana",
+                "display_name": "Ana",
                 "customer_id": "CUST-1",
                 "language": "es",
                 "scenario": "eligible",

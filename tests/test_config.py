@@ -50,6 +50,8 @@ _ENV_KEYS = (
     "LLM_BREAKER_RESET_SECONDS",
     "TOOL_BREAKER_FAILURE_THRESHOLD",
     "TOOL_BREAKER_RESET_SECONDS",
+    "POST_HANDOFF_CONTACT_DAYS_PRIORITY",
+    "POST_HANDOFF_CONTACT_DAYS_DEFAULT",
     "DEMO_SIGNIN_ENABLED",
     "DEMO_SIGNIN_ACCESS_CODE",
     "DEMO_AGENT_SIGNIN_ENABLED",
@@ -325,6 +327,27 @@ def test_a_zero_attempts_or_threshold_is_rejected(
         load_settings(env_file=None)
 
 
+def test_the_post_handoff_contact_days_default_to_the_ratified_figures() -> None:
+    """A bare environment yields the ratified figures: 1 day priority, 2 days otherwise."""
+    settings = load_settings(env_file=None)
+
+    assert settings.post_handoff_contact_days_priority == 1
+    assert settings.post_handoff_contact_days_default == 2
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [("POST_HANDOFF_CONTACT_DAYS_PRIORITY", "-1"), ("POST_HANDOFF_CONTACT_DAYS_DEFAULT", "-1")],
+)
+def test_a_negative_post_handoff_contact_days_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(ConfigError, match=name):
+        load_settings(env_file=None)
+
+
 @pytest.mark.parametrize(
     "name", ["LLM_RETRY_BASE_DELAY_MS", "TOOL_RETRY_BASE_DELAY_MS", "LLM_RETRY_MAX_DELAY_MS"]
 )
@@ -340,6 +363,13 @@ def test_a_zero_base_delay_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_RETRY_BASE_DELAY_MS", "0")
 
     assert load_settings(env_file=None).llm_retry_base_delay_ms == 0
+
+
+def test_a_zero_post_handoff_contact_days_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero (same-day) is a valid, if aggressive, configuration."""
+    monkeypatch.setenv("POST_HANDOFF_CONTACT_DAYS_PRIORITY", "0")
+
+    assert load_settings(env_file=None).post_handoff_contact_days_priority == 0
 
 
 def test_the_sandbox_login_needs_its_secret(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -371,6 +401,28 @@ def test_the_sandbox_login_can_be_enabled_outside_production(
     monkeypatch.setenv("TEST_IDENTITY_KEY", "t" * 16)
 
     assert load_settings(env_file=None).test_identity_enabled is True
+
+
+def test_the_stub_llm_provider_can_never_be_enabled_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Whatever else is set, prod refuses the stub LLM provider, same reasoning as the sandbox
+    login: a CI-only shortcut must never reach a real deployment."""
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("LLM_PROVIDER", "stub")
+
+    with pytest.raises(ConfigError, match="not allowed when APP_ENV=prod"):
+        load_settings(env_file=None)
+
+
+def test_the_stub_llm_provider_can_be_enabled_outside_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Local, dev and CI may select the stub provider freely."""
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.setenv("LLM_PROVIDER", "stub")
+
+    assert load_settings(env_file=None).llm_provider is LlmProvider.STUB
 
 
 def test_the_demo_broker_needs_its_own_access_code(monkeypatch: pytest.MonkeyPatch) -> None:
