@@ -35,8 +35,9 @@ carries it, not a promise about a later one.
   found none: the model card records this as a negative result and keeps routing switched off. A
   fraud claim still always reaches a person regardless of this signal, since that rule does not
   depend on the risk score.
-- **The intent classifier's labeled evaluation set is only just becoming available.** The keyword
-  baseline it will be compared against has not been built yet.
+- **The intent classifier's labeled evaluation set is only just becoming available.** The primary
+  evaluation — per-language accuracy and a confusion matrix against that labeled set — stays in
+  scope; a secondary keyword-baseline comparison point is descoped (see Not attempted).
 
 ## Conversation and evaluation
 
@@ -55,9 +56,20 @@ carries it, not a promise about a later one.
   combines the operational seed with the evaluation scenario bank, so every case that needs a
   deliberately inconsistent transaction (an orphan reference, a null field, an injected merchant
   name, an unconvertible amount) resolves against real, loaded data, not only the smoke slice's
-  synthetic subset. What has not happened yet is the first full `make evaluate` run itself and its
-  recorded report — the pieces exist, but no evidence-producing run against the complete golden
-  set has been executed.
+  synthetic subset. The first full `make evaluate` run against the complete 135-case golden set
+  has now executed, scoring all three systems against the live model; its safe/unsafe outcome
+  classification is read directly off each run's own recorded outcome and is final, unaffected by
+  the human-rated judge-validation sample still due. The judge's own quality and correctness
+  scores stay provisional until that sample lands. The recorded report artifact itself
+  (`reports/evaluation.md`) is still pending write-up.
+- **One case in the completed full evaluation run produced a single, non-reproducible unsafe
+  outcome.** The English fraud-claim case in the human-required category turned unsafe in one of
+  three repeated runs against the proposed system, in the handoff-ticket path the case exercises.
+  Twenty further live repeats of the same case produced zero unsafe outcomes and found no
+  structural defect anywhere in that path. This is recorded as a disclosed, non-reproducible
+  finding, not a fixed defect: nothing in the code changed, because nothing reproducible was
+  found to fix, and a rare, non-reproducible finding from a real evaluation run is a fact worth
+  stating plainly rather than treating as resolved once no cause is found.
 - **The human-agent console is now live, read-only.** The queue and ticket-detail screens draw
   from real backend data (`LiveQueueClient`, `LiveTicketDetailClient`), and `app.main.create_app`
   registers the console's routes whenever the agent demo broker is enabled — the same flag that
@@ -116,3 +128,9 @@ number's digits are masked before that same request is sent.
 A zero-shot multilingual intent classifier comparison was considered as further work if time
 allowed once every other item above is closed. It has not been started, and is recorded here as
 descoped work, not a missed requirement.
+
+A keyword-rule baseline for intent classification, compared against the labeled intent set as a
+secondary reference point, was descoped the same way: the primary evaluation it would have stood
+beside — per-language accuracy and a confusion matrix for the intent classifier itself — is
+unaffected and stays in scope. Nothing downstream depends on the keyword baseline, and it is
+recorded here as descoped work, not a missed requirement.
