@@ -11,6 +11,7 @@ marked ``integration``, skipped when ``DATABASE_URL`` is not set.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +27,7 @@ from app.persistence.migrate import apply_migrations
 from evals.cli import _fmt, _require_test_login_key, _select_cases, main
 from evals.golden.case_sheet import ALL_CASES
 from evals.metrics import NOT_DEFINED, CaseResult, Metric
+from evals.models import Case
 from evals.runner.smoke import SMOKE_CASE_IDS
 from tests.fixtures.ci_smoke_seed import seed_ci_smoke_data
 
@@ -199,11 +201,6 @@ def test_neither_full_nor_system_is_an_error() -> None:
         main([])
 
 
-def test_full_rejects_smoke() -> None:
-    with pytest.raises(SystemExit):
-        main(["--full", "--smoke"])
-
-
 def test_full_writes_the_report_and_exits_0_when_nothing_is_unsafe(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -221,6 +218,46 @@ def test_full_writes_the_report_and_exits_0_when_nothing_is_unsafe(
     text = report_path.read_text(encoding="utf-8")
     assert "# Evaluation Report" in text
     assert "2026-06-18" in text
+    assert "Scope." not in text  # a full-golden-set run carries no scope_note
+
+
+def test_full_smoke_narrows_the_case_set_and_discloses_it_in_the_report(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--full --smoke is today's only working full-report scope (3.4c's loader hasn't landed);
+    the written report must disclose the narrowing, never silently under-report as if it were the
+    full 135-case golden set."""
+    captured_cases: dict[str, tuple[Case, ...]] = {}
+
+    def _capturing_runner(
+        system: str,
+    ) -> Callable[[object, Sequence[Case]], tuple[CaseResult, ...]]:
+        def runner(settings: object, cases: Sequence[Case]) -> tuple[CaseResult, ...]:
+            captured_cases[system] = tuple(cases)
+            return (_full_result("c1"),)
+
+        return runner
+
+    _patch_full_report_dependencies(
+        monkeypatch,
+        p_runs=[(_full_result("c1"),), (_full_result("c1"),), (_full_result("c1"),)],
+        b0_run=(_full_result("c1"),),
+        b1_run=(_full_result("c1"),),
+    )
+    for system in ("P", "B0", "B1"):
+        monkeypatch.setitem(evals.cli._RUNNERS, system, _capturing_runner(system))
+    report_path = tmp_path / "evaluation.md"
+
+    exit_code = main(["--full", "--smoke", "--report", str(report_path)])
+
+    assert exit_code == 0
+    for system in ("P", "B0", "B1"):
+        assert {case.case_id for case in captured_cases[system]} == SMOKE_CASE_IDS
+    text = report_path.read_text(encoding="utf-8")
+    assert "**Scope.**" in text
+    assert "16-case CI-smoke subset" in text
+    assert "slice 3.4c" in text
+    assert f"Total golden-set cases: {len(SMOKE_CASE_IDS)}" in text
 
 
 def test_full_exits_1_when_any_run_of_any_system_is_unsafe(
