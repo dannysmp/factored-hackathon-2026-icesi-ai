@@ -63,4 +63,14 @@ describe('QueueTable', () => {
 
     expect(screen.queryByText('vencido', { exact: false })).not.toBeInTheDocument()
   })
+
+  it('does not flag a ticket due today, the boundary between not-yet and overdue', () => {
+    render(
+      <QueueTable
+        items={[item({ reference_date: '2026-06-18', promised_contact_by: '2026-06-18' })]}
+      />,
+    )
+
+    expect(screen.queryByText('vencido', { exact: false })).not.toBeInTheDocument()
+  })
 })
