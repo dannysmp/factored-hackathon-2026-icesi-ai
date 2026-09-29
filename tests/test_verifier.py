@@ -250,6 +250,63 @@ def test_a_third_occurrence_beyond_the_entries_available_is_rejected() -> None:
 
 
 # -----------------------------------------------------------------------------
+# Rejected: a multi-entry field cited once and left otherwise unsaid
+# -----------------------------------------------------------------------------
+
+
+def test_citing_only_one_of_several_grounded_entries_is_rejected() -> None:
+    """Two cases are grounded; a reply that names only the first silently drops the second, the
+    same class of omission the required-field check exists to catch."""
+    facts = DisputeFacts(
+        cases=(
+            _case("D-1", date(2026, 6, 1), "tx-1"),
+            _case("D-2", date(2026, 6, 5), "tx-2"),
+        )
+    )
+    envelope = _envelope(intent=Intent.DISPUTE_STATUS, facts=facts, decisions=())
+    candidate = CandidateReply(
+        raw_text="Case {{case_number}} filed {{filed_on}}. {{outcome_statement}}"
+    )
+    slots = _slots(
+        (GroundedField.CASE_NUMBER, "D-1"),
+        (GroundedField.FILED_ON, "June 1, 2026"),
+        (GroundedField.CASE_NUMBER, "D-2"),
+        (GroundedField.FILED_ON, "June 5, 2026"),
+        (GroundedField.OUTCOME_STATEMENT, "both cases are still under review"),
+    )
+
+    result = verify(envelope, candidate, slots)
+
+    assert result.outcome == "rejected"
+    assert RejectionReason.GROUNDED_ENTRY_DROPPED in result.reasons
+
+
+def test_a_field_with_leftover_entries_that_is_never_cited_is_not_penalized() -> None:
+    """A multi-entry field the model never mentions at all is a different, already-allowed
+    outcome (nothing required forces every optional field into the reply) — the dropped-entry
+    check only applies once the model starts citing a field at all."""
+    facts = DisputeFacts(
+        cases=(
+            _case("D-1", date(2026, 6, 1), "tx-1"),
+            _case("D-2", date(2026, 6, 5), "tx-2"),
+        )
+    )
+    envelope = _envelope(intent=Intent.DISPUTE_STATUS, facts=facts, decisions=())
+    candidate = CandidateReply(raw_text="{{outcome_statement}}")
+    slots = _slots(
+        (GroundedField.CASE_NUMBER, "D-1"),
+        (GroundedField.FILED_ON, "June 1, 2026"),
+        (GroundedField.CASE_NUMBER, "D-2"),
+        (GroundedField.FILED_ON, "June 5, 2026"),
+        (GroundedField.OUTCOME_STATEMENT, "both cases are still under review"),
+    )
+
+    result = verify(envelope, candidate, slots)
+
+    assert result.outcome == "accepted"
+
+
+# -----------------------------------------------------------------------------
 # Rejected: the outcome silently dropped
 # -----------------------------------------------------------------------------
 

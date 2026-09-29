@@ -24,7 +24,9 @@ Design Principles
 - A field can be cited more than once (``DisputeFacts.cases`` holds up to three cases, each with
   its own case number and filing date): ``SlotValues`` holds a tuple of entries rather than one
   value per field, and successive placeholder occurrences for the same field consume its entries
-  in order. A single-valued fact is simply one entry.
+  in order. A single-valued fact is simply one entry. Citing a multi-entry field at all commits the
+  reply to citing every entry it was given, not just the first: ``GROUNDED_ENTRY_DROPPED`` names
+  the reply that names a field once and silently leaves the rest of its grounded entries unsaid.
 - ``RejectionReason`` names *why* a candidate was rejected, not just that it was, so a verifier
   test can assert the specific failure mode it seeded rather than only the outcome.
 - The models are immutable and reject unknown fields, matching every other service contract.
@@ -105,6 +107,7 @@ class RejectionReason(StrEnum):
     UNDECLARED_PLACEHOLDER = "undeclared_placeholder"
     UNRESOLVED_PLACEHOLDER = "unresolved_placeholder"
     REQUIRED_FIELD_MISSING = "required_field_missing"
+    GROUNDED_ENTRY_DROPPED = "grounded_entry_dropped"
 
 
 class VerifierResult(ContractModel):
