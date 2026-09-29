@@ -1,13 +1,22 @@
 /* Base styles, reading the design tokens (ADR-19): color scheme, font stack and text color come
    from the token file so every surface starts from the same source, before any per-component
-   retrofit. */
+   retrofit. The focus-visible treatment lives in tokens.css itself, applied globally there, so
+   this file never repeats it. */
 @import './styles/tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
   font-family: var(--font-family);
   font-size: var(--font-size-base);
+  font-weight: var(--font-weight-body);
   line-height: var(--line-height-base);
+  font-variant-numeric: var(--font-variant-numeric);
   color: var(--color-text);
   background-color: var(--color-bg);
 }

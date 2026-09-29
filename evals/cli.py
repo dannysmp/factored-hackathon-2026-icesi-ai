@@ -4,14 +4,17 @@ Evaluation CLI
 
 Overview
 --------
-Two modes. ``make evaluate SYSTEM={P|B0|B1}``: runs one system variant once against a set of
-golden-set cases and logs the resulting headline metrics (unchanged from every earlier increment,
-including the CI-gating smoke job — ``--smoke`` narrows the case set to
-``evals.runner.smoke.smoke_cases()``; its absence runs the full golden set,
-``evals.golden.case_sheet.ALL_CASES``). ``make evaluate FULL=1``: runs every system variant (P
-three times, B0 and B1 once each, the plan's own execution protocol) and writes the full
-``reports/evaluation.md`` — the first increment able to produce the plan's single generated report
-artifact end to end.
+Two modes, both accepting ``--smoke`` to narrow the case set to
+``evals.runner.smoke.smoke_cases()`` (16 cases) instead of the full golden set,
+``evals.golden.case_sheet.ALL_CASES`` (135 cases, including all 32 adversarial cases).
+``make evaluate SYSTEM={P|B0|B1} [SMOKE=1]``: runs one system variant once and logs the resulting
+headline metrics (unchanged from every earlier increment, including the CI-gating smoke job).
+``make evaluate FULL=1 [SMOKE=1]``: runs every system variant (P three times, B0 and B1 once each,
+the plan's own execution protocol) and writes the full ``reports/evaluation.md`` — the first
+increment able to produce the plan's single generated report artifact end to end. ``FULL=1
+SMOKE=1`` is today's only working full-report scope: the full 135-case run needs stream 4's loader
+(slice 3.4c) to land first, since only the smoke subset's adversarial cases resolve without it; the
+written report's own ``scope_note`` discloses the narrowing rather than silently under-reporting.
 
 Scope
 -----
@@ -19,7 +22,9 @@ In: choosing and building the right dependencies for the requested system varian
 batch(es), logging a summary or writing the full report, and the process exit code the CI smoke
 job (and, for ``--full``, any run of any variant) gates on.
 Out: loading any seed data into the target store — the caller's own responsibility (``make
-load-seed`` for a real run against ``data/gold/ops_seed``, a CI-only fixture for the smoke job);
+load-seed`` for a real run against ``data/gold/ops_seed``, followed by ``make load-eval-bank`` for
+the full 32-case adversarial set (the 16-case CI-smoke subset needs only ``ops_seed``), a CI-only
+fixture for the smoke job);
 scoring the automated judge against every case of a full run (the judge-validation section reads
 this slice's own H4 sample — synthetic today, the real returned sheets later — not a fresh judge
 call over the whole golden set every time ``--full`` runs; see ``evals.judge_validation``).
@@ -55,8 +60,8 @@ Design Principles
 Runtime Contract
 -----------------
 ``main(argv) -> int``. Command line: ``python -m evals.cli --system {P,B0,B1} [--smoke]`` or
-``python -m evals.cli --full [--report PATH]`` (default ``reports/evaluation.md``); exactly one of
-``--system``/``--full`` is required.
+``python -m evals.cli --full [--smoke] [--report PATH]`` (default ``reports/evaluation.md``);
+exactly one of ``--system``/``--full`` is required, and ``--smoke`` applies to either.
 
 Limitations
 -----------
@@ -205,12 +210,22 @@ def _build_system_result(system: str, runs: Sequence[tuple[CaseResult, ...]]) ->
     )
 
 
-def _run_full_report(settings: Settings) -> tuple[EvaluationReport, bool]:
+def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationReport, bool]:
     """Run every system variant the plan's execution protocol calls for, and assemble the report.
 
     P runs three times, B0 and B1 once each (``_RUN_COUNTS``); the judge-validation section reads
     this slice's own synthetic placeholder sample until the real H4 sheets replace it (see
     ``evals.golden.judge_validation_sample``).
+
+    Parameters
+    ----------
+    smoke : bool
+        Narrows the case set to ``evals.runner.smoke.smoke_cases()`` (16 cases, the CI-gating
+        subset) instead of the full golden set (135 cases, including all 32 adversarial cases).
+        Needed until stream 4's loader (slice 3.4c, combining the operational seed with
+        ``data/gold/eval_bank``) lands: only the smoke subset's adversarial cases resolve without
+        it (``plan/delivery/streams.md``'s own note on slice 3.11). The resulting report's own
+        ``scope_note`` discloses the narrowing; nothing about the pipeline itself changes.
 
     Returns
     -------
@@ -219,7 +234,7 @@ def _run_full_report(settings: Settings) -> tuple[EvaluationReport, bool]:
         ``SystemResult.case_results``, which keeps only the last one) was unsafe — the exit-code
         enforcement needs every run checked, not only the one the report happens to display.
     """
-    cases = ALL_CASES
+    cases = _select_cases(smoke=smoke)
     calendar = _resolve_calendar(settings, clock=_real_clock)
     all_runs = {
         system: [_RUNNERS[system](settings, cases) for _ in range(_RUN_COUNTS[system])]
@@ -240,6 +255,15 @@ def _run_full_report(settings: Settings) -> tuple[EvaluationReport, bool]:
     agreement = compute_agreement(
         _SYNTHETIC_RATER_1_SCORES, _SYNTHETIC_RATER_2_SCORES, _SYNTHETIC_JUDGE_VERDICTS
     )
+    scope_note = (
+        f"Generated from the {len(cases)}-case CI-smoke subset, not the full "
+        f"{len(ALL_CASES)}-case golden set (including all 32 adversarial cases): stream 4's "
+        "loader (slice 3.4c, combining the operational seed with data/gold/eval_bank) has not "
+        "landed yet, so only the smoke subset's adversarial cases resolve. Re-run with --full "
+        "alone once it does."
+        if smoke
+        else ""
+    )
     report = EvaluationReport(
         versions=versions,
         golden_cases=tuple(cases),
@@ -249,6 +273,7 @@ def _run_full_report(settings: Settings) -> tuple[EvaluationReport, bool]:
         reference_date=calendar.reference_date.isoformat(),
         reference_date_source=calendar.origin.value,
         bank_timezone=_BANK_TIMEZONE_LABEL,
+        scope_note=scope_note,
     )
     return report, unsafe
 
@@ -293,12 +318,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the evaluation harness; return the process exit code.
 
     Either ``--system {P,B0,B1} [--smoke]`` (one variant, one run, logged as before — unchanged
-    from every earlier increment, including the CI-gating smoke job) or ``--full [--report PATH]``
-    (every variant, P three times, written as ``reports/evaluation.md``).
+    from every earlier increment, including the CI-gating smoke job) or ``--full [--smoke]
+    [--report PATH]`` (every variant, P three times, written as ``reports/evaluation.md``).
+    ``--full --smoke`` narrows the full run to the 16-case CI-smoke subset too — needed until
+    stream 4's loader (slice 3.4c) lands, since only that subset's adversarial cases resolve
+    without it; the written report discloses the narrowing in its own ``scope_note``.
     """
     parser = argparse.ArgumentParser(description="Run the evaluation harness.")
     parser.add_argument("--system", choices=_SYSTEMS)
-    parser.add_argument("--smoke", action="store_true", help="Run the CI-gating smoke slice only.")
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="Narrow the case set to the 16-case CI-smoke subset (--system or --full).",
+    )
     parser.add_argument(
         "--full",
         action="store_true",
@@ -308,14 +340,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.full == bool(args.system):
         parser.error("pass exactly one of --system or --full")
-    if args.full and args.smoke:
-        parser.error("--smoke narrows a single --system run; --full always runs the full set")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     settings = load_settings()
 
     if args.full:
-        report, unsafe = _run_full_report(settings)
+        report, unsafe = _run_full_report(settings, smoke=args.smoke)
         args.report.write_text(render_markdown(report), encoding="utf-8")
         logger.info("evaluation_report path=%s systems=%d", args.report, len(report.systems))
         return 1 if unsafe else 0

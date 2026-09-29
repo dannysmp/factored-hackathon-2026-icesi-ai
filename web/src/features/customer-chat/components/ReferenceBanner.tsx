@@ -1,4 +1,5 @@
 import type { JSX } from 'react'
+import styles from './ReferenceBanner.module.css'
 
 /**
  * The persistent reference-date line and the demonstration notice.
@@ -14,7 +15,7 @@ export function ReferenceBanner({
   demoNotice: string | null
 }): JSX.Element {
   return (
-    <div role="note">
+    <div role="note" className={styles.banner}>
       <p>{referenceDateLine}</p>
       {demoNotice !== null && <p>{demoNotice}</p>}
     </div>

@@ -1,0 +1,25 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.message {
+  max-width: 32rem;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+}
+
+.from {
+  font-weight: var(--font-weight-emphasis);
+}
+
+.empty {
+  margin: var(--space-4) 0;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-sm);
+}

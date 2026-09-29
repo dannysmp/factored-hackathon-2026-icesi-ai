@@ -124,6 +124,34 @@ describe('ConsoleApp', () => {
     ).toBeInTheDocument()
   })
 
+  it('shows a ticket’s detail once its reference is clicked, then returns to the queue', async () => {
+    stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<ConsoleApp />)
+
+    await screen.findByLabelText('Persona')
+    await user.type(screen.getByLabelText('Access code'), 'agent-code')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    const rows = await screen.findAllByRole('row')
+    const firstTicketRefButton = rows[1]?.querySelector('button')
+    if (firstTicketRefButton === null || firstTicketRefButton === undefined) {
+      throw new Error('expected the first row to contain a ticket reference button')
+    }
+
+    await user.click(firstTicketRefButton)
+
+    expect(await screen.findByRole('region', { name: 'Detalle del ticket' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('region', { name: 'Cola de casos escalados' }),
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Volver a la cola' }))
+
+    expect(
+      await screen.findByRole('region', { name: 'Cola de casos escalados' }),
+    ).toBeInTheDocument()
+  })
+
   it('has no automatically detectable accessibility violations at the sign-in step', async () => {
     stubTheWholeFlow()
     const { container } = render(<ConsoleApp />)

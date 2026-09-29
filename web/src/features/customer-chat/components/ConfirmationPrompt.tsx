@@ -1,5 +1,6 @@
 import type { JSX } from 'react'
 import { CONFIRMATION_TEXT } from '../contracts'
+import styles from './ConfirmationPrompt.module.css'
 
 /**
  * The confirmation button next to the text prompt (AC-E10-13).
@@ -19,6 +20,7 @@ export function ConfirmationPrompt({
   return (
     <button
       type="button"
+      className={styles.confirm}
       disabled={disabled}
       onClick={() => {
         onConfirm(CONFIRMATION_TEXT)

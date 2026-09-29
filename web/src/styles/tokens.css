@@ -15,7 +15,8 @@
 
   /* ---------------------------------------------------------------------------------------
    * Color: a restrained neutral ramp carries the interface; one accent hue for primary actions
-   * and links; a small semantic set for status only. No gradients, no decorative color.
+   * and links; a small semantic set for status only, each with a tinted background for banners.
+   * No gradients, no decorative color.
    * --------------------------------------------------------------------------------------- */
   --color-bg: light-dark(#ffffff, #0f1115);
   --color-bg-subtle: light-dark(#f6f7f9, #171a20);
@@ -25,15 +26,21 @@
 
   --color-accent: light-dark(#1c5fd6, #6ea1ff);
   --color-accent-contrast: light-dark(#ffffff, #0f1115);
+  --color-accent-hover: light-dark(#1650b3, #8db3ff);
 
   --color-success: light-dark(#1a7f4b, #4fd08a);
+  --color-success-bg: light-dark(#e8f6ee, #10321f);
   --color-warning: light-dark(#8a5a00, #f0b429);
+  --color-warning-bg: light-dark(#fdf3dc, #3a2c05);
   --color-error: light-dark(#b3251f, #ff6b64);
+  --color-error-bg: light-dark(#fbebe9, #3a1512);
   --color-info: light-dark(#1c5fd6, #6ea1ff);
+  --color-info-bg: light-dark(#e9f1ff, #0f1f3a);
 
   /* ---------------------------------------------------------------------------------------
    * Typography: one system font stack (matching the previous global default so no font is
    * downloaded), a fixed scale of five sizes, one weight for emphasis and one for body text.
+   * Numbers and dates use tabular figures so amounts don't jitter (ADR-19's trust principle).
    * --------------------------------------------------------------------------------------- */
   --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
@@ -45,6 +52,7 @@
 
   --font-weight-body: 400;
   --font-weight-emphasis: 600;
+  --font-variant-numeric: tabular-nums;
 
   --line-height-base: 1.5;
 

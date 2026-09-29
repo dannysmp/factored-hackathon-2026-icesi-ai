@@ -180,6 +180,19 @@ def test_render_states_offline_and_reference_date() -> None:
     assert "America/Bogota" in text
 
 
+def test_no_scope_note_renders_no_scope_callout() -> None:
+    """A full-golden-set run (the default) carries no scope_note and shows no callout."""
+    text = render_markdown(_report())
+    assert "**Scope.**" not in text
+
+
+def test_a_scope_note_renders_as_a_prominent_callout_and_in_limitations() -> None:
+    text = render_markdown(_report(scope_note="Generated from the 16-case CI-smoke subset."))
+    assert "**Scope.** Generated from the 16-case CI-smoke subset." in text
+    limitations = text.split("## 8.")[1]
+    assert "Generated from the 16-case CI-smoke subset." in limitations
+
+
 def test_workload_section_counts_the_golden_cases() -> None:
     cases = (
         _case(case_id="c1", category=CaseCategory.NORMAL, lang="es"),

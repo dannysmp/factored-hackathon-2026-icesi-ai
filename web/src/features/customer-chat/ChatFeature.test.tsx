@@ -13,6 +13,17 @@ function renderChat(): ReturnType<typeof render> {
 }
 
 describe('ChatFeature', () => {
+  it('shows only its own loading text while starting, never MessageList’s empty state too', () => {
+    const pending = (): Promise<never> =>
+      new Promise(() => {
+        // never resolves: simulates the chat still starting
+      })
+    const client: ChatClient = { start: pending, sendTurn: pending }
+    render(<ChatFeature client={client} />)
+    expect(screen.getByText('Starting the conversation…')).toBeInTheDocument()
+    expect(screen.queryByText('No messages yet.')).not.toBeInTheDocument()
+  })
+
   it('shows the reference-date line and the demonstration notice', async () => {
     renderChat()
     expect(await screen.findByText('Today is Thursday, 18 June 2026.')).toBeInTheDocument()
@@ -47,11 +58,22 @@ describe('ChatFeature', () => {
     ).toBeInTheDocument()
   })
 
-  it('disables the form once the assistant ends the session', async () => {
+  it('disables the form and shows a distinct ended state once the assistant ends the session', async () => {
     // Start straight from the last, session-ending turn.
     render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN.slice(-1))} />)
     await screen.findByText('Thanks for reaching out. Have a good day!')
     expect(screen.queryByLabelText('Your message')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('This conversation has ended.')
+  })
+
+  it('shows the case reference on the ended state when the last turn carries one', async () => {
+    const [lastTurn] = FILE_DISPUTE_EN.slice(-1)
+    if (lastTurn === undefined) {
+      throw new Error('fixture FILE_DISPUTE_EN must have at least one turn')
+    }
+    const endedWithTicket = { ...lastTurn, handoff_ticket: 'DEMO-1234' }
+    render(<ChatFeature client={new FixtureChatClient([endedWithTicket])} />)
+    expect(await screen.findByRole('status')).toHaveTextContent('Case reference: DEMO-1234.')
   })
 
   it('shows a retryable error, not a stack trace, when the client rejects', async () => {

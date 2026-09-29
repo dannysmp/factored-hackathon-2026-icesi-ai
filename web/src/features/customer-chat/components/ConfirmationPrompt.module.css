@@ -1,0 +1,28 @@
+/* The chat's one primary action (AC-E10-17): visually dominant relative to the choice buttons
+   and the text form next to it — solid accent fill, the larger of the two button sizes. */
+.confirm {
+  display: block;
+  width: 100%;
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-6);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-emphasis);
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-easing),
+    opacity var(--motion-duration-fast) var(--motion-easing);
+}
+
+.confirm:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

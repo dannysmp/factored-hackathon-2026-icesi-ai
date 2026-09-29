@@ -64,6 +64,9 @@ eval-bank: ## Write the frozen evaluation scenario bank
 load-seed: ## Load the built operational seed into Postgres (needs DATABASE_URL, already migrated)
 	$(RUN) python -m app.persistence.load_seed
 
+load-eval-bank: ## Load the built eval bank into Postgres, additively (run after load-seed for a full evaluation run)
+	$(RUN) python -m app.persistence.load_eval_bank
+
 load-analytics: ## Load the dispute-demand marts into the Postgres analytics schema (needs DATABASE_URL, already migrated)
 	$(RUN) python -m pipelines.analytics_load
 
@@ -112,8 +115,8 @@ train: ## Run the risk signal probe, the boosted-model comparison and calibratio
 	$(RUN) python -m models.boosted
 	$(RUN) python -m models.calibration
 
-evaluate: ## Run the evaluation harness: make evaluate SYSTEM={P|B0|B1} [SMOKE=1], or make evaluate FULL=1
-	$(RUN) python -m evals.cli $(if $(FULL),--full,--system $(SYSTEM) $(if $(SMOKE),--smoke,))
+evaluate: ## Run the evaluation harness: make evaluate SYSTEM={P|B0|B1} [SMOKE=1], or make evaluate FULL=1 [SMOKE=1]
+	$(RUN) python -m evals.cli $(if $(FULL),--full,--system $(SYSTEM)) $(if $(SMOKE),--smoke,)
 
 seed-ci-smoke: ## Seed the CI-only synthetic data the smoke slice needs (needs DATABASE_URL, migrated)
 	$(RUN) python -m tests.fixtures.ci_smoke_seed
