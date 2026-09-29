@@ -9,6 +9,8 @@ real provider.
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from app.conversation.llm_understanding import LlmNlu
@@ -20,10 +22,12 @@ from app.llm.client import (
     LlmRequestRejected,
     LlmUnavailable,
 )
+from contracts.service_v1.envelope import DateSource
 from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult
 
 _MODEL = "claude-haiku-4-5-20251001"
 _VISA = "4111111111111111"
+_REFERENCE_DATE = date(2026, 6, 18)
 
 
 def test_a_well_formed_tool_call_maps_to_a_validated_nlu_result() -> None:
@@ -43,7 +47,9 @@ def test_a_well_formed_tool_call_maps_to_a_validated_nlu_result() -> None:
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result, accounting = nlu.understand("no reconozco un cargo de Amazon", language_hint="es")
+    result, accounting = nlu.understand(
+        "no reconozco un cargo de Amazon", language_hint="es", reference_date=_REFERENCE_DATE
+    )
 
     assert result.intent is NluIntent.FILE_DISPUTE
     assert result.confidence == 0.82
@@ -52,7 +58,7 @@ def test_a_well_formed_tool_call_maps_to_a_validated_nlu_result() -> None:
     assert str(result.transaction.amount) == "125.50"
     assert result.transaction.currency == "MXN"
     assert accounting == TurnAccounting(
-        model=_MODEL, prompt_version="1", input_tokens=0, output_tokens=0, latency_ms=0.0
+        model=_MODEL, prompt_version="2", input_tokens=0, output_tokens=0, latency_ms=0.0
     )
 
 
@@ -61,7 +67,7 @@ def test_empty_text_is_unusable_without_calling_the_model() -> None:
     llm = FakeLlm(responses=[])
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result, accounting = nlu.understand("   ", language_hint="es")
+    result, accounting = nlu.understand("   ", language_hint="es", reference_date=_REFERENCE_DATE)
 
     assert result == NluResult.unusable()
     assert accounting is None
@@ -75,7 +81,7 @@ def test_a_transient_port_failure_raises_understanding_unavailable() -> None:
     nlu = LlmNlu(llm, model=_MODEL)
 
     with pytest.raises(UnderstandingUnavailable):
-        nlu.understand("hola", language_hint=None)
+        nlu.understand("hola", language_hint=None, reference_date=_REFERENCE_DATE)
 
 
 def test_a_permanent_port_failure_still_becomes_unusable_understanding() -> None:
@@ -84,7 +90,7 @@ def test_a_permanent_port_failure_still_becomes_unusable_understanding() -> None
     llm = FakeLlm(responses=[LlmRequestRejected("bad credentials")])
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result, accounting = nlu.understand("hola", language_hint=None)
+    result, accounting = nlu.understand("hola", language_hint=None, reference_date=_REFERENCE_DATE)
 
     assert result == NluResult.unusable()
     assert accounting is None
@@ -95,7 +101,7 @@ def test_a_tool_call_missing_a_required_field_falls_back_to_unusable() -> None:
     llm = FakeLlm(responses=[{"confidence": 0.9, "mentions_second_dispute": False}])
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result, accounting = nlu.understand("algo", language_hint="es")
+    result, accounting = nlu.understand("algo", language_hint="es", reference_date=_REFERENCE_DATE)
 
     assert result == NluResult.unusable()
     assert accounting is not None  # the call itself completed; only the arguments were incomplete
@@ -115,7 +121,9 @@ def test_an_overlong_free_text_field_is_truncated_and_repaired() -> None:
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result, _accounting = nlu.understand("un cargo grande", language_hint="es")
+    result, _accounting = nlu.understand(
+        "un cargo grande", language_hint="es", reference_date=_REFERENCE_DATE
+    )
 
     assert result.intent is NluIntent.FILE_DISPUTE
     assert result.transaction.merchant == "A" * 80
@@ -135,7 +143,7 @@ def test_an_invalid_enum_value_is_nulled_and_repaired() -> None:
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result, _accounting = nlu.understand("hola", language_hint="es")
+    result, _accounting = nlu.understand("hola", language_hint="es", reference_date=_REFERENCE_DATE)
 
     assert result.intent is NluIntent.SMALL_TALK
     assert result.language is None
@@ -154,7 +162,9 @@ def test_an_out_of_range_choice_is_nulled_and_repaired() -> None:
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result, _accounting = nlu.understand("el noveno", language_hint="es")
+    result, _accounting = nlu.understand(
+        "el noveno", language_hint="es", reference_date=_REFERENCE_DATE
+    )
 
     # choice=None together with intent=CHOICE fails the contract's own slot-ownership rule, so
     # this is a case a bounded repair cannot rescue: the whole result falls back to unusable.
@@ -174,7 +184,9 @@ def test_a_confirmation_that_belongs_to_its_intent_maps_cleanly() -> None:
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result, _accounting = nlu.understand("sí, confirmo", language_hint="es")
+    result, _accounting = nlu.understand(
+        "sí, confirmo", language_hint="es", reference_date=_REFERENCE_DATE
+    )
 
     assert result.confirmation is ConfirmationAnswer.YES
 
@@ -186,7 +198,7 @@ def test_the_customers_text_is_masked_before_it_leaves_this_process() -> None:
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    nlu.understand(f"mi tarjeta es {_VISA}", language_hint="es")
+    nlu.understand(f"mi tarjeta es {_VISA}", language_hint="es", reference_date=_REFERENCE_DATE)
 
     assert _VISA not in llm.requests[0].user_text
     assert "card-number-redacted" in llm.requests[0].user_text
@@ -198,10 +210,10 @@ def test_the_request_carries_the_configured_model_and_the_prompt_version() -> No
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    nlu.understand("algo", language_hint="es")
+    nlu.understand("algo", language_hint="es", reference_date=_REFERENCE_DATE)
 
     assert llm.requests[0].model == _MODEL
-    assert llm.requests[0].prompt_version == "1"
+    assert llm.requests[0].prompt_version == "2"
     assert llm.requests[0].temperature == 0.0
 
 
@@ -211,7 +223,7 @@ def test_a_missing_language_hint_is_rendered_as_unknown_not_left_blank() -> None
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    nlu.understand("algo", language_hint=None)
+    nlu.understand("algo", language_hint=None, reference_date=_REFERENCE_DATE)
 
     assert "unknown" in llm.requests[0].user_text
 
@@ -236,8 +248,83 @@ def test_a_successful_calls_accounting_matches_the_completions_own_fields() -> N
 
     nlu = LlmNlu(_FixedResultLlm(), model=_MODEL)
 
-    _result, accounting = nlu.understand("algo", language_hint="es")
+    _result, accounting = nlu.understand("algo", language_hint="es", reference_date=_REFERENCE_DATE)
 
     assert accounting == TurnAccounting(
-        model=_MODEL, prompt_version="1", input_tokens=120, output_tokens=40, latency_ms=812.5
+        model=_MODEL, prompt_version="2", input_tokens=120, output_tokens=40, latency_ms=812.5
     )
+
+
+def test_a_reported_date_expression_resolves_against_the_reference_date() -> None:
+    """AC-E5-16, end to end through the adapter: the model reports only the customer's own
+    words; the resolved date and how it was expressed are what the contract actually carries."""
+    llm = FakeLlm(
+        responses=[
+            {
+                "intent": "file_dispute",
+                "confidence": 0.8,
+                "language": "es",
+                "date_expression": "ayer",
+                "mentions_second_dispute": False,
+            }
+        ]
+    )
+    nlu = LlmNlu(llm, model=_MODEL)
+
+    result, _accounting = nlu.understand(
+        "no reconozco un cargo de ayer", language_hint="es", reference_date=_REFERENCE_DATE
+    )
+
+    assert result.transaction.date_on == date(2026, 6, 17)
+    assert result.transaction.date_source is DateSource.RELATIVE
+
+
+def test_an_unrecognized_date_expression_leaves_the_transaction_dateless() -> None:
+    """The same "nothing stated" outcome as no date at all — a phrase the closed vocabulary
+    does not know is never guessed at, matching ``date_expressions.resolve``'s own contract."""
+    llm = FakeLlm(
+        responses=[
+            {
+                "intent": "file_dispute",
+                "confidence": 0.8,
+                "language": "es",
+                "date_expression": "hace un tiempo",
+                "mentions_second_dispute": False,
+            }
+        ]
+    )
+    nlu = LlmNlu(llm, model=_MODEL)
+
+    result, _accounting = nlu.understand(
+        "no reconozco un cargo de hace un tiempo",
+        language_hint="es",
+        reference_date=_REFERENCE_DATE,
+    )
+
+    assert result.transaction.date_on is None
+    assert result.transaction.date_source is None
+
+
+def test_an_overlong_date_expression_is_truncated_and_repaired() -> None:
+    """The same bounded-repair convention every other free-text field already gets."""
+    llm = FakeLlm(
+        responses=[
+            {
+                "intent": "file_dispute",
+                "confidence": 0.7,
+                "date_expression": "x" * 60,
+                "mentions_second_dispute": False,
+            }
+        ]
+    )
+    nlu = LlmNlu(llm, model=_MODEL)
+
+    result, _accounting = nlu.understand(
+        "un cargo de hace mucho", language_hint="es", reference_date=_REFERENCE_DATE
+    )
+
+    # Truncated to 40 characters and then not recognized by the closed vocabulary either way —
+    # proven by the fact this does not raise and the transaction stays dateless, the same
+    # graceful outcome as any other unrecognized expression.
+    assert result.intent is NluIntent.FILE_DISPUTE
+    assert result.transaction.date_on is None

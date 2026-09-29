@@ -52,7 +52,7 @@ class _FakeUnderstanding:
     """Returns the same small-talk understanding for every message: no tool call is ever needed."""
 
     def understand(
-        self, text: str, *, language_hint: str | None
+        self, text: str, *, language_hint: str | None, reference_date: date
     ) -> tuple[NluResult, TurnAccounting | None]:
         return NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, language="es"), None
 

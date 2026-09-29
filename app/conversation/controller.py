@@ -417,11 +417,13 @@ class DialogueController:
         """
         if current is not None:
             result, accounting = self._understanding.understand(
-                request.text, language_hint=current.lang
+                request.text, language_hint=current.lang, reference_date=self._domain_date
             )
             return current, current.version, result, accounting
 
-        result, accounting = self._understanding.understand(request.text, language_hint=None)
+        result, accounting = self._understanding.understand(
+            request.text, language_hint=None, reference_date=self._domain_date
+        )
         lang: Lang = result.language if result.language is not None else "es"
         fresh = DialogueState(
             session_id=self._session_id(),
@@ -586,7 +588,7 @@ class DialogueController:
             tool_contracts.Tool.EVALUATE_DISPUTE,
             EvaluateDisputeRequest(transaction_ref=state.selected_ref, category=state.category),
         )
-        if isinstance(decision, ToolFailure):
+        if isinstance(decision, ToolFailure) or decision is None:
             return self._tool_failure_handoff(state, tool=tool_contracts.Tool.EVALUATE_DISPUTE)
         if decision.outcome is not Outcome.ELIGIBLE:
             return self._present_non_eligible(state, state.category, decision)
@@ -725,7 +727,7 @@ class DialogueController:
             tool_contracts.Tool.EVALUATE_DISPUTE,
             EvaluateDisputeRequest(transaction_ref=ref, category=category),
         )
-        if isinstance(decision, ToolFailure):
+        if isinstance(decision, ToolFailure) or decision is None:
             return self._tool_failure_handoff(state, tool=tool_contracts.Tool.EVALUATE_DISPUTE)
         if decision.outcome is not Outcome.ELIGIBLE:
             return self._present_non_eligible(state, category, decision)
@@ -1022,7 +1024,7 @@ class DialogueController:
         # handle_turn's own call in _start_turn); its accounting, if any, is not logged again here.
         try:
             result, _replay_accounting = self._understanding.understand(
-                request.text, language_hint=state.lang
+                request.text, language_hint=state.lang, reference_date=self._domain_date
             )
         except UnderstandingUnavailable:
             logger.warning(

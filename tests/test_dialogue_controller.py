@@ -171,12 +171,12 @@ class ScriptedNlu:
 
     result: NluResult
     accounting: TurnAccounting | None = None
-    calls: list[tuple[str, str | None]] = field(default_factory=list)
+    calls: list[tuple[str, str | None, date]] = field(default_factory=list)
 
     def understand(
-        self, text: str, *, language_hint: str | None
+        self, text: str, *, language_hint: str | None, reference_date: date
     ) -> tuple[NluResult, TurnAccounting | None]:
-        self.calls.append((text, language_hint))
+        self.calls.append((text, language_hint, reference_date))
         return self.result, self.accounting
 
 
@@ -185,7 +185,7 @@ class UnavailableNlu:
     """An ``Understanding`` whose own dependency is never reachable."""
 
     def understand(
-        self, text: str, *, language_hint: str | None
+        self, text: str, *, language_hint: str | None, reference_date: date
     ) -> tuple[NluResult, TurnAccounting | None]:
         raise UnderstandingUnavailable("the provider could not be reached")
 
@@ -199,7 +199,7 @@ class FakeToolPort:
 
     transactions: tuple[TransactionFact, ...] = ()
     cases: tuple[CaseRecord, ...] = ()
-    evaluate_result: PolicyDecision | ToolFailure | None = None
+    evaluate_result: object = _UNSET
     create_result: CreateDisputeCaseResult | ToolFailure | None = None
     list_transactions_result: TransactionPage | ToolFailure | None = None
     list_cases_result: tuple[CaseRecord, ...] | ToolFailure | None = None
@@ -233,9 +233,9 @@ class FakeToolPort:
             return self.get_case_result  # type: ignore[return-value]
         return next((c for c in self.cases if c.case_number == case_number), None)
 
-    def evaluate_dispute(self, request: object) -> PolicyDecision | ToolFailure:
-        assert self.evaluate_result is not None
-        return self.evaluate_result
+    def evaluate_dispute(self, request: object) -> PolicyDecision | ToolFailure | None:
+        assert self.evaluate_result is not _UNSET, "evaluate_result was never configured"
+        return self.evaluate_result  # type: ignore[return-value]
 
     def create_dispute_case(self, request: object) -> CreateDisputeCaseResult | ToolFailure:
         self.create_calls += 1
@@ -433,6 +433,24 @@ def test_ambiguous_first_message_offers_both_languages() -> None:
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert response.lang == "es"
     assert "español" in response.reply.lower() or "espanhol" in response.reply.lower()
+
+
+def test_the_controller_passes_its_own_domain_date_as_the_understanding_reference_date() -> None:
+    """AC-E5-16: a customer-stated transaction date is resolved against the domain calendar's own
+    reference date, never the wall clock — proven by reading back exactly what the controller
+    itself passed into ``understand``, not by trusting it silently matches."""
+    store = InMemoryDialogueStore()
+    controller, nlu = _controller(
+        _plain(NluIntent.UNCLEAR, language=None),
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=load_policy(),
+        outbox=FakeHandoffOutbox(),
+        retriever=LexicalRetriever.from_corpus(),
+    )
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert nlu.calls[-1][2] == _DOMAIN_DATE
 
 
 def test_switch_language_updates_the_conversation_language() -> None:
@@ -1553,6 +1571,88 @@ def test_get_transaction_failure_while_presenting_confirmation_hands_off(
         retriever=retriever,
     )
     response = controller.handle_turn(_turn("turn-0002"), principal=_principal())
+    assert response.end_session
+    assert outbox.packets[0].trigger.value == "tool_failure"
+
+
+def test_a_matchless_evaluate_dispute_result_hands_off_on_first_evaluation(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """None (AC-E4-06: the reference stopped resolving, or stopped being this customer's own,
+    between an earlier read and this evaluation) is routed through the same fail-closed handoff
+    as a genuine ToolFailure, never re-interpreted as an ineligible or eligible decision."""
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    port = FakeToolPort(transactions=(_transaction(),), evaluate_result=None)
+    controller, _ = _controller(
+        _file_dispute(transaction=TransactionHint(merchant="Amazon")),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=outbox,
+        retriever=retriever,
+    )
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+    controller, _ = _controller(
+        _file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=outbox,
+        retriever=retriever,
+    )
+
+    response = controller.handle_turn(_turn("turn-0002"), principal=_principal())
+
+    assert response.end_session
+    assert outbox.packets[0].trigger.value == "tool_failure"
+
+
+def test_a_matchless_evaluate_dispute_result_hands_off_on_re_evaluation_at_confirmation(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The confirmation step re-evaluates fresh rather than trusting the earlier decision; a
+    reference that stopped resolving in between must hand off the same way as the first call."""
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+    )
+    controller, _ = _controller(
+        _file_dispute(transaction=TransactionHint(merchant="Amazon")),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=outbox,
+        retriever=retriever,
+    )
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+    controller, _ = _controller(
+        _file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=outbox,
+        retriever=retriever,
+    )
+    controller.handle_turn(_turn("turn-0002"), principal=_principal())
+
+    # The world moved on: the reference no longer resolves by the time confirmation arrives.
+    port.evaluate_result = None
+
+    controller, _ = _controller(
+        _confirmation(ConfirmationAnswer.YES),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=outbox,
+        retriever=retriever,
+    )
+    response = controller.handle_turn(_turn("turn-0003"), principal=_principal())
+
     assert response.end_session
     assert outbox.packets[0].trigger.value == "tool_failure"
 

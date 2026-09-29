@@ -7,6 +7,8 @@ Component: ``app.conversation.understanding``. Hermetic: keyword matching only, 
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from app.conversation.understanding import FakeNlu
@@ -14,11 +16,14 @@ from contracts.service_v1.envelope import Lang
 from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult
 
 _NLU = FakeNlu()
+_REFERENCE_DATE = date(2026, 6, 18)
 
 
 def _understand(text: str, *, language_hint: Lang | None = None) -> NluResult:
     """``FakeNlu.understand`` never produces accounting; tests here only need the result."""
-    result, accounting = _NLU.understand(text, language_hint=language_hint)
+    result, accounting = _NLU.understand(
+        text, language_hint=language_hint, reference_date=_REFERENCE_DATE
+    )
     assert accounting is None
     return result
 

@@ -86,7 +86,9 @@ class FailureInjectingToolPort:
         failure = self._failure_for(Tool.GET_CASE)
         return failure if failure is not None else self.inner.get_case(case_number)
 
-    def evaluate_dispute(self, request: EvaluateDisputeRequest) -> PolicyDecision | ToolFailure:
+    def evaluate_dispute(
+        self, request: EvaluateDisputeRequest
+    ) -> PolicyDecision | ToolFailure | None:
         failure = self._failure_for(Tool.EVALUATE_DISPUTE)
         return failure if failure is not None else self.inner.evaluate_dispute(request)
 

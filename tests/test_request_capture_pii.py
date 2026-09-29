@@ -28,6 +28,7 @@ from __future__ import annotations
 
 # Standard libraries
 import logging
+from datetime import date
 
 # Third-party libraries
 import pytest
@@ -40,6 +41,7 @@ from contracts.service_v1.nlu import TransactionHint
 
 # A well-known, published Visa test PAN (Luhn-valid) — never a real cardholder's number.
 _TEST_CARD_NUMBER = "4111111111111111"
+_REFERENCE_DATE = date(2026, 6, 18)
 
 
 def test_a_card_number_in_the_customers_message_never_reaches_the_outbound_request() -> None:
@@ -51,7 +53,7 @@ def test_a_card_number_in_the_customers_message_never_reaches_the_outbound_reque
     nlu = LlmNlu(llm, model="claude-sonnet-5")
     message = f"No reconozco un cargo, mi tarjeta es {_TEST_CARD_NUMBER}, ayúdenme por favor."
 
-    nlu.understand(message, language_hint="es")
+    nlu.understand(message, language_hint="es", reference_date=_REFERENCE_DATE)
 
     assert len(llm.requests) == 1
     sent = llm.requests[0].user_text
@@ -67,7 +69,7 @@ def test_a_card_number_split_by_separators_never_reaches_the_outbound_request() 
     spaced = "4111 1111 1111 1111"
     message = f"Mi tarjeta {spaced} tiene un cargo que no reconozco."
 
-    nlu.understand(message, language_hint="es")
+    nlu.understand(message, language_hint="es", reference_date=_REFERENCE_DATE)
 
     sent = llm.requests[0].user_text
     assert "1111" * 4 not in sent.replace(" ", "")
@@ -106,7 +108,7 @@ def test_no_log_line_in_the_understanding_call_path_ever_carries_the_customers_r
     )
 
     with caplog.at_level(logging.DEBUG):
-        nlu.understand(message, language_hint="es")
+        nlu.understand(message, language_hint="es", reference_date=_REFERENCE_DATE)
 
     logged_text = "\n".join(record.getMessage() for record in caplog.records)
     assert _TEST_CARD_NUMBER not in logged_text

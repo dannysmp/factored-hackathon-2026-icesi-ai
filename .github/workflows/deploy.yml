@@ -166,6 +166,9 @@ jobs:
       - name: Provision Metabase and connect the analytics schema
         run: infra/scripts/08-deploy-metabase.sh
 
+      - name: Style the operations dashboard's panels from the token palette
+        run: infra/scripts/10-configure-metabase-dashboard.sh
+
       - name: Smoke test the dashboard subdomain over HTTPS
         run: infra/scripts/06-smoke-test.sh "${{ needs.deploy-and-smoke-test.outputs.host_name }}" --dashboard
 

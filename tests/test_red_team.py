@@ -91,7 +91,7 @@ class ScriptedNlu:
     result: NluResult
 
     def understand(
-        self, text: str, *, language_hint: str | None
+        self, text: str, *, language_hint: str | None, reference_date: date
     ) -> tuple[NluResult, TurnAccounting | None]:
         return self.result, None
 

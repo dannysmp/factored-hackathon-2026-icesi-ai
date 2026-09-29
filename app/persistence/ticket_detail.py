@@ -81,6 +81,7 @@ from app.domain.policy.models import DisputeCategory, ReasonCode
 from app.domain.policy.models import TransactionStatus as PolicyTransactionStatus
 from app.persistence.dialogue_turn_log import PostgresDialogueTurnLog
 from app.persistence.handoff_queue import PostgresHandoffQueue
+from app.persistence.reads import clamp_merchant  # Shared fit to TransactionFact.merchant's bound
 from app.retrieval.lexical import LexicalRetriever
 from contracts.service_v1.console import TicketDetail
 from contracts.service_v1.envelope import (  # The envelope-flavored shapes HandoffPacket expects
@@ -283,7 +284,7 @@ class PostgresTicketDetail:
             TransactionFact(
                 ref=transaction_id,
                 occurred_on=occurred_at.date(),
-                merchant=merchant,
+                merchant=clamp_merchant(merchant),
                 amount=money,
                 product=ProductLabel(name=product_type or "unknown", last4=last4),
                 status=PolicyTransactionStatus(status),
