@@ -53,6 +53,7 @@ from __future__ import annotations
 from collections.abc import Callable  # Type of one template's renderer function
 from dataclasses import dataclass  # Immutable result of one render
 from datetime import date  # Absolute dates, always formatted in words
+from typing import Literal  # Which path produced a reply
 
 # Local modules
 from app.domain.policy.models import DisputeCategory, Outcome  # Shared vocabulary
@@ -251,10 +252,18 @@ INELIGIBLE_TEXT: dict[Lang, dict[CustomerReason, str]] = {
 
 @dataclass(frozen=True, slots=True)
 class RenderedReply:
-    """What the template renderer produces for one turn."""
+    """What one turn's reply came from, alongside its text.
+
+    ``render_mode`` names which path actually produced ``reply`` — ``render()`` itself always
+    returns ``"template"``; ``app.conversation.reply.render_reply`` sets ``"model"`` only when a
+    model-rendered candidate was accepted, and falls back to ``"template"`` otherwise. This is the
+    console's own record of how a reply was produced (ADR-17's timeline), not a grounding check —
+    that already happened before this value exists.
+    """
 
     reply: str
     reference_date_line: str
+    render_mode: Literal["template", "model"] = "template"
 
 
 # -----------------------------------------------------------------------------

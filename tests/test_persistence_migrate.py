@@ -131,10 +131,11 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
             "DROP TABLE IF EXISTS cases, transactions, products, customers, "
             "ops_meta, audit_log, signin_audit, handoff_actions, handoff_open_questions, "
             "handoff_reason_codes, handoff_sources, handoff_outbox, dialogue_state, "
-            "schema_migrations CASCADE"
+            "dialogue_turn_log, schema_migrations CASCADE"
         )
         # A table's own trigger drops with it, but the function it calls is a separate object.
         cur.execute("DROP FUNCTION IF EXISTS audit_log_forbid_mutation() CASCADE")
+        cur.execute("DROP FUNCTION IF EXISTS dialogue_turn_log_forbid_mutation() CASCADE")
         # The analytics schema's tables drop with it; the role does not and is cluster-global.
         cur.execute("DROP SCHEMA IF EXISTS analytics CASCADE")
         cur.execute("DROP ROLE IF EXISTS analytics_reader")
@@ -150,6 +151,7 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         "0006_dialogue_and_handoff",
         "0006_signin_audit",
         "0007_signin_audit_agent_id",
+        "0008_console_read_support",
     )
 
     again = apply_migrations(dsn)
