@@ -127,6 +127,9 @@ def test_an_unrelated_banking_question_abstains_in_every_language(
         ("pt", "se ele for embora sem avisar, ninguém vai entender"),
         ("pt", "quando eu estiver de férias, vou viajar bastante"),
         ("pt", "se houver alguém disponível agora, me avise"),
+        # ter's own futuro do subjuntivo (the "tiver..." family) — the same ordinary-Portuguese
+        # gap as the other three auxiliaries above, found separately.
+        ("pt", "se ele tiver um problema, me avise"),
     ],
 )
 def test_a_common_auxiliary_verb_conjugation_does_not_leak_relevance(
@@ -169,6 +172,15 @@ def test_the_new_contraction_forms_are_stopwords(contraction: str) -> None:
     assert tokenize(contraction, "pt") == ()
 
 
+@pytest.mark.parametrize("form", ["tiver", "tiveres", "tivermos", "tiverdes", "tiverem"])
+def test_ters_futuro_do_subjuntivo_forms_are_stopwords(form: str) -> None:
+    """A direct membership check, the same reason ``test_the_new_contraction_forms_are_stopwords``
+    needs one: none of these five forms collides with the committed corpus, so the search-level
+    abstention test above would keep passing even if one were removed from ``_STOPWORDS["pt"]`` —
+    this is the test that actually catches that removal."""
+    assert tokenize(form, "pt") == ()
+
+
 def _conjugated(stem: str, endings: tuple[str, ...]) -> list[str]:
     """The six person-forms of one tense, from its own stem and the tense's own endings — the
     shape any Portuguese conjugation table uses, so a table built this way can be checked person
@@ -185,9 +197,8 @@ def test_every_auxiliary_verb_form_is_a_stopword(retriever: LexicalRetriever) ->
     The Portuguese forms are built from each verb's own stem and the standard ending set for its
     tense, not transcribed from ``_STOPWORDS["pt"]`` itself: a list copied from the production set
     could omit exactly the form the production set omits and never notice, which is exactly how
-    the futuro do subjuntivo gap this table now covers went unnoticed before. ``ter``'s own futuro
-    do subjuntivo (a matching gap building this table surfaced) is intentionally left out here,
-    matching what ``_STOPWORDS["pt"]`` currently covers; a tracked follow-up covers closing it.
+    the futuro do subjuntivo gaps this table now covers (``ser``/``ir``, ``estar``, ``haver`` and
+    now ``ter``'s own "tiver..." family) went unnoticed before.
     """
     es_forms = [
         "soy",
@@ -388,8 +399,7 @@ def test_every_auxiliary_verb_form_is_a_stopword(retriever: LexicalRetriever) ->
         "estar",
         "estando",
         "estado",
-        # ter (its own futuro do subjuntivo, the "tiver..." family, is a known, separately
-        # tracked gap — not part of this table, matching what _STOPWORDS["pt"] covers today)
+        # ter
         "tenho",
         "tens",
         "tem",
@@ -406,6 +416,7 @@ def test_every_auxiliary_verb_form_is_a_stopword(retriever: LexicalRetriever) ->
         *_conjugated("ter", condicional),  # futuro do preterito
         *_conjugated("tenh", presente_subjuntivo),  # presente do subjuntivo
         *_conjugated("tive", imperfeito_subjuntivo),  # preterito imperfeito do subjuntivo
+        *_conjugated("tiver", futuro_subjuntivo),  # futuro do subjuntivo
         "ter",
         "tendo",
         "tido",
