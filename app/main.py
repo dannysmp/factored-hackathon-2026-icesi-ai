@@ -32,11 +32,12 @@ Design Principles
   ``/v1/turns`` — most tests, a bare health check — never needs them configured.
 - Configuration resolves first, and structured JSON logging installs immediately after — not
   before it, since the service version and environment logging carries come from that same
-  configuration. A configuration failure itself is still captured as a JSON line: it installs a
-  fallback logger just for that one critical event before re-raising
-  (``_load_settings_or_log_and_raise``), rather than surfacing only as an unstructured traceback.
-  Every event after configuration resolves, success or failure, is already a JSON line carrying
-  the service's own identity and version.
+  configuration. A configuration failure itself is still captured as a JSON line, not only an
+  unstructured traceback: it installs a fallback logger just for that one critical event before
+  re-raising (``_load_settings_or_log_and_raise``), with placeholder identity fields
+  (``service_version``/``environment`` both ``"unknown"``, since the real values were never
+  resolved) rather than the service's own. Every event after configuration resolves
+  successfully carries the service's real identity and version.
 - Bounded retries and one circuit breaker per external dependency sit in front of the LLM
   client and the tool port, built once and shared across every turn the app serves — never rebuilt
   per request, since breaker state held on an object rebuilt every request could never trip.
