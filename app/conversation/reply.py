@@ -150,6 +150,7 @@ def render_reply(
             reference_date_line=reference_date_line(
                 template_envelope.domain_date, template_envelope.lang
             ),
+            render_mode="model",
         )
 
     logger.info(
