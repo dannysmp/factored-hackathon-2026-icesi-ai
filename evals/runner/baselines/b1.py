@@ -44,6 +44,11 @@ Design Principles
   what other tools, if any, the model called in between — mirroring the one structural signal
   ``evals.scoring``'s ``CONFIRM_FILING`` check already reads from P's own replies, so the same
   scorer reads the same signal from all three systems.
+- **One case's failure never silences the rest of the batch**, the same rule
+  ``evals.runner.runner.run_cases`` applies: a case that fails to resolve or score with
+  ``ValueError`` or ``NotImplementedError`` is recorded as a named ``CaseResult.error``
+  (``evals.scoring.error_result``) instead of stopping the run; any other exception still
+  propagates.
 
 Runtime Contract
 -----------------
@@ -89,13 +94,17 @@ from evals.models import Case
 from evals.runner.baselines.b1_tools import TOOL_SCHEMAS, B1ToolDispatcher
 from evals.runner.baselines.naive_agent_client import NaiveAgentClient, NaiveAgentTurn
 from evals.runner.seed_resolution import resolve_customer_id
-from evals.scoring import RunTranscript, score_case
+from evals.scoring import RunTranscript, error_result, score_case
 
 logger = logging.getLogger(__name__)
 
 _MAX_TOOL_ROUNDS = 6
 _MAX_TOKENS = 1024
 _TIMEOUT_SECONDS = 30.0
+
+#: The batch's own documented, anticipated per-case failure modes — anything else still
+#: propagates and stops the run, the same rule ``evals.runner.runner.run_cases`` applies.
+_CASE_FAILURES: tuple[type[Exception], ...] = (ValueError, NotImplementedError)
 
 _SYSTEM_PROMPT = (
     "You are a bank customer service assistant. A customer will describe a problem with a "
@@ -319,29 +328,34 @@ def run_cases(
     the tool dispatcher and session id are rebuilt per case: B1ToolDispatcher is scoped to one
     customer and language, and a case's own seed_ref and lang may each differ from the last case's.
 
+    A case that fails to resolve or score with ``ValueError`` or ``NotImplementedError`` (a
+    malformed ``seed_ref``, an unscored ``expected_intent``) is recorded as a named
+    ``CaseResult.error`` instead of stopping the batch; any other exception still propagates.
+
     Raises
     ------
     ConfigError
         ``settings.app_env`` is ``prod``.
-    ValueError
-        A case's ``seed_ref`` is malformed or names a transaction absent from the store.
-    NotImplementedError
-        A case's ``expected_intent`` is not yet scored.
     """
     if settings.app_env is AppEnvironment.PROD:
         raise ConfigError("the B1 baseline is not allowed when APP_ENV=prod")
     results = []
     for case in cases:
-        customer_id = resolve_customer_id(dsn, case.seed_ref)
-        dispatcher, session_id = _build_dispatcher(
-            settings,
-            policy=policy,
-            retriever=retriever,
-            calendar=calendar,
-            clock=clock,
-            customer_id=customer_id,
-            lang=case.lang,
-        )
-        transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
-        results.append(score_case(dsn, transcript))
+        try:
+            customer_id = resolve_customer_id(dsn, case.seed_ref)
+            dispatcher, session_id = _build_dispatcher(
+                settings,
+                policy=policy,
+                retriever=retriever,
+                calendar=calendar,
+                clock=clock,
+                customer_id=customer_id,
+                lang=case.lang,
+            )
+            transcript = run_case(
+                client, dispatcher, case, session_id=session_id, calendar=calendar
+            )
+            results.append(score_case(dsn, transcript))
+        except _CASE_FAILURES as exc:
+            results.append(error_result(case, exc))
     return tuple(results)

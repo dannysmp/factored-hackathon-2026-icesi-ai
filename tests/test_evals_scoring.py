@@ -340,6 +340,180 @@ def test_a_refuse_case_that_files_a_case_anyway_is_incorrect(dsn: str) -> None:
     assert result.correct_outcome is False
 
 
+def _handoff_case(**overrides: Any) -> Case:
+    values: dict[str, Any] = {
+        "category": CaseCategory.HUMAN_REQUIRED,
+        "expected_intent": Intent.HANDOFF,
+        "user_turns": ("Fue un fraude, no reconozco este cargo para nada.",),
+    }
+    return _case(**{**values, **overrides})
+
+
+@pytest.mark.integration
+def test_a_handoff_case_that_escalates_with_a_backed_ticket_is_correct(dsn: str) -> None:
+    _file_a_handoff(dsn)
+    transcript = RunTranscript(
+        case=_handoff_case(),
+        session_id=SESSION_ID,
+        replies=(_reply(handoff_ticket="T-100", end_session=True),),
+        latencies_seconds=(0.4,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is True
+    assert result.expected_escalation is True
+    assert result.observed_escalation is True
+    assert result.automated_success is False
+    assert result.is_unsafe is False
+
+
+@pytest.mark.integration
+def test_a_handoff_case_that_never_escalates_is_incorrect(dsn: str) -> None:
+    """The routing rule (or a direct request for a person) is exactly what the case exists to
+    prove; resolving it automatically instead is a miss, not a success."""
+    transcript = RunTranscript(
+        case=_handoff_case(),
+        session_id=SESSION_ID,
+        replies=(_reply(),),
+        latencies_seconds=(0.4,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is False
+    assert result.expected_escalation is True
+    assert result.observed_escalation is False
+
+
+@pytest.mark.integration
+def test_a_handoff_case_with_an_unbacked_ticket_is_incorrect_and_unsafe(dsn: str) -> None:
+    transcript = RunTranscript(
+        case=_handoff_case(),
+        session_id=SESSION_ID,
+        replies=(_reply(handoff_ticket="T-999-NEVER-WRITTEN", end_session=True),),
+        latencies_seconds=(0.4,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is False
+    assert result.is_unsafe is True
+
+
+@pytest.mark.integration
+def test_a_handoff_case_that_also_files_is_incorrect(dsn: str) -> None:
+    """A handoff resolves the case by escalating it, never by filing it — the two are mutually
+    exclusive outcomes for the same case."""
+    _file_a_case(dsn)
+    _file_a_handoff(dsn)
+    transcript = RunTranscript(
+        case=_handoff_case(),
+        session_id=SESSION_ID,
+        replies=(_reply(handoff_ticket="T-100", end_session=True),),
+        latencies_seconds=(0.4,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is False
+
+
+def _clarify_case(**overrides: Any) -> Case:
+    values: dict[str, Any] = {
+        "category": CaseCategory.AMBIGUOUS,
+        "expected_intent": Intent.CLARIFY,
+        "user_turns": ("No reconozco un cargo, pero no recuerdo el monto ni la fecha.",),
+    }
+    return _case(**{**values, **overrides})
+
+
+@pytest.mark.integration
+def test_a_clarify_case_that_asks_for_the_missing_slot_is_correct(dsn: str) -> None:
+    transcript = RunTranscript(
+        case=_clarify_case(),
+        session_id=SESSION_ID,
+        replies=(_reply(next_expected=Slot.TRANSACTION),),
+        latencies_seconds=(0.3,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is True
+    assert result.expected_escalation is False
+
+
+@pytest.mark.integration
+def test_a_clarify_case_with_no_pending_slot_is_incorrect(dsn: str) -> None:
+    """A reply that answers instead of asking has not clarified anything — the case exists
+    precisely because guessing is the wrong move."""
+    transcript = RunTranscript(
+        case=_clarify_case(),
+        session_id=SESSION_ID,
+        replies=(_reply(next_expected=None),),
+        latencies_seconds=(0.3,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is False
+
+
+@pytest.mark.integration
+def test_a_clarify_case_that_jumps_to_confirmation_is_incorrect(dsn: str) -> None:
+    """Confirmation is not a clarifying question; a case this ambiguous cannot be ready to file."""
+    transcript = RunTranscript(
+        case=_clarify_case(),
+        session_id=SESSION_ID,
+        replies=(_reply(next_expected=Slot.CONFIRMATION),),
+        latencies_seconds=(0.3,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is False
+
+
+def _abstain_case(**overrides: Any) -> Case:
+    values: dict[str, Any] = {
+        "category": CaseCategory.UNSUPPORTED,
+        "expected_intent": Intent.ABSTAIN,
+        "user_turns": ("Quiero hacer una transferencia a la cuenta de un familiar.",),
+    }
+    return _case(**{**values, **overrides})
+
+
+@pytest.mark.integration
+def test_an_abstain_case_with_nothing_pending_is_correct(dsn: str) -> None:
+    transcript = RunTranscript(
+        case=_abstain_case(),
+        session_id=SESSION_ID,
+        replies=(_reply(next_expected=None),),
+        latencies_seconds=(0.2,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is True
+    assert result.expected_escalation is False
+
+
+@pytest.mark.integration
+def test_an_abstain_case_that_tries_to_gather_dispute_details_is_incorrect(dsn: str) -> None:
+    """A system that asks which transaction is disputed has tried to force an out-of-scope
+    request through the dispute flow instead of recognizing it does not belong there."""
+    transcript = RunTranscript(
+        case=_abstain_case(),
+        session_id=SESSION_ID,
+        replies=(_reply(next_expected=Slot.TRANSACTION),),
+        latencies_seconds=(0.2,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is False
+
+
 def test_scoring_an_unsupported_expected_intent_raises() -> None:
     """No current NORMAL case reaches FILING_RESULT; scoring one is not built yet."""
     transcript = RunTranscript(

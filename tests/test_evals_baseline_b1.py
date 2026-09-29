@@ -30,6 +30,7 @@ from app.domain.policy.loader import load_policy
 from app.persistence.migrate import apply_migrations
 from app.retrieval.lexical import LexicalRetriever
 from contracts.service_v1.envelope import Intent, Slot
+from evals.metrics import CaseResult
 from evals.models import Case, CaseCategory
 from evals.runner.baselines.b1 import (
     _MAX_TOOL_ROUNDS,
@@ -541,6 +542,93 @@ def test_run_cases_refuses_when_app_env_is_prod() -> None:
             calendar=DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING),
             clock=lambda: _NOW,
         )
+
+
+def _b1_case(**overrides: Any) -> Case:
+    values: dict[str, Any] = {
+        "case_id": "b1-hermetic-01",
+        "category": CaseCategory.NORMAL,
+        "lang": "es",
+        "provenance": "observed",
+        "seed_ref": "ops_seed:CLI-B1-HERMETIC",
+        "user_turns": ("No reconozco un cargo en mi tarjeta.",),
+        "expected_intent": Intent.POLICY_ANSWER,
+        "expected_policy_section_id": "filing-windows",
+    }
+    return Case(**{**values, **overrides})
+
+
+def test_run_cases_records_a_failed_case_as_a_named_error_and_continues(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hermetic, against fakes of every piece run_cases sequences — the same orchestration-level
+    proof evals.runner.runner's own test file gives its run_cases, and the same reason: one bad
+    case must not silence the rest of the batch."""
+    settings = _settings(database_url=SecretStr("postgresql://unused"))
+    cases = (_b1_case(case_id="fails"), _b1_case(case_id="c2"))
+    client = NaiveAgentClient(
+        SecretStr("unused"),
+        model=_MODEL,
+        client=_StubAnthropic([]),  # type: ignore[arg-type]
+    )
+
+    def fake_resolve(dsn: str, seed_ref: str) -> str:
+        return "CUST-A"
+
+    def fake_build_dispatcher(
+        settings: Settings,
+        *,
+        policy: object,
+        retriever: object,
+        calendar: object,
+        clock: object,
+        customer_id: str,
+        lang: str,
+    ) -> tuple[object, str]:
+        return object(), "SESSION-B1-HERMETIC"
+
+    def fake_run_case(
+        client: object, dispatcher: object, case: Case, *, session_id: str, calendar: object
+    ) -> str:
+        return f"transcript-for-{case.case_id}"
+
+    def fake_score(dsn: str, transcript: str) -> CaseResult:
+        if transcript == "transcript-for-fails":
+            raise ValueError("names no transaction in the store")
+        return CaseResult(
+            case_id=transcript,
+            is_adversarial=False,
+            expected_escalation=False,
+            observed_escalation=False,
+            automation_attempted=True,
+            correct_outcome=True,
+        )
+
+    monkeypatch.setattr("evals.runner.baselines.b1.resolve_customer_id", fake_resolve)
+    monkeypatch.setattr("evals.runner.baselines.b1._build_dispatcher", fake_build_dispatcher)
+    monkeypatch.setattr("evals.runner.baselines.b1.run_case", fake_run_case)
+    monkeypatch.setattr("evals.runner.baselines.b1.score_case", fake_score)
+
+    results = run_cases(
+        client,
+        settings,
+        "postgresql://unused",
+        cases,
+        policy=load_policy(),
+        retriever=LexicalRetriever.from_corpus(),
+        calendar=DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING),
+        clock=lambda: _NOW,
+    )
+
+    assert len(results) == 2
+    failed, succeeded = results
+    assert failed.case_id == "fails"
+    assert failed.error is not None
+    assert "names no transaction in the store" in failed.error
+    assert failed.correct_outcome is False
+    assert succeeded.case_id == "transcript-for-c2"
+    assert succeeded.error is None
+    assert succeeded.correct_outcome is True
 
 
 @pytest.mark.integration

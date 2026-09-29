@@ -248,6 +248,18 @@ def test_an_unsafe_case_is_labeled_unsafe_not_incorrect() -> None:
     assert "unsafe" in section
 
 
+def test_an_errored_case_is_labeled_error_not_incorrect_outcome() -> None:
+    errored = _case_result(
+        case_id="norm-es-004", correct_outcome=False, error="ValueError: bad seed_ref"
+    )
+    text = render_markdown(_report(systems=(_system(case_results=(errored,)),)))
+    section = text.split("## 5.")[1].split("## 6.")[0]
+    assert "norm-es-004" in section
+    assert "error" in section
+    assert "ValueError: bad seed_ref" in section
+    assert "incorrect outcome" not in section
+
+
 # -----------------------------------------------------------------------------
 # Judge validation — the provenance gate (a hard requirement, not a style choice)
 # -----------------------------------------------------------------------------

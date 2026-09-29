@@ -11,10 +11,11 @@ Two modes, both accepting ``--smoke`` to narrow the case set to
 headline metrics (unchanged from every earlier increment, including the CI-gating smoke job).
 ``make evaluate FULL=1 [SMOKE=1]``: runs every system variant (P three times, B0 and B1 once each,
 the plan's own execution protocol) and writes the full ``reports/evaluation.md`` — the first
-increment able to produce the plan's single generated report artifact end to end. ``FULL=1
-SMOKE=1`` is today's only working full-report scope: the full 135-case run needs stream 4's loader
-(slice 3.4c) to land first, since only the smoke subset's adversarial cases resolve without it; the
-written report's own ``scope_note`` discloses the narrowing rather than silently under-reporting.
+increment able to produce the plan's single generated report artifact end to end. The full
+135-case golden set (every ``expected_intent`` it declares, including all 32 adversarial cases)
+runs either way; ``SMOKE=1`` stays available as a deliberately narrower, faster scope for a quick
+check, and the written report's own ``scope_note`` discloses the narrowing whenever it is used,
+rather than silently under-reporting.
 
 Scope
 -----
@@ -65,11 +66,13 @@ exactly one of ``--system``/``--full`` is required, and ``--smoke`` applies to e
 
 Limitations
 -----------
-A case the scorer does not yet cover, or a case runtime error (a non-2xx response, a malformed
-``seed_ref``), still raises and aborts the whole batch — the already-reviewed ``run_cases``
-functions' own "no hidden retry" rule, unchanged here, and unchanged by ``--full`` running several
-batches in sequence. ``--full``'s judge-validation section is only as real as its own data source
-(see Scope); it is not itself run per system per call.
+A case that fails to resolve, run or score with one of ``evals.runner.runner``'s or
+``evals.runner.baselines.b1``'s own documented failure classes no longer aborts the batch; it is
+recorded as a named ``CaseResult.error`` and the batch continues, on both ``--system`` and
+``--full`` (each of ``--full``'s several batches applies this independently, one system at a time).
+An unanticipated exception outside those documented classes still propagates and stops the run.
+``--full``'s judge-validation section is only as real as its own data source (see Scope); it is not
+itself run per system per call.
 """
 
 from __future__ import annotations
@@ -222,10 +225,12 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
     smoke : bool
         Narrows the case set to ``evals.runner.smoke.smoke_cases()`` (16 cases, the CI-gating
         subset) instead of the full golden set (135 cases, including all 32 adversarial cases).
-        Needed until stream 4's loader (slice 3.4c, combining the operational seed with
-        ``data/gold/eval_bank``) lands: only the smoke subset's adversarial cases resolve without
-        it (``plan/delivery/streams.md``'s own note on slice 3.11). The resulting report's own
-        ``scope_note`` discloses the narrowing; nothing about the pipeline itself changes.
+        The full set is fully runnable today (``app.persistence.load_eval_bank`` resolves every
+        adversarial case's data, and ``evals.scoring.score_case`` covers every outcome class the
+        golden set declares); ``--smoke`` stays available as a deliberately narrower, faster scope
+        for a quick check, not a fallback for a missing dependency. The resulting report's own
+        ``scope_note`` discloses the narrowing whenever it is used; nothing about the pipeline
+        itself changes.
 
     Returns
     -------
@@ -241,6 +246,9 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
         for system in _SYSTEMS
     }
     unsafe = any(result.is_unsafe for runs in all_runs.values() for run in runs for result in run)
+    for system, runs in all_runs.items():
+        for run in runs:
+            _log_errored_cases(system, run)
     systems = tuple(_build_system_result(system, all_runs[system]) for system in _SYSTEMS)
     versions = Versions(
         nlu_model=settings.nlu_model,
@@ -257,10 +265,8 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
     )
     scope_note = (
         f"Generated from the {len(cases)}-case CI-smoke subset, not the full "
-        f"{len(ALL_CASES)}-case golden set (including all 32 adversarial cases): stream 4's "
-        "loader (slice 3.4c, combining the operational seed with data/gold/eval_bank) has not "
-        "landed yet, so only the smoke subset's adversarial cases resolve. Re-run with --full "
-        "alone once it does."
+        f"{len(ALL_CASES)}-case golden set (including all 32 adversarial cases): --smoke was "
+        "passed for a faster, narrower check. Re-run with --full alone for the full golden set."
         if smoke
         else ""
     )
@@ -276,6 +282,23 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
         scope_note=scope_note,
     )
     return report, unsafe
+
+
+def _log_errored_cases(system: str, results: Sequence[CaseResult]) -> None:
+    """Log every case in ``results`` that ``evals.scoring.error_result`` recorded, if any.
+
+    Shared by both run modes: ``--system`` logs it once per call via ``_log_report``; ``--full``
+    logs it once per system per run, since ``SystemResult.case_results`` keeps only the last run
+    and an error in a discarded run would otherwise never surface anywhere.
+    """
+    errored = [(result.case_id, result.error) for result in results if result.error is not None]
+    if errored:
+        logger.error(
+            "errored_cases system=%s count=%d cases=%s",
+            system,
+            len(errored),
+            ",".join(f"{case_id}({error})" for case_id, error in errored),
+        )
 
 
 def _fmt(metric: Metric) -> str:
@@ -312,6 +335,7 @@ def _log_report(system: str, results: Sequence[CaseResult], metrics: HeadlineMet
         logger.error(
             "unsafe_cases count=%d cases=%s", len(unsafe_case_ids), ",".join(unsafe_case_ids)
         )
+    _log_errored_cases(system, results)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -320,9 +344,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     Either ``--system {P,B0,B1} [--smoke]`` (one variant, one run, logged as before — unchanged
     from every earlier increment, including the CI-gating smoke job) or ``--full [--smoke]
     [--report PATH]`` (every variant, P three times, written as ``reports/evaluation.md``).
-    ``--full --smoke`` narrows the full run to the 16-case CI-smoke subset too — needed until
-    stream 4's loader (slice 3.4c) lands, since only that subset's adversarial cases resolve
-    without it; the written report discloses the narrowing in its own ``scope_note``.
+    ``--full --smoke`` narrows the full run to the 16-case CI-smoke subset too, for a faster check;
+    the written report discloses the narrowing in its own ``scope_note``.
     """
     parser = argparse.ArgumentParser(description="Run the evaluation harness.")
     parser.add_argument("--system", choices=_SYSTEMS)

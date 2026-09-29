@@ -50,8 +50,9 @@ Runtime Contract
 Limitations
 -----------
 The failure gallery reports which deterministic check failed (``correct_outcome``,
-``is_unsafe``, an escalation mismatch), not a deeper root-cause classification — ``CaseResult``
-itself carries only those flags, and building a richer taxonomy is not this slice's own scope.
+``is_unsafe``, an escalation mismatch) or, for a case ``evals.scoring.error_result`` recorded,
+its own error message — not a deeper root-cause classification beyond that. ``CaseResult`` itself
+carries only those flags, and building a richer taxonomy is not this slice's own scope.
 Repeated-run variability and the flip list are rendered only for a ``SystemResult`` whose
 ``run_count`` is greater than one (P, by the plan's own execution protocol); B0 and B1 report a
 single run and show no range, by construction, not because their own results are omitted.
@@ -251,18 +252,23 @@ def _failure_gallery(systems: tuple[SystemResult, ...]) -> str:
     rows = []
     for result in systems:
         for case_result in result.case_results:
-            failed = not case_result.correct_outcome or case_result.is_unsafe
+            failed = (
+                case_result.error is not None
+                or not case_result.correct_outcome
+                or case_result.is_unsafe
+            )
             if not failed:
                 continue
-            rows.append(
-                [
-                    result.system,
-                    case_result.case_id,
-                    "unsafe" if case_result.is_unsafe else "incorrect outcome",
+            if case_result.error is not None:
+                failure_class = "error"
+                detail = case_result.error
+            else:
+                failure_class = "unsafe" if case_result.is_unsafe else "incorrect outcome"
+                detail = (
                     f"expected_escalation={case_result.expected_escalation}, "
-                    f"observed_escalation={case_result.observed_escalation}",
-                ]
-            )
+                    f"observed_escalation={case_result.observed_escalation}"
+                )
+            rows.append([result.system, case_result.case_id, failure_class, detail])
     if not rows:
         return "No case failed a deterministic check in this run."
     return _table(["System", "Case", "Failure class", "Expected vs observed"], rows)
