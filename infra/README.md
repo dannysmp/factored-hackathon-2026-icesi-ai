@@ -54,6 +54,11 @@ far. Written the same way, via `infra/scripts/put-secret.sh`, all read by `05-de
   characters, at least 8 distinct — `openssl rand -hex 32 | infra/scripts/put-secret.sh
   agent-session-signing-key`). Both must exist together to turn `DEMO_AGENT_SIGNIN_ENABLED` on;
   either alone leaves it off.
+- **The backend refuses to start, not just to leave sign-in off, if two of these values collide**:
+  `demo-signin-access-code` must differ from `demo-agent-access-code`, and
+  `agent-session-signing-key` must differ from `session-signing-key` — each pair is checked at
+  startup and a match raises a configuration error. Give each its own independently generated
+  value; never reuse one across the two.
 
 **Additional one-time prerequisites, before the first run with `deploy_metabase` enabled** — each
 written the same way, via `infra/scripts/put-secret.sh`:
