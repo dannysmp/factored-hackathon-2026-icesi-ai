@@ -10,6 +10,9 @@
 #   test         Hermetic tests with the coverage gate, and the policy-corpus drift check
 #                (runs after lint).
 #   secret-scan  Full-history secret scan and the scanner self-test.
+#   migration-prefixes Fails when this pull request adds a migration whose numeric prefix
+#                already belongs to one on the target branch (pull_request only; a push to
+#                main has nothing left to compare against).
 #   gate-scripts Executed fixture test of the review gate's glob translation
 #                (.github/scripts/glob-match.js), independent of the other jobs.
 #   web          The web/ package's own lint, test (with its coverage gate) and build,
@@ -42,6 +45,7 @@
 #
 # Usage:
 #   Runs automatically. To reproduce locally: make lint test audit secrets semgrep
+#   For migration-prefixes: make check-migrations (BASE defaults to origin/main)
 #   For test-postgres: make db-up migrate test-integration (needs docker and DATABASE_URL set)
 #   For smoke: make db-up migrate seed-ci-smoke, then
 #     LLM_PROVIDER=stub make evaluate SYSTEM=P SMOKE=1 && LLM_PROVIDER=stub make evaluate SYSTEM=B0 SMOKE=1
@@ -129,6 +133,27 @@ jobs:
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
       - name: Scan history and staged changes, then prove the scanner blocks a planted key
         run: make secrets
+
+  # ---------------------------------------------------------------------------
+  # Migration prefix collisions
+  # ---------------------------------------------------------------------------
+  migration-prefixes:
+    name: migration-prefixes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the full history to diff against the target branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Install uv with dependency caching
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          enable-cache: true
+      - name: Install locked dependencies
+        run: make setup
+      - name: Fail if an added migration's numeric prefix collides with one already on the base
+        run: make check-migrations BASE=origin/${{ github.base_ref }}
 
   # ---------------------------------------------------------------------------
   # Review gate helper scripts
