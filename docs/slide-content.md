@@ -28,7 +28,7 @@ file itself.
   loop). Dispute eligibility, routing and confirmation requirements live only in that engine — the
   model never decides an outcome.
 - **Every write is read back before the customer is told it happened**; a document number is never
-  accepted as identity, in any tool, for any customer (ADR-18).
+  accepted as identity, in any tool, for any customer (ADR-3, ADR-4).
 - Three deliberate right-sizing trade-offs, each with a written trigger to move up a tier (the full
   set is the technology evolution matrix in `plan/docs/architecture.md`):
   - **Policy retrieval (ADR-16):** lexical BM25 with an abstention floor, not embeddings — the
