@@ -9,6 +9,8 @@ SDK object this adapter actually touches (``.messages.create(...)``), not be one
 
 from __future__ import annotations
 
+import itertools
+import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -25,6 +27,7 @@ from app.llm.client import (
     LlmUnavailable,
     ToolSpec,
 )
+from app.llm.masking import redact_pan
 
 _TOOL = ToolSpec(
     name="record_understanding", description="Record it.", input_schema={"type": "object"}
@@ -89,6 +92,29 @@ def test_a_successful_tool_call_becomes_a_completion_result() -> None:
     assert result.input_tokens == 42
     assert result.output_tokens == 7
     assert result.latency_ms >= 0
+
+
+def test_latency_is_rounded_so_it_can_never_look_card_shaped_in_a_log_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unrounded duration's decimal expansion can run long enough to fall inside a real card
+    number's digit-length window; the log formatter's blanket PAN redaction would then treat a
+    latency figure as a leaked card number purely because enough of its digits pass the Luhn check
+    by chance. ``3125.2192252088007`` is a real example: unrounded, ``redact_pan`` flags it.
+    Rounding closes this off by construction: three decimal places never reach the 13-digit floor
+    real PANs start at."""
+    unrounded_elapsed_ms = 3125.2192252088007
+    assert redact_pan(f"latency_ms={unrounded_elapsed_ms}").found  # the vulnerability, confirmed
+
+    clock = itertools.count()
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock) * (unrounded_elapsed_ms / 1000))
+    stub = _StubAnthropic(_tool_use_response({"intent": "farewell", "confidence": 0.9}))
+    client = AnthropicLlmClient(SecretStr("test-key"), client=stub)  # type: ignore[arg-type]
+
+    result = client.complete(_REQUEST)
+
+    assert result.latency_ms == round(result.latency_ms, 3)
+    assert not redact_pan(f"latency_ms={result.latency_ms}").found
 
 
 def test_the_call_forces_the_requested_tool_and_carries_the_timeout() -> None:

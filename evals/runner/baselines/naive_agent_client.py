@@ -178,7 +178,9 @@ class NaiveAgentClient:
             ) from error
         except anthropic.APIStatusError as error:
             raise LlmUnavailable(f"Anthropic call failed: status {error.status_code}") from error
-        latency_ms = (time.monotonic() - started) * 1000
+        # Rounded here, not left at full float precision: see app.llm.anthropic_client's own
+        # latency computation for why an unrounded duration risks a spurious PAN redaction in logs.
+        latency_ms = round((time.monotonic() - started) * 1000, 3)
 
         text = "".join(
             block.text for block in response.content if isinstance(block, anthropic.types.TextBlock)

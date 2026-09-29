@@ -135,7 +135,12 @@ class AnthropicLlmClient:
             # Any other status the provider might raise (for example a conflict): treated as
             # transient rather than assumed permanent, since it names no known rejection reason.
             raise LlmUnavailable(f"Anthropic call failed: status {error.status_code}") from error
-        latency_ms = (time.monotonic() - started) * 1000
+        # Rounded here, not left at full float precision: an unrounded value's decimal expansion
+        # can run long enough to fall inside a card number's digit-length window, and the log
+        # formatter's blanket PAN redaction (app.observability.logging) then treats a duration as
+        # if it were a leaked card number purely because enough of its digits happen to pass the
+        # Luhn check by chance.
+        latency_ms = round((time.monotonic() - started) * 1000, 3)
 
         tool_input = _extract_tool_input(response, request.tool.name)
         usage = response.usage
