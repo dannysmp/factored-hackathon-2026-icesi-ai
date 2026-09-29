@@ -97,6 +97,13 @@ trust_policy=$(cat <<JSON
 JSON
 )
 
+# ssm:GetCommandInvocation authorizes against an SSM-namespaced resource (arn:aws:ssm:...), not
+# the EC2 instance ARN ssm:SendCommand's own instance-target authorization uses — granting it
+# alongside SendCommand on the EC2 instance ARN (as DeployBySsmInstance briefly did) leaves it
+# silently unauthorized: CloudTrail confirms the actual denial names arn:aws:ssm:<region>:<account>:*,
+# a different service namespace the EC2-scoped statement can never match. The command's own target
+# instance is still established by ssm:SendCommand's own tag-conditioned grant above, so this read
+# of a command already sent under that authorization doesn't need its own tag condition.
 permissions_policy=$(cat <<JSON
 {
   "Version": "2012-10-17",
@@ -130,11 +137,17 @@ permissions_policy=$(cat <<JSON
     {
       "Sid": "DeployBySsmInstance",
       "Effect": "Allow",
-      "Action": ["ssm:SendCommand", "ssm:GetCommandInvocation"],
+      "Action": "ssm:SendCommand",
       "Resource": "arn:aws:ec2:${INFRA_REGION}:${account_id}:instance/*",
       "Condition": {
         "StringEquals": { "aws:ResourceTag/${INFRA_TAG_KEY}": "${INFRA_TAG_VALUE}" }
       }
+    },
+    {
+      "Sid": "DeploySsmCommandStatus",
+      "Effect": "Allow",
+      "Action": "ssm:GetCommandInvocation",
+      "Resource": "arn:aws:ssm:${INFRA_REGION}:${account_id}:*"
     },
     {
       "Sid": "FindTaggedResources",
