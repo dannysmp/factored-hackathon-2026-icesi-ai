@@ -18,8 +18,8 @@ SEMGREP_VERSION := 1.178.0
 
 .PHONY: help setup lint format test test-all secrets semgrep audit run clean \
         profile pipeline analyze features corpus corpus-check train evaluate up \
-        db-up db-down migrate test-integration seed eval-bank load-seed load-analytics \
-        reset-demo-personas seed-ci-smoke
+        db-up db-down migrate check-migrations test-integration seed eval-bank load-seed \
+        load-analytics reset-demo-personas seed-ci-smoke
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -51,6 +51,9 @@ db-down: ## Stop the local Postgres serving store and remove its volume
 
 migrate: ## Apply pending serving-store migrations (needs DATABASE_URL)
 	$(RUN) python -m app.persistence.migrate
+
+check-migrations: ## Fail if a new migration's numeric prefix collides with one already on BASE (default origin/main)
+	$(RUN) python -m scripts.check_migration_prefixes --base $(or $(BASE),origin/main)
 
 test-integration: ## Tests needing a real Postgres (DATABASE_URL must point at a migrated one)
 	$(RUN) pytest -m integration
