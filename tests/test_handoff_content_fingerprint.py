@@ -20,7 +20,8 @@ from app.conversation.handoff import HandoffContent
 # Local modules
 from app.domain.policy.models import ReasonCode
 from app.persistence.handoff_outbox import content_fingerprint
-from contracts.service_v1.handoff import HandoffTrigger
+from contracts.service_v1.envelope import Slot
+from contracts.service_v1.handoff import HandoffTrigger, OpenQuestion
 
 _REFERENCE_DATE = date(2026, 6, 18)
 _CREATED_AT = datetime(2026, 6, 18, 15, 0, tzinfo=UTC)
@@ -72,6 +73,19 @@ def test_customer_id_is_compared_through_its_masked_label() -> None:
 
     assert content_fingerprint(baseline) == content_fingerprint(same_last_four)
     assert content_fingerprint(baseline) != content_fingerprint(different_last_four)
+
+
+def test_open_questions_order_does_not_change_the_fingerprint() -> None:
+    """``handoff_open_questions`` has no ``ord`` column and is keyed ``(ticket_ref, slot)``
+    (migration 0006): the table itself has no order to preserve, so two calls differing only in
+    the order they listed the same open questions must fingerprint identically — the same
+    order-independence the comparison this replaces gave this one field via a ``frozenset``."""
+    reason = OpenQuestion(slot=Slot.REASON, attempts=1)
+    confirmation = OpenQuestion(slot=Slot.CONFIRMATION, attempts=2)
+    baseline = _content(open_questions=(reason, confirmation))
+    reordered = _content(open_questions=(confirmation, reason))
+
+    assert content_fingerprint(baseline) == content_fingerprint(reordered)
 
 
 @dataclass(frozen=True, slots=True)
