@@ -34,7 +34,9 @@ Design Principles
 - Level discipline: ``DEBUG`` for detail useful only while developing; ``INFO`` for a normal
   lifecycle event (a session issued, a migration applied); ``WARNING`` for a handled refusal or
   degradation (a rejected sign-in, a rate limit); ``ERROR`` for a failure the caller could not
-  handle, with ``exc_info`` attached; ``CRITICAL`` is not used anywhere in this service today.
+  handle, with ``exc_info`` attached; ``CRITICAL`` for a failure the process cannot continue past
+  (``app.main``'s ``config_invalid`` event on a start-up configuration failure is the one call site
+  today).
 
 Runtime Contract
 -----------------
