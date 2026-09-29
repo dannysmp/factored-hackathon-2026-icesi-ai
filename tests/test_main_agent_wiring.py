@@ -3,9 +3,12 @@ Agent Console Wiring Tests
 ==========================
 
 Component: ``app.main.create_app`` wiring the console's own routes (``app.api.agent``) into the
-running application (ADR-17, ADR-18). Hermetic: a fake ``AgentConsolePorts`` bundle (no real
-Postgres), real sign-ins through the demo brokers so the tokens under test are genuine, signed
-sessions, not hand-minted ones.
+running application (ADR-17, ADR-18). Most tests here are hermetic: a fake ``AgentConsolePorts``
+bundle (no real Postgres), real sign-ins through the demo brokers so the tokens under test are
+genuine, signed sessions, not hand-minted ones. Two tests at the end are marked ``integration``:
+``_default_agent_console`` — the real, store-backed collaborators ``create_app`` builds when no
+``agent_console`` is injected — is otherwise never exercised by any test in this suite, since every
+other one injects a fake precisely to avoid needing Postgres.
 
 ADR-18's own evidence requirement: "a test enumerates every route with each token type, including
 crossing in both directions." ``tests/test_session_auth_middleware.py`` already proves the
@@ -15,19 +18,24 @@ a real agent-audience route exists to cross into.
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import psycopg
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 import app.main as main_module
-from app.config import Settings, load_settings
+from app.config import ConfigError, Settings, load_settings
 from app.domain.calendar import DateOrigin, DomainCalendar
+from app.domain.policy.models import ReasonCode
 from app.main import AgentConsolePorts, create_app
+from app.persistence.handoff_outbox import HandoffContent, PostgresHandoffOutbox
+from app.persistence.migrate import apply_migrations
 from app.security.demo_personas import load_personas
 from app.security.signin_audit import SignInAuditRecord
 from contracts.service_v1.api import ReferenceDateOrigin
@@ -242,3 +250,72 @@ def test_no_session_at_all_is_refused_on_the_queue_route(client: TestClient) -> 
 
     assert response.status_code == 401
     assert response.json()["code"] == "session_missing"
+
+
+# -----------------------------------------------------------------------------
+# `_default_agent_console`: the real, store-backed collaborators, exercised nowhere else
+# -----------------------------------------------------------------------------
+
+
+def test_the_agent_broker_refuses_to_start_without_a_database_or_an_injected_console() -> None:
+    """`_default_agent_console` needs `DATABASE_URL` to build the real collaborators; every other
+    test in this suite sidesteps it by injecting a fake `agent_console` — this is the one test
+    that actually reaches that code path's own failure."""
+    settings = _settings().model_copy(update={"database_url": None})
+
+    with pytest.raises(ConfigError, match="DATABASE_URL"):
+        create_app(settings, customer_lookup=_always_active, signin_audit=_NoOpSignInAudit())
+
+
+@pytest.mark.integration
+def test_an_agent_token_reaches_the_queue_route_through_the_real_collaborators() -> None:
+    """No `agent_console` is injected here: `_default_agent_console` builds the real
+    `PostgresHandoffQueue`/`PostgresTicketDetail`/`PostgresConsoleAuditSink`, and this proves a
+    real request actually completes end to end through them, not just through the fakes every
+    other test in this file uses."""
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL is not set")
+    apply_migrations(dsn)
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("SET LOCAL session_replication_role = replica")
+        cur.execute(
+            "TRUNCATE TABLE handoff_actions, handoff_open_questions, handoff_reason_codes, "
+            "handoff_sources, handoff_outbox, audit_log CASCADE"
+        )
+        conn.commit()
+    outbox = PostgresHandoffOutbox(dsn)
+    packet = outbox.record(
+        HandoffContent(
+            reference_date=_NOW.date(),
+            created_at=_NOW,
+            language="es",
+            trigger=HandoffTrigger.CUSTOMER_REQUEST,
+            first_name="Ana",
+            customer_id="CLI-1234",
+            request_summary="Wants to speak with a person.",
+            reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
+            policy_version="2",
+        ),
+        session_id="sess-customer-original",
+        turn_id="turn-1",
+        trace_id="trace-1",
+    )
+
+    app = create_app(
+        _settings().model_copy(update={"database_url": SecretStr(dsn)}),
+        customer_lookup=_always_active,
+        signin_audit=_NoOpSignInAudit(),
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+    token = _agent_token(client)
+
+    response = client.get(f"/v1/agent/tickets/{packet.ticket_ref}", headers=_bearer(token))
+
+    assert response.status_code == 200
+    assert response.json()["item"]["ticket_ref"] == packet.ticket_ref
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("SELECT customer_id FROM audit_log WHERE action = 'packet_viewed'")
+        row = cur.fetchone()
+    assert row is not None
+    assert row[0] == "CLI-1234"
