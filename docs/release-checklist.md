@@ -42,7 +42,7 @@ This checklist states each obligation of a release and names the evidence a revi
 |---|---|---|
 | The video shows the working solution end to end: the normal path, the ambiguous or unsupported path and the human-required path with the handoff and the console | The recording, with the time of each path noted | [ ] |
 | The core architectural decisions are named by their record number and explained in a sentence each | The recording; the decision records | [ ] |
-| No secret value, administration screen, key or unmasked identifier appears in the recording | A person watches the whole recording before it is delivered, and records the check by role | [ ] |
+| No secret value, administration screen, key or unmasked identifier appears in the recording | A person watches the whole recording before the release is announced, and records the check by role | [ ] |
 | The video is uploaded and opens from its link | The link, opened live at the freeze and again before the release is announced | [ ] |
 
 ## Requirements walk

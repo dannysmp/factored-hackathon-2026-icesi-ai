@@ -35,7 +35,9 @@
       "**/*.sql",
       ".github/workflows/**",
       "policy/corpus/**",
-      "app/domain/policy/**"
+      "app/domain/policy/**",
+      "web/package.json",
+      "web/package-lock.json"
     ]
   }
 }

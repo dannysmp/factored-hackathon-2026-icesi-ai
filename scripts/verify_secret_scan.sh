@@ -89,6 +89,10 @@ expect_result() {
         exit 1
       fi
       ;;
+    *)
+      echo "FAIL: $label — unknown expectation '$want'" >&2
+      exit 1
+      ;;
   esac
 }
 

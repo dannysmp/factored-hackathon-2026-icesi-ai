@@ -20,9 +20,11 @@ from pydantic import SecretStr
 
 import app.main as main_module
 from app.config import Settings, load_settings
-from app.main import create_app
+from app.domain.calendar import DomainCalendar
+from app.main import AgentConsolePorts, create_app
 from app.security.demo_personas import load_personas
 from app.security.signin_audit import SignInAuditRecord
+from contracts.service_v1.console import QueueFilters, QueueResponse, TicketDetail
 
 START = datetime(2026, 9, 26, 12, 0, 0, tzinfo=UTC)
 ACCESS_CODE = "demo-access-code-0123456789"
@@ -125,6 +127,35 @@ def _always_active(customer_id: str) -> str | None:
     return "Active"
 
 
+class _UnreachableAgentConsole:
+    """An ``AgentConsolePorts``-shaped bundle whose methods are never actually called: these
+    tests are about the sign-in broker, not the console's read routes, and injecting this avoids
+    requiring a real ``DATABASE_URL`` just to build the routes' collaborators."""
+
+    def list_tickets(self, filters: QueueFilters, *, calendar: DomainCalendar) -> QueueResponse:
+        raise NotImplementedError
+
+    def get_ticket_detail(
+        self, ticket_ref: str, *, calendar: DomainCalendar
+    ) -> TicketDetail | None:
+        raise NotImplementedError
+
+    def packet_viewed(self, **kwargs: object) -> None:
+        raise NotImplementedError
+
+    def timeline_viewed(self, **kwargs: object) -> None:
+        raise NotImplementedError
+
+
+def _agent_console() -> AgentConsolePorts:
+    unreachable = _UnreachableAgentConsole()
+    return AgentConsolePorts(
+        queue=unreachable,
+        ticket_detail=unreachable,
+        audit=unreachable,
+    )
+
+
 @pytest.fixture
 def clock() -> Clock:
     return Clock()
@@ -156,7 +187,11 @@ def client(app: FastAPI) -> TestClient:
 def agent_app(clock: Clock, audit: _RecordingAuditSink) -> FastAPI:
     """Both brokers enabled together, matching the deployed configuration (ADR-18)."""
     return create_app(
-        _agent_settings(), clock=clock, customer_lookup=_always_active, signin_audit=audit
+        _agent_settings(),
+        clock=clock,
+        customer_lookup=_always_active,
+        signin_audit=audit,
+        agent_console=_agent_console(),
     )
 
 
@@ -532,6 +567,7 @@ def test_an_agent_signin_that_cannot_be_audited_fails_closed(clock: Clock) -> No
         clock=clock,
         customer_lookup=_always_active,
         signin_audit=_FailingAuditSink(),
+        agent_console=_agent_console(),
     )
     client = TestClient(app, raise_server_exceptions=False)
 
@@ -553,6 +589,7 @@ def test_a_failed_agent_audit_write_releases_the_issuance_reservations_it_held(
         clock=clock,
         customer_lookup=_always_active,
         signin_audit=_FlakyAuditSink(fail_times=1),
+        agent_console=_agent_console(),
     )
     client = TestClient(app, raise_server_exceptions=False)
 
