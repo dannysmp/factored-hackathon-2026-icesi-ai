@@ -18,11 +18,12 @@ import psycopg
 import pytest
 
 # Local modules
+from app.domain.policy.models import ReasonCode
 from app.persistence.migrate import apply_migrations
 from contracts.service_v1.api import TurnResponse
 from contracts.service_v1.envelope import Intent, Slot
 from evals.models import Case, CaseCategory, SafeBehavior
-from evals.scoring import RunTranscript, score_case
+from evals.scoring import RunTranscript, _packet_is_useful, score_case
 
 SESSION_ID = "SESSION-CASE-1"
 
@@ -133,7 +134,13 @@ def _file_a_case(dsn: str, *, session_id: str = SESSION_ID) -> None:
         )
 
 
-def _file_a_handoff(dsn: str, *, session_id: str = SESSION_ID, ticket_ref: str = "T-100") -> None:
+def _file_a_handoff(
+    dsn: str,
+    *,
+    session_id: str = SESSION_ID,
+    ticket_ref: str = "T-100",
+    reason_codes: tuple[str, ...] = (),
+) -> None:
     with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(
             "INSERT INTO handoff_outbox (ticket_ref, customer_id, session_id, trace_id, "
@@ -144,6 +151,12 @@ def _file_a_handoff(dsn: str, *, session_id: str = SESSION_ID, ticket_ref: str =
             "'A summary', '2')",
             (ticket_ref, session_id),
         )
+        for ord_, reason_code in enumerate(reason_codes):
+            cur.execute(
+                "INSERT INTO handoff_reason_codes (ticket_ref, ord, reason_code) "
+                "VALUES (%s, %s, %s)",
+                (ticket_ref, ord_, reason_code),
+            )
 
 
 @pytest.mark.integration
@@ -417,6 +430,105 @@ def test_a_handoff_case_that_also_files_is_incorrect(dsn: str) -> None:
     result = score_case(dsn, transcript)
 
     assert result.correct_outcome is False
+
+
+@pytest.mark.integration
+def test_a_handoff_case_with_no_expected_reason_code_is_useful_once_backed(dsn: str) -> None:
+    """The default fixture case (a direct request for a person) declares no expected reason
+    code; a backed packet needs no reason code at all to be useful for it."""
+    _file_a_handoff(dsn)
+    transcript = RunTranscript(
+        case=_handoff_case(),
+        session_id=SESSION_ID,
+        replies=(_reply(handoff_ticket="T-100", end_session=True),),
+        latencies_seconds=(0.4,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.useful_handoff_packet is True
+
+
+@pytest.mark.integration
+def test_a_handoff_case_with_its_expected_reason_code_in_the_packet_is_useful(dsn: str) -> None:
+    _file_a_handoff(dsn, reason_codes=(ReasonCode.ESCALATE_FRAUD_CLAIM.value,))
+    transcript = RunTranscript(
+        case=_handoff_case(expected_reason_code=ReasonCode.ESCALATE_FRAUD_CLAIM),
+        session_id=SESSION_ID,
+        replies=(_reply(handoff_ticket="T-100", end_session=True),),
+        latencies_seconds=(0.4,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is True
+    assert result.useful_handoff_packet is True
+
+
+@pytest.mark.integration
+def test_a_handoff_case_missing_its_expected_reason_code_in_the_packet_is_not_useful(
+    dsn: str,
+) -> None:
+    """Revert-check pairing for the test above: the identical case and a genuinely backed
+    ticket, but the packet's own persisted evidence never names the reason it exists — an agent
+    reading it would have no way to know why. correct_outcome stays True (the escalation itself
+    is real); only useful_handoff_packet, and the escalation_quality it feeds, is affected."""
+    _file_a_handoff(dsn)  # No reason codes at all.
+    transcript = RunTranscript(
+        case=_handoff_case(expected_reason_code=ReasonCode.ESCALATE_FRAUD_CLAIM),
+        session_id=SESSION_ID,
+        replies=(_reply(handoff_ticket="T-100", end_session=True),),
+        latencies_seconds=(0.4,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is True
+    assert result.useful_handoff_packet is False
+
+
+@pytest.mark.integration
+def test_a_handoff_case_with_a_different_reason_code_in_the_packet_is_not_useful(
+    dsn: str,
+) -> None:
+    """A packet backed by *some* reason code is not the same as one backed by the *right* one —
+    without this, a check that only asked "is there any reason code at all" would pass every
+    test in this file just as well as the real exact-match check does."""
+    _file_a_handoff(dsn, reason_codes=(ReasonCode.ESCALATE_REPEAT_COMPLAINER.value,))
+    transcript = RunTranscript(
+        case=_handoff_case(expected_reason_code=ReasonCode.ESCALATE_FRAUD_CLAIM),
+        session_id=SESSION_ID,
+        replies=(_reply(handoff_ticket="T-100", end_session=True),),
+        latencies_seconds=(0.4,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is True
+    assert result.useful_handoff_packet is False
+
+
+@pytest.mark.integration
+def test_packet_is_useful_returns_false_for_a_ticket_with_no_outbox_row_at_all(dsn: str) -> None:
+    """Direct unit test of the helper's own defensive branch: ``score_case`` never reaches it
+    (an unbacked ticket already short-circuits ``useful_handoff_packet`` to False beforehand),
+    but the helper's own contract — never crash or claim usefulness for a ticket that plain does
+    not exist — holds independent of that caller."""
+    assert _packet_is_useful(dsn, _handoff_case(), "T-DOES-NOT-EXIST") is False
+
+
+@pytest.mark.integration
+def test_an_unbacked_handoff_ticket_is_never_useful(dsn: str) -> None:
+    transcript = RunTranscript(
+        case=_handoff_case(expected_reason_code=ReasonCode.ESCALATE_FRAUD_CLAIM),
+        session_id=SESSION_ID,
+        replies=(_reply(handoff_ticket="T-999-NEVER-WRITTEN", end_session=True),),
+        latencies_seconds=(0.4,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.useful_handoff_packet is False
 
 
 def _clarify_case(**overrides: Any) -> Case:
