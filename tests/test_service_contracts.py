@@ -874,6 +874,32 @@ def test_an_ineligible_reply_and_a_refusal_have_an_intent_of_their_own() -> None
         )
 
 
+def test_the_window_deadline_matches_the_domain_date_and_the_days_remaining() -> None:
+    """The deadline is the domain date plus the days left in the window — negative once the
+    window has expired, which the deadline must reflect, not just the flat filing period."""
+    ineligible = Decision(
+        outcome=Outcome.INELIGIBLE,
+        customer_reason=CustomerReason.WINDOW_EXPIRED,
+        policy_version="2",
+    )
+    consistent = WindowFact(days_allowed=60, age_days=137, deadline=date(2026, 4, 2))
+    assert _envelope(
+        intent=Intent.INELIGIBLE,
+        template_id=TemplateId.INELIGIBLE,
+        facts=DisputeFacts(window=consistent),
+        decisions=(ineligible,),
+    )
+
+    inconsistent = WindowFact(days_allowed=60, age_days=137, deadline=date(2026, 4, 3))
+    with pytest.raises(ValidationError, match="deadline does not match"):
+        _envelope(
+            intent=Intent.INELIGIBLE,
+            template_id=TemplateId.INELIGIBLE,
+            facts=DisputeFacts(window=inconsistent),
+            decisions=(ineligible,),
+        )
+
+
 def test_confirm_filing_needs_its_selection_among_the_listed_transactions() -> None:
     """A confirmation names a transaction the customer was shown, and files nothing else."""
     facts = DisputeFacts(

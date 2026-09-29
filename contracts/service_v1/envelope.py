@@ -70,7 +70,7 @@ from __future__ import annotations
 # Standard libraries
 import unicodedata  # Control characters in free text
 from collections.abc import Mapping  # Type of the template table
-from datetime import date, datetime  # Absolute dates of facts and instants that must be UTC
+from datetime import date, datetime, timedelta  # Absolute dates and instants that must be UTC
 from decimal import Decimal  # Money is never a float
 from enum import StrEnum  # Closed sets of the contract
 from typing import Annotated, Final, Literal  # Bounded fields, constants, closed sets
@@ -683,6 +683,18 @@ class _EnvelopeBody(ContractModel):
             decision.outcome is Outcome.ESCALATE for decision in self.decisions
         ):
             raise ValueError("this handoff text requires an escalate decision")
+        return self
+
+    @model_validator(mode="after")
+    def _window_deadline_matches_domain_date(self) -> _EnvelopeBody:
+        """The filing deadline is the domain date plus the days remaining in the window."""
+        window = self.facts.window
+        if window is not None:
+            expected = self.domain_date + timedelta(days=window.days_allowed - window.age_days)
+            if window.deadline != expected:
+                raise ValueError(
+                    "window.deadline does not match domain_date, days_allowed and age_days"
+                )
         return self
 
 
