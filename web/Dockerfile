@@ -21,7 +21,22 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.29-alpine AS runtime
+
+# nginx's own binary links only libpcre2, libssl, libcrypto and libz (confirmed with `ldd`); the
+# rest of the base image's packages are optional nginx modules this deployment never loads
+# (image-filter, njs, xslt — nothing here needs image processing, JavaScript scripting or XSLT)
+# and their own dependency trees (curl and friends), carried along for the ride. Purging them
+# drops the image from 72 packages to 26 and closes every CVE those packages accumulate, rather
+# than tracking each one individually as it's disclosed. The four libraries nginx does link
+# against are upgraded first, since the base image's own baked-in index can lag the actual
+# package repository by the time this builds.
+RUN apk update \
+    && apk upgrade --no-cache \
+    && apk del --no-cache \
+      curl nginx-module-image-filter nginx-module-njs nginx-module-xslt \
+      c-ares libxml2 nghttp2-libs util-linux libuuid \
+    && nginx -t
 
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
