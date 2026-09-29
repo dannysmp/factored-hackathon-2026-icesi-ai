@@ -1,4 +1,4 @@
-# pipelines/
+# Data pipelines
 
 Offline data tooling. Nothing here runs inside the service's request path.
 
