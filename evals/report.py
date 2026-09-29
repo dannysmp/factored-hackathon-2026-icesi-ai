@@ -52,7 +52,10 @@ Limitations
 The failure gallery reports which deterministic check failed (``correct_outcome``,
 ``is_unsafe``, an escalation mismatch) or, for a case ``evals.scoring.error_result`` recorded,
 its own error message — not a deeper root-cause classification beyond that. ``CaseResult`` itself
-carries only those flags, and building a richer taxonomy is not this slice's own scope.
+carries only those flags, and building a richer taxonomy is not this slice's own scope. The
+failure gallery draws from ``case_results`` alone, the last run only; the Unsafe outcomes section
+is the one that reports every unsafe result from every repeated run, each tagged with which of
+the harness's own checks fired (``unsafe_reasons``) and its run's number.
 Repeated-run variability and the flip list are rendered only for a ``SystemResult`` whose
 ``run_count`` is greater than one (P, by the plan's own execution protocol); B0 and B1 report a
 single run and show no range, by construction, not because their own results are omitted.
@@ -69,7 +72,12 @@ from evals.judge import JudgeVerdict
 from evals.judge_validation import DimensionAgreement
 from evals.metrics import NOT_DEFINED, CaseResult
 from evals.models import Case, CaseCategory
-from evals.repeated_runs import CaseFlip, HeadlineMetricsVariability, VariabilityValue
+from evals.repeated_runs import (
+    CaseFlip,
+    HeadlineMetricsVariability,
+    UnsafeOccurrence,
+    VariabilityValue,
+)
 
 # One (label, accessor) pair per headline metric, in the order the plan's own Metric definitions
 # section lists them; shared by the headline table and the repeated-run variability table so the
@@ -119,6 +127,9 @@ class SystemResult:
     """Empty when ``run_count == 1``: there is nothing to flip across a single run."""
     judge_verdicts: tuple[JudgeVerdict, ...]
     """May be empty if the judge was not run for this system variant."""
+    unsafe_occurrences: tuple[UnsafeOccurrence, ...] = ()
+    """Every unsafe ``CaseResult`` from every run, not only the last — an unsafe verdict a later
+    run did not repeat is otherwise unrecoverable from ``case_results`` alone."""
 
     def __post_init__(self) -> None:
         if self.run_count < 1:
@@ -274,6 +285,23 @@ def _failure_gallery(systems: tuple[SystemResult, ...]) -> str:
     return _table(["System", "Case", "Failure class", "Expected vs observed"], rows)
 
 
+def _unsafe_outcomes_section(systems: tuple[SystemResult, ...]) -> str:
+    rows = []
+    for result in systems:
+        for occurrence in result.unsafe_occurrences:
+            case_result = occurrence.result
+            reasons = ", ".join(case_result.unsafe_reasons) or "unspecified"
+            run_label = str(occurrence.run_index + 1) if result.run_count > 1 else "1"
+            detail = (
+                f"expected_escalation={case_result.expected_escalation}, "
+                f"observed_escalation={case_result.observed_escalation}"
+            )
+            rows.append([result.system, run_label, case_result.case_id, reasons, detail])
+    if not rows:
+        return "No unsafe outcome was observed in any run."
+    return _table(["System", "Run", "Case", "Unsafe reason(s)", "Expected vs observed"], rows)
+
+
 def _judge_validation_section(
     agreement: tuple[DimensionAgreement, ...],
     provenance: Literal["team_generated_synthetic", "human"],
@@ -350,9 +378,10 @@ def render_markdown(report: EvaluationReport) -> str:
         "## 3. Headline metrics\n\n" + _headline_table(report.systems),
         "## 4. Repeated-run variability\n\n" + _repeated_run_section(report.systems),
         "## 5. Failure gallery\n\n" + _failure_gallery(report.systems),
-        "## 6. Judge validation\n\n"
+        "## 6. Unsafe outcomes\n\n" + _unsafe_outcomes_section(report.systems),
+        "## 7. Judge validation\n\n"
         + _judge_validation_section(report.judge_validation, report.judge_validation_provenance),
-        "## 7. Learned components\n\n" + _LEARNED_COMPONENT_SECTION,
-        "## 8. Limitations\n\n" + _limitations_section(report),
+        "## 8. Learned components\n\n" + _LEARNED_COMPONENT_SECTION,
+        "## 9. Limitations\n\n" + _limitations_section(report),
     ]
     return "\n\n".join(sections) + "\n"

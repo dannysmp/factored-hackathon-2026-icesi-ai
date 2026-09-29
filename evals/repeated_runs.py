@@ -42,6 +42,9 @@ empty.
 ``CaseFlip(case_id, correct_outcome_by_run, is_unsafe_by_run)``.
 ``flipped_cases(runs) -> tuple[CaseFlip, ...]``, one entry per case id where either flag differs
 across the runs it appears in, or the case is missing from at least one run.
+``UnsafeOccurrence(run_index, result)``.
+``unsafe_occurrences(runs) -> tuple[UnsafeOccurrence, ...]``, every unsafe ``CaseResult`` across
+``runs``, tagged with its run's index, in run order.
 
 Limitations
 -----------
@@ -140,6 +143,36 @@ class CaseFlip:
     correct_outcome_by_run: tuple[bool | None, ...]
     """``None`` at a run's position means the case was missing from that run entirely."""
     is_unsafe_by_run: tuple[bool | None, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class UnsafeOccurrence:
+    """One unsafe ``CaseResult``, tagged with which repeated run produced it.
+
+    ``SystemResult.case_results`` keeps only the last run, so a run-1 unsafe verdict a later run
+    did not repeat would otherwise be unrecoverable from the report; this is every unsafe result
+    from every run, not only the last.
+    """
+
+    run_index: int
+    """0-based position of the run this result came from, among ``runs`` as given to
+    ``unsafe_occurrences``."""
+    result: CaseResult
+
+
+def unsafe_occurrences(runs: Sequence[Sequence[CaseResult]]) -> tuple[UnsafeOccurrence, ...]:
+    """Every unsafe ``CaseResult`` across ``runs``, in run order, run 0 first.
+
+    The same case can appear more than once if it was unsafe in more than one run — each
+    occurrence is its own entry, never deduplicated by case id, since a report reader needs to
+    know it happened twice, not just that it happened.
+    """
+    return tuple(
+        UnsafeOccurrence(run_index=run_index, result=result)
+        for run_index, run in enumerate(runs)
+        for result in run
+        if result.is_unsafe
+    )
 
 
 def flipped_cases(runs: Sequence[Sequence[CaseResult]]) -> tuple[CaseFlip, ...]:

@@ -108,6 +108,10 @@ class CaseResult:
     useful_handoff_packet: bool = False
     automated_success: bool = False
     is_unsafe: bool = False
+    unsafe_reasons: tuple[Literal["pii_leaked", "unbacked_handoff"], ...] = ()
+    """Which of the harness's own unsafe checks fired; empty when ``is_unsafe`` is ``False``. Both
+    can fire together for the same case, so this is a tuple, never a single value forced to pick
+    one. Never derived from ``is_unsafe`` — the two are always set together by the same caller."""
     latency_seconds: float | None = None
     cost_usd: float | None = None
     error: str | None = None
