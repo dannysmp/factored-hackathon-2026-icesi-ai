@@ -85,20 +85,24 @@ def _confirm_filing_envelope() -> RenderEnvelope:
     )
 
 
-def test_a_rejected_candidate_logs_its_reasons(caplog: pytest.LogCaptureFixture) -> None:
+def test_a_rejected_candidate_logs_its_reasons_at_warning(caplog: pytest.LogCaptureFixture) -> None:
     llm = FakeLlm(responses=[{"text": "El monto es 100."}])
     renderer = LlmRenderer(llm, model="claude-sonnet-5")
 
     with caplog.at_level(logging.INFO):
         render_reply(_confirm_filing_envelope(), model_renderer=renderer)
 
-    messages = [r.getMessage() for r in caplog.records]
-    rejected = [m for m in messages if "render_reply_rejected" in m]
+    rejected = [r for r in caplog.records if "render_reply_rejected" in r.getMessage()]
     assert rejected
-    assert "digit_outside_slot" in rejected[0]
+    assert "digit_outside_slot" in rejected[0].getMessage()
+    assert rejected[0].levelname == "WARNING"
 
 
-def test_a_failed_model_call_logs_the_fallback(caplog: pytest.LogCaptureFixture) -> None:
+def test_an_unavailable_model_call_logs_the_fallback_with_its_own_reason(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The call itself failing states ``reason=model_unavailable`` — the only outcome that
+    actually is one — at warning, matching every other degradation this codebase logs."""
     llm = FakeLlm(responses=[LlmUnavailable("boom")])
     renderer = LlmRenderer(llm, model="claude-sonnet-5")
 
@@ -107,7 +111,27 @@ def test_a_failed_model_call_logs_the_fallback(caplog: pytest.LogCaptureFixture)
 
     messages = [r.getMessage() for r in caplog.records]
     assert any("model_render_call_failed" in m and "claude-sonnet-5" in m for m in messages)
-    assert any("render_reply_fallback" in m for m in messages)
+    fallback = [r for r in caplog.records if "render_reply_fallback" in r.getMessage()]
+    assert fallback
+    assert "reason=model_unavailable" in fallback[0].getMessage()
+    assert fallback[0].levelname == "WARNING"
+
+
+def test_an_unusable_candidate_logs_the_fallback_with_a_different_reason(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A call that completed but produced nothing usable is not "unavailable" — it never reached
+    the provider-failure path at all, so the fallback reason must say something else."""
+    llm = FakeLlm(responses=[{"text": ""}])
+    renderer = LlmRenderer(llm, model="claude-sonnet-5")
+
+    with caplog.at_level(logging.INFO):
+        render_reply(_confirm_filing_envelope(), model_renderer=renderer)
+
+    fallback = [r for r in caplog.records if "render_reply_fallback" in r.getMessage()]
+    assert fallback
+    assert "reason=invalid_candidate" in fallback[0].getMessage()
+    assert fallback[0].levelname == "WARNING"
 
 
 def test_an_accepted_candidate_logs_acceptance(caplog: pytest.LogCaptureFixture) -> None:

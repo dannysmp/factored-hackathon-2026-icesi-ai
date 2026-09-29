@@ -33,12 +33,15 @@ Design Principles
   contract refuses to build either envelope in model mode (it permits both, from facts alone).
   Every purely procedural template (a greeting, a clarification, a farewell, a cancellation) is
   excluded too, since it has no grounded content to gain from model wording.
-- Never guesses on failure: a verifier rejection, a ``None`` from the model renderer, and an
+- Never guesses on failure: a verifier rejection, an unavailable or unusable model call, and an
   ineligible template all take the exact same path — render the already-built template envelope,
   unchanged.
-- Every outcome is logged (ineligible, a failed model call, a rejected candidate with its reasons,
-  or an accepted one), so a model-rendering degradation is visible without instrumenting every
-  caller of ``render_reply`` separately.
+- Every outcome is logged: ineligible at debug (expected routing, not a degradation); an
+  unavailable call, an unusable candidate and a rejected one each at warning, with their own
+  reason, matching every other degradation this codebase logs (the dialogue controller's own
+  handoff-not-registered path, ``PostgresDialogueStore``, ``PostgresHandoffOutbox``) so a fallback
+  is easy to alert on; an accepted reply at info. A model-rendering degradation is visible without
+  instrumenting every caller of ``render_reply`` separately.
 
 Runtime Contract
 ----------------
@@ -52,7 +55,7 @@ from __future__ import annotations
 import logging  # Structured events about the model path's outcome, never print
 
 # Local modules
-from app.conversation.model_renderer import LlmRenderer
+from app.conversation.model_renderer import LlmRenderer, RenderUnavailable
 from app.conversation.renderer import RenderedReply, reference_date_line, render
 from app.conversation.slot_values import slot_values_for
 from app.conversation.verifier import verify
@@ -127,10 +130,20 @@ def render_reply(
 
     assert model_renderer is not None  # noqa: S101 - guaranteed by `eligible` above
     model_envelope = _model_sibling(template_envelope)
-    candidate = model_renderer.render(model_envelope)
-    if candidate is None:
-        logger.info(
+    try:
+        candidate = model_renderer.render(model_envelope)
+    except RenderUnavailable:
+        logger.warning(
             "render_reply_fallback reason=model_unavailable session_id=%s template_id=%s "
+            "request_id=%s",
+            session_id,
+            template_envelope.template_id,
+            current_request_id(),
+        )
+        return render(template_envelope)
+    if candidate is None:
+        logger.warning(
+            "render_reply_fallback reason=invalid_candidate session_id=%s template_id=%s "
             "request_id=%s",
             session_id,
             template_envelope.template_id,
@@ -155,7 +168,7 @@ def render_reply(
             render_mode="model",
         )
 
-    logger.info(
+    logger.warning(
         "render_reply_rejected session_id=%s template_id=%s reasons=%s request_id=%s",
         session_id,
         template_envelope.template_id,
