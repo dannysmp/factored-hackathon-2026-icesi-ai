@@ -225,7 +225,7 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
     smoke : bool
         Narrows the case set to ``evals.runner.smoke.smoke_cases()`` (16 cases, the CI-gating
         subset) instead of the full golden set (135 cases, including all 32 adversarial cases).
-        The full set is fully runnable today (``evals.persistence.load_eval_bank`` resolves every
+        The full set is fully runnable today (``app.persistence.load_eval_bank`` resolves every
         adversarial case's data, and ``evals.scoring.score_case`` covers every outcome class the
         golden set declares); ``--smoke`` stays available as a deliberately narrower, faster scope
         for a quick check, not a fallback for a missing dependency. The resulting report's own
