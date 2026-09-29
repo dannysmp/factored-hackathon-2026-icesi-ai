@@ -112,7 +112,7 @@ from evals.golden.judge_validation_sample import (
 from evals.judge_validation import compute_agreement
 from evals.metrics import NOT_DEFINED, CaseResult, HeadlineMetrics, Metric, compute_headline_metrics
 from evals.models import Case
-from evals.repeated_runs import compute_variability, flipped_cases
+from evals.repeated_runs import compute_variability, flipped_cases, unsafe_occurrences
 from evals.report import EvaluationReport, SystemResult, Versions, render_markdown
 from evals.runner.baselines.b0 import build_b0_app
 from evals.runner.baselines.b1 import run_cases as run_b1_cases
@@ -210,6 +210,7 @@ def _build_system_result(system: str, runs: Sequence[tuple[CaseResult, ...]]) ->
         case_results=runs[-1],
         flips=flipped_cases(runs) if len(runs) > 1 else (),
         judge_verdicts=(),
+        unsafe_occurrences=unsafe_occurrences(runs),
     )
 
 

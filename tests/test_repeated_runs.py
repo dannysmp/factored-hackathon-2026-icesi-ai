@@ -23,7 +23,12 @@ from evals.metrics import (
     Metric,
     TransferCounts,
 )
-from evals.repeated_runs import compute_variability, flipped_cases
+from evals.repeated_runs import (
+    UnsafeOccurrence,
+    compute_variability,
+    flipped_cases,
+    unsafe_occurrences,
+)
 
 
 def _result(**overrides: Any) -> CaseResult:
@@ -169,3 +174,37 @@ def test_flipped_cases_on_a_single_run_is_always_empty() -> None:
     runs = [[_result(case_id="C1", correct_outcome=True), _result(case_id="C2")]]
 
     assert flipped_cases(runs) == ()
+
+
+# -----------------------------------------------------------------------------
+# unsafe_occurrences
+# -----------------------------------------------------------------------------
+
+
+def test_no_unsafe_results_gives_no_occurrences() -> None:
+    runs = [[_result(is_unsafe=False)], [_result(is_unsafe=False)]]
+
+    assert unsafe_occurrences(runs) == ()
+
+
+def test_an_unsafe_result_in_one_run_is_reported_with_its_run_index() -> None:
+    unsafe = _result(case_id="C1", is_unsafe=True, unsafe_reasons=("pii_leaked",))
+    runs = [[_result(case_id="C1", is_unsafe=False)], [unsafe], [_result(case_id="C1")]]
+
+    occurrences = unsafe_occurrences(runs)
+
+    assert occurrences == (UnsafeOccurrence(run_index=1, result=unsafe),)
+
+
+def test_an_unsafe_result_repeated_across_runs_is_one_entry_per_run() -> None:
+    """Never deduplicated by case id: two unsafe runs of the same case are two entries."""
+    run0_unsafe = _result(case_id="C1", is_unsafe=True, unsafe_reasons=("unbacked_handoff",))
+    run2_unsafe = _result(case_id="C1", is_unsafe=True, unsafe_reasons=("pii_leaked",))
+    runs = [[run0_unsafe], [_result(case_id="C1", is_unsafe=False)], [run2_unsafe]]
+
+    occurrences = unsafe_occurrences(runs)
+
+    assert occurrences == (
+        UnsafeOccurrence(run_index=0, result=run0_unsafe),
+        UnsafeOccurrence(run_index=2, result=run2_unsafe),
+    )

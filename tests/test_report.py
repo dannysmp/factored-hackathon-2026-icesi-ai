@@ -26,7 +26,7 @@ from evals.metrics import (
     TransferCounts,
 )
 from evals.models import Case, CaseCategory
-from evals.repeated_runs import CaseFlip, compute_variability
+from evals.repeated_runs import CaseFlip, UnsafeOccurrence, compute_variability
 from evals.report import EvaluationReport, SystemResult, Versions, render_markdown
 
 _MODEL = "claude-sonnet-5"
@@ -78,7 +78,10 @@ def _case_result(**overrides: Any) -> CaseResult:
 
 
 def _system(
-    system: str = "P", run_count: int = 1, case_results: tuple[CaseResult, ...] = ()
+    system: str = "P",
+    run_count: int = 1,
+    case_results: tuple[CaseResult, ...] = (),
+    unsafe_occurrences: tuple[UnsafeOccurrence, ...] = (),
 ) -> SystemResult:
     runs = [_headline() for _ in range(run_count)]
     return SystemResult(
@@ -88,6 +91,7 @@ def _system(
         case_results=case_results,
         flips=(),
         judge_verdicts=(),
+        unsafe_occurrences=unsafe_occurrences,
     )
 
 
@@ -166,9 +170,10 @@ def test_render_includes_every_top_level_section() -> None:
         "## 3. Headline metrics",
         "## 4. Repeated-run variability",
         "## 5. Failure gallery",
-        "## 6. Judge validation",
-        "## 7. Learned components",
-        "## 8. Limitations",
+        "## 6. Unsafe outcomes",
+        "## 7. Judge validation",
+        "## 8. Learned components",
+        "## 9. Limitations",
     ):
         assert heading in text
 
@@ -189,7 +194,7 @@ def test_no_scope_note_renders_no_scope_callout() -> None:
 def test_a_scope_note_renders_as_a_prominent_callout_and_in_limitations() -> None:
     text = render_markdown(_report(scope_note="Generated from the 16-case CI-smoke subset."))
     assert "**Scope.** Generated from the 16-case CI-smoke subset." in text
-    limitations = text.split("## 8.")[1]
+    limitations = text.split("## 9.")[1]
     assert "Generated from the 16-case CI-smoke subset." in limitations
 
 
@@ -261,6 +266,59 @@ def test_an_errored_case_is_labeled_error_not_incorrect_outcome() -> None:
 
 
 # -----------------------------------------------------------------------------
+# Unsafe outcomes — every run, not only the last
+# -----------------------------------------------------------------------------
+
+
+def test_no_unsafe_occurrences_states_so_explicitly() -> None:
+    text = render_markdown(_report(systems=(_system(),)))
+    section = text.split("## 6.")[1].split("## 7.")[0]
+    assert "No unsafe outcome was observed" in section
+
+
+def test_an_unsafe_occurrence_names_its_run_and_reasons() -> None:
+    unsafe = _case_result(
+        case_id="hr-fraud-en-01",
+        expected_escalation=True,
+        observed_escalation=False,
+        is_unsafe=True,
+        unsafe_reasons=("unbacked_handoff",),
+    )
+    occurrence = UnsafeOccurrence(run_index=0, result=unsafe)
+    text = render_markdown(
+        _report(systems=(_system(run_count=3, unsafe_occurrences=(occurrence,)),))
+    )
+    section = text.split("## 6.")[1].split("## 7.")[0]
+
+    assert "hr-fraud-en-01" in section
+    assert "unbacked_handoff" in section
+    assert "| P | 1 |" in section
+
+
+def test_every_unsafe_run_is_listed_even_when_only_one_survives_to_case_results() -> None:
+    """Run 1's unsafe verdict must still show even though ``case_results`` only keeps run 3."""
+    run1_unsafe = _case_result(
+        case_id="hr-fraud-en-01", is_unsafe=True, unsafe_reasons=("pii_leaked",)
+    )
+    run3_safe = _case_result(case_id="hr-fraud-en-01", is_unsafe=False)
+    text = render_markdown(
+        _report(
+            systems=(
+                _system(
+                    run_count=3,
+                    case_results=(run3_safe,),
+                    unsafe_occurrences=(UnsafeOccurrence(run_index=0, result=run1_unsafe),),
+                ),
+            )
+        )
+    )
+    section = text.split("## 6.")[1].split("## 7.")[0]
+
+    assert "hr-fraud-en-01" in section
+    assert "pii_leaked" in section
+
+
+# -----------------------------------------------------------------------------
 # Judge validation — the provenance gate (a hard requirement, not a style choice)
 # -----------------------------------------------------------------------------
 
@@ -285,7 +343,7 @@ def test_a_synthetic_sample_never_renders_an_agreement_rate() -> None:
             judge_validation_provenance="team_generated_synthetic",
         )
     )
-    section = text.split("## 6.")[1].split("## 7.")[0]
+    section = text.split("## 7.")[1].split("## 8.")[0]
 
     assert "Pending H4" in section
     assert "1.000" not in section  # the agreement rate itself must not leak through
@@ -295,7 +353,7 @@ def test_a_human_sample_renders_the_real_agreement_table() -> None:
     text = render_markdown(
         _report(judge_validation=_agreement(), judge_validation_provenance="human")
     )
-    section = text.split("## 6.")[1].split("## 7.")[0]
+    section = text.split("## 7.")[1].split("## 8.")[0]
 
     assert "Pending H4" not in section
     assert "grounding" in section
@@ -328,7 +386,7 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
     text = render_markdown(
         _report(judge_validation=(demoted,), judge_validation_provenance="human")
     )
-    section = text.split("## 6.")[1].split("## 7.")[0]
+    section = text.split("## 7.")[1].split("## 8.")[0]
 
     assert "human-only" in section
 
@@ -340,7 +398,7 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
 
 def test_learned_components_points_at_the_experiment_log_not_a_fabricated_number() -> None:
     text = render_markdown(_report())
-    section = text.split("## 7.")[1].split("## 8.")[0]
+    section = text.split("## 8.")[1].split("## 9.")[0]
     assert "experiment log" in section
 
 
@@ -348,5 +406,5 @@ def test_limitations_names_pending_h4_only_when_not_human() -> None:
     synthetic = render_markdown(_report(judge_validation_provenance="team_generated_synthetic"))
     human = render_markdown(_report(judge_validation_provenance="human"))
 
-    assert "pending the real H4" in synthetic.split("## 8.")[1]
-    assert "pending the real H4" not in human.split("## 8.")[1]
+    assert "pending the real H4" in synthetic.split("## 9.")[1]
+    assert "pending the real H4" not in human.split("## 9.")[1]
