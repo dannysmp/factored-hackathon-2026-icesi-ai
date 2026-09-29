@@ -3,9 +3,9 @@ Agent Routes Tests
 ==================
 
 Component: ``app.api.agent``. Hermetic: a fake queue, ticket-detail and audit sink, and a
-standalone FastAPI app carrying only this router — not the full ``create_app()``, since this
-router is not wired into the running application yet (see the module's own docstring). A tiny
-middleware sets ``request.state.principal`` directly, standing in for the real
+standalone FastAPI app carrying only this router, not the full ``create_app()`` — the real wiring
+(``app.main``, a real ``ConsoleAuditSink``) is exercised in ``tests/test_main_agent_wiring.py``. A
+tiny middleware sets ``request.state.principal`` directly, standing in for the real
 ``SessionAuthMiddleware``, which is exercised elsewhere.
 """
 
@@ -99,14 +99,23 @@ class _FakeTicketDetail:
 
 @dataclass
 class _FakeAudit:
-    packet_calls: list[tuple[str, str]] = field(default_factory=list)
-    timeline_calls: list[tuple[str, str]] = field(default_factory=list)
+    packet_calls: list[tuple[str, str, str]] = field(default_factory=list)
+    timeline_calls: list[tuple[str, str, str]] = field(default_factory=list)
 
-    def packet_viewed(self, *, agent_id: str, ticket_ref: str) -> None:
-        self.packet_calls.append((agent_id, ticket_ref))
+    def packet_viewed(
+        self, *, agent_id: str, session_id: str, ticket_ref: str, packet: HandoffPacket
+    ) -> None:
+        self.packet_calls.append((agent_id, session_id, ticket_ref))
 
-    def timeline_viewed(self, *, agent_id: str, ticket_ref: str) -> None:
-        self.timeline_calls.append((agent_id, ticket_ref))
+    def timeline_viewed(
+        self,
+        *,
+        agent_id: str,
+        session_id: str,
+        ticket_ref: str,
+        timeline: tuple[object, ...],
+    ) -> None:
+        self.timeline_calls.append((agent_id, session_id, ticket_ref))
 
 
 def _client(
@@ -209,8 +218,8 @@ def test_the_ticket_route_answers_an_agent_session_and_audits_both_reads() -> No
 
     assert response.status_code == 200
     assert response.json()["item"]["ticket_ref"] == _ITEM.ticket_ref
-    assert audit.packet_calls == [(_AGENT.agent_id, _ITEM.ticket_ref)]
-    assert audit.timeline_calls == [(_AGENT.agent_id, _ITEM.ticket_ref)]
+    assert audit.packet_calls == [(_AGENT.agent_id, _AGENT.session_id, _ITEM.ticket_ref)]
+    assert audit.timeline_calls == [(_AGENT.agent_id, _AGENT.session_id, _ITEM.ticket_ref)]
 
 
 def test_the_ticket_route_answers_404_for_an_unknown_ticket_and_never_audits() -> None:
@@ -249,10 +258,19 @@ def test_a_failing_audit_write_propagates_instead_of_serving_the_ticket() -> Non
     audited, so the audit sink's own exception is never swallowed."""
 
     class _FailingAudit:
-        def packet_viewed(self, *, agent_id: str, ticket_ref: str) -> None:
+        def packet_viewed(
+            self, *, agent_id: str, session_id: str, ticket_ref: str, packet: HandoffPacket
+        ) -> None:
             raise RuntimeError("audit store is down")
 
-        def timeline_viewed(self, *, agent_id: str, ticket_ref: str) -> None:
+        def timeline_viewed(
+            self,
+            *,
+            agent_id: str,
+            session_id: str,
+            ticket_ref: str,
+            timeline: tuple[object, ...],
+        ) -> None:
             raise RuntimeError("audit store is down")
 
     client = _client(
@@ -274,8 +292,8 @@ def test_a_failing_audit_write_propagates_instead_of_serving_the_ticket() -> Non
 def test_the_unimplemented_audit_stub_always_raises_for_both_events() -> None:
     stub = AuditNotYetImplemented()
 
-    with pytest.raises(NotImplementedError, match="PACKET_VIEWED"):
-        stub.packet_viewed(agent_id="AGT-1", ticket_ref="T-1")
+    with pytest.raises(NotImplementedError, match="not wired"):
+        stub.packet_viewed(agent_id="AGT-1", session_id="sess-1", ticket_ref="T-1", packet=_PACKET)
 
-    with pytest.raises(NotImplementedError, match="TIMELINE_VIEWED"):
-        stub.timeline_viewed(agent_id="AGT-1", ticket_ref="T-1")
+    with pytest.raises(NotImplementedError, match="not wired"):
+        stub.timeline_viewed(agent_id="AGT-1", session_id="sess-1", ticket_ref="T-1", timeline=())
