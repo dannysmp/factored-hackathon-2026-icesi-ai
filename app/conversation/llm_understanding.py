@@ -41,18 +41,30 @@ Runtime Contract
 ``NluResult`` paired with a ``TurnAccounting`` built from the completion's own token/latency
 accounting, ``(NluResult.unusable(), None)`` when the call completed but its output was not
 usable, or raises ``UnderstandingUnavailable`` when the call could not be completed at all.
+
+Limitations
+-----------
+The model reports only the customer's own words for a stated transaction date
+(``date_expression``); resolving them against ``reference_date`` (AC-E5-16) is a deterministic
+step (``app.conversation.date_expressions``), never the model's own arithmetic. Its curated
+vocabulary is deliberately narrow (relative day terms, weekday names, a day-of-month phrase, and a
+numeric day-first date) — a vague range such as "last week" resolves to nothing, the same as an
+expression it never recognized, rather than guessing one specific day out of it.
 """
 
 from __future__ import annotations
 
 # Standard libraries
 from collections.abc import Mapping  # Type of the raw tool arguments
+from datetime import date  # The domain calendar's own reference date
 from decimal import Decimal, InvalidOperation  # Money is never a float; malformed amounts repair
+from typing import cast  # Narrowing a checked-membership str to the closed Lang literal
 
 # Third-party libraries
 from pydantic import BaseModel, ConfigDict, ValidationError  # Loose intermediate model
 
 # Local modules
+from app.conversation.date_expressions import resolve as resolve_date  # AC-E5-16, deterministic
 from app.conversation.understanding import (  # What this call cost; raised, never swallowed
     TurnAccounting,
     UnderstandingUnavailable,
@@ -99,6 +111,15 @@ _NLU_TOOL = ToolSpec(
                 "description": "The language this message is written in, or null if unclear.",
             },
             "merchant": {"type": ["string", "null"], "maxLength": 80},
+            "date_expression": {
+                "type": ["string", "null"],
+                "maxLength": 40,
+                "description": (
+                    "The customer's own words for when the transaction happened, verbatim or "
+                    "lightly normalized (e.g. 'ayer', 'el lunes', 'the 3rd', '03/04'), or null "
+                    "if not stated. Never a resolved date: report the words only."
+                ),
+            },
             "amount": {
                 "type": ["string", "null"],
                 "description": 'The amount as decimal text, e.g. "125.50", or null.',
@@ -137,6 +158,7 @@ _MAX_CHOICE = 5
 # Free-text fields worth one truncation attempt when the model overruns the contract's bound.
 _LENGTH_REPAIRS: tuple[tuple[str, int], ...] = (
     ("merchant", 80),
+    ("date_expression", 40),
     ("detail", 500),
     ("policy_query", 200),
 )
@@ -160,6 +182,7 @@ class _ModelExtraction(BaseModel):
     confidence: float
     language: str | None = None
     merchant: str | None = None
+    date_expression: str | None = None
     amount: str | None = None
     currency: str | None = None
     product_last4: str | None = None
@@ -172,8 +195,12 @@ class _ModelExtraction(BaseModel):
     mentions_second_dispute: bool = False
 
 
-def _to_nlu_result(extraction: _ModelExtraction) -> NluResult:
+def _to_nlu_result(extraction: _ModelExtraction, *, reference_date: date) -> NluResult:
     """Map a validated extraction into the contract's own, stricter shape.
+
+    ``reference_date`` resolves ``extraction.date_expression`` (AC-E5-16), never the model's own
+    arithmetic; an expression the closed vocabulary does not recognize resolves to nothing, the
+    same as no date stated at all.
 
     Raises
     ------
@@ -183,10 +210,18 @@ def _to_nlu_result(extraction: _ModelExtraction) -> NluResult:
     decimal.InvalidOperation
         ``amount`` does not parse as decimal text.
     """
+    language = cast(Lang, extraction.language) if extraction.language in LANGUAGES else None
+    resolved_date = (
+        resolve_date(extraction.date_expression, language=language, reference_date=reference_date)
+        if extraction.date_expression
+        else None
+    )
     transaction = TransactionHint(
         merchant=extraction.merchant,
         amount=Decimal(extraction.amount) if extraction.amount else None,
         currency=extraction.currency,
+        date_on=resolved_date[0] if resolved_date is not None else None,
+        date_source=resolved_date[1] if resolved_date is not None else None,
         product_last4=extraction.product_last4,
     )
     return NluResult(
@@ -231,14 +266,18 @@ def _repaired(raw: Mapping[str, object]) -> dict[str, object]:
 _REPAIRABLE_ERRORS = (ValidationError, InvalidOperation, TypeError, ValueError)
 
 
-def _parse(tool_input: Mapping[str, object]) -> NluResult:
+def _parse(tool_input: Mapping[str, object], *, reference_date: date) -> NluResult:
     """Validate the tool's arguments into an ``NluResult``, with one bounded repair attempt."""
     try:
-        return _to_nlu_result(_ModelExtraction.model_validate(tool_input))
+        return _to_nlu_result(
+            _ModelExtraction.model_validate(tool_input), reference_date=reference_date
+        )
     except _REPAIRABLE_ERRORS:
         pass
     try:
-        return _to_nlu_result(_ModelExtraction.model_validate(_repaired(tool_input)))
+        return _to_nlu_result(
+            _ModelExtraction.model_validate(_repaired(tool_input)), reference_date=reference_date
+        )
     except _REPAIRABLE_ERRORS:
         return NluResult.unusable()
 
@@ -262,9 +301,12 @@ class LlmNlu:
         self._prompt = prompt or load_prompt(_PROMPT_NAME)
 
     def understand(
-        self, text: str, *, language_hint: Lang | None
+        self, text: str, *, language_hint: Lang | None, reference_date: date
     ) -> tuple[NluResult, TurnAccounting | None]:
         """Understand ``text`` through the model, or return unusable understanding.
+
+        ``reference_date`` resolves a customer-stated transaction date (AC-E5-16) against the
+        domain calendar's own reference date — never the wall clock.
 
         Empty text and an invalid call's output are both treated as unusable: the customer is
         never shown a model or provider error, only asked again — genuine ambiguity a
@@ -307,4 +349,4 @@ class LlmNlu:
             output_tokens=result.output_tokens,
             latency_ms=result.latency_ms,
         )
-        return _parse(result.tool_input), accounting
+        return _parse(result.tool_input, reference_date=reference_date), accounting

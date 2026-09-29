@@ -19,7 +19,7 @@ def test_the_shipped_nlu_prompt_loads_and_validates() -> None:
     """``prompts/nlu_v1.yaml`` is a real, valid prompt file, not just a fixture."""
     prompt = load_prompt("nlu_v1")
 
-    assert prompt.version == "1"
+    assert prompt.version == "2"
     assert prompt.system.strip()
     assert prompt.placeholders() == {"language_hint", "message"}
 
