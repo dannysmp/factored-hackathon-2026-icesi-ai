@@ -44,6 +44,7 @@ or raises if fewer than the needed candidates exist for any scenario.
 from __future__ import annotations
 
 # Standard libraries
+import json
 import logging
 from datetime import date
 from decimal import Decimal
@@ -61,15 +62,21 @@ from app.domain.policy import (
     evaluate_dispute,
     load_policy,
 )
+from pipelines.ops_seed import MANIFEST_NAME
 
 logger = logging.getLogger(__name__)
 
-#: DATA_AS_OF_DATE's own default for a demo deployment (docker-compose.prod.yml), matching the
-#: golden set's own reference date so a candidate eligible today stays eligible in the demo.
-REFERENCE_DATE = date(2026, 6, 18)
-
 GOLD_DIR = Path("data/gold/ops_seed")
 COMPLAINTS_PARQUET = Path("data/silver/silver/complaints.parquet")
+
+
+def _reference_date(gold_dir: Path = GOLD_DIR) -> date:
+    """The seed's own reference date, from its manifest — never a second, hardcoded guess at the
+    same fact ``app.persistence.load_seed`` and ``docker-compose.prod.yml``'s own
+    ``DATA_AS_OF_DATE`` default already carry."""
+    manifest = json.loads((gold_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
+    return date.fromisoformat(manifest["reference_date"])
+
 
 #: ana, joao and emma — one eligible customer each.
 _ELIGIBLE_PERSONAS_NEEDED = 3
@@ -113,7 +120,7 @@ ORDER BY c.customer_id, t.transaction_id
 """
 
 
-def _candidates() -> list[CandidateRow]:
+def _candidates(reference_date: date) -> list[CandidateRow]:
     """Every Active-customer, Active-product, in-window candidate transaction, ordered
     deterministically."""
     con = duckdb.connect()
@@ -121,17 +128,17 @@ def _candidates() -> list[CandidateRow]:
         _CANDIDATES_SQL,
         [
             str(COMPLAINTS_PARQUET),
-            REFERENCE_DATE,
+            reference_date,
             str(GOLD_DIR / "customers.parquet"),
             str(GOLD_DIR / "transactions.parquet"),
             str(GOLD_DIR / "products.parquet"),
-            REFERENCE_DATE,
-            REFERENCE_DATE,
+            reference_date,
+            reference_date,
         ],
     ).fetchall()
 
 
-def _confirms(row: CandidateRow, *, expect: Outcome) -> bool:
+def _confirms(row: CandidateRow, *, expect: Outcome, reference_date: date) -> bool:
     """Whether the real engine agrees this row's transaction produces ``expect``."""
     (
         _customer_id,
@@ -155,11 +162,13 @@ def _confirms(row: CandidateRow, *, expect: Outcome) -> bool:
         is_repeat_complainer=is_repeat_complainer,
         has_open_case_for_transaction=False,
     )
-    decision = evaluate_dispute(request, load_policy(), today=REFERENCE_DATE)
+    decision = evaluate_dispute(request, load_policy(), today=reference_date)
     return decision.outcome is expect
 
 
-def select_personas(rows: list[CandidateRow] | None = None) -> dict[str, str]:
+def select_personas(
+    rows: list[CandidateRow] | None = None, *, reference_date: date | None = None
+) -> dict[str, str]:
     """The slug-to-``customer_id`` mapping for the five demo customer personas.
 
     Parameters
@@ -169,6 +178,9 @@ def select_personas(rows: list[CandidateRow] | None = None) -> dict[str, str]:
         ``data/gold/ops_seed`` and ``data/silver/silver/complaints.parquet``. Overriding this is
         for tests only, so the selection and verification logic is checkable without the real
         seed files present.
+    reference_date
+        Defaults to the seed's own manifest value (``_reference_date``); overriding this is for
+        tests only, for the same reason as ``rows``.
 
     Raises
     ------
@@ -176,15 +188,19 @@ def select_personas(rows: list[CandidateRow] | None = None) -> dict[str, str]:
         Fewer candidates exist for some scenario than the demo needs (each already-used
         customer is excluded from every later scenario, so the five results are always distinct).
     """
+    if reference_date is None:
+        reference_date = _reference_date()
     if rows is None:
-        rows = _candidates()
+        rows = _candidates(reference_date)
     used: set[str] = set()
 
     def _pick(rows_: list[CandidateRow], *, expect: Outcome) -> tuple[str, ...]:
         picked = []
         for row in rows_:
             customer_id = row[0]
-            if customer_id in used or not _confirms(row, expect=expect):
+            if customer_id in used or not _confirms(
+                row, expect=expect, reference_date=reference_date
+            ):
                 continue
             used.add(customer_id)
             picked.append(customer_id)

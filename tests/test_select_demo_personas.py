@@ -19,6 +19,8 @@ import pytest
 
 from scripts.select_demo_personas import CandidateRow, main, select_personas
 
+_REFERENCE_DATE = date(2026, 6, 18)
+
 _Shape = tuple[str, str, Decimal, str, bool]
 
 _ELIGIBLE: _Shape = ("Purchase", "Approved", Decimal("100.00"), "Tarjeta Débito", False)
@@ -49,7 +51,7 @@ def test_selects_one_customer_per_scenario_from_enough_candidates() -> None:
         _row("CLI-5", "TRX-5", _REPEAT_COMPLAINER),
     ]
 
-    mapping = select_personas(rows)
+    mapping = select_personas(rows, reference_date=_REFERENCE_DATE)
 
     assert mapping == {
         "ana": "CLI-1",
@@ -72,8 +74,8 @@ def test_selection_is_deterministic_across_repeated_calls() -> None:
         _row("CLI-5", "TRX-5", _REPEAT_COMPLAINER),
     ]
 
-    first = select_personas(rows)
-    second = select_personas(rows)
+    first = select_personas(rows, reference_date=_REFERENCE_DATE)
+    second = select_personas(rows, reference_date=_REFERENCE_DATE)
 
     assert first == second
 
@@ -90,7 +92,7 @@ def test_never_reuses_a_customer_across_scenarios() -> None:
         _row("CLI-5", "TRX-5", _REPEAT_COMPLAINER),
     ]
 
-    mapping = select_personas(rows)
+    mapping = select_personas(rows, reference_date=_REFERENCE_DATE)
 
     assert len(set(mapping.values())) == 5
     assert mapping["carlos"] == "CLI-4"
@@ -105,7 +107,7 @@ def test_raises_when_too_few_eligible_candidates_exist() -> None:
     ]
 
     with pytest.raises(ValueError, match="need 3 distinct eligible"):
-        select_personas(rows)
+        select_personas(rows, reference_date=_REFERENCE_DATE)
 
 
 def test_raises_when_no_above_threshold_candidate_exists() -> None:
@@ -117,7 +119,7 @@ def test_raises_when_no_above_threshold_candidate_exists() -> None:
     ]
 
     with pytest.raises(ValueError, match="amount-above-threshold"):
-        select_personas(rows)
+        select_personas(rows, reference_date=_REFERENCE_DATE)
 
 
 def test_raises_when_no_repeat_complainer_candidate_exists() -> None:
@@ -129,7 +131,7 @@ def test_raises_when_no_repeat_complainer_candidate_exists() -> None:
     ]
 
     with pytest.raises(ValueError, match="repeat-complainer"):
-        select_personas(rows)
+        select_personas(rows, reference_date=_REFERENCE_DATE)
 
 
 def test_main_logs_each_selected_persona_and_returns_0(
@@ -173,4 +175,4 @@ def test_a_candidate_the_real_engine_disagrees_with_is_not_picked() -> None:
     ]
 
     with pytest.raises(ValueError, match="amount-above-threshold"):
-        select_personas(rows)
+        select_personas(rows, reference_date=_REFERENCE_DATE)
