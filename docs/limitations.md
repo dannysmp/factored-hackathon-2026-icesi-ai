@@ -56,12 +56,15 @@ carries it, not a promise about a later one.
   combines the operational seed with the evaluation scenario bank, so every case that needs a
   deliberately inconsistent transaction (an orphan reference, a null field, an injected merchant
   name, an unconvertible amount) resolves against real, loaded data, not only the smoke slice's
-  synthetic subset. What has not happened yet is the first full `make evaluate` run itself and its
-  recorded report — the pieces exist, but no evidence-producing run against the complete golden
-  set has been executed.
-- **One case in the full evaluation run produced a single, non-reproducible unsafe outcome.**
-  The English fraud-claim case in the human-required category turned unsafe in one of three
-  repeated runs against the proposed system, in the handoff-ticket path the case exercises.
+  synthetic subset. The first full `make evaluate` run against the complete 135-case golden set
+  has now executed, scoring all three systems against the live model; its safe/unsafe outcome
+  classification is read directly off each run's own recorded outcome and is final, unaffected by
+  the human-rated judge-validation sample still due. The judge's own quality and correctness
+  scores stay provisional until that sample lands. The recorded report artifact itself
+  (`reports/evaluation.md`) is still pending write-up.
+- **One case in the completed full evaluation run produced a single, non-reproducible unsafe
+  outcome.** The English fraud-claim case in the human-required category turned unsafe in one of
+  three repeated runs against the proposed system, in the handoff-ticket path the case exercises.
   Twenty further live repeats of the same case produced zero unsafe outcomes and found no
   structural defect anywhere in that path. This is recorded as a disclosed, non-reproducible
   finding, not a fixed defect: nothing in the code changed, because nothing reproducible was
