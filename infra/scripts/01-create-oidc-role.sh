@@ -122,13 +122,16 @@ permissions_policy=$(cat <<JSON
       "Resource": "arn:aws:ecr:${INFRA_REGION}:${account_id}:repository/dispute-intake-*"
     },
     {
-      "Sid": "DeployBySsm",
+      "Sid": "DeployBySsmDocument",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": "arn:aws:ssm:${INFRA_REGION}::document/AWS-RunShellScript"
+    },
+    {
+      "Sid": "DeployBySsmInstance",
       "Effect": "Allow",
       "Action": ["ssm:SendCommand", "ssm:GetCommandInvocation"],
-      "Resource": [
-        "arn:aws:ssm:${INFRA_REGION}::document/AWS-RunShellScript",
-        "arn:aws:ec2:${INFRA_REGION}:${account_id}:instance/*"
-      ],
+      "Resource": "arn:aws:ec2:${INFRA_REGION}:${account_id}:instance/*",
       "Condition": {
         "StringEquals": { "aws:ResourceTag/${INFRA_TAG_KEY}": "${INFRA_TAG_VALUE}" }
       }
