@@ -23,7 +23,13 @@ function itemsForView(items: readonly QueueItem[], view: TriggerView): QueueItem
  * Fixed Spanish copy, not a catalog entry (D91): the console stays fixed-Spanish and never
  * imports the trilingual `useT` hook chat and sign-in use.
  */
-export function QueueScreen({ client }: { client: QueueClient }): JSX.Element {
+export function QueueScreen({
+  client,
+  onSelectTicket,
+}: {
+  client: QueueClient
+  onSelectTicket: (ticketRef: string) => void
+}): JSX.Element {
   const queue = useQueue(client)
   const [triggerView, setTriggerView] = useState<TriggerView>('all')
 
@@ -67,7 +73,9 @@ export function QueueScreen({ client }: { client: QueueClient }): JSX.Element {
           onLanguageChange={queue.setLanguage}
           triggerView={triggerView}
           onTriggerViewChange={setTriggerView}
-          renderTable={(view) => <QueueTable items={itemsForView(queue.items, view)} />}
+          renderTable={(view) => (
+            <QueueTable items={itemsForView(queue.items, view)} onSelectTicket={onSelectTicket} />
+          )}
         />
       )}
     </section>

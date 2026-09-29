@@ -15,8 +15,18 @@ function isOverdue(referenceDate: string, promisedContactBy: string): boolean {
  * (priority tickets first, `contracts/service_v1/console.py`'s own `QueueResponse`) — this
  * component does not re-sort, the same "a fixture does not recompute what its source already
  * decided" rule `FixtureChatClient` follows.
+ *
+ * A ticket's own reference is a real button, not a styled link over a `<th>` (frontend standard,
+ * section 7: semantic HTML first) — clicking it calls `onSelectTicket`, `ConsoleApp`'s own
+ * master-detail navigation into that ticket's packet and timeline.
  */
-export function QueueTable({ items }: { items: readonly QueueItem[] }): JSX.Element {
+export function QueueTable({
+  items,
+  onSelectTicket,
+}: {
+  items: readonly QueueItem[]
+  onSelectTicket: (ticketRef: string) => void
+}): JSX.Element {
   if (items.length === 0) {
     return <p>Ningún ticket coincide con este filtro.</p>
   }
@@ -47,7 +57,17 @@ export function QueueTable({ items }: { items: readonly QueueItem[] }): JSX.Elem
                 key={item.ticket_ref}
                 className={item.priority ? 'queue-row-priority' : undefined}
               >
-                <th scope="row">{item.ticket_ref}</th>
+                <th scope="row">
+                  <button
+                    type="button"
+                    className="queue-ticket-ref-button"
+                    onClick={() => {
+                      onSelectTicket(item.ticket_ref)
+                    }}
+                  >
+                    {item.ticket_ref}
+                  </button>
+                </th>
                 <td>{TRIGGER_LABELS[item.trigger]}</td>
                 <td>{LANGUAGE_LABELS[item.language]}</td>
                 <td>{item.category === null ? '—' : CATEGORY_LABELS[item.category]}</td>

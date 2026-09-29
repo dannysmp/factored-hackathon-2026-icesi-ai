@@ -2,7 +2,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { QueueClient } from './client'
 import { FixtureQueueClient } from './client'
 import { DEMO_QUEUE, EMPTY_QUEUE } from './fixtures'
@@ -15,13 +15,13 @@ const FAILING_CLIENT: QueueClient = {
 describe('QueueScreen', () => {
   it('shows the loading state before the first response arrives', () => {
     const client: QueueClient = { fetchQueue: () => new Promise(() => undefined) }
-    render(<QueueScreen client={client} />)
+    render(<QueueScreen client={client} onSelectTicket={vi.fn()} />)
 
     expect(screen.getByRole('status')).toHaveTextContent('Cargando la cola')
   })
 
   it('shows the whole queue, priority tickets first, once it loads', async () => {
-    render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} />)
+    render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={vi.fn()} />)
 
     const rows = await screen.findAllByRole('row')
     // Header row, then one row per fixture item, in the fixture's own (priority-first) order.
@@ -31,15 +31,30 @@ describe('QueueScreen', () => {
     expect(rows[1]).toHaveTextContent(firstItem?.ticket_ref ?? '')
   })
 
+  it('calls onSelectTicket when a ticket reference is clicked', async () => {
+    const user = userEvent.setup()
+    const onSelectTicket = vi.fn()
+    render(
+      <QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={onSelectTicket} />,
+    )
+    await screen.findAllByRole('row')
+    const [firstItem] = DEMO_QUEUE.items
+    expect(firstItem).toBeDefined()
+
+    await user.click(screen.getByRole('button', { name: firstItem?.ticket_ref ?? '' }))
+
+    expect(onSelectTicket).toHaveBeenCalledWith(firstItem?.ticket_ref)
+  })
+
   it('shows the empty state when there are no open tickets at all', async () => {
-    render(<QueueScreen client={new FixtureQueueClient(EMPTY_QUEUE)} />)
+    render(<QueueScreen client={new FixtureQueueClient(EMPTY_QUEUE)} onSelectTicket={vi.fn()} />)
 
     expect(await screen.findByText('No hay tickets abiertos en este momento.')).toBeInTheDocument()
   })
 
   it('narrows the table to the priority tab, then back to all', async () => {
     const user = userEvent.setup()
-    render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} />)
+    render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={vi.fn()} />)
     await screen.findAllByRole('row')
 
     await user.click(screen.getByRole('tab', { name: 'Fraude y pérdida de tarjeta' }))
@@ -53,7 +68,7 @@ describe('QueueScreen', () => {
 
   it('narrows the table by language', async () => {
     const user = userEvent.setup()
-    render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} />)
+    render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={vi.fn()} />)
     await screen.findAllByRole('row')
 
     await user.selectOptions(screen.getByLabelText('Idioma'), 'pt')
@@ -63,13 +78,15 @@ describe('QueueScreen', () => {
   })
 
   it('shows a retryable error when the queue cannot be loaded', async () => {
-    render(<QueueScreen client={FAILING_CLIENT} />)
+    render(<QueueScreen client={FAILING_CLIENT} onSelectTicket={vi.fn()} />)
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar la cola')
     expect(screen.getByRole('button', { name: 'Intentar de nuevo' })).toBeInTheDocument()
   })
 
   it('has no automatically detectable accessibility violations once ready', async () => {
-    const { container } = render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} />)
+    const { container } = render(
+      <QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={vi.fn()} />,
+    )
 
     await screen.findAllByRole('row')
     expect(await axe(container)).toHaveNoViolations()
@@ -77,21 +94,23 @@ describe('QueueScreen', () => {
 
   it('has no automatically detectable accessibility violations while loading', async () => {
     const client: QueueClient = { fetchQueue: () => new Promise(() => undefined) }
-    const { container } = render(<QueueScreen client={client} />)
+    const { container } = render(<QueueScreen client={client} onSelectTicket={vi.fn()} />)
 
     await screen.findByRole('status')
     expect(await axe(container)).toHaveNoViolations()
   })
 
   it('has no automatically detectable accessibility violations in the error state', async () => {
-    const { container } = render(<QueueScreen client={FAILING_CLIENT} />)
+    const { container } = render(<QueueScreen client={FAILING_CLIENT} onSelectTicket={vi.fn()} />)
 
     await screen.findByRole('alert')
     expect(await axe(container)).toHaveNoViolations()
   })
 
   it('has no automatically detectable accessibility violations when the queue is empty', async () => {
-    const { container } = render(<QueueScreen client={new FixtureQueueClient(EMPTY_QUEUE)} />)
+    const { container } = render(
+      <QueueScreen client={new FixtureQueueClient(EMPTY_QUEUE)} onSelectTicket={vi.fn()} />,
+    )
 
     await screen.findByText('No hay tickets abiertos en este momento.')
     expect(await axe(container)).toHaveNoViolations()

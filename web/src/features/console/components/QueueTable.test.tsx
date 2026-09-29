@@ -1,6 +1,7 @@
-/** Component test: `QueueTable`'s rows, empty state and overdue flag. */
+/** Component test: `QueueTable`'s rows, empty state, overdue flag and ticket selection. */
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
 import type { QueueItem } from '../contracts'
 import { QueueTable } from './QueueTable'
 
@@ -22,14 +23,14 @@ function item(overrides: Partial<QueueItem> = {}): QueueItem {
 
 describe('QueueTable', () => {
   it('shows a message instead of a table when there are no items', () => {
-    render(<QueueTable items={[]} />)
+    render(<QueueTable items={[]} onSelectTicket={vi.fn()} />)
 
     expect(screen.getByText('Ningún ticket coincide con este filtro.')).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
   it('renders one row per item, with its reference, trigger, language, category and status', () => {
-    render(<QueueTable items={[item()]} />)
+    render(<QueueTable items={[item()]} onSelectTicket={vi.fn()} />)
 
     expect(screen.getByRole('cell', { name: 'Reporte de fraude' })).toBeInTheDocument()
     expect(screen.getByRole('rowheader', { name: 'T-20260618-AAAAAAAA' })).toBeInTheDocument()
@@ -38,8 +39,18 @@ describe('QueueTable', () => {
     expect(screen.getByRole('cell', { name: 'Abierto' })).toBeInTheDocument()
   })
 
+  it('calls onSelectTicket with the ticket_ref when its reference is clicked', async () => {
+    const user = userEvent.setup()
+    const onSelectTicket = vi.fn()
+    render(<QueueTable items={[item()]} onSelectTicket={onSelectTicket} />)
+
+    await user.click(screen.getByRole('button', { name: 'T-20260618-AAAAAAAA' }))
+
+    expect(onSelectTicket).toHaveBeenCalledWith('T-20260618-AAAAAAAA')
+  })
+
   it('shows an em dash for a ticket with no category', () => {
-    render(<QueueTable items={[item({ category: null })]} />)
+    render(<QueueTable items={[item({ category: null })]} onSelectTicket={vi.fn()} />)
 
     expect(screen.getByRole('cell', { name: '—' })).toBeInTheDocument()
   })
@@ -48,6 +59,7 @@ describe('QueueTable', () => {
     render(
       <QueueTable
         items={[item({ reference_date: '2026-06-20', promised_contact_by: '2026-06-19' })]}
+        onSelectTicket={vi.fn()}
       />,
     )
 
@@ -58,6 +70,7 @@ describe('QueueTable', () => {
     render(
       <QueueTable
         items={[item({ reference_date: '2026-06-18', promised_contact_by: '2026-06-19' })]}
+        onSelectTicket={vi.fn()}
       />,
     )
 
@@ -68,6 +81,7 @@ describe('QueueTable', () => {
     render(
       <QueueTable
         items={[item({ reference_date: '2026-06-18', promised_contact_by: '2026-06-18' })]}
+        onSelectTicket={vi.fn()}
       />,
     )
 
