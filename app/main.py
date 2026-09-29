@@ -30,9 +30,13 @@ Design Principles
 - The turns route's own heavy dependencies (a database connection, an LLM provider key) are
   resolved lazily, inside its per-request factory, never at start-up: an app that never calls
   ``/v1/turns`` — most tests, a bare health check — never needs them configured.
-- Structured JSON logging (``app.observability.logging``) is installed before anything else runs,
-  so every event this factory or a route logs, including a start-up failure, is already a JSON
-  line carrying the service's own identity and version.
+- Configuration resolves first, and structured JSON logging installs immediately after — not
+  before it, since the service version and environment logging carries come from that same
+  configuration. A configuration failure itself is still captured as a JSON line: it installs a
+  fallback logger just for that one critical event before re-raising
+  (``_load_settings_or_log_and_raise``), rather than surfacing only as an unstructured traceback.
+  Every event after configuration resolves, success or failure, is already a JSON line carrying
+  the service's own identity and version.
 - Bounded retries and one circuit breaker per external dependency sit in front of the LLM
   client and the tool port, built once and shared across every turn the app serves — never rebuilt
   per request, since breaker state held on an object rebuilt every request could never trip.
