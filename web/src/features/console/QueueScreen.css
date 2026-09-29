@@ -29,6 +29,17 @@
   padding: var(--space-4);
 }
 
+/* A flex column's default cross-axis alignment is `stretch`: without this, a direct `<button>`
+   child (the error state's "Intentar de nuevo", the ticket-detail screen's "Volver a la cola")
+   stretches to the container's full width — a plain browser default nothing here had overridden,
+   caught only by looking at a screenshot. Scoped to the button itself, not the container's own
+   `align-items`, so the banner, the filters row and the table keep stretching to full width as
+   they already correctly do. */
+.queue-screen > button,
+.ticket-detail-screen > button {
+  align-self: flex-start;
+}
+
 .queue-filters {
   display: flex;
   flex-wrap: wrap;
@@ -99,4 +110,18 @@ tbody th[scope='row'] {
 .queue-overdue-flag {
   color: var(--color-error);
   font-weight: var(--font-weight-emphasis);
+}
+
+/* A real `<button>` (frontend standard, section 7), styled to read as the reference text it
+   replaces, not as a UI-chrome button — the ticket's own reference stays the row's visual weight,
+   not the fact that it happens to be clickable. */
+.queue-ticket-ref-button {
+  font: inherit;
+  font-weight: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
 }

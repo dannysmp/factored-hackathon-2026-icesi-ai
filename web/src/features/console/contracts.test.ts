@@ -3,7 +3,14 @@
  * alone would miss.
  */
 import { describe, expect, it } from 'vitest'
-import { QueueItemSchema, QueueResponseSchema } from './contracts'
+import { DEMO_TICKET_DETAILS } from './fixtures'
+import {
+  HandoffPacketSchema,
+  MoneySchema,
+  QueueItemSchema,
+  QueueResponseSchema,
+  TicketDetailSchema,
+} from './contracts'
 
 const BASE_ITEM = {
   ticket_ref: 'T-20260618-AAAAAAAA',
@@ -60,6 +67,62 @@ describe('QueueResponseSchema', () => {
         reference_date: '2026-06-18',
         reference_date_origin: 'guessed',
         items: [],
+      }),
+    ).toThrow()
+  })
+})
+
+describe('MoneySchema', () => {
+  it.each(['250', '250.5', '250.00'])(
+    'accepts %s, since decimal_places=2 on the Python side bounds the fraction, not pads it',
+    (amount) => {
+      expect(MoneySchema.parse({ amount, currency: 'MXN' }).amount).toBe(amount)
+    },
+  )
+
+  it('refuses more than two fraction digits', () => {
+    expect(() => MoneySchema.parse({ amount: '250.001', currency: 'MXN' })).toThrow()
+  })
+})
+
+describe('HandoffPacketSchema', () => {
+  const [FIRST] = DEMO_TICKET_DETAILS
+  if (FIRST === undefined) {
+    throw new Error('fixture setup: DEMO_TICKET_DETAILS needs at least one entry for this test')
+  }
+
+  it('accepts the fixture packet as-is', () => {
+    expect(() => HandoffPacketSchema.parse(FIRST.packet)).not.toThrow()
+  })
+
+  it('refuses needs_language_routing=false when the language is not Spanish', () => {
+    expect(() =>
+      HandoffPacketSchema.parse({ ...FIRST.packet, language: 'en', needs_language_routing: false }),
+    ).toThrow()
+  })
+
+  it('refuses needs_language_routing=true when the language is Spanish', () => {
+    expect(() =>
+      HandoffPacketSchema.parse({ ...FIRST.packet, language: 'es', needs_language_routing: true }),
+    ).toThrow()
+  })
+})
+
+describe('TicketDetailSchema', () => {
+  const [FIRST] = DEMO_TICKET_DETAILS
+  if (FIRST === undefined) {
+    throw new Error('fixture setup: DEMO_TICKET_DETAILS needs at least one entry for this test')
+  }
+
+  it('accepts the fixture detail as-is', () => {
+    expect(() => TicketDetailSchema.parse(FIRST)).not.toThrow()
+  })
+
+  it('refuses a detail whose item and packet disagree (_row_describes_the_packet)', () => {
+    expect(() =>
+      TicketDetailSchema.parse({
+        ...FIRST,
+        item: { ...FIRST.item, trigger: 'card_loss' },
       }),
     ).toThrow()
   })
