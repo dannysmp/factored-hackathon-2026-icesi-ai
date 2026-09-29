@@ -124,6 +124,7 @@ def test_b0_answers_a_policy_question_end_to_end(dsn: str) -> None:
         seed_ref="ops_seed:CLI-B0-A",
         user_turns=("¿Cuánto tiempo tengo para presentar una disputa?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
     )
 
     results = run_cases(client, dsn, (case,), test_login_key=LOGIN_KEY)
@@ -156,6 +157,7 @@ def test_b0_never_constructs_a_real_anthropic_client(
         seed_ref="ops_seed:CLI-B0-A",
         user_turns=("¿Cuánto tiempo tengo para presentar una disputa?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
     )
 
     results = run_cases(client, dsn, (case,), test_login_key=LOGIN_KEY)

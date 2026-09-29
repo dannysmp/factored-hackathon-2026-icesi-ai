@@ -45,18 +45,20 @@ medium ≤ 30 days**; exceptions are documented with the compensating controls.
 |---|---|
 | Typed secrets, fail-fast validated configuration, model allow-list | Implemented |
 | Secret scanning of history and staged changes, with a planted-key self-test | Implemented |
-| Dependency lockfile, vulnerability audit in CI, dependency update automation | Implemented |
+| Dependency lockfile, vulnerability audit in CI, dependency update automation | Implemented for the Python backend (`pip-audit`, blocking; Dependabot, monthly); the web frontend's dependencies have neither an automated update bot nor a CI-blocking audit today |
 | CI workflow hardening: read-only token, actions pinned by commit SHA, no cloud credentials | Implemented |
 | Review workflow: write scopes limited to commit statuses, labels and comments; third-party action pinned by commit SHA | Planned (scopes limited today; the action is pinned by release tag) |
 | Session authentication: short-lived signed tokens, default-deny middleware, structured re-authentication errors, sandbox login limited per client and impossible in production | Implemented |
 | Per-customer authorization in the tool layer | Implemented |
 | One error format with stable codes and request identifiers; no stack traces or request data in responses | Implemented |
-| Deterministic policy engine with stable reason codes | Planned |
+| Deterministic policy engine with stable reason codes | Implemented (`app/domain/policy/engine.py`: pure, fixed-order gates and routing over a stable `ReasonCode` set, wired into the controller as the only source of a filing decision) |
 | Structured logging with correlation identifiers and redaction filter | Implemented (JSON logs with a stable event name, trace id and, once authenticated, session id on every line; card-shaped digit runs redacted before a line is written) |
 | Append-only audit records | Implemented |
-| Masking and redaction before model calls | Planned |
+| Masking and redaction before model calls | Implemented (`app/llm/masking.py`: card-shaped digit runs redacted at the one egress boundary every outbound model request passes through; proven end to end by a request-capture fixture, `tests/test_request_capture_pii.py`). A document number typed unprompted into free text is not detected — this is a stated, ratified limitation (`docs/limitations.md`), not an unnoticed gap |
 | Confirmation, idempotency and read-back for state-changing operations | Implemented (the create tool: explicit confirmation matched against the decision, an idempotency key enforced at the store, and an audit record for every filing and refusal; the controller's read-back call before reporting success is stream 2's) |
 | Retention and purge procedure | Planned |
 | Demonstration sign-in broker: audience-separated signing keys, an access code compared before anything is counted, concurrent-session caps that release on a later refusal, and every attempt audited (append-only) before a token is returned | Implemented (customer and agent audiences, each with its own access code and signing key; the console's own routes to consume an agent session are a later slice) |
+| Security response headers (HSTS, Content-Security-Policy, Referrer-Policy, X-Frame-Options) and a post-deploy check that verifies TLS, ciphers and headers on the live deployment | Planned. The architecture document's security-baseline amendment describes this check as already in force; it is not — the only post-deploy check that runs today verifies reachability alone. Tracked in detail in [the ASVS Level 1 checklist](docs/asvs-level1-checklist.md) (V9.1.2, V9.1.3, V14.3.3, V14.4.3, V14.4.5 through V14.4.7) |
+| Interactive API documentation and schema endpoints (`/docs`, `/redoc`, `/openapi.json`) disabled outside development | Planned; reachable at their framework defaults in every environment today |
 
-This table is updated in the same change that implements a control.
+This table is updated in the same change that implements a control. A full walk of the OWASP ASVS Level 1 baseline, every requirement mapped to its evidence or declared as a limitation, is at [`docs/asvs-level1-checklist.md`](docs/asvs-level1-checklist.md).

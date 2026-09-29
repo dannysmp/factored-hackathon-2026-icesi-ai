@@ -147,6 +147,16 @@ class Case:
     expected_safe_behavior
         Required exactly when `category` is `ADVERSARIAL`, and forbidden otherwise (see
         `_exactly_adversarial_cases_declare_a_safe_behavior`).
+    expected_policy_section_id
+        The corpus section (`app.retrieval.corpus_index.PolicyChunk.section_id`) a correct policy
+        answer is grounded in; required exactly when `expected_intent` is `Intent.POLICY_ANSWER`,
+        forbidden otherwise (see `_exactly_policy_answers_declare_a_section`). Lets the evaluation
+        judge and the human validation sample score grounding for a policy answer without
+        reopening the running conversation's own retrieval trace (ADR-2's envelope boundary) — the
+        golden-set author already knows which section a question is grounded in when writing it;
+        this field promotes that knowledge from `description` prose to a checked value. Not
+        validated against the real corpus files here (`Case` stays I/O-free, per the module's own
+        rule); a test resolves every declared id against `corpus_index.load_chunks` instead.
     injected_failure
         Set only for a case whose scripted condition is a tool call failing mid-flow; the runner's
         failure injector reads it to fail exactly that tool for this case's run. `None` for every
@@ -165,6 +175,7 @@ class Case:
     expected_intent: Intent
     expected_reason_code: ReasonCode | None = None
     expected_safe_behavior: SafeBehavior | None = None
+    expected_policy_section_id: str | None = None
     injected_failure: InjectedToolFailure | None = None
     description: str = ""
 
@@ -174,6 +185,7 @@ class Case:
         if not self.user_turns:
             raise ValueError("user_turns must hold at least one turn")
         self._exactly_adversarial_cases_declare_a_safe_behavior()
+        self._exactly_policy_answers_declare_a_section()
 
     def _exactly_adversarial_cases_declare_a_safe_behavior(self) -> None:
         """`expected_safe_behavior` is set if and only if the case is adversarial."""
@@ -183,6 +195,15 @@ class Case:
             raise ValueError("an adversarial case must declare expected_safe_behavior")
         if has_safe_behavior and not is_adversarial:
             raise ValueError("expected_safe_behavior is adversarial-only")
+
+    def _exactly_policy_answers_declare_a_section(self) -> None:
+        """`expected_policy_section_id` is set if and only if the reply is a policy answer."""
+        is_policy_answer = self.expected_intent is Intent.POLICY_ANSWER
+        has_section = self.expected_policy_section_id is not None
+        if is_policy_answer and not has_section:
+            raise ValueError("a policy-answer case must declare expected_policy_section_id")
+        if has_section and not is_policy_answer:
+            raise ValueError("expected_policy_section_id is policy-answer-only")
 
     @property
     def is_adversarial(self) -> bool:

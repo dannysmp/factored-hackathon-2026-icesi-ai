@@ -67,6 +67,11 @@ class AuditAction(StrEnum):
     confirmation with the same idempotency key and payload answers the customer exactly as the
     original filing did, but the trail still shows a distinct entry for it, so a trace built from
     audit records alone accounts for every filing call the customer actually made.
+    ``PACKET_VIEWED`` and ``TIMELINE_VIEWED`` are a further compatible addition: an agent opening a
+    handoff packet or a conversation's audit timeline is a customer-data access like any other
+    (ADR-17), so it is audited under the same fail-closed rule — ``customer_id`` names the
+    customer whose packet or timeline was opened, and ``session_id`` the agent's own session,
+    never a customer one.
     """
 
     TRANSACTIONS_LISTED = "transactions_listed"
@@ -79,6 +84,8 @@ class AuditAction(StrEnum):
     CASE_CREATED = "case_created"
     CASE_CREATION_REFUSED = "case_creation_refused"
     CASE_CREATION_REPLAYED = "case_creation_replayed"
+    PACKET_VIEWED = "packet_viewed"
+    TIMELINE_VIEWED = "timeline_viewed"
 
 
 class AuditRecord(ContractModel):

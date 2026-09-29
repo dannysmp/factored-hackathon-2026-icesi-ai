@@ -181,6 +181,7 @@ def test_run_case_answers_a_policy_question_via_one_tool_round(
         seed_ref="ops_seed:CLI-B1-LOOP",
         user_turns=("¿Cuánto tiempo tengo para presentar una disputa?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
     )
 
     transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
@@ -372,6 +373,7 @@ def test_run_case_does_not_leak_a_handoff_ticket_into_a_later_unrelated_turn(
         seed_ref="ops_seed:CLI-B1-LOOP",
         user_turns=("Quiero hablar con una persona.", "¿Algo más en qué me pueda ayudar?"),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
     )
 
     transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
@@ -416,6 +418,7 @@ def test_run_case_stops_after_max_tool_rounds_with_no_text_reply(
         seed_ref="ops_seed:CLI-B1-LOOP",
         user_turns=("¿Cuánto tiempo tengo para presentar una disputa?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
     )
 
     transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)

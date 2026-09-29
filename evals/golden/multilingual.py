@@ -59,6 +59,7 @@ _ES_PT_CASES = (
         seed_ref="ops_seed:CLI-3CUI4FEZFBQM",
         user_turns=("¿Cuántos días tenho para contestar um cargo que no reconozco en mi tarjeta?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
         description=(
             'Opens in Spanish ("¿Cuántos días"), code-switches into Portuguese words'
             ' ("tenho", "contestar", "um cargo") mid-sentence; the system should lock onto'
@@ -76,6 +77,7 @@ _ES_PT_CASES = (
             "Quantos dias tenho para reportar, eh, un cargo que no reconozco en mi tarjeta?",
         ),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
         description=(
             'Opens in Portuguese ("Quantos dias tenho"), switches into Spanish'
             ' ("un cargo que no reconozco") mid-turn; the system should lock onto Portuguese,'
@@ -91,6 +93,7 @@ _ES_PT_CASES = (
         seed_ref="ops_seed:CLI-3L2193M91XBS",
         user_turns=("¿Puedo contestar uma transferência hecha desde mi conta de ahorros?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="who-can-dispute",
         description=(
             "Opens in Spanish, code-switches into Portuguese words for the transaction itself."
             " Grounded in the who-can-dispute section."
@@ -104,6 +107,7 @@ _ES_PT_CASES = (
         seed_ref="ops_seed:CLI-3LZYXZ9296GP",
         user_turns=("Preciso saber, ¿cuánto tiempo tenho para apresentar uma disputa por fraude?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="fraud-claims",
         description=(
             'Opens in Portuguese, switches into Spanish ("¿cuánto tiempo") and back.'
             " Grounded in the fraud-claims section (180 days)."
@@ -126,6 +130,7 @@ _EN_ES_CASES = (
             "How many days do I have, o sea, cuántos días tengo to report a duplicate charge?",
         ),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
         description=(
             'Opens in English, switches into Spanish ("o sea, cuántos días tengo") mid-turn;'
             " the system should lock onto English. Grounded in the filing-windows section"
@@ -140,6 +145,7 @@ _EN_ES_CASES = (
         seed_ref="ops_seed:CLI-3OFDD68FE4MT",
         user_turns=("Necesito saber, I mean, when does a person review my dispute?",),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="human-review",
         description=(
             'Opens in Spanish, switches into English ("I mean, when does...") mid-turn;'
             " the system should lock onto Spanish. Grounded in the human-review section."
@@ -156,6 +162,7 @@ _EN_ES_CASES = (
             " a service I paid for?",
         ),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="evidence",
         description=(
             "Opens in English, code-switches into Spanish mid-sentence for the clarifying"
             " aside. Grounded in the evidence section (service not received)."
@@ -178,6 +185,7 @@ _ACCENT_FLAVORED_CASES = (
             "Oye, ¿qué onda con cuántos días tengo pa' reportar un cargo que no reconozco?",
         ),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
         description=(
             'Mexican colloquial phrasing ("qué onda", "pa\'"); tests that regional wording'
             " doesn't break intent or language detection. Grounded in the filing-windows"
@@ -194,6 +202,7 @@ _ACCENT_FLAVORED_CASES = (
             "Ey parcero, ¿cuánto tiempo tengo pa' meter una disputa por un fraude, oíste?",
         ),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="fraud-claims",
         description=(
             'Colombian colloquial phrasing ("parcero", "oíste"). Grounded in the'
             " fraud-claims section."
@@ -210,6 +219,7 @@ _ACCENT_FLAVORED_CASES = (
             " por un monto incorrecto?",
         ),
         expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="response-time",
         description=(
             'Argentine voseo phrasing ("che", "vos sabés"). Grounded in the response-time'
             " section (wrong amount, 3 days)."

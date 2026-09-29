@@ -44,6 +44,7 @@ def _case(**overrides: Any) -> Case:
         "seed_ref": "ops_seed:CLI-RUNNER-A",
         "user_turns": ("¿Cuánto tiempo tengo para presentar una disputa?",),
         "expected_intent": Intent.POLICY_ANSWER,
+        "expected_policy_section_id": "filing-windows",
     }
     return Case(**{**values, **overrides})
 
