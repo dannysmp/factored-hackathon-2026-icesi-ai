@@ -122,6 +122,11 @@ def test_an_unrelated_banking_question_abstains_in_every_language(
         ("pt", "nós estivemos lá ontem à tarde"),
         ("pt", "espero que tenhamos feito a coisa certa"),
         ("pt", "eles estarão lá amanhã de manhã"),
+        # Futuro do subjuntivo of ser/ir, estar and haver — ordinary Portuguese (unlike the
+        # archaic Spanish cognate), missing from the paradigm until this fix.
+        ("pt", "se ele for embora sem avisar, ninguém vai entender"),
+        ("pt", "quando eu estiver de férias, vou viajar bastante"),
+        ("pt", "se houver alguém disponível agora, me avise"),
     ],
 )
 def test_a_common_auxiliary_verb_conjugation_does_not_leak_relevance(
@@ -132,11 +137,58 @@ def test_a_common_auxiliary_verb_conjugation_does_not_leak_relevance(
     assert retriever.search(query, lang) == ()
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "o carro é dele, não meu",
+        "a bicicleta é dela, não minha",
+        "confio muito nele para isso",
+        "pensei bastante nela ontem",
+        "ele mora num apartamento pequeno",
+        "ela trabalha numa loja perto daqui",
+        "obrigado pelos conselhos de ontem",
+        "agradeço pelas mensagens de apoio",
+    ],
+)
+def test_a_common_contraction_does_not_leak_relevance(
+    retriever: LexicalRetriever, query: str
+) -> None:
+    """An unrelated sentence sharing only a contraction (dele/dela/nele/nela/num/numa/pelos/
+    pelas) — the pelo/pela pair's plural and siblings, missing until this fix — still abstains."""
+    assert retriever.search(query, "pt") == ()
+
+
+@pytest.mark.parametrize(
+    "contraction", ["dele", "dela", "nele", "nela", "num", "numa", "pelos", "pelas"]
+)
+def test_the_new_contraction_forms_are_stopwords(contraction: str) -> None:
+    """A direct membership check, not a search-level one: none of the eight new contractions
+    currently collides with the committed corpus, so the abstention test above would keep
+    passing even if one of them were removed from ``_STOPWORDS["pt"]`` — this is the test that
+    actually catches that removal, tokenizing the word alone and asserting nothing survives."""
+    assert tokenize(contraction, "pt") == ()
+
+
+def _conjugated(stem: str, endings: tuple[str, ...]) -> list[str]:
+    """The six person-forms of one tense, from its own stem and the tense's own endings — the
+    shape any Portuguese conjugation table uses, so a table built this way can be checked person
+    by person against a grammar reference, not read as one flat, opaque list."""
+    return [stem + ending for ending in endings]
+
+
 def test_every_auxiliary_verb_form_is_a_stopword(retriever: LexicalRetriever) -> None:
     """The stopword lists cover the auxiliary paradigm as a whole, checked against the closed
     set of forms rather than against any one reported sentence: tokenizing every conjugated
     form of ser/estar/haber (ES) and ser/estar/ter/haver (PT) yields nothing, in every person
-    and tense, so none of them can ever leak in as an accidental content token."""
+    and tense, so none of them can ever leak in as an accidental content token.
+
+    The Portuguese forms are built from each verb's own stem and the standard ending set for its
+    tense, not transcribed from ``_STOPWORDS["pt"]`` itself: a list copied from the production set
+    could omit exactly the form the production set omits and never notice, which is exactly how
+    the futuro do subjuntivo gap this table now covers went unnoticed before. ``ter``'s own futuro
+    do subjuntivo (a matching gap building this table surfaced) is intentionally left out here,
+    matching what ``_STOPWORDS["pt"]`` currently covers; a tracked follow-up covers closing it.
+    """
     es_forms = [
         "soy",
         "eres",
@@ -278,169 +330,105 @@ def test_every_auxiliary_verb_form_is_a_stopword(retriever: LexicalRetriever) ->
         "habido",
         "haber",
     ]
+    # Endings, in person order (eu, tu, ele/ela/voce, nos, vos, eles/elas): the same six-slot
+    # shape for every regular tense in this table. Two imperfeito families exist because the
+    # tense itself has two regular patterns in Portuguese (the -ar-verb pattern ser/estar/ter
+    # follow here, and the -er/-ir-verb pattern haver follows), not because of an inconsistency.
+    imperfeito = ("a", "as", "a", "amos", "eis", "am")
+    imperfeito_ia = ("ia", "ias", "ia", "iamos", "ieis", "iam")
+    futuro = ("ei", "as", "a", "emos", "eis", "ao")
+    condicional = ("ia", "ias", "ia", "iamos", "ieis", "iam")
+    presente_subjuntivo = ("a", "as", "a", "amos", "ais", "am")
+    imperfeito_subjuntivo = ("sse", "sses", "sse", "ssemos", "sseis", "ssem")
+    futuro_subjuntivo = ("", "es", "", "mos", "des", "em")
+
     pt_forms = [
+        # ser (irregular; also covers ir's own preterito, mais-que-perfeito, imperfeito do
+        # subjuntivo and futuro do subjuntivo, which are identical to ser's in Portuguese)
         "sou",
         "es",
         "somos",
         "sois",
         "sao",
-        "era",
-        "eras",
-        "eramos",
-        "ereis",
-        "eram",
+        *_conjugated("er", imperfeito),  # preterito imperfeito
         "fui",
         "foste",
         "foi",
         "fomos",
         "fostes",
-        "foram",
-        "serei",
-        "seras",
-        "sera",
-        "seremos",
-        "sereis",
-        "serao",
-        "seria",
-        "serias",
-        "seriamos",
-        "serieis",
-        "seriam",
-        "seja",
-        "sejas",
-        "sejamos",
-        "sejais",
-        "sejam",
-        "fosse",
-        "fosses",
-        "fossemos",
-        "fosseis",
-        "fossem",
-        "fora",
-        "foras",
-        "foramos",
-        "foreis",
+        "foram",  # preterito perfeito
+        *_conjugated("for", imperfeito),  # preterito mais-que-perfeito
+        *_conjugated("ser", futuro),  # futuro do presente
+        *_conjugated("ser", condicional),  # futuro do preterito
+        *_conjugated("sej", presente_subjuntivo),  # presente do subjuntivo
+        *_conjugated("fo", imperfeito_subjuntivo),  # preterito imperfeito do subjuntivo
+        *_conjugated("for", futuro_subjuntivo),  # futuro do subjuntivo
+        "ser",
         "sendo",
         "sido",
-        "ser",
+        # estar
         "estou",
         "estas",
         "esta",
         "estamos",
         "estais",
         "estao",
-        "estava",
-        "estavas",
-        "estavamos",
-        "estaveis",
-        "estavam",
+        *_conjugated("estav", imperfeito),  # preterito imperfeito
         "estive",
         "estiveste",
         "esteve",
         "estivemos",
         "estivestes",
-        "estiveram",
-        "estarei",
-        "estaras",
-        "estara",
-        "estaremos",
-        "estareis",
-        "estarao",
-        "estaria",
-        "estarias",
-        "estariamos",
-        "estarieis",
-        "estariam",
-        "esteja",
-        "estejas",
-        "estejamos",
-        "estejais",
-        "estejam",
-        "estivesse",
-        "estivesses",
-        "estivessemos",
-        "estivesseis",
-        "estivessem",
+        "estiveram",  # preterito perfeito
+        *_conjugated("estar", futuro),  # futuro do presente
+        *_conjugated("estar", condicional),  # futuro do preterito
+        *_conjugated("estej", presente_subjuntivo),  # presente do subjuntivo
+        *_conjugated("estive", imperfeito_subjuntivo),  # preterito imperfeito do subjuntivo
+        *_conjugated("estiver", futuro_subjuntivo),  # futuro do subjuntivo
+        "estar",
         "estando",
         "estado",
-        "estar",
+        # ter (its own futuro do subjuntivo, the "tiver..." family, is a known, separately
+        # tracked gap — not part of this table, matching what _STOPWORDS["pt"] covers today)
         "tenho",
         "tens",
         "tem",
         "temos",
         "tendes",
-        "tinha",
-        "tinhas",
-        "tinhamos",
-        "tinheis",
-        "tinham",
+        *_conjugated("tinh", imperfeito),  # preterito imperfeito
         "tive",
         "tiveste",
         "teve",
         "tivemos",
         "tivestes",
-        "tiveram",
-        "terei",
-        "teras",
-        "tera",
-        "teremos",
-        "tereis",
-        "terao",
-        "teria",
-        "terias",
-        "teriamos",
-        "terieis",
-        "teriam",
-        "tenha",
-        "tenhas",
-        "tenhamos",
-        "tenhais",
-        "tenham",
-        "tivesse",
-        "tivesses",
-        "tivessemos",
-        "tivesseis",
-        "tivessem",
+        "tiveram",  # preterito perfeito
+        *_conjugated("ter", futuro),  # futuro do presente
+        *_conjugated("ter", condicional),  # futuro do preterito
+        *_conjugated("tenh", presente_subjuntivo),  # presente do subjuntivo
+        *_conjugated("tive", imperfeito_subjuntivo),  # preterito imperfeito do subjuntivo
+        "ter",
         "tendo",
         "tido",
-        "ter",
+        # haver
         "hei",
+        "has",
         "havemos",
         "haveis",
         "hao",
-        "havia",
-        "havias",
-        "haviamos",
-        "havieis",
-        "haviam",
+        *_conjugated("hav", imperfeito_ia),  # preterito imperfeito
         "houve",
         "houveste",
         "houvemos",
         "houvestes",
-        "houveram",
-        "havera",
-        "haveras",
-        "haveremos",
-        "havereis",
-        "haverao",
-        "haveria",
-        "haverias",
-        "haveriamos",
-        "haverieis",
-        "haveriam",
-        "haja",
-        "hajas",
-        "hajamos",
-        "hajais",
-        "hajam",
-        "houvesse",
-        "houvesses",
-        "houvessemos",
-        "houvesseis",
-        "houvessem",
+        "houveram",  # preterito perfeito (1st/3rd singular share "houve")
+        *_conjugated("haver", futuro),  # futuro do presente
+        *_conjugated("haver", condicional),  # futuro do preterito
+        *_conjugated("haj", presente_subjuntivo),  # presente do subjuntivo
+        *_conjugated("houve", imperfeito_subjuntivo),  # preterito imperfeito do subjuntivo
+        *_conjugated("houver", futuro_subjuntivo),  # futuro do subjuntivo
+        "haver",
         "havendo",
         "havido",
-        "haver",
     ]
 
     assert tokenize(" ".join(es_forms), "es") == ()
