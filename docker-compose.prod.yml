@@ -17,6 +17,12 @@
 #   rather than guess the real date. An explicit ISO date still wins over
 #   this default (ADR-15's own resolution order), so a run against a seeded
 #   database can still override it.
+#   The demo sign-in variables (ADR-18) all default empty/false: a smoke
+#   deployment that never created the access codes in SSM gets a backend with
+#   sign-in disabled, exactly as before this pass added them. The deploy
+#   step (05-deploy.sh) derives `DEMO_SIGNIN_ENABLED`/`DEMO_AGENT_SIGNIN_ENABLED`
+#   from whether the corresponding SSM parameters exist, not from a separate
+#   toggle — creating the access codes is what turns sign-in on.
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #   (the deploy pipeline, a later slice, sets the environment variables above
@@ -34,6 +40,11 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       SESSION_SIGNING_KEY: ${SESSION_SIGNING_KEY}
       DATA_AS_OF_DATE: ${DATA_AS_OF_DATE:-2026-06-18}
+      DEMO_SIGNIN_ENABLED: ${DEMO_SIGNIN_ENABLED:-false}
+      DEMO_SIGNIN_ACCESS_CODE: ${DEMO_SIGNIN_ACCESS_CODE:-}
+      DEMO_AGENT_SIGNIN_ENABLED: ${DEMO_AGENT_SIGNIN_ENABLED:-false}
+      DEMO_AGENT_ACCESS_CODE: ${DEMO_AGENT_ACCESS_CODE:-}
+      AGENT_SESSION_SIGNING_KEY: ${AGENT_SESSION_SIGNING_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

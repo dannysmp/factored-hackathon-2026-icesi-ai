@@ -11,10 +11,19 @@
 #   The compose files and the Caddyfile live in this repository, not on the
 #   host; this script base64-encodes their current content and embeds it in
 #   the SSM command, so the host never needs git, a checkout or a token to
-#   fetch them. The two application secrets (the model API key, the session-
-#   signing key) are read on the host itself, by the host's own instance
-#   role (03-create-instance-role.sh) — this script and the CI role that
-#   calls it never see either value, matching PII/secret minimization.
+#   fetch them. Every application secret (the model API key, the session-
+#   signing key, and — when present — the demo sign-in access codes and the
+#   agent session-signing key) is read on the host itself, by the host's own
+#   instance role (03-create-instance-role.sh) — this script and the CI role
+#   that calls it never see any of their values, matching PII/secret
+#   minimization.
+#   The three demo sign-in parameters (ADR-18) are optional: a deployment
+#   where the maintainer hasn't created them yet (the smoke-only path) gets
+#   an empty value for each and sign-in stays disabled, exactly as before
+#   this script knew about them — `DEMO_SIGNIN_ENABLED`/
+#   `DEMO_AGENT_SIGNIN_ENABLED` are derived on the host from whether the
+#   corresponding access code resolved to a non-empty value, not from a
+#   separate toggle this script or its caller would need to remember to set.
 #   Idempotent: `docker compose up -d` reconciles a running stack to the new
 #   image tag rather than erroring on one already up.
 # Usage:
@@ -80,6 +89,13 @@ export IMAGE_TAG='${IMAGE_TAG}'
 export HOST_NAME='${HOST_NAME}'
 export ANTHROPIC_API_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/anthropic-api-key --with-decryption --query Parameter.Value --output text)"
 export SESSION_SIGNING_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/session-signing-key --with-decryption --query Parameter.Value --output text)"
+export DEMO_SIGNIN_ACCESS_CODE="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/demo-signin-access-code --with-decryption --query Parameter.Value --output text 2>/dev/null || echo '')"
+export DEMO_AGENT_ACCESS_CODE="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/demo-agent-access-code --with-decryption --query Parameter.Value --output text 2>/dev/null || echo '')"
+export AGENT_SESSION_SIGNING_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/agent-session-signing-key --with-decryption --query Parameter.Value --output text 2>/dev/null || echo '')"
+export DEMO_SIGNIN_ENABLED=false
+if [ -n "\${DEMO_SIGNIN_ACCESS_CODE}" ]; then export DEMO_SIGNIN_ENABLED=true; fi
+export DEMO_AGENT_SIGNIN_ENABLED=false
+if [ -n "\${DEMO_AGENT_ACCESS_CODE}" ] && [ -n "\${AGENT_SESSION_SIGNING_KEY}" ]; then export DEMO_AGENT_SIGNIN_ENABLED=true; fi
 aws ecr get-login-password --region ${INFRA_REGION} | docker login --username AWS --password-stdin "\${ECR_REGISTRY}"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
