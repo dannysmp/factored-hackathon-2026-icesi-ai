@@ -91,3 +91,17 @@ def test_an_audit_record_is_immutable() -> None:
 
     with pytest.raises(ValidationError):
         record.reason_code = ReasonCode.ELIGIBLE  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "action", [AuditAction.PACKET_VIEWED, AuditAction.TIMELINE_VIEWED], ids=lambda a: a.value
+)
+def test_an_agent_console_read_carries_no_reason_code_or_policy_version(
+    action: AuditAction,
+) -> None:
+    """Opening a packet or a timeline is a plain read, like any other (ADR-17): no policy basis
+    to record, same as a customer's own transaction or case read."""
+    record = _record(action=action)
+
+    assert record.reason_code is None
+    assert record.policy_version is None

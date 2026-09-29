@@ -87,6 +87,25 @@ def test_a_policy_decision_carries_its_reason_code_and_policy_version(dsn: str) 
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    "action", [AuditAction.PACKET_VIEWED, AuditAction.TIMELINE_VIEWED], ids=lambda a: a.value
+)
+def test_an_agent_console_read_is_accepted_by_the_stores_own_check_constraint(
+    dsn: str, action: AuditAction
+) -> None:
+    """Migration 0008 widened the CHECK constraint, not just the Python enum: a value the store
+    itself refused before now writes cleanly."""
+    sink = PostgresAuditSink(dsn)
+
+    sink.record(_record(action=action))
+
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("SELECT action FROM audit_log")
+        rows = cur.fetchall()
+    assert rows == [(action.value,)]
+
+
+@pytest.mark.integration
 def test_the_audit_log_refuses_an_update_at_the_store(dsn: str) -> None:
     """AC-E4-21: fails at the store, not only in code."""
     PostgresAuditSink(dsn).record(_record())
