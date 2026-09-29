@@ -36,7 +36,11 @@ Design Principles
   other brace-delimited text is malformed and rejects the reply the same as an undeclared field.
 - Multiple entries for the same field are consumed in the order ``SlotValues`` lists them by
   successive occurrences of that field's placeholder, so a reply that lists several cases pairs
-  each placeholder with the next case in order.
+  each placeholder with the next case in order. Naming a field at all commits the reply to naming
+  it as many times as it was given entries: citing it once and stopping leaves the rest of its
+  grounded values unsaid, exactly the outcome the required-field check exists to catch, so it is
+  rejected the same way — ``required <= used`` alone only proves a field was named once, never
+  that its whole queue was drained.
 
 Runtime Contract
 ----------------
@@ -140,6 +144,9 @@ def verify(
     required = INTENT_REQUIRED_FIELDS[envelope.intent]
     if not required <= used:
         reasons.add(RejectionReason.REQUIRED_FIELD_MISSING)
+
+    if any(queues[field] for field in used):
+        reasons.add(RejectionReason.GROUNDED_ENTRY_DROPPED)
 
     if reasons:
         ordered = tuple(reason for reason in RejectionReason if reason in reasons)
