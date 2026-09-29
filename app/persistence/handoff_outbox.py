@@ -12,11 +12,11 @@ the ordinary replay and the table's own unique constraint as the true race's saf
 
 Scope
 -----
-In: ``HandoffContent`` (everything a packet needs but its ticket), ``HandoffOutbox`` (the port),
-``PostgresHandoffOutbox``.
-Out: building the packet's *content* (``app.conversation.handoff.build_packet``, called from
-here only to validate what is written), deciding when a handoff is warranted (the controller),
-reading the outbox back (the console, a later slice).
+In: ``HandoffOutbox`` (the port), ``PostgresHandoffOutbox``.
+Out: ``HandoffContent`` and building the packet's *content* (both
+``app.conversation.handoff``, the conversation layer this module depends on for the shape of what
+it writes — imported here only to validate what is written), deciding when a handoff is warranted
+(the controller), reading the outbox back (the console, a later slice).
 
 Design Principles
 -----------------
@@ -55,7 +55,7 @@ Design Principles
 
 Runtime Contract
 ----------------
-``HandoffContent`` (dataclass), ``HandoffReplayMismatch``, ``PostgresHandoffOutbox(dsn)``.
+``HandoffReplayMismatch``, ``PostgresHandoffOutbox(dsn)``.
 """
 
 from __future__ import annotations
@@ -63,7 +63,6 @@ from __future__ import annotations
 # Standard libraries
 import logging  # Progress events, never print
 import secrets  # Unguessable suffix of a generated ticket reference
-from dataclasses import dataclass  # Everything a packet needs but its ticket
 from datetime import date  # The reference date the packet used
 
 # Third-party libraries
@@ -71,22 +70,9 @@ import psycopg  # Serving-store driver
 import psycopg.errors  # Distinguishing a unique-constraint race from any other store failure
 
 # Local modules
-from app.conversation.handoff import build_packet, mask_customer_id
-from app.domain.policy.models import DisputeCategory, ReasonCode  # Shared vocabulary
+from app.conversation.handoff import HandoffContent, build_packet, mask_customer_id
 from app.security.middleware import current_request_id  # Correlates a log line to its request
-from contracts.service_v1.envelope import (  # Shared base, types and vocabulary
-    Lang,
-    RiskEvidence,
-    SourceRef,
-    TransactionFact,
-    UtcDatetime,
-)
-from contracts.service_v1.handoff import (  # The packet this module writes
-    ActionRecord,
-    HandoffPacket,
-    HandoffTrigger,
-    OpenQuestion,
-)
+from contracts.service_v1.handoff import HandoffPacket  # The packet this module writes
 
 logger = logging.getLogger(__name__)
 
@@ -96,29 +82,6 @@ _SESSION_TURN_CONSTRAINT = "handoff_outbox_session_turn_unique"
 
 class HandoffReplayMismatch(Exception):
     """A repeated (session_id, turn_id) was given content that disagrees with what is on file."""
-
-
-@dataclass(frozen=True, slots=True)
-class HandoffContent:
-    """Everything ``build_packet`` needs except the ticket reference, which this module mints."""
-
-    reference_date: date
-    created_at: UtcDatetime
-    language: Lang
-    trigger: HandoffTrigger
-    first_name: str
-    customer_id: str
-    request_summary: str
-    reason_codes: tuple[ReasonCode, ...]
-    policy_version: str
-    category: DisputeCategory | None = None
-    verified_facts: tuple[TransactionFact, ...] = ()
-    actions: tuple[ActionRecord, ...] = ()
-    attempted_action: ActionRecord | None = None
-    existing_case_number: str | None = None
-    sources: tuple[SourceRef, ...] = ()
-    risk: RiskEvidence | None = None
-    open_questions: tuple[OpenQuestion, ...] = ()
 
 
 def _new_ticket_ref(reference_date: date) -> str:

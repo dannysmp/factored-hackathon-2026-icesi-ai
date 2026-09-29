@@ -21,11 +21,12 @@ import psycopg
 import pytest
 
 # Local modules
+from app.conversation.handoff import HandoffContent
 from app.domain.calendar import DateOrigin, DomainCalendar
 from app.domain.policy.models import ReasonCode
 from app.domain.policy.models import TransactionStatus as PolicyTransactionStatus
 from app.persistence.dialogue_turn_log import PostgresDialogueTurnLog
-from app.persistence.handoff_outbox import HandoffContent, PostgresHandoffOutbox
+from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.handoff_queue import PostgresHandoffQueue
 from app.persistence.migrate import apply_migrations
 from app.persistence.ticket_detail import PostgresTicketDetail, SourceUnavailable

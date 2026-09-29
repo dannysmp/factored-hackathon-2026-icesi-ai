@@ -21,12 +21,9 @@ import psycopg.errors
 import pytest
 
 # Local modules
+from app.conversation.handoff import HandoffContent
 from app.domain.policy.models import DisputeCategory, ReasonCode, TransactionStatus
-from app.persistence.handoff_outbox import (
-    HandoffContent,
-    HandoffReplayMismatch,
-    PostgresHandoffOutbox,
-)
+from app.persistence.handoff_outbox import HandoffReplayMismatch, PostgresHandoffOutbox
 from app.persistence.migrate import apply_migrations
 from contracts.service_v1.envelope import (
     LocalizedTitle,

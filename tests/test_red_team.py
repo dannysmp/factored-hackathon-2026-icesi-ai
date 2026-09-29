@@ -37,6 +37,7 @@ from decimal import Decimal
 # Local modules
 from app.conversation.controller import DialogueController
 from app.conversation.facts import to_envelope_transaction
+from app.conversation.handoff import HandoffContent
 from app.conversation.model_renderer import LlmRenderer
 from app.conversation.policy_answer import answer
 from app.conversation.store import InMemoryDialogueStore
@@ -44,7 +45,6 @@ from app.conversation.understanding import TurnAccounting
 from app.domain.policy.loader import load_policy
 from app.domain.policy.models import DisputeCategory, PolicyDecision, TransactionStatus
 from app.llm.client import FakeLlm
-from app.persistence.handoff_outbox import HandoffContent
 from app.retrieval.lexical import LexicalRetriever
 from app.security.sessions import Principal
 from contracts.service_v1.api import TurnRequest
