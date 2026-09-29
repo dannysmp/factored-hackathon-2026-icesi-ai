@@ -13,6 +13,7 @@ extended here to script more than one call in a row (this module's own loop, unl
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
@@ -30,8 +31,14 @@ from app.persistence.migrate import apply_migrations
 from app.retrieval.lexical import LexicalRetriever
 from contracts.service_v1.envelope import Intent, Slot
 from evals.models import Case, CaseCategory
-from evals.runner.baselines.b1 import _MAX_TOOL_ROUNDS, build_b1_dependencies, run_case, run_cases
-from evals.runner.baselines.naive_agent_client import NaiveAgentClient
+from evals.runner.baselines.b1 import (
+    _MAX_TOOL_ROUNDS,
+    _log_call_completed,
+    build_b1_dependencies,
+    run_case,
+    run_cases,
+)
+from evals.runner.baselines.naive_agent_client import NaiveAgentClient, NaiveAgentTurn
 from evals.scoring import score_case
 
 _NOW = datetime(2026, 6, 18, 15, 0, tzinfo=UTC)
@@ -197,6 +204,88 @@ def test_run_case_answers_a_policy_question_via_one_tool_round(
 
     result = score_case(dsn, transcript)
     assert result.correct_outcome is True
+
+
+@pytest.mark.integration
+def test_run_case_logs_the_real_cost_of_every_call_it_makes(
+    dsn: str, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Unlike P, B1's own client discards its token counts once send() returns; this is the only
+    place that spend is ever recorded, so a real evaluation run's B1 cost must be computable from
+    these lines alone, the same guarantee E9 already established for P's own turn_completed."""
+    stub = _StubAnthropic(
+        [
+            _response(
+                [_tool_use_block("get_policy", {"query": "cuánto tiempo tengo"}, block_id="t1")],
+                stop_reason="tool_use",
+            ),
+            _response(
+                [_text_block("Tiene 60 días para presentar la disputa.")], stop_reason="end_turn"
+            ),
+        ]
+    )
+    settings = _settings(database_url=SecretStr(dsn))
+    calendar = DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING)
+    _real_client, dispatcher, session_id = build_b1_dependencies(
+        settings,
+        policy=load_policy(),
+        retriever=retriever,
+        calendar=calendar,
+        clock=lambda: _NOW,
+        customer_id="CLI-B1-LOOP",
+        lang="es",
+        model=_MODEL,
+    )
+    client = NaiveAgentClient(SecretStr("unused"), model=_MODEL, client=stub)  # type: ignore[arg-type]
+    case = Case(
+        case_id="b1-loop-01",
+        category=CaseCategory.NORMAL,
+        lang="es",
+        provenance="observed",
+        seed_ref="ops_seed:CLI-B1-LOOP",
+        user_turns=("¿Cuánto tiempo tengo para presentar una disputa?",),
+        expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
+    )
+
+    with caplog.at_level(logging.INFO):
+        run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
+
+    call_logs = [r for r in caplog.records if r.message.startswith("b1_call_completed")]
+    assert len(call_logs) == 2  # one tool-call round, then the final text reply
+    for record in call_logs:
+        assert f"model={_MODEL}" in record.message
+        assert "input_tokens=10 output_tokens=5" in record.message
+        assert "cost_usd=" in record.message
+        assert "cost_usd=None" not in record.message  # _MODEL is a priced, allow-listed model
+
+
+def test_an_unpriced_model_never_aborts_the_batch(caplog: pytest.LogCaptureFixture) -> None:
+    """A model missing from app.llm.pricing's table must not turn a real batch run into a crash:
+    the call is still logged, only a warning names the pricing gap — mirroring
+    test_dialogue_controller.py::test_an_unpriced_model_never_aborts_the_turn's own rule for P,
+    applied here to B1's own accounting. NaiveAgentTurn is constructed directly, bypassing
+    NaiveAgentClient's own allow-list check, since this tests _log_call_completed's own fallback,
+    not model selection."""
+    turn = NaiveAgentTurn(
+        text="",
+        tool_calls=(),
+        stop_reason="end_turn",
+        model="claude-opus-4",  # not in app.llm.pricing's table
+        input_tokens=100,
+        output_tokens=20,
+        latency_ms=250.0,
+    )
+
+    with caplog.at_level(logging.INFO):
+        _log_call_completed("session-1", "turn-0001", turn)
+
+    warnings = [r for r in caplog.records if r.message.startswith("b1_call_cost_unpriced")]
+    assert len(warnings) == 1
+    assert "model=claude-opus-4" in warnings[0].message
+    completed = [r for r in caplog.records if r.message.startswith("b1_call_completed")]
+    assert len(completed) == 1
+    assert "cost_usd=None" in completed[0].message
 
 
 @pytest.mark.integration

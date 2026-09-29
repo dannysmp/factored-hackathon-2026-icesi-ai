@@ -103,6 +103,7 @@ class NaiveAgentTurn:
     text: str
     tool_calls: tuple[ToolCall, ...]
     stop_reason: str
+    model: str
     input_tokens: int
     output_tokens: int
     latency_ms: float
@@ -192,6 +193,7 @@ class NaiveAgentClient:
             text=text,
             tool_calls=tool_calls,
             stop_reason=response.stop_reason or "",
+            model=self._model,
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
             latency_ms=latency_ms,

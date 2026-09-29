@@ -67,6 +67,7 @@ allow-list.
 from __future__ import annotations
 
 # Standard libraries
+import logging
 import secrets
 from collections.abc import Sequence
 
@@ -75,6 +76,7 @@ from app.config import AppEnvironment, ConfigError, Settings
 from app.conversation.renderer import reference_date_line  # Pure; the same line P renders
 from app.domain.calendar import DomainCalendar
 from app.domain.policy.models import Policy
+from app.llm.pricing import cost_usd  # Per-call cost accounting, the same table P's own turns use
 from app.persistence.audit import PostgresAuditSink
 from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.reads import PostgresToolPort
@@ -85,9 +87,11 @@ from contracts.service_v1.envelope import Lang, Slot
 from evals.metrics import CaseResult
 from evals.models import Case
 from evals.runner.baselines.b1_tools import TOOL_SCHEMAS, B1ToolDispatcher
-from evals.runner.baselines.naive_agent_client import NaiveAgentClient
+from evals.runner.baselines.naive_agent_client import NaiveAgentClient, NaiveAgentTurn
 from evals.runner.seed_resolution import resolve_customer_id
 from evals.scoring import RunTranscript, score_case
+
+logger = logging.getLogger(__name__)
 
 _MAX_TOOL_ROUNDS = 6
 _MAX_TOKENS = 1024
@@ -179,6 +183,32 @@ def build_b1_dependencies(
     return client, dispatcher, session_id
 
 
+def _log_call_completed(session_id: str, turn_id: str, turn: NaiveAgentTurn) -> None:
+    """One stable-shaped log line per real B1 call, mirroring
+    ``app.conversation.controller.DialogueController._log_turn_completed``'s own shape and its
+    "an unpriced model never aborts the run" rule: this is the only place B1's own spend is
+    recorded anywhere (``NaiveAgentTurn``'s token counts are otherwise discarded once this
+    function returns), so a real evaluation run's cost is computable from logs alone, the same
+    guarantee E9 already established for P.
+    """
+    try:
+        cost = cost_usd(turn.model, turn.input_tokens, turn.output_tokens)
+    except KeyError:
+        logger.warning("b1_call_cost_unpriced model=%s", turn.model)
+        cost = None
+    logger.info(
+        "b1_call_completed session_id=%s turn_id=%s model=%s input_tokens=%s output_tokens=%s "
+        "latency_ms=%s cost_usd=%s",
+        session_id,
+        turn_id,
+        turn.model,
+        turn.input_tokens,
+        turn.output_tokens,
+        turn.latency_ms,
+        cost,
+    )
+
+
 def _run_turn(
     client: NaiveAgentClient,
     dispatcher: B1ToolDispatcher,
@@ -208,6 +238,7 @@ def _run_turn(
             max_tokens=_MAX_TOKENS,
             timeout_seconds=_TIMEOUT_SECONDS,
         )
+        _log_call_completed(session_id, turn_id, turn)
         latency_seconds += turn.latency_ms / 1000
         if not turn.tool_calls:
             return turn.text, reached_confirmable, latency_seconds
