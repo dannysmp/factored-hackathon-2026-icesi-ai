@@ -1,5 +1,6 @@
 import type { JSX } from 'react'
 import type { Choice } from '../contracts'
+import styles from './ChoiceButtons.module.css'
 
 /**
  * The numbered options the assistant offered, each a real button (frontend standard, section 7:
@@ -19,11 +20,12 @@ export function ChoiceButtons({
     return null
   }
   return (
-    <ul>
+    <ul className={styles.list}>
       {choices.map((choice) => (
         <li key={choice.number}>
           <button
             type="button"
+            className={styles.choice}
             disabled={disabled}
             onClick={() => {
               onChoose(choice.label)

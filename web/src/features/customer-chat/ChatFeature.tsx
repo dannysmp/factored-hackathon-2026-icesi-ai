@@ -6,6 +6,7 @@ import { ReferenceBanner } from './components/ReferenceBanner'
 import { TurnForm } from './components/TurnForm'
 import type { ChatClient } from './client'
 import { useConversation } from './useConversation'
+import styles from './ChatFeature.module.css'
 
 /**
  * The customer chat, wired to whatever `ChatClient` its caller passes in.
@@ -19,7 +20,7 @@ export function ChatFeature({ client }: { client: ChatClient }): JSX.Element {
 
   if (conversation.status === 'error' && conversation.latest === null) {
     return (
-      <div role="alert">
+      <div role="alert" className={styles.error}>
         <p>The conversation could not start. Please try again.</p>
       </div>
     )
@@ -30,17 +31,23 @@ export function ChatFeature({ client }: { client: ChatClient }): JSX.Element {
   const ended = latest?.end_session === true
 
   return (
-    <section aria-label="Customer chat">
+    <section aria-label="Customer chat" className={styles.chat}>
       {latest !== null && (
         <ReferenceBanner
           referenceDateLine={latest.reference_date_line}
           demoNotice={latest.demo_notice}
         />
       )}
-      {latest === null && <p aria-live="polite">Starting the conversation…</p>}
+      {latest === null && (
+        <p className={styles.status} aria-live="polite">
+          Starting the conversation…
+        </p>
+      )}
       <MessageList messages={conversation.messages} />
       {conversation.status === 'error' && (
-        <p role="alert">Your last message could not be sent. Please try again.</p>
+        <p role="alert" className={styles.error}>
+          Your last message could not be sent. Please try again.
+        </p>
       )}
       {latest !== null && !ended && (
         <>
@@ -50,6 +57,12 @@ export function ChatFeature({ client }: { client: ChatClient }): JSX.Element {
           )}
           <TurnForm onSubmit={conversation.send} disabled={busy} />
         </>
+      )}
+      {ended && (
+        <p role="status" className={styles.ended}>
+          This conversation has ended.
+          {latest.handoff_ticket !== null && <> Case reference: {latest.handoff_ticket}.</>}
+        </p>
       )}
     </section>
   )

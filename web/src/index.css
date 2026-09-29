@@ -1,15 +1,25 @@
-/* Base styles: light/dark support and a system font stack. No design system yet — the chat
-   feature that needs one is a later slice. */
-:root {
-  color-scheme: light dark;
+/* Base styles: the token layer (ADR-19) supplies color, spacing and type; this file applies it
+   to the document root and sets the one global rule every surface shares — a visible focus ring,
+   never suppressed for aesthetics. */
+@import './styles/tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-body);
+  font-variant-numeric: var(--font-variant-numeric);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }

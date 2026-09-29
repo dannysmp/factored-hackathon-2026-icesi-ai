@@ -1,0 +1,29 @@
+.chat {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: var(--space-4);
+}
+
+.status {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.error {
+  margin: var(--space-4) 0;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
+/* The session-ended state (AC-E10-18): a distinct, purpose-built treatment, not a form that
+   silently stopped responding. */
+.ended {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  font-weight: var(--font-weight-emphasis);
+}

@@ -1,0 +1,95 @@
+/* =============================================================================
+   tokens.css — design tokens for the chat, the sign-in screen and the console
+   =============================================================================
+   Single source (ADR-19): every color, spacing, radius, shadow, focus ring and
+   font size used across web/src reads a variable declared here, never a raw
+   literal. Light and dark both derive from the same neutral ramp so the two
+   modes stay in sync without a second token set.
+   ============================================================================= */
+
+:root {
+  color-scheme: light dark;
+
+  /* Color: a restrained neutral ramp, one accent, a semantic status set. No
+     gradients, no decorative color (ADR-19). */
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f5f6f7;
+  --color-border: #d8dbdf;
+  --color-text: #1a1d21;
+  --color-text-muted: #5b6168;
+
+  --color-accent: #0b5fff;
+  --color-accent-text: #ffffff;
+  --color-accent-hover: #0a52dd;
+
+  --color-success: #157a3d;
+  --color-success-bg: #e8f6ee;
+  --color-warning: #8a5a00;
+  --color-warning-bg: #fdf3dc;
+  --color-error: #b3261e;
+  --color-error-bg: #fbebe9;
+  --color-info: #0b5fff;
+  --color-info-bg: #e9f1ff;
+
+  /* Typography: the same system stack index.css already used, no font
+     download. Five sizes at most; one weight for emphasis, one for body. */
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-md: 1.125rem;
+  --font-size-lg: 1.5rem;
+  --font-size-xl: 2rem;
+  --font-weight-body: 400;
+  --font-weight-emphasis: 600;
+  --font-variant-numeric: tabular-nums;
+
+  /* Spacing: an 8px scale, used for every margin, padding and gap. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 8%);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 12%);
+
+  /* Focus ring: always visible, never suppressed for aesthetics (ADR-19). */
+  --focus-ring: 0 0 0 3px var(--color-accent);
+
+  /* Motion: state-change transitions only; nothing decorative. */
+  --motion-duration: 150ms;
+  --motion-easing: ease-out;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #16181a;
+    --color-bg-subtle: #1e2124;
+    --color-border: #34383d;
+    --color-text: #f2f3f4;
+    --color-text-muted: #a3a9b0;
+
+    --color-accent: #4c8dff;
+    --color-accent-text: #0b1220;
+    --color-accent-hover: #6ba0ff;
+
+    --color-success: #4fd18a;
+    --color-success-bg: #10321f;
+    --color-warning: #e8b13d;
+    --color-warning-bg: #3a2c05;
+    --color-error: #f2857c;
+    --color-error-bg: #3a1512;
+    --color-info: #4c8dff;
+    --color-info-bg: #0f1f3a;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow-md: 0 4px 12px rgb(0 0 0 / 48%);
+  }
+}
