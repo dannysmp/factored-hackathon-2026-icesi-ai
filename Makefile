@@ -112,8 +112,8 @@ train: ## Run the risk signal probe, the boosted-model comparison and calibratio
 	$(RUN) python -m models.boosted
 	$(RUN) python -m models.calibration
 
-evaluate: ## Run the evaluation harness: make evaluate SYSTEM={P|B0|B1} [SMOKE=1], or make evaluate FULL=1
-	$(RUN) python -m evals.cli $(if $(FULL),--full,--system $(SYSTEM) $(if $(SMOKE),--smoke,))
+evaluate: ## Run the evaluation harness: make evaluate SYSTEM={P|B0|B1} [SMOKE=1], or make evaluate FULL=1 [SMOKE=1]
+	$(RUN) python -m evals.cli $(if $(FULL),--full,--system $(SYSTEM)) $(if $(SMOKE),--smoke,)
 
 seed-ci-smoke: ## Seed the CI-only synthetic data the smoke slice needs (needs DATABASE_URL, migrated)
 	$(RUN) python -m tests.fixtures.ci_smoke_seed

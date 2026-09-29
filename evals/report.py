@@ -138,6 +138,11 @@ class EvaluationReport:
     reference_date: str
     reference_date_source: str
     bank_timezone: str
+    scope_note: str = ""
+    """Set by the caller when ``golden_cases`` is a subset of the full golden set (for example the
+    16-case CI-smoke subset, run before the full adversarial set's loader lands) — empty for a
+    full-golden-set run. Rendered as a prominent callout, never silently inferred from a case
+    count this module has no independent way to call "full" or "partial"."""
 
 
 def _count(value: int) -> str:
@@ -313,6 +318,8 @@ def _limitations_section(report: EvaluationReport) -> str:
             "- The judge-validation section is pending the real H4 human sample; see that "
             "section for detail."
         )
+    if report.scope_note:
+        lines.append(f"- {report.scope_note}")
     return "\n".join(lines)
 
 
@@ -328,6 +335,10 @@ def render_markdown(report: EvaluationReport) -> str:
         "# Evaluation Report",
         "All measurements below are **OFFLINE**: run against the held-out golden set, never "
         "against real production traffic. See Limitations for the measured/projected split.",
+    ]
+    if report.scope_note:
+        sections.append(f"**Scope.** {report.scope_note}")
+    sections += [
         "## 1. Workload\n\n" + _workload_section(report.golden_cases),
         "## 2. Versions\n\n" + _versions_section(report.versions),
         "## 3. Headline metrics\n\n" + _headline_table(report.systems),
