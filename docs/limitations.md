@@ -55,8 +55,12 @@ carries it, not a promise about a later one.
   synthetic subset. What has not happened yet is the first full `make evaluate` run itself and its
   recorded report — the pieces exist, but no evidence-producing run against the complete golden
   set has been executed.
-- **The human-agent console is not yet built.** The customer-facing chat exists; the read-only
-  queue view a human agent would use to handle an escalated case does not.
+- **The human-agent console is not yet live.** The queue and ticket-detail screens, and the
+  backend's read routes for them, both exist, but neither is wired into the running application
+  yet: the frontend renders from fixture data (`web/src/ConsoleApp.tsx`'s own comment states this
+  plainly), and `app.main.create_app` does not register the console's routes, so an agent who
+  signs in has nothing live to reach. The customer-facing chat, by contrast, is fully wired end to
+  end.
 - **Structured logging runs across the service and every CLI entrypoint, including a configuration
   failure at start-up.** Every line carries a stable event name, the request's trace id and, once
   authenticated, its session id, with any card-shaped digit run redacted before the line is
