@@ -99,6 +99,7 @@ _CUSTOMER_COLUMNS: tuple[tuple[str, str], ...] = (
     ("masked_phone", "VARCHAR"),
     ("country", "VARCHAR"),
     ("customer_status", "VARCHAR"),
+    ("is_repeat_complainer", "BOOLEAN"),
 )
 _PRODUCT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("product_id", "VARCHAR"),
@@ -132,6 +133,7 @@ _CUSTOMERS: tuple[dict[str, Any], ...] = (
         "masked_phone": "+1 555 ***0001",
         "country": "México",
         "customer_status": "Active",
+        "is_repeat_complainer": False,
     },
 )
 
