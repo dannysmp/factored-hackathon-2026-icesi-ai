@@ -553,7 +553,12 @@ INTENT_ALLOWED_FIELDS: Mapping[Intent, frozenset[GroundedField]] = {
     ),
     Intent.INELIGIBLE: frozenset({GroundedField.OUTCOME_STATEMENT}),
     Intent.DISPUTE_STATUS: frozenset(
-        {GroundedField.CASE_NUMBER, GroundedField.CASE_STATUS, GroundedField.FILED_ON}
+        {
+            GroundedField.CASE_NUMBER,
+            GroundedField.CASE_STATUS,
+            GroundedField.FILED_ON,
+            GroundedField.OUTCOME_STATEMENT,
+        }
     ),
     Intent.POLICY_ANSWER: frozenset({GroundedField.SOURCE_TITLE, GroundedField.POLICY_VALUE}),
     Intent.ABSTAIN: frozenset(),
@@ -574,6 +579,10 @@ INTENT_ALLOWED_FIELDS: Mapping[Intent, frozenset[GroundedField]] = {
 # intent; the fields listed here are exactly the ones every envelope of that intent's own
 # validators (``_intent_has_what_it_states``, ``_handoff_states_what_happened``) guarantee are
 # always available, so requiring them can never fail for want of a value to substitute.
+# ``DISPUTE_STATUS`` and ``HANDOFF`` require only the outcome statement, the same as
+# ``INELIGIBLE``: their case and ticket fields are conditional on facts a "no case"/"not
+# registered" envelope legitimately lacks, so only the field every state of the intent always
+# carries can be mandatory — the case-specific fields stay allowed, not required.
 INTENT_REQUIRED_FIELDS: Mapping[Intent, frozenset[GroundedField]] = {
     Intent.CLARIFY: frozenset(),
     Intent.PRESENT_TRANSACTIONS: frozenset(),
@@ -582,11 +591,11 @@ INTENT_REQUIRED_FIELDS: Mapping[Intent, frozenset[GroundedField]] = {
     ),
     Intent.FILING_RESULT: frozenset({GroundedField.CASE_NUMBER}),
     Intent.INELIGIBLE: frozenset({GroundedField.OUTCOME_STATEMENT}),
-    Intent.DISPUTE_STATUS: frozenset({GroundedField.CASE_NUMBER, GroundedField.FILED_ON}),
+    Intent.DISPUTE_STATUS: frozenset({GroundedField.OUTCOME_STATEMENT}),
     Intent.POLICY_ANSWER: frozenset({GroundedField.SOURCE_TITLE}),
     Intent.ABSTAIN: frozenset(),
     Intent.REFUSE: frozenset(),
-    Intent.HANDOFF: frozenset({GroundedField.TICKET_REF, GroundedField.OUTCOME_STATEMENT}),
+    Intent.HANDOFF: frozenset({GroundedField.OUTCOME_STATEMENT}),
     Intent.FAREWELL: frozenset(),
 }
 
@@ -652,6 +661,7 @@ class _EnvelopeBody(ContractModel):
         if (
             self.intent is Intent.DISPUTE_STATUS
             and not facts.cases
+            and self.render_mode == "template"
             and self.template_id is not TemplateId.NO_CASE_FOUND
         ):
             raise ValueError("dispute_status requires cases unless it states there are none")
@@ -674,9 +684,12 @@ class _EnvelopeBody(ContractModel):
         """A handoff names its ticket unless nothing was registered, and never reads as eligible."""
         if self.intent is not Intent.HANDOFF:
             return self
-        registered = self.template_id is not TemplateId.HANDOFF_NOT_REGISTERED
-        if registered != (self.facts.ticket_ref is not None):
-            raise ValueError("a handoff names its ticket exactly when the request was registered")
+        if self.render_mode == "template":
+            registered = self.template_id is not TemplateId.HANDOFF_NOT_REGISTERED
+            if registered != (self.facts.ticket_ref is not None):
+                raise ValueError(
+                    "a handoff names its ticket exactly when the request was registered"
+                )
         if any(decision.outcome is Outcome.ELIGIBLE for decision in self.decisions):
             raise ValueError("a handoff carries no eligible decision")
         if self.template_id in _ROUTED_HANDOFFS and not any(
