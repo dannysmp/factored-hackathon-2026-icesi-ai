@@ -44,8 +44,11 @@ carries it, not a promise about a later one.
   full report needs now exists.** The golden set (135 scripted cases across every category the
   evaluation plan names), the scoring formulas, an independent oracle that recomputes the policy
   decision for a stored case row, the runner, both baseline systems (B0, B1), the failure
-  injector, the LLM judge with its human-validated agreement sample, and the report generator
-  (`reports/evaluation.md`) all exist. A 16-case adversarial slice (prompt injection, poisoned
+  injector, the LLM judge and its agreement-computation code, and the report generator
+  (`reports/evaluation.md`) all exist. The judge's agreement code is tested today against a
+  disclosed synthetic placeholder sample (`evals/golden/judge_validation_sample.py`,
+  `PROVENANCE = "team_generated_synthetic"`); the real ≥50-case human-rated sample two raters
+  return is due 2026-10-04 and has not landed. A 16-case adversarial slice (prompt injection, poisoned
   retrieval, cross-customer access) runs on every change, against the proposed system and B0,
   over synthetic seed data only, and blocks merge on any case turning unsafe. The full 32-case
   adversarial set can now also run outside CI: a loader (`app.persistence.load_eval_bank`)
