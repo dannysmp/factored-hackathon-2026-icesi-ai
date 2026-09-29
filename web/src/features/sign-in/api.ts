@@ -10,6 +10,11 @@ import { DemoPersonaDirectorySchema, SessionResponseSchema } from './contracts'
 
 const DEMO_PERSONAS_PATH = '/v1/auth/demo-personas'
 const DEMO_SESSIONS_PATH = '/v1/auth/demo-sessions'
+const DEMO_AGENT_SESSIONS_PATH = '/v1/auth/demo-agent-sessions'
+
+/** `SignInAudience` (app/security/signin_audit.py): which broker and access code a sign-in
+ * uses. `signIn` defaults to `'customer'`, matching every call site before the console existed. */
+export type SignInAudience = 'customer' | 'agent'
 
 /** Raised when the persona list or the sign-in itself cannot be fetched. */
 export class SignInError extends Error {
@@ -35,22 +40,37 @@ async function toError(response: Response): Promise<SignInError> {
   }
 }
 
-/** The customer personas the demo broker currently accepts (agent personas never reach this
- * screen — the web app is the customer chat only). */
-export async function fetchCustomerPersonas(): Promise<readonly DemoPersonaSummary[]> {
+async function fetchPersonas(audience: SignInAudience): Promise<readonly DemoPersonaSummary[]> {
   const response = await fetch(DEMO_PERSONAS_PATH)
   if (!response.ok) {
     throw await toError(response)
   }
   const directory = DemoPersonaDirectorySchema.parse(await response.json())
-  return directory.personas.filter((persona) => persona.audience === 'customer')
+  return directory.personas.filter((persona) => persona.audience === audience)
 }
 
-/** Claims a demo session for `persona`, or throws `SignInError` (a wrong code and an unknown
- * persona are refused identically by the broker, ADR-18 — this client does not try to tell them
- * apart either). */
-export async function signIn(persona: string, accessCode: string): Promise<string> {
-  const response = await fetch(DEMO_SESSIONS_PATH, {
+/** The customer personas the demo broker currently accepts. */
+export function fetchCustomerPersonas(): Promise<readonly DemoPersonaSummary[]> {
+  return fetchPersonas('customer')
+}
+
+/** The agent personas the demo broker currently accepts — the console's own sign-in. */
+export function fetchAgentPersonas(): Promise<readonly DemoPersonaSummary[]> {
+  return fetchPersonas('agent')
+}
+
+/** Claims a demo session for `persona` against `audience`'s own broker and access code
+ * (`DEMO_SESSIONS_PATH` for `'customer'`, `DEMO_AGENT_SESSIONS_PATH` for `'agent'` — ADR-18: "a
+ * leaked customer code leaves the console protected"), or throws `SignInError` (a wrong code and
+ * an unknown persona are refused identically by either broker; this client does not try to tell
+ * them apart either). */
+export async function signIn(
+  persona: string,
+  accessCode: string,
+  audience: SignInAudience = 'customer',
+): Promise<string> {
+  const path = audience === 'agent' ? DEMO_AGENT_SESSIONS_PATH : DEMO_SESSIONS_PATH
+  const response = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Demo-Access-Code': accessCode },
     body: JSON.stringify({ persona }),
