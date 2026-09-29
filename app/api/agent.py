@@ -14,9 +14,8 @@ Scope
 In: the two routes and ``build_agent_router``.
 Out: authenticating the request (``app.security.middleware.SessionAuthMiddleware``), the
 collaborators this module reads through (``app.persistence.handoff_queue``,
-``app.persistence.ticket_detail``), and mounting this router and the ``"agent"`` audience prefix
-into the running application (``app.main`` — a later change, once the audit-of-agent-reads write
-this module requires is real; see ``ConsoleAuditSink``'s own docstring).
+``app.persistence.ticket_detail``, ``app.persistence.console_audit``), and mounting this router and
+the ``"agent"`` audience prefix into the running application (``app.main``).
 
 Design Principles
 -----------------
@@ -58,9 +57,9 @@ from fastapi import APIRouter, Request  # Routing and request access
 from app.api.auth import agent_principal_of  # The authenticated agent principal
 from app.domain.calendar import DomainCalendar
 from app.security.errors import ErrorCode, ProblemError
-from contracts.service_v1.console import QueueFilters, QueueResponse, TicketDetail
+from contracts.service_v1.console import QueueFilters, QueueResponse, TicketDetail, TimelineEntry
 from contracts.service_v1.envelope import Lang
-from contracts.service_v1.handoff import HandoffTrigger
+from contracts.service_v1.handoff import HandoffPacket, HandoffTrigger
 
 
 class QueuePort(Protocol):
@@ -86,43 +85,60 @@ class TicketDetailPort(Protocol):
 class ConsoleAuditSink(Protocol):
     """Where every packet or timeline read is audited (AC-E10-07, ADR-17).
 
-    Blocked, as of this module, on a change request to add ``PACKET_VIEWED``/``TIMELINE_VIEWED``
-    to ``contracts.service_v1.audit.AuditAction`` (owned by a different stream) — a compatible
-    addition after that contract froze, the same precedented shape as
-    ``TRANSACTION_PROBED``/``CASE_PROBED``/``CASE_CREATION_REPLAYED``. This protocol exists so the
-    route itself never needs to know ``AuditRecord``'s own field mapping (which ``trace_id`` a
-    ticket's own read correlates to is that implementation's decision, not this router's); until a
-    real implementation is injected, a stub that always raises keeps this router from ever
-    actually serving agent data unaudited, in production or in a test — never a silent no-op.
+    ``contracts.service_v1.audit.AuditAction.PACKET_VIEWED``/``TIMELINE_VIEWED`` exist; the real
+    implementation (``app.persistence.console_audit``) resolves the ticket's own ``customer_id``
+    and ``trace_id`` itself, from ``ticket_ref`` alone. This protocol hands it ``session_id`` (the
+    agent's own, never the customer's own session on the original conversation — that value has no
+    other source once the read completes) and the exact data shown (``packet``/``timeline``), so
+    the real sink can hash what was actually returned into ``AuditRecord.tool_result_hash``, the
+    same "prove what was shown, not just that something was" rule every other read audits under
+    (``app.persistence.reads``'s own ``_hash(result)``). Until a real implementation is injected, a
+    stub that always raises keeps this router from ever actually serving agent data unaudited, in
+    production or in a test — never a silent no-op.
     """
 
-    def packet_viewed(self, *, agent_id: str, ticket_ref: str) -> None:
-        """Record that ``agent_id`` opened ``ticket_ref``'s packet."""
+    def packet_viewed(
+        self, *, agent_id: str, session_id: str, ticket_ref: str, packet: HandoffPacket
+    ) -> None:
+        """Record that ``agent_id``, in ``session_id``, opened ``ticket_ref``'s ``packet``."""
         ...
 
-    def timeline_viewed(self, *, agent_id: str, ticket_ref: str) -> None:
-        """Record that ``agent_id`` opened ``ticket_ref``'s timeline."""
+    def timeline_viewed(
+        self,
+        *,
+        agent_id: str,
+        session_id: str,
+        ticket_ref: str,
+        timeline: tuple[TimelineEntry, ...],
+    ) -> None:
+        """Record that ``agent_id``, in ``session_id``, opened ``ticket_ref``'s ``timeline``."""
         ...
 
 
 class AuditNotYetImplemented:
-    """The ``ConsoleAuditSink`` every composition root injects until the real one exists.
+    """The ``ConsoleAuditSink`` a composition root injects until it wires the real one.
 
-    Raises ``NotImplementedError`` unconditionally: this is not a workaround for the missing
-    ``AuditAction`` members, it is the correct behavior in their absence, so the ticket-detail
-    route fails closed rather than ever serving a packet or a timeline with no audit record.
+    Raises ``NotImplementedError`` unconditionally: fails the ticket-detail route closed rather
+    than ever serving a packet or a timeline with no audit record.
     """
 
-    def packet_viewed(self, *, agent_id: str, ticket_ref: str) -> None:
+    def packet_viewed(
+        self, *, agent_id: str, session_id: str, ticket_ref: str, packet: HandoffPacket
+    ) -> None:
         raise NotImplementedError(
-            "the console's audit-of-agent-reads write is not implemented yet "
-            "(blocked on AuditAction.PACKET_VIEWED)"
+            "the console's audit-of-agent-reads write is not wired into this application"
         )
 
-    def timeline_viewed(self, *, agent_id: str, ticket_ref: str) -> None:
+    def timeline_viewed(
+        self,
+        *,
+        agent_id: str,
+        session_id: str,
+        ticket_ref: str,
+        timeline: tuple[TimelineEntry, ...],
+    ) -> None:
         raise NotImplementedError(
-            "the console's audit-of-agent-reads write is not implemented yet "
-            "(blocked on AuditAction.TIMELINE_VIEWED)"
+            "the console's audit-of-agent-reads write is not wired into this application"
         )
 
 
@@ -172,8 +188,18 @@ def build_agent_router(
                 "Not found",
                 "No ticket exists with that reference.",
             )
-        audit.packet_viewed(agent_id=agent.agent_id, ticket_ref=ticket_ref)
-        audit.timeline_viewed(agent_id=agent.agent_id, ticket_ref=ticket_ref)
+        audit.packet_viewed(
+            agent_id=agent.agent_id,
+            session_id=agent.session_id,
+            ticket_ref=ticket_ref,
+            packet=detail.packet,
+        )
+        audit.timeline_viewed(
+            agent_id=agent.agent_id,
+            session_id=agent.session_id,
+            ticket_ref=ticket_ref,
+            timeline=detail.timeline,
+        )
         return detail
 
     return router
