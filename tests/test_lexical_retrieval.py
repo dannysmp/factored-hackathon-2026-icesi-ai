@@ -158,6 +158,17 @@ def test_a_common_contraction_does_not_leak_relevance(
     assert retriever.search(query, "pt") == ()
 
 
+@pytest.mark.parametrize(
+    "contraction", ["dele", "dela", "nele", "nela", "num", "numa", "pelos", "pelas"]
+)
+def test_the_new_contraction_forms_are_stopwords(contraction: str) -> None:
+    """A direct membership check, not a search-level one: none of the eight new contractions
+    currently collides with the committed corpus, so the abstention test above would keep
+    passing even if one of them were removed from ``_STOPWORDS["pt"]`` — this is the test that
+    actually catches that removal, tokenizing the word alone and asserting nothing survives."""
+    assert tokenize(contraction, "pt") == ()
+
+
 def _conjugated(stem: str, endings: tuple[str, ...]) -> list[str]:
     """The six person-forms of one tense, from its own stem and the tense's own endings — the
     shape any Portuguese conjugation table uses, so a table built this way can be checked person
