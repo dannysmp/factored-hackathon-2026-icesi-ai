@@ -5,6 +5,7 @@ import type { Lang } from '../customer-chat/contracts'
 import type { SignInAudience } from './api'
 import { fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
 import { useT } from '../../i18n/useT'
+import { LANGUAGES } from '../../i18n/lang'
 import styles from './SignInScreen.module.css'
 
 type DirectoryStatus = 'loading' | 'ready' | 'error'
@@ -13,6 +14,14 @@ type DirectoryStatus = 'loading' | 'ready' | 'error'
  * which language to speak in yet — Spanish is the product's own first-listed, required language
  * (CLAUDE.md), so it is this screen's own starting point, not a guess. */
 const DEFAULT_LANG: Lang = 'es'
+
+/** `DemoPersonaSummary.language` is a bare, unvalidated string at the wire contract (it mirrors
+ * the backend's own persona model, which is not scoped to this frontend's three display
+ * languages) — falls back to `DEFAULT_LANG` rather than crash on a value `useT`'s catalog lookup
+ * doesn't recognize. */
+function toLang(value: string): Lang {
+  return (LANGUAGES as readonly string[]).includes(value) ? (value as Lang) : DEFAULT_LANG
+}
 
 /**
  * The demo sign-in screen (ADR-18): a persona picker built from the real, live persona directory
@@ -54,7 +63,9 @@ export function SignInScreen({
   const t = useT(
     audience === 'agent'
       ? DEFAULT_LANG
-      : ((selectedPersona?.language as Lang | undefined) ?? DEFAULT_LANG),
+      : selectedPersona !== undefined
+        ? toLang(selectedPersona.language)
+        : DEFAULT_LANG,
   )
 
   useEffect(() => {
@@ -86,7 +97,7 @@ export function SignInScreen({
     setSignInError(null)
     signIn(selectedPersona.slug, accessCode, audience).then(
       (token) => {
-        onSignedIn(token, selectedPersona.language as Lang)
+        onSignedIn(token, toLang(selectedPersona.language))
       },
       () => {
         setSubmitting(false)

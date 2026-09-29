@@ -123,4 +123,25 @@ describe('SignInScreen', () => {
 
     expect(await screen.findByRole('button', { name: es['signin.submit'] })).toBeInTheDocument()
   })
+
+  it('falls back to the default language instead of crashing when a persona’s language is outside es/pt/en', async () => {
+    // The wire contract's `language` field is a bare, unvalidated string (it mirrors the
+    // backend's own persona model, not scoped to this frontend's three display languages) — a
+    // persona carrying something else must degrade gracefully, not blank the whole screen.
+    const personasWithOddLanguage = [
+      { slug: 'zora', display_name: 'Zora', language: 'klingon', audience: 'customer' as const },
+    ]
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(personasWithOddLanguage)
+    const onSignedIn = vi.fn()
+    const user = userEvent.setup()
+    render(<SignInScreen onSignedIn={onSignedIn} />)
+
+    expect(await screen.findByRole('button', { name: es['signin.submit'] })).toBeInTheDocument()
+
+    vi.spyOn(api, 'signIn').mockResolvedValue('token-xyz')
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+
+    expect(onSignedIn).toHaveBeenCalledWith('token-xyz', 'es')
+  })
 })
