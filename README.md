@@ -57,7 +57,7 @@ evidence of its state — not a status claim, but something a reader can open an
 | Discipline | Open this |
 |---|---|
 | Data engineering | [`reports/data-profile.md`](reports/data-profile.md), [`reports/data-quality.md`](reports/data-quality.md) |
-| Backend and policy | `app/domain/policy/`, [SECURITY.md](SECURITY.md) |
+| Backend and policy | `app/domain/policy/`, [SECURITY.md](SECURITY.md), [the ASVS Level 1 checklist](docs/asvs-level1-checklist.md) |
 | Language understanding and dialogue | `app/conversation/`, `app/llm/`, `app/retrieval/` |
 | Machine learning | [`models/model_card.json`](models/model_card.json), [`models/README.md`](models/README.md) |
 | Evaluation | `evals/golden/`, [`reports/`](reports/) once `make evaluate` has run |
