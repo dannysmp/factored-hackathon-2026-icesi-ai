@@ -28,6 +28,8 @@ RUN uv sync --frozen --no-default-groups --no-install-project
 COPY app ./app
 COPY contracts ./contracts
 COPY policy ./policy
+COPY personas ./personas
+COPY prompts ./prompts
 RUN uv sync --frozen --no-default-groups
 
 FROM python:3.11-slim AS runtime
@@ -48,6 +50,8 @@ COPY --from=builder --chown=app:app /app/.venv .venv
 COPY --from=builder --chown=app:app /app/app ./app
 COPY --from=builder --chown=app:app /app/contracts ./contracts
 COPY --from=builder --chown=app:app /app/policy ./policy
+COPY --from=builder --chown=app:app /app/personas ./personas
+COPY --from=builder --chown=app:app /app/prompts ./prompts
 
 ENV PATH="/app/.venv/bin:${PATH}"
 USER app

@@ -1,9 +1,11 @@
-# Only pyproject.toml, uv.lock, app/, contracts/ and policy/ are ever needed to build the
-# backend image (see the Dockerfile); everything else here is excluded so it can never leak into
-# a layer, intentionally or not.
+# Only pyproject.toml, uv.lock, app/, contracts/, policy/, personas/ and prompts/ are ever needed
+# to build the backend image (see the Dockerfile); everything else here is excluded so it can
+# never leak into a layer, intentionally or not.
 *
 !pyproject.toml
 !uv.lock
 !app/
 !contracts/
 !policy/
+!personas/
+!prompts/
