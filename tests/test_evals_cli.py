@@ -10,6 +10,7 @@ marked ``integration``, skipped when ``DATABASE_URL`` is not set.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
@@ -129,7 +130,11 @@ def test_main_rejects_an_unknown_system() -> None:
 
 
 def _full_result(
-    case_id: str, *, is_unsafe: bool = False, correct_outcome: bool = True
+    case_id: str,
+    *,
+    is_unsafe: bool = False,
+    correct_outcome: bool = True,
+    error: str | None = None,
 ) -> CaseResult:
     return CaseResult(
         case_id=case_id,
@@ -140,6 +145,7 @@ def _full_result(
         correct_outcome=correct_outcome,
         automated_success=correct_outcome,
         is_unsafe=is_unsafe,
+        error=error,
     )
 
 
@@ -224,9 +230,9 @@ def test_full_writes_the_report_and_exits_0_when_nothing_is_unsafe(
 def test_full_smoke_narrows_the_case_set_and_discloses_it_in_the_report(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """--full --smoke is today's only working full-report scope (3.4c's loader hasn't landed);
-    the written report must disclose the narrowing, never silently under-report as if it were the
-    full 135-case golden set."""
+    """--full --smoke deliberately narrows a full run to the 16-case CI-smoke subset for a faster
+    check; the written report must disclose the narrowing, never silently under-report as if it
+    were the full 135-case golden set."""
     captured_cases: dict[str, tuple[Case, ...]] = {}
 
     def _capturing_runner(
@@ -256,7 +262,7 @@ def test_full_smoke_narrows_the_case_set_and_discloses_it_in_the_report(
     text = report_path.read_text(encoding="utf-8")
     assert "**Scope.**" in text
     assert "16-case CI-smoke subset" in text
-    assert "slice 3.4c" in text
+    assert "--smoke was passed" in text
     assert f"Total golden-set cases: {len(SMOKE_CASE_IDS)}" in text
 
 
@@ -280,6 +286,55 @@ def test_full_exits_1_when_any_run_of_any_system_is_unsafe(
     exit_code = main(["--full", "--report", str(report_path)])
 
     assert exit_code == 1
+
+
+def test_full_report_gives_an_errored_case_its_own_failure_class(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A ``CaseResult.error`` must render as its own failure class in the failure gallery, not
+    blend into "incorrect outcome" or "unsafe" — those are different facts about a case."""
+    _patch_full_report_dependencies(
+        monkeypatch,
+        p_runs=[
+            (_full_result("c1"),),
+            (_full_result("c1"),),
+            (_full_result("c1", correct_outcome=False, error="ValueError: bad seed_ref"),),
+        ],
+        b0_run=(_full_result("c1"),),
+        b1_run=(_full_result("c1"),),
+    )
+    report_path = tmp_path / "evaluation.md"
+
+    exit_code = main(["--full", "--report", str(report_path)])
+
+    assert exit_code == 0
+    text = report_path.read_text(encoding="utf-8")
+    assert "| P | c1 | error | ValueError: bad seed_ref |" in text
+    assert "incorrect outcome" not in text
+
+
+def test_full_logs_an_errored_case_even_from_a_run_discarded_by_the_report(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An error in a P run other than the last (which the report's own case_results discards) must
+    still be logged — the same completeness the exit code already gives ``is_unsafe``."""
+    _patch_full_report_dependencies(
+        monkeypatch,
+        p_runs=[
+            (_full_result("c1", error="ValueError: bad seed_ref"),),
+            (_full_result("c1"),),
+            (_full_result("c1"),),
+        ],
+        b0_run=(_full_result("c1"),),
+        b1_run=(_full_result("c1"),),
+    )
+    report_path = tmp_path / "evaluation.md"
+
+    with caplog.at_level(logging.ERROR):
+        exit_code = main(["--full", "--report", str(report_path)])
+
+    assert exit_code == 0
+    assert "errored_cases system=P" in caplog.text
 
 
 # -----------------------------------------------------------------------------
