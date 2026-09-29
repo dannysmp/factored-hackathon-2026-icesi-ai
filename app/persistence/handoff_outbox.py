@@ -120,6 +120,12 @@ def content_fingerprint(content: HandoffContent) -> str:
     already drifted out of sync once. ``json.dumps(..., sort_keys=True)`` gives one canonical
     ordering regardless of ``HandoffContent``'s own field declaration order, so the digest is
     stable even if that order ever changes.
+
+    ``open_questions`` is sorted by slot before hashing: unlike every other repeating part of a
+    handoff, ``handoff_open_questions`` has no ``ord`` column and is keyed ``(ticket_ref, slot)``
+    (migration 0006) — the table itself has no order to preserve, so two calls differing only in
+    the order they listed the same open questions must fingerprint identically, matching what the
+    comparison this replaces already did with a ``frozenset`` for this one field.
     """
     payload = {
         f.name: getattr(content, f.name)
@@ -127,6 +133,8 @@ def content_fingerprint(content: HandoffContent) -> str:
         if f.name not in _FINGERPRINT_EXCLUDED_FIELDS
     }
     payload["customer_id"] = mask_customer_id(content.customer_id)
+    if "open_questions" in payload:
+        payload["open_questions"] = sorted(payload["open_questions"], key=lambda q: q.slot.value)
     canonical = json.dumps(payload, sort_keys=True, default=_fingerprint_default)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
