@@ -153,7 +153,7 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         "0007_signin_audit_agent_id",
         "0008_audit_log_console_read_actions",
         "0008_console_read_support",
-        "0009_customer_repeat_complainer",
+        "0010_customer_repeat_complainer",
     )
 
     again = apply_migrations(dsn)

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 0009 — customers.is_repeat_complainer: the escalation matrix's repeat-complainer
+-- Migration 0010 — customers.is_repeat_complainer: the escalation matrix's repeat-complainer
 -- signal, carried into the serving store
 -- =============================================================================
 -- pipelines.ops_seed already computes this fact (its own _flags_query's repeat_complainers CTE)
