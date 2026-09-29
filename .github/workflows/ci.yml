@@ -153,7 +153,9 @@ jobs:
       - name: Install locked dependencies
         run: make setup
       - name: Fail if an added migration's numeric prefix collides with one already on the base
-        run: make check-migrations BASE=origin/${{ github.base_ref }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: make check-migrations BASE="origin/$BASE_REF"
 
   # ---------------------------------------------------------------------------
   # Review gate helper scripts
