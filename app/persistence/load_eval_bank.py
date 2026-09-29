@@ -91,30 +91,6 @@ from pipelines.raw import quote_literal  # Safe SQL string literals
 
 logger = logging.getLogger(__name__)
 
-_CUSTOMER_COLUMNS = (
-    "customer_id",
-    "first_name",
-    "last_name",
-    "masked_email",
-    "masked_phone",
-    "country",
-    "customer_status",
-)
-_PRODUCT_COLUMNS = ("product_id", "customer_id", "product_type", "last4", "product_status")
-_TRANSACTION_COLUMNS = (
-    "transaction_id",
-    "customer_id",
-    "product_id",
-    "transaction_date",
-    "transaction_type",
-    "merchant_name",
-    "amount",
-    "currency",
-    "amount_usd",
-    "amount_usd_provenance",
-    "transaction_status",
-)
-
 
 @dataclass(frozen=True, slots=True)
 class EvalBankLoadResult:
