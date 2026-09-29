@@ -16,10 +16,11 @@ system variants — one implementation of scoring, never a B1-specific one.
 Scope
 -----
 In: ``build_b1_dependencies`` (B1's own client and tool dispatcher from ``Settings``, refused in
-production); ``run_case``, driving one case's turns.
+production); ``run_case``, driving one case's turns; ``run_cases``, sequencing that over a batch,
+the same shape ``evals.runner.runner.run_cases`` already gives P and B0.
 Out: the tool schemas and dispatch themselves (``evals.runner.baselines.b1_tools``, already
 built); scoring a transcript (``evals.scoring``, unchanged); the ``make evaluate`` CLI wiring that
-will call this for a batch (a following increment).
+will call ``run_cases`` for P, B0 or B1 alike (a following increment).
 
 Design Principles
 -----------------
@@ -50,6 +51,9 @@ Runtime Contract
 -> (NaiveAgentClient, B1ToolDispatcher, str)`` — the client, the dispatcher, and the session id it
 minted. Raises ``ConfigError`` when ``settings.app_env`` is ``prod``.
 ``run_case(client, dispatcher, case, *, session_id, calendar) -> RunTranscript``.
+``run_cases(client, settings, dsn, cases, *, policy, retriever, calendar, clock)
+-> tuple[CaseResult, ...]`` — the caller's own ``client``, reused for every case; resolves,
+builds a fresh dispatcher and session id for, drives and scores each case in order.
 
 Limitations
 -----------
@@ -64,6 +68,7 @@ from __future__ import annotations
 
 # Standard libraries
 import secrets
+from collections.abc import Sequence
 
 # Local modules
 from app.config import AppEnvironment, ConfigError, Settings
@@ -77,10 +82,12 @@ from app.retrieval.lexical import Retriever
 from app.security.sessions import Clock
 from contracts.service_v1.api import TurnResponse
 from contracts.service_v1.envelope import Lang, Slot
+from evals.metrics import CaseResult
 from evals.models import Case
 from evals.runner.baselines.b1_tools import TOOL_SCHEMAS, B1ToolDispatcher
 from evals.runner.baselines.naive_agent_client import NaiveAgentClient
-from evals.scoring import RunTranscript
+from evals.runner.seed_resolution import resolve_customer_id
+from evals.scoring import RunTranscript, score_case
 
 _MAX_TOOL_ROUNDS = 6
 _MAX_TOKENS = 1024
@@ -94,6 +101,48 @@ _SYSTEM_PROMPT = (
     "should not resolve yourself (fraud, a lost card, a request to speak with a person, or a "
     "tool failure). Reply in the same language the customer writes in."
 )
+
+
+def _build_dispatcher(
+    settings: Settings,
+    *,
+    policy: Policy,
+    retriever: Retriever,
+    calendar: DomainCalendar,
+    clock: Clock,
+    customer_id: str,
+    lang: Lang,
+) -> tuple[B1ToolDispatcher, str]:
+    """A fresh tool dispatcher and the opaque session id minted for it, scoped to one customer.
+
+    No production guard here: the caller (``build_b1_dependencies`` or ``run_cases``) checks
+    ``settings.app_env`` itself, once, before calling this for one case or a whole batch.
+    """
+    dsn = settings.require_database_url().get_secret_value()
+    session_id = secrets.token_urlsafe(16)
+    tool_port = PostgresToolPort(
+        dsn,
+        PostgresAuditSink(dsn),
+        policy,
+        customer_id=customer_id,
+        session_id=session_id,
+        trace_id=session_id,
+        domain_date=calendar.reference_date,
+        now=clock,
+        language=lang,
+        case_create_session_cap=settings.case_create_session_cap,
+    )
+    dispatcher = B1ToolDispatcher(
+        tool_port=tool_port,
+        retriever=retriever,
+        outbox=PostgresHandoffOutbox(dsn),
+        policy=policy,
+        calendar=calendar,
+        clock=clock,
+        customer_id=customer_id,
+        lang=lang,
+    )
+    return dispatcher, session_id
 
 
 def build_b1_dependencies(
@@ -117,25 +166,10 @@ def build_b1_dependencies(
     """
     if settings.app_env is AppEnvironment.PROD:
         raise ConfigError("the B1 baseline is not allowed when APP_ENV=prod")
-    dsn = settings.require_database_url().get_secret_value()
-    session_id = secrets.token_urlsafe(16)
-    tool_port = PostgresToolPort(
-        dsn,
-        PostgresAuditSink(dsn),
-        policy,
-        customer_id=customer_id,
-        session_id=session_id,
-        trace_id=session_id,
-        domain_date=calendar.reference_date,
-        now=clock,
-        language=lang,
-        case_create_session_cap=settings.case_create_session_cap,
-    )
-    dispatcher = B1ToolDispatcher(
-        tool_port=tool_port,
-        retriever=retriever,
-        outbox=PostgresHandoffOutbox(dsn),
+    dispatcher, session_id = _build_dispatcher(
+        settings,
         policy=policy,
+        retriever=retriever,
         calendar=calendar,
         clock=clock,
         customer_id=customer_id,
@@ -233,3 +267,50 @@ def run_case(
     return RunTranscript(
         case=case, session_id=session_id, replies=tuple(replies), latencies_seconds=tuple(latencies)
     )
+
+
+def run_cases(
+    client: NaiveAgentClient,
+    settings: Settings,
+    dsn: str,
+    cases: Sequence[Case],
+    *,
+    policy: Policy,
+    retriever: Retriever,
+    calendar: DomainCalendar,
+    clock: Clock,
+) -> tuple[CaseResult, ...]:
+    """Resolve, run and score every case in ``cases`` against B1, in order.
+
+    ``client`` is built once by the caller and reused for every case — the same shape
+    ``evals.runner.runner.run_cases`` takes an ``httpx.Client`` P reuses across its own batch —
+    so a test can inject a stub the same way it already does for one case with ``run_case``. Only
+    the tool dispatcher and session id are rebuilt per case: B1ToolDispatcher is scoped to one
+    customer and language, and a case's own seed_ref and lang may each differ from the last case's.
+
+    Raises
+    ------
+    ConfigError
+        ``settings.app_env`` is ``prod``.
+    ValueError
+        A case's ``seed_ref`` is malformed or names a transaction absent from the store.
+    NotImplementedError
+        A case's ``expected_intent`` is not yet scored.
+    """
+    if settings.app_env is AppEnvironment.PROD:
+        raise ConfigError("the B1 baseline is not allowed when APP_ENV=prod")
+    results = []
+    for case in cases:
+        customer_id = resolve_customer_id(dsn, case.seed_ref)
+        dispatcher, session_id = _build_dispatcher(
+            settings,
+            policy=policy,
+            retriever=retriever,
+            calendar=calendar,
+            clock=clock,
+            customer_id=customer_id,
+            lang=case.lang,
+        )
+        transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
+        results.append(score_case(dsn, transcript))
+    return tuple(results)

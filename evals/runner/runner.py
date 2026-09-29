@@ -58,7 +58,7 @@ def run_cases(
     ValueError
         A case's ``seed_ref`` is malformed or names a transaction absent from the store.
     NotImplementedError
-        A case's ``seed_ref`` names ``eval_bank``, or its ``expected_intent`` is not yet scored.
+        A case's ``expected_intent`` is not yet scored.
     httpx.HTTPStatusError
         The sandbox login or a turn call returned a non-2xx response for some case.
     """
