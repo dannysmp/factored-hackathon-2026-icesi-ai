@@ -7,9 +7,10 @@ import { ChatFeature } from './ChatFeature'
 import type { ChatClient } from './client'
 import { FixtureChatClient } from './client'
 import { FILE_DISPUTE_EN } from './fixtures'
+import { FILE_DISPUTE_ES } from './fixtures.es'
 
 function renderChat(): ReturnType<typeof render> {
-  return render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN)} />)
+  return render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN)} lang="en" />)
 }
 
 describe('ChatFeature', () => {
@@ -19,9 +20,18 @@ describe('ChatFeature', () => {
         // never resolves: simulates the chat still starting
       })
     const client: ChatClient = { start: pending, sendTurn: pending }
-    render(<ChatFeature client={client} />)
+    render(<ChatFeature client={client} lang="en" />)
     expect(screen.getByText('Starting the conversation…')).toBeInTheDocument()
     expect(screen.queryByText('No messages yet.')).not.toBeInTheDocument()
+  })
+
+  it('prefers the arriving turn’s own lang over the initial prop once one arrives', async () => {
+    // The initial prop says English (the persona's language before any turn exists); the
+    // fixture's own turns say Spanish (the server's grounded value) — the chrome must follow
+    // the turn, not the stale initial guess.
+    render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_ES)} lang="en" />)
+    expect(await screen.findByRole('button', { name: 'Enviar' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Send' })).not.toBeInTheDocument()
   })
 
   it('shows the reference-date line and the demonstration notice', async () => {
@@ -60,7 +70,7 @@ describe('ChatFeature', () => {
 
   it('disables the form and shows a distinct ended state once the assistant ends the session', async () => {
     // Start straight from the last, session-ending turn.
-    render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN.slice(-1))} />)
+    render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN.slice(-1))} lang="en" />)
     await screen.findByText('Thanks for reaching out. Have a good day!')
     expect(screen.queryByLabelText('Your message')).not.toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('This conversation has ended.')
@@ -72,7 +82,7 @@ describe('ChatFeature', () => {
       throw new Error('fixture FILE_DISPUTE_EN must have at least one turn')
     }
     const endedWithTicket = { ...lastTurn, handoff_ticket: 'DEMO-1234' }
-    render(<ChatFeature client={new FixtureChatClient([endedWithTicket])} />)
+    render(<ChatFeature client={new FixtureChatClient([endedWithTicket])} lang="en" />)
     expect(await screen.findByRole('status')).toHaveTextContent('Case reference: DEMO-1234.')
   })
 
@@ -81,7 +91,7 @@ describe('ChatFeature', () => {
       start: () => Promise.reject(new Error('network is down')),
       sendTurn: () => Promise.reject(new Error('unused')),
     }
-    render(<ChatFeature client={failing} />)
+    render(<ChatFeature client={failing} lang="en" />)
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The conversation could not start. Please try again.',
     )
@@ -94,7 +104,7 @@ describe('ChatFeature', () => {
       start: () => new FixtureChatClient(FILE_DISPUTE_EN).start(),
       sendTurn: () => Promise.reject(new Error('network is down')),
     }
-    render(<ChatFeature client={client} />)
+    render(<ChatFeature client={client} lang="en" />)
     await screen.findByText('Hi! Which transaction would you like to dispute?')
     await user.type(screen.getByLabelText('Your message'), 'the Tienda Sol one')
     await user.click(screen.getByRole('button', { name: 'Send' }))

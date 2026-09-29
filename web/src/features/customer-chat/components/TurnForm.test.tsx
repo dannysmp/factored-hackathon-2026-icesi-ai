@@ -8,7 +8,7 @@ describe('TurnForm', () => {
   it('submits the trimmed text and clears the field', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
-    render(<TurnForm onSubmit={onSubmit} disabled={false} />)
+    render(<TurnForm onSubmit={onSubmit} disabled={false} lang="en" />)
 
     await user.type(screen.getByLabelText('Your message'), '  hello  ')
     await user.click(screen.getByRole('button', { name: 'Send' }))
@@ -21,7 +21,7 @@ describe('TurnForm', () => {
   it('refuses a whitespace-only submission, in case the form is ever submitted directly', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
-    const { container } = render(<TurnForm onSubmit={onSubmit} disabled={false} />)
+    const { container } = render(<TurnForm onSubmit={onSubmit} disabled={false} lang="en" />)
 
     await user.type(screen.getByLabelText('Your message'), '   ')
     // The submit button is already disabled for whitespace-only text, which itself suppresses a

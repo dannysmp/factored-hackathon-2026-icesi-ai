@@ -1,5 +1,7 @@
 import { useId, useState } from 'react'
 import type { JSX, SyntheticEvent } from 'react'
+import { useT } from '../../../i18n/useT'
+import type { Lang } from '../../../i18n/lang'
 import styles from './TurnForm.module.css'
 
 /**
@@ -9,12 +11,15 @@ import styles from './TurnForm.module.css'
 export function TurnForm({
   onSubmit,
   disabled,
+  lang,
 }: {
   onSubmit: (text: string) => void
   disabled: boolean
+  lang: Lang
 }): JSX.Element {
   const [text, setText] = useState('')
   const inputId = useId()
+  const t = useT(lang)
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault()
@@ -30,7 +35,7 @@ export function TurnForm({
     <form className={styles.form} onSubmit={handleSubmit}>
       <div className={styles.field}>
         <label className={styles.label} htmlFor={inputId}>
-          Your message
+          {t('chat.messageLabel')}
         </label>
         <input
           id={inputId}
@@ -44,7 +49,7 @@ export function TurnForm({
         />
       </div>
       <button type="submit" className={styles.submit} disabled={disabled || text.trim() === ''}>
-        Send
+        {t('chat.send')}
       </button>
     </form>
   )

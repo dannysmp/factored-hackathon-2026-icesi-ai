@@ -9,4 +9,23 @@ export interface Messages {
   'common.retry': string
   'common.error.generic': string
   'chat.placeholder': string
+  'chat.messageLabel': string
+  'chat.starting': string
+  'chat.couldNotStart': string
+  'chat.couldNotSend': string
+  'chat.noMessagesYet': string
+  'chat.assistantLabel': string
+  'chat.customerLabel': string
+  'chat.confirm': string
+  'chat.send': string
+  'chat.ended': string
+  /** `{ticket}` is replaced with the handoff ticket at render time — the one templated key. */
+  'chat.caseReference': string
+  'signin.loading': string
+  'signin.unreachable': string
+  'signin.intro': string
+  'signin.personaLabel': string
+  'signin.accessCodeLabel': string
+  'signin.refused': string
+  'signin.submit': string
 }

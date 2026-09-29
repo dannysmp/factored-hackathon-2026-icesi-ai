@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConsoleApp } from './ConsoleApp'
+import { es } from './i18n/es'
 
 const PERSONAS_BODY = {
   personas: [{ slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' }],
@@ -41,7 +42,7 @@ describe('ConsoleApp', () => {
     stubTheWholeFlow()
     render(<ConsoleApp />)
 
-    expect(await screen.findByLabelText('Persona')).toBeInTheDocument()
+    expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
     expect(
       screen.queryByRole('region', { name: 'Cola de casos escalados' }),
     ).not.toBeInTheDocument()
@@ -52,9 +53,9 @@ describe('ConsoleApp', () => {
     const user = userEvent.setup()
     render(<ConsoleApp />)
 
-    await screen.findByLabelText('Persona')
-    await user.type(screen.getByLabelText('Access code'), 'agent-code')
-    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    await screen.findByLabelText(es['signin.personaLabel'])
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
 
     expect(
       await screen.findByRole('region', { name: 'Cola de casos escalados' }),
@@ -66,9 +67,9 @@ describe('ConsoleApp', () => {
     const user = userEvent.setup()
     render(<ConsoleApp />)
 
-    await screen.findByLabelText('Persona')
-    await user.type(screen.getByLabelText('Access code'), 'agent-code')
-    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    await screen.findByLabelText(es['signin.personaLabel'])
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
     const rows = await screen.findAllByRole('row')
     const firstTicketRefButton = rows[1]?.querySelector('button')
     if (firstTicketRefButton === null || firstTicketRefButton === undefined) {
@@ -93,7 +94,7 @@ describe('ConsoleApp', () => {
     stubTheWholeFlow()
     const { container } = render(<ConsoleApp />)
 
-    await screen.findByLabelText('Persona')
+    await screen.findByLabelText(es['signin.personaLabel'])
     expect(await axe(container)).toHaveNoViolations()
   })
 
@@ -102,9 +103,9 @@ describe('ConsoleApp', () => {
     const user = userEvent.setup()
     const { container } = render(<ConsoleApp />)
 
-    await screen.findByLabelText('Persona')
-    await user.type(screen.getByLabelText('Access code'), 'agent-code')
-    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    await screen.findByLabelText(es['signin.personaLabel'])
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
     await screen.findByRole('region', { name: 'Cola de casos escalados' })
 
     expect(await axe(container)).toHaveNoViolations()

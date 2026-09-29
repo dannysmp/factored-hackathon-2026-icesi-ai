@@ -35,7 +35,7 @@ export function App(): JSX.Element {
   return (
     <main>
       <h1 className={styles.heading}>Dispute intake</h1>
-      <ChatFeature client={client} />
+      <ChatFeature client={client} lang={session.lang} />
     </main>
   )
 }

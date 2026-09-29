@@ -4,9 +4,15 @@ import type { DemoPersonaSummary } from './contracts'
 import type { Lang } from '../customer-chat/contracts'
 import type { SignInAudience } from './api'
 import { fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
+import { useT } from '../../i18n/useT'
 import styles from './SignInScreen.module.css'
 
 type DirectoryStatus = 'loading' | 'ready' | 'error'
+
+/** Before any persona is selected (loading, the directory error), nothing has told this screen
+ * which language to speak in yet — Spanish is the product's own first-listed, required language
+ * (CLAUDE.md), so it is this screen's own starting point, not a guess. */
+const DEFAULT_LANG: Lang = 'es'
 
 /**
  * The demo sign-in screen (ADR-18): a persona picker built from the real, live persona directory
@@ -21,6 +27,11 @@ type DirectoryStatus = 'loading' | 'ready' | 'error'
  * hand both to `LiveChatClient` — the token is this component's own state, held only for the
  * moment it takes to pass it up; nothing here ever writes it to storage (ADR-18: "the token held
  * in memory only").
+ *
+ * This screen's own copy follows the selected persona's language for the customer audience
+ * (D91); the agent audience stays fixed-Spanish regardless of persona, matching the rest of the
+ * console (`ConsoleApp.tsx`). Before a persona is selected, `DEFAULT_LANG` covers the loading
+ * and directory-error states, which occur before any language signal exists.
  */
 export function SignInScreen({
   audience = 'customer',
@@ -37,6 +48,14 @@ export function SignInScreen({
   const [signInError, setSignInError] = useState<string | null>(null)
   const personaFieldId = useId()
   const accessCodeFieldId = useId()
+  const selectedPersona = personas.find((candidate) => candidate.slug === selectedSlug)
+  // The console stays fixed-Spanish regardless of which agent persona is selected (D91); only
+  // the customer path follows the selected persona's own language.
+  const t = useT(
+    audience === 'agent'
+      ? DEFAULT_LANG
+      : ((selectedPersona?.language as Lang | undefined) ?? DEFAULT_LANG),
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -60,19 +79,18 @@ export function SignInScreen({
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault()
-    const persona = personas.find((candidate) => candidate.slug === selectedSlug)
-    if (persona === undefined || accessCode.trim() === '' || submitting) {
+    if (selectedPersona === undefined || accessCode.trim() === '' || submitting) {
       return
     }
     setSubmitting(true)
     setSignInError(null)
-    signIn(persona.slug, accessCode, audience).then(
+    signIn(selectedPersona.slug, accessCode, audience).then(
       (token) => {
-        onSignedIn(token, persona.language as Lang)
+        onSignedIn(token, selectedPersona.language as Lang)
       },
       () => {
         setSubmitting(false)
-        setSignInError('The access code or persona was refused. Please try again.')
+        setSignInError(t('signin.refused'))
       },
     )
   }
@@ -80,7 +98,7 @@ export function SignInScreen({
   if (directoryStatus === 'loading') {
     return (
       <p className={styles.status} aria-live="polite" role="status">
-        Loading the demonstration sign-in…
+        {t('signin.loading')}
       </p>
     )
   }
@@ -88,20 +106,18 @@ export function SignInScreen({
   if (directoryStatus === 'error') {
     return (
       <div role="alert" className={styles.error}>
-        <p>The demonstration sign-in could not be reached. Please try again.</p>
+        <p>{t('signin.unreachable')}</p>
       </div>
     )
   }
 
   return (
     <section aria-label="Demonstration sign-in" className={styles.screen}>
-      <p className={styles.intro}>
-        This is a demonstration. Sign in with one of the personas below.
-      </p>
+      <p className={styles.intro}>{t('signin.intro')}</p>
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.field}>
           <label className={styles.label} htmlFor={personaFieldId}>
-            Persona
+            {t('signin.personaLabel')}
           </label>
           <select
             id={personaFieldId}
@@ -122,7 +138,7 @@ export function SignInScreen({
 
         <div className={styles.field}>
           <label className={styles.label} htmlFor={accessCodeFieldId}>
-            Access code
+            {t('signin.accessCodeLabel')}
           </label>
           <input
             id={accessCodeFieldId}
@@ -147,7 +163,7 @@ export function SignInScreen({
           className={styles.submit}
           disabled={submitting || selectedSlug === '' || accessCode === ''}
         >
-          Sign in
+          {t('signin.submit')}
         </button>
       </form>
     </section>
