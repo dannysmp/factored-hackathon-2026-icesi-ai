@@ -11,6 +11,12 @@
 #   host), `IMAGE_TAG`, `ANTHROPIC_API_KEY` and `SESSION_SIGNING_KEY` (read
 #   from SSM Parameter Store by the deploy step, never written to disk here)
 #   and `HOST_NAME` (the sslip.io address, or a real domain later).
+#   `DATA_AS_OF_DATE` defaults to the evaluation period's own reference date
+#   (ADR-15): the deployed database starts empty, with no `ops_meta` seed row
+#   for the domain calendar to fall back on, and the service refuses to start
+#   rather than guess the real date. An explicit ISO date still wins over
+#   this default (ADR-15's own resolution order), so a run against a seeded
+#   database can still override it.
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #   (the deploy pipeline, a later slice, sets the environment variables above
@@ -27,6 +33,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-dispute_intake}:${POSTGRES_PASSWORD:-dispute_intake}@postgres:5432/${POSTGRES_DB:-dispute_intake}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       SESSION_SIGNING_KEY: ${SESSION_SIGNING_KEY}
+      DATA_AS_OF_DATE: ${DATA_AS_OF_DATE:-2026-06-18}
     depends_on:
       postgres:
         condition: service_healthy
