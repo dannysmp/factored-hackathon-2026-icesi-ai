@@ -190,3 +190,19 @@ def test_a_numeric_date_falling_back_a_year_can_itself_not_exist() -> None:
     before it — which can itself lack a 29th of February, resolving to nothing rather than a
     wrong day."""
     assert resolve("29/02", language="es", reference_date=date(2024, 1, 1)) is None
+
+
+def test_a_numeric_date_with_an_explicit_year_matching_the_reference_date_resolves() -> None:
+    """The reference date itself is not "in the future" relative to itself: an explicit year
+    landing exactly on it must still resolve, not be rejected by an off-by-one boundary check."""
+    result = resolve("18/06/2026", language="es", reference_date=_REFERENCE_DATE)
+
+    assert result == (_REFERENCE_DATE, DateSource.NUMERIC)
+
+
+def test_a_numeric_date_with_no_year_matching_the_reference_date_resolves() -> None:
+    """The same same-day boundary on the no-year branch: the reference date's own day must resolve
+    to itself, not be mistaken for "in the future" and pushed back a year it doesn't need."""
+    result = resolve("18/06", language="es", reference_date=_REFERENCE_DATE)
+
+    assert result == (_REFERENCE_DATE, DateSource.NUMERIC)
