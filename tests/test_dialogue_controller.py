@@ -29,7 +29,7 @@ from app.conversation.controller import (
     _idempotency_key,
     _matches_hint,
 )
-from app.conversation.handoff import build_packet
+from app.conversation.handoff import HandoffContent, build_packet
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DuplicateTurn, InMemoryDialogueStore
 from app.conversation.understanding import TurnAccounting, UnderstandingUnavailable
@@ -43,7 +43,6 @@ from app.domain.policy.models import (
     TransactionStatus,
 )
 from app.domain.policy.models import Fact as PolicyFact
-from app.persistence.handoff_outbox import HandoffContent
 from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError
 from app.security.sessions import Principal

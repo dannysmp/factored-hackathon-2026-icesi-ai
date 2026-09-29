@@ -11,11 +11,13 @@ and this module cannot silently disagree with it about what happened.
 
 Scope
 -----
-In: ``build_packet`` and ``mask_customer_id``, the one place a customer identifier is turned into
-the four-asterisk label an agent may see.
-Out: writing the packet (the outbox, a separate module), generating the ticket reference (the
-outbox's job, since it is the one that knows the ticket is unique before it commits), deciding
-which trigger applies to which situation (the controller).
+In: ``HandoffContent`` (everything ``build_packet`` needs but the ticket reference, which the
+outbox mints), ``build_packet`` and ``mask_customer_id``, the one place a customer identifier is
+turned into the four-asterisk label an agent may see.
+Out: writing the packet (the outbox, a separate module, which depends on this one for the shape of
+what it writes — never the other way around), generating the ticket reference (the outbox's job,
+since it is the one that knows the ticket is unique before it commits), deciding which trigger
+applies to which situation (the controller).
 
 Design Principles
 -----------------
@@ -26,16 +28,21 @@ Design Principles
   the disagreement can never be constructed in the first place.
 - ``mask_customer_id`` keeps at most the last four characters of the identifier; a customer
   identifier is never a field a packet or a log line carries in full (PII minimization).
+- ``HandoffContent`` belongs to the conversation layer, not the outbox that writes it: it is what
+  the controller (conversation) hands to the ``HandoffOutbox`` port, so the type lives on the
+  caller's side of that boundary. The outbox module imports it from here, never the reverse.
 
 Runtime Contract
 ----------------
-``build_packet(...) -> HandoffPacket``. ``mask_customer_id(customer_id) -> str``.
+``HandoffContent`` (dataclass). ``build_packet(...) -> HandoffPacket``.
+``mask_customer_id(customer_id) -> str``.
 """
 
 from __future__ import annotations
 
 # Standard libraries
 import re  # Non-alphanumeric characters stripped before masking
+from dataclasses import dataclass  # HandoffContent, everything build_packet needs but the ticket
 from datetime import date  # The reference date the packet used
 
 # Local modules
@@ -59,6 +66,29 @@ from contracts.service_v1.handoff import (  # The packet this module builds
 _MASK_PREFIX = "****"
 _MASK_VISIBLE_CHARS = 4
 _MASK_MIN_VISIBLE_CHARS = 2
+
+
+@dataclass(frozen=True, slots=True)
+class HandoffContent:
+    """Everything ``build_packet`` needs except the ticket reference, which the outbox mints."""
+
+    reference_date: date
+    created_at: UtcDatetime
+    language: Lang
+    trigger: HandoffTrigger
+    first_name: str
+    customer_id: str
+    request_summary: str
+    reason_codes: tuple[ReasonCode, ...]
+    policy_version: str
+    category: DisputeCategory | None = None
+    verified_facts: tuple[TransactionFact, ...] = ()
+    actions: tuple[ActionRecord, ...] = ()
+    attempted_action: ActionRecord | None = None
+    existing_case_number: str | None = None
+    sources: tuple[SourceRef, ...] = ()
+    risk: RiskEvidence | None = None
+    open_questions: tuple[OpenQuestion, ...] = ()
 
 
 def mask_customer_id(customer_id: str) -> str:

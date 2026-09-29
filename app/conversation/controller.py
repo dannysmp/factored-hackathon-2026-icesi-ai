@@ -115,6 +115,7 @@ import psycopg  # Distinguishing an outbox write failure from every other outcom
 # Local modules
 from app.conversation.facts import to_envelope_case, to_envelope_transaction
 from app.conversation.guard import required_slot
+from app.conversation.handoff import HandoffContent
 from app.conversation.model_renderer import LlmRenderer
 from app.conversation.policy_answer import answer as policy_answer
 from app.conversation.renderer import RenderedReply, demo_notice
@@ -124,7 +125,6 @@ from app.conversation.store import Conflict, DialogueStore, DuplicateTurn
 from app.conversation.understanding import TurnAccounting, Understanding, UnderstandingUnavailable
 from app.domain.policy.models import DisputeCategory, Outcome, Policy, PolicyDecision, ReasonCode
 from app.llm.pricing import cost_usd  # Per-turn cost accounting
-from app.persistence.handoff_outbox import HandoffContent
 from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError
 from app.security.middleware import current_request_id

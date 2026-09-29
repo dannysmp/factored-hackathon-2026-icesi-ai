@@ -18,11 +18,12 @@ import psycopg
 import pytest
 
 # Local modules
+from app.conversation.handoff import HandoffContent
 from app.domain.calendar import DateOrigin, DomainCalendar
 from app.domain.policy.models import ReasonCode
 from app.persistence.audit import PostgresAuditSink
 from app.persistence.console_audit import PostgresConsoleAuditSink, TicketNotFoundError
-from app.persistence.handoff_outbox import HandoffContent, PostgresHandoffOutbox
+from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.migrate import apply_migrations
 from contracts.service_v1.audit import AuditAction
 from contracts.service_v1.console import TimelineEntry

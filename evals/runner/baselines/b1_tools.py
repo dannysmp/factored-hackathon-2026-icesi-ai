@@ -76,9 +76,9 @@ from dataclasses import dataclass, field
 
 # Local modules
 from app.conversation.controller import HandoffOutbox  # The port, same one P's controller takes
+from app.conversation.handoff import HandoffContent
 from app.domain.calendar import DomainCalendar  # The reference date B1 holds, injected like P's
 from app.domain.policy.models import DisputeCategory, Policy, PolicyDecision, ReasonCode
-from app.persistence.handoff_outbox import HandoffContent
 from app.retrieval.lexical import Retriever
 from app.security.sessions import Clock
 from app.tools.dispatcher import dispatch as dispatch_tool_port

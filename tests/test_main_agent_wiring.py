@@ -31,10 +31,11 @@ from pydantic import SecretStr
 
 import app.main as main_module
 from app.config import ConfigError, Settings, load_settings
+from app.conversation.handoff import HandoffContent
 from app.domain.calendar import DateOrigin, DomainCalendar
 from app.domain.policy.models import ReasonCode
 from app.main import AgentConsolePorts, create_app
-from app.persistence.handoff_outbox import HandoffContent, PostgresHandoffOutbox
+from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.migrate import apply_migrations
 from app.security.demo_personas import load_personas
 from app.security.signin_audit import SignInAuditRecord
