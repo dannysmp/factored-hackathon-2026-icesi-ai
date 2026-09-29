@@ -32,7 +32,7 @@ from app.conversation.controller import (
 from app.conversation.handoff import build_packet
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DuplicateTurn, InMemoryDialogueStore
-from app.conversation.understanding import UnderstandingUnavailable
+from app.conversation.understanding import TurnAccounting, UnderstandingUnavailable
 from app.domain.policy.loader import load_policy
 from app.domain.policy.models import (
     DisputeCategory,
@@ -163,21 +163,30 @@ def _decision(
 
 @dataclass
 class ScriptedNlu:
-    """Returns the same, pre-built understanding for every message this turn."""
+    """Returns the same, pre-built understanding for every message this turn.
+
+    ``accounting`` defaults to ``None`` (``FakeNlu``'s own behavior, and what nearly every test
+    here wants); a test proving the controller's own accounting-logging behavior sets it.
+    """
 
     result: NluResult
+    accounting: TurnAccounting | None = None
     calls: list[tuple[str, str | None]] = field(default_factory=list)
 
-    def understand(self, text: str, *, language_hint: str | None) -> NluResult:
+    def understand(
+        self, text: str, *, language_hint: str | None
+    ) -> tuple[NluResult, TurnAccounting | None]:
         self.calls.append((text, language_hint))
-        return self.result
+        return self.result, self.accounting
 
 
 @dataclass
 class UnavailableNlu:
-    """An ``Understanding`` whose own dependency is never reachable (E9)."""
+    """An ``Understanding`` whose own dependency is never reachable."""
 
-    def understand(self, text: str, *, language_hint: str | None) -> NluResult:
+    def understand(
+        self, text: str, *, language_hint: str | None
+    ) -> tuple[NluResult, TurnAccounting | None]:
         raise UnderstandingUnavailable("the provider could not be reached")
 
 
@@ -298,9 +307,10 @@ def _controller(
     policy: Policy,
     outbox: FakeHandoffOutbox,
     retriever: LexicalRetriever,
+    accounting: TurnAccounting | None = None,
     turn_log: FakeDialogueTurnLog | None = None,
 ) -> tuple[DialogueController, ScriptedNlu]:
-    nlu = ScriptedNlu(result)
+    nlu = ScriptedNlu(result, accounting)
     controller = DialogueController(
         nlu,
         store=store,
@@ -1268,6 +1278,38 @@ def test_a_concurrent_conflict_raises_turn_conflict(
     assert excinfo.value.code is ErrorCode.TURN_CONFLICT
 
 
+def test_a_conflicted_turns_real_model_cost_is_still_logged(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The LLM call already happened and cost real money before the save was even attempted; a
+    409 tells the client to retry, but it must not silently undercount that spend."""
+    accounting = TurnAccounting(
+        model="claude-haiku-4-5-20251001",
+        prompt_version="1",
+        input_tokens=50,
+        output_tokens=10,
+        latency_ms=120.0,
+    )
+    store = _AlwaysConflictStore(InMemoryDialogueStore())
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=store,  # type: ignore[arg-type]
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        accounting=accounting,
+    )
+
+    with caplog.at_level(logging.INFO), pytest.raises(ProblemError):
+        controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    logged = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(logged) == 1
+    assert "model=claude-haiku-4-5-20251001" in logged[0].getMessage()
+    assert "input_tokens=50" in logged[0].getMessage()
+
+
 def test_handoff_not_registered_when_the_outbox_fails(
     policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -1534,7 +1576,185 @@ def test_list_dispute_cases_failure_hands_off(policy: Policy, retriever: Lexical
 
 
 # -----------------------------------------------------------------------------
-# An unreachable understanding dependency (E9): never the customer's own ambiguity
+# Per-turn cost accounting
+# -----------------------------------------------------------------------------
+
+
+def test_a_turn_with_no_real_model_call_logs_zeroed_accounting(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The log line's shape never varies: a scripted (FakeNlu-like) turn logs zero/None values,
+    not a missing line."""
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+    with caplog.at_level(logging.INFO):
+        controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    logged = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(logged) == 1
+    message = logged[0].getMessage()
+    assert f"session_id={_SESSION_ID}" in message
+    assert "case_number=None" in message
+    assert "model=None" in message
+    assert "input_tokens=0" in message
+    assert "output_tokens=0" in message
+    assert "cost_usd=0" in message
+
+
+def test_a_turn_with_a_real_model_call_logs_its_accounting(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    accounting = TurnAccounting(
+        model="claude-haiku-4-5-20251001",
+        prompt_version="1",
+        input_tokens=100,
+        output_tokens=20,
+        latency_ms=250.0,
+    )
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        accounting=accounting,
+    )
+    with caplog.at_level(logging.INFO):
+        controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    logged = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(logged) == 1
+    message = logged[0].getMessage()
+    assert "model=claude-haiku-4-5-20251001" in message
+    assert "input_tokens=100" in message
+    assert "output_tokens=20" in message
+    assert "latency_ms=250.0" in message
+    # 100 * $1/M + 20 * $5/M = 0.0001 + 0.0001 = 0.0002
+    assert "cost_usd=0.0002" in message
+
+
+def test_an_unpriced_model_never_aborts_the_turn(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A model missing from the price table must not turn a real customer outcome into a 500:
+    the turn still completes, its state is still saved, and only a warning names the gap."""
+    accounting = TurnAccounting(
+        model="claude-opus-4",  # not in app.llm.pricing's table
+        prompt_version="1",
+        input_tokens=100,
+        output_tokens=20,
+        latency_ms=250.0,
+    )
+    store = InMemoryDialogueStore()
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        accounting=accounting,
+    )
+
+    with caplog.at_level(logging.INFO):
+        response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.reply
+    assert store.get(_SESSION_ID) is not None  # the save ran; the turn's own state is persisted
+    warnings = [r for r in caplog.records if r.getMessage().startswith("turn_cost_unpriced")]
+    assert len(warnings) == 1
+    assert "model=claude-opus-4" in warnings[0].getMessage()
+    completed = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(completed) == 1
+    assert "cost_usd=None" in completed[0].getMessage()
+
+
+def test_an_exact_duplicate_turn_id_does_not_re_log_accounting(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The early exact-duplicate-turn-id path (the same client request retried) returns the
+    replayed envelope without a new understanding call, so it must not log a second
+    turn_completed line — the model was only ever called once."""
+    accounting = TurnAccounting(
+        model="claude-haiku-4-5-20251001",
+        prompt_version="1",
+        input_tokens=100,
+        output_tokens=20,
+        latency_ms=250.0,
+    )
+    store = InMemoryDialogueStore()
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+        accounting=accounting,
+    )
+
+    with caplog.at_level(logging.INFO):
+        first = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+        second = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert first.reply == second.reply
+    logged = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(logged) == 1
+
+
+def test_a_turn_that_files_a_case_logs_its_case_number(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The filing turn's own log line already carries the new case number (the "per case" key),
+    mirroring ``test_no_confirmation_required_files_immediately``'s own filing flow."""
+    store = InMemoryDialogueStore()
+    case = _case("D-1")
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        cases=(case,),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=False
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+    )
+    controller, _ = _controller(
+        _file_dispute(transaction=TransactionHint(merchant="Amazon")),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+    with caplog.at_level(logging.INFO):
+        controller.handle_turn(_turn("turn-0001"), principal=_principal())
+    caplog.clear()  # only turn-0002's own log line is under test below
+    controller, _ = _controller(
+        _file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+
+    with caplog.at_level(logging.INFO):
+        response = controller.handle_turn(_turn("turn-0002"), principal=_principal())
+
+    assert "D-1" in response.reply
+    logged = [r for r in caplog.records if r.getMessage().startswith("turn_completed")]
+    assert len(logged) == 1
+    assert "case_number=D-1" in logged[0].getMessage()
+
+
+# -----------------------------------------------------------------------------
+# An unreachable understanding dependency: never the customer's own ambiguity
 # -----------------------------------------------------------------------------
 
 

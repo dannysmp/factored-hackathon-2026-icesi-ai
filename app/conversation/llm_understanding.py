@@ -29,7 +29,7 @@ Design Principles
   still fails becomes ``NluResult.unusable()``: one question, then a person — the customer is
   never shown a model or provider error. A call the port could not complete at all is a different
   outcome (``UnderstandingUnavailable``, raised rather than swallowed): unlike a malformed result,
-  it is not the customer's own ambiguity, so it must not be treated as one (E9).
+  it is not the customer's own ambiguity, so it must not be treated as one.
 - The masking serializer is the only path text takes to leave the process: this class never builds
   the user message from anything but ``redact_pan(text).masked``.
 - Temperature 0: this is structured extraction, not open-ended writing.
@@ -37,7 +37,10 @@ Design Principles
 Runtime Contract
 ----------------
 ``LlmNlu(llm, *, model, prompt=None)`` implementing
-``app.conversation.understanding.Understanding``.
+``app.conversation.understanding.Understanding``: ``understand(...)`` returns the parsed
+``NluResult`` paired with a ``TurnAccounting`` built from the completion's own token/latency
+accounting, ``(NluResult.unusable(), None)`` when the call completed but its output was not
+usable, or raises ``UnderstandingUnavailable`` when the call could not be completed at all.
 """
 
 from __future__ import annotations
@@ -50,7 +53,10 @@ from decimal import Decimal, InvalidOperation  # Money is never a float; malform
 from pydantic import BaseModel, ConfigDict, ValidationError  # Loose intermediate model
 
 # Local modules
-from app.conversation.understanding import UnderstandingUnavailable  # Raised, never swallowed
+from app.conversation.understanding import (  # What this call cost; raised, never swallowed
+    TurnAccounting,
+    UnderstandingUnavailable,
+)
 from app.domain.policy.models import DisputeCategory  # Closed set of dispute categories
 from app.llm.client import (  # The port
     CompletionRequest,
@@ -255,14 +261,17 @@ class LlmNlu:
         self._model = model
         self._prompt = prompt or load_prompt(_PROMPT_NAME)
 
-    def understand(self, text: str, *, language_hint: Lang | None) -> NluResult:
+    def understand(
+        self, text: str, *, language_hint: Lang | None
+    ) -> tuple[NluResult, TurnAccounting | None]:
         """Understand ``text`` through the model, or return unusable understanding.
 
         Empty text and an invalid call's output are both treated as unusable: the customer is
         never shown a model or provider error, only asked again — genuine ambiguity a
-        clarification question can resolve. A call that could not reach the provider at all,
-        after its own bounded retries (E9), is a different outcome and raises
-        ``UnderstandingUnavailable`` instead: that is not the customer's ambiguity to clarify.
+        clarification question can resolve, and neither produces accounting, since no real,
+        priced call completed. A call that could not reach the provider at all, after its own
+        bounded retries, is a different outcome and raises ``UnderstandingUnavailable`` instead:
+        that is not the customer's ambiguity to clarify, and it produces no accounting either.
 
         Raises
         ------
@@ -271,7 +280,7 @@ class LlmNlu:
             in front of it could not be reached, even after retrying.
         """
         if not text.strip():
-            return NluResult.unusable()
+            return NluResult.unusable(), None
 
         masked = redact_pan(text).masked
         user_text = self._prompt.render_task(
@@ -290,5 +299,12 @@ class LlmNlu:
         except LlmUnavailable as error:
             raise UnderstandingUnavailable(str(error)) from error
         except LlmError:
-            return NluResult.unusable()
-        return _parse(result.tool_input)
+            return NluResult.unusable(), None
+        accounting = TurnAccounting(
+            model=result.model,
+            prompt_version=result.prompt_version,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            latency_ms=result.latency_ms,
+        )
+        return _parse(result.tool_input), accounting

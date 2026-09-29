@@ -23,6 +23,7 @@ from pydantic import SecretStr
 from app.config import Settings, load_settings
 from app.conversation.controller import DialogueController
 from app.conversation.store import InMemoryDialogueStore
+from app.conversation.understanding import TurnAccounting
 from app.domain.policy.loader import load_policy
 from app.main import create_app
 from app.retrieval.lexical import LexicalRetriever
@@ -50,8 +51,10 @@ _NOW = datetime(2026, 6, 18, 15, 0, tzinfo=UTC)
 class _FakeUnderstanding:
     """Returns the same small-talk understanding for every message: no tool call is ever needed."""
 
-    def understand(self, text: str, *, language_hint: str | None) -> NluResult:
-        return NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, language="es")
+    def understand(
+        self, text: str, *, language_hint: str | None
+    ) -> tuple[NluResult, TurnAccounting | None]:
+        return NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, language="es"), None
 
 
 class _NoopToolPort:

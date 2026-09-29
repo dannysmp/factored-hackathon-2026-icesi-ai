@@ -10,14 +10,23 @@ the same port; nothing that consumes ``NluResult`` needs to know which implement
 
 Scope
 -----
-In: the ``Understanding`` port and ``FakeNlu``, a keyword-based implementation for scripted
-conversations, tests and CI.
-Out: the language model adapter that implements the same port against a real provider.
+In: the ``Understanding`` port, ``TurnAccounting`` (what a real call cost, if one happened), and
+``FakeNlu``, a keyword-based implementation for scripted conversations, tests and CI.
+Out: the language model adapter that implements the same port against a real provider
+(``app.conversation.llm_understanding``), what a caller does with the accounting (logging it is
+the dialogue controller's job).
 
 Design Principles
 -----------------
-- One call, one typed result. The controller never sees raw model output, only the validated
-  ``NluResult``; a caller that cannot understand a message at all uses ``NluResult.unusable()``.
+- One call, one typed result — a pair, not a single value forced to carry two unrelated concerns.
+  ``NluResult`` (``contracts/service_v1/nlu.py``) is a frozen, versioned service contract
+  describing what was *understood*; it stays exactly that. ``TurnAccounting`` describes how the
+  understanding was *produced* (which model, how many tokens, how long) and is ``None`` whenever
+  no real model call happened — every call through ``FakeNlu``, and any real call the port itself
+  could not complete. Widening the contract instead would force ``FakeNlu``, used in every test and
+  CI path, to fabricate accounting for a call that made no request.
+- The controller never sees raw model output, only the validated ``NluResult``; a caller that
+  cannot understand a message at all uses ``NluResult.unusable()``.
 - The fake is deliberately simple: keyword and pattern matching per language, not a stand-in for
   quality. Its purpose is to exercise every path the controller and the tests take, not to
   understand language; low-confidence and unclear results are still expected and correct outputs
@@ -25,13 +34,15 @@ Design Principles
 
 Runtime Contract
 ----------------
-``Understanding`` (protocol): ``understand(text, *, language_hint) -> NluResult``.
+``Understanding`` (protocol): ``understand(text, *, language_hint) -> tuple[NluResult,
+TurnAccounting | None]``, or raises ``UnderstandingUnavailable`` instead of returning at all.
+``TurnAccounting(model, prompt_version, input_tokens, output_tokens, latency_ms)``.
 ``UnderstandingUnavailable``: raised instead of returning a result when the port could not reach
-its own dependency after its bounded retries (E9) — distinct from ``NluResult.unusable()``, which
+its own dependency after its bounded retries — distinct from ``NluResult.unusable()``, which
 means the dependency answered but produced nothing usable. A caller that cannot tell the two apart
 would spend a customer's clarification budget on an outage that was never their own confusion.
-``FakeNlu``: a keyword-based implementation with no network access; it never raises
-``UnderstandingUnavailable``, since it makes no call that could fail this way.
+``FakeNlu``: a keyword-based implementation with no network access; always returns ``None``
+accounting and never raises ``UnderstandingUnavailable``, since it makes no call that could fail.
 """
 
 from __future__ import annotations
@@ -39,6 +50,7 @@ from __future__ import annotations
 # Standard libraries
 import re  # Keyword and pattern matching
 from collections.abc import Callable  # Type of a rule's match test and result builder
+from dataclasses import dataclass  # Immutable accounting record
 from typing import Protocol  # The understanding port
 
 # Local modules
@@ -51,6 +63,23 @@ from contracts.service_v1.nlu import (  # The typed result and its vocabulary
 )
 
 
+@dataclass(frozen=True, slots=True)
+class TurnAccounting:
+    """What one real model call behind a turn's understanding cost.
+
+    Never produced by ``FakeNlu``, and never produced for a real call the port itself could not
+    complete (``understand`` then returns ``NluResult.unusable()`` paired with ``None``, or raises
+    ``UnderstandingUnavailable`` outright) — the absence of a real, priced call is not an
+    accounting event.
+    """
+
+    model: str
+    prompt_version: str
+    input_tokens: int
+    output_tokens: int
+    latency_ms: float
+
+
 class UnderstandingUnavailable(Exception):
     """The port's own dependency could not be reached, after its bounded retries.
 
@@ -58,15 +87,21 @@ class UnderstandingUnavailable(Exception):
     answered, just not with anything usable (empty text, a malformed model output) — genuine
     customer-facing ambiguity a clarification question can resolve. This exception means the
     dependency itself was not reachable; retrying the same question would not help, and the
-    caller must not spend the customer's clarification budget on it.
+    caller must not spend the customer's clarification budget on it. No accounting is produced
+    either way: nothing was priced.
     """
 
 
 class Understanding(Protocol):
     """Turns one customer message into a typed understanding."""
 
-    def understand(self, text: str, *, language_hint: Lang | None) -> NluResult:
-        """The understanding of ``text``, read with ``language_hint`` as a tie-breaker.
+    def understand(
+        self, text: str, *, language_hint: Lang | None
+    ) -> tuple[NluResult, TurnAccounting | None]:
+        """The understanding of ``text`` and, when a real model call produced it, its accounting.
+
+        ``language_hint`` is a tie-breaker; the accounting half is ``None`` whenever no real,
+        priced model call happened (``FakeNlu``, always; a real call the port could not complete).
 
         Raises
         ------
@@ -234,25 +269,32 @@ _RULES: tuple[_Rule, ...] = (
 )
 
 
+def _classify(text: str, *, language_hint: Lang | None) -> NluResult:
+    """Classify ``text`` by keyword and pattern matching."""
+    if not text.strip():
+        return NluResult.unusable()
+
+    language = _detect_language(text, language_hint)
+    requested = _requested_language(text)
+    if requested is not None and _SWITCH_REQUEST.search(text):
+        return NluResult(
+            intent=NluIntent.SWITCH_LANGUAGE,
+            confidence=0.95,
+            language=language,
+            requested_language=requested,
+        )
+
+    for matches, build in _RULES:
+        if matches(text) is not None:
+            return build(text, language)
+    return NluResult(intent=NluIntent.UNCLEAR, confidence=0.3, language=language)
+
+
 class FakeNlu:
     """A deterministic, keyword-based ``Understanding``; no network, no model."""
 
-    def understand(self, text: str, *, language_hint: Lang | None) -> NluResult:
-        """Classify ``text`` by keyword and pattern matching."""
-        if not text.strip():
-            return NluResult.unusable()
-
-        language = _detect_language(text, language_hint)
-        requested = _requested_language(text)
-        if requested is not None and _SWITCH_REQUEST.search(text):
-            return NluResult(
-                intent=NluIntent.SWITCH_LANGUAGE,
-                confidence=0.95,
-                language=language,
-                requested_language=requested,
-            )
-
-        for matches, build in _RULES:
-            if matches(text) is not None:
-                return build(text, language)
-        return NluResult(intent=NluIntent.UNCLEAR, confidence=0.3, language=language)
+    def understand(
+        self, text: str, *, language_hint: Lang | None
+    ) -> tuple[NluResult, TurnAccounting | None]:
+        """Classify ``text`` by keyword and pattern matching; never produces accounting."""
+        return _classify(text, language_hint=language_hint), None

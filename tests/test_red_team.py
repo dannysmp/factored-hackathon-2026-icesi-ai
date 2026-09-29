@@ -40,6 +40,7 @@ from app.conversation.facts import to_envelope_transaction
 from app.conversation.model_renderer import LlmRenderer
 from app.conversation.policy_answer import answer
 from app.conversation.store import InMemoryDialogueStore
+from app.conversation.understanding import TurnAccounting
 from app.domain.policy.loader import load_policy
 from app.domain.policy.models import DisputeCategory, PolicyDecision, TransactionStatus
 from app.llm.client import FakeLlm
@@ -89,8 +90,10 @@ def _turn(turn_id: str, text: str = "hola") -> TurnRequest:
 class ScriptedNlu:
     result: NluResult
 
-    def understand(self, text: str, *, language_hint: str | None) -> NluResult:
-        return self.result
+    def understand(
+        self, text: str, *, language_hint: str | None
+    ) -> tuple[NluResult, TurnAccounting | None]:
+        return self.result, None
 
 
 @dataclass

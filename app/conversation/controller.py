@@ -52,11 +52,18 @@ Design Principles
   reply) has no tool call that isn't already safe to repeat, so it is simply recomputed.
 - **PII minimization.** No raw customer text reaches a store, a log or a handoff packet; a handoff
   names its category and reason codes, never a transcript.
+- **Per-turn cost is logged, not stored**: a stable ``turn_completed`` log line reports the
+  real model cost (if any — ``FakeNlu`` turns log zero/``None``) and, once the session has one, its
+  case number, so cost per session or per case is computable from the log stream alone
+  (``app.observability.turn_metrics``). Logged once the model call already happened, before the
+  store save is attempted, since real spend occurred regardless of whether the save then replays
+  or conflicts.
 - **An unreachable dependency is not the customer's ambiguity.** ``Understanding.understand``
-  raising ``UnderstandingUnavailable`` (E9: the LLM port's own bounded retries and circuit breaker
+  raising ``UnderstandingUnavailable`` (the LLM port's own bounded retries and circuit breaker
   were exhausted) escalates directly to a handoff, saved with the same idempotent discipline as any
   other turn — it never reaches ``_advance``, so it never spends a clarification-budget attempt on
-  an outage that was never the customer's own confusion.
+  an outage that was never the customer's own confusion. No accounting is logged for that attempt:
+  nothing was priced.
 
 Runtime Contract
 ----------------
@@ -82,7 +89,14 @@ handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
-handoff packet: neither is available from the tools this module calls.
+handoff packet: neither is available from the tools this module calls. A genuine concurrent
+duplicate (two requests racing on the same turn id, whether the session is brand new or already
+has prior turns) each read the same starting state, each run their own real model call, and each
+log their own ``turn_completed`` line before either attempts to save; the loser's save then
+replays the winner's state, so one client-visible turn can log cost twice. This is an honest
+account of both calls' real spend, not a bug in the log line itself, but it means "one
+client-visible turn" and "one logged turn_completed line" are not always the same count under this
+specific race.
 """
 
 from __future__ import annotations
@@ -92,6 +106,7 @@ import hashlib  # Deterministic idempotency key derived from the turn id
 import logging  # Progress events, never print
 from collections.abc import Callable  # Type of one route's handler
 from datetime import date  # Domain date the controller was built with
+from decimal import Decimal  # Money is never a float
 from typing import Protocol  # The handoff outbox port this module depends on
 
 # Third-party libraries
@@ -106,8 +121,9 @@ from app.conversation.renderer import RenderedReply, demo_notice
 from app.conversation.reply import render_reply
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DialogueStore, DuplicateTurn
-from app.conversation.understanding import Understanding, UnderstandingUnavailable
+from app.conversation.understanding import TurnAccounting, Understanding, UnderstandingUnavailable
 from app.domain.policy.models import DisputeCategory, Outcome, Policy, PolicyDecision, ReasonCode
+from app.llm.pricing import cost_usd  # Per-turn cost accounting
 from app.persistence.handoff_outbox import HandoffContent
 from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError
@@ -312,13 +328,14 @@ class DialogueController:
             return self._respond(current, self._replay_envelope(current))
 
         try:
-            state, expected_version, result = self._start_turn(current, request)
+            state, expected_version, result, accounting = self._start_turn(current, request)
         except UnderstandingUnavailable:
             return self._handoff_from_turn(
                 current, expected_version=current.version if current is not None else 0
             )
         state_before = state.phase
         new_state, envelope = self._advance(state, result)
+        self._log_turn_completed(new_state, accounting)
 
         try:
             saved = self._store.save(
@@ -343,7 +360,7 @@ class DialogueController:
         self, current: DialogueState | None, *, expected_version: int
     ) -> TurnResponse:
         """Escalate a turn that could not even be understood, because the understanding port's own
-        dependency was unreachable after its bounded retries (E9) — never the customer's own
+        dependency was unreachable after its bounded retries — never the customer's own
         ambiguity, so it skips ``_advance`` and its clarification-budget accounting entirely.
 
         Persists exactly like a normal turn advance: the same idempotent save, the same
@@ -390,18 +407,21 @@ class DialogueController:
 
     def _start_turn(
         self, current: DialogueState | None, request: TurnRequest
-    ) -> tuple[DialogueState, int, NluResult]:
-        """The state to advance from, the version it was read at, and this message's understanding.
+    ) -> tuple[DialogueState, int, NluResult, TurnAccounting | None]:
+        """The state to advance from, the version it was read at, this message's understanding,
+        and what understanding it cost (``None`` for ``FakeNlu`` or a call that did not complete).
 
         A brand-new session starts at expected version 0 (a fresh insert, unconditional on it —
         ``DialogueStore.save``'s own documented behavior); its language is the first message's own,
         or Spanish when the message is too ambiguous to tell (AC: es and pt are both required).
         """
         if current is not None:
-            result = self._understanding.understand(request.text, language_hint=current.lang)
-            return current, current.version, result
+            result, accounting = self._understanding.understand(
+                request.text, language_hint=current.lang
+            )
+            return current, current.version, result, accounting
 
-        result = self._understanding.understand(request.text, language_hint=None)
+        result, accounting = self._understanding.understand(request.text, language_hint=None)
         lang: Lang = result.language if result.language is not None else "es"
         fresh = DialogueState(
             session_id=self._session_id(),
@@ -409,7 +429,53 @@ class DialogueController:
             phase=ConversationPhase.STARTED,
             updated_at=self._now(),
         )
-        return fresh, 0, result
+        return fresh, 0, result, accounting
+
+    def _log_turn_completed(self, state: DialogueState, accounting: TurnAccounting | None) -> None:
+        """One stable-shaped log line per real turn: the real cost, if any, of understanding
+        it, and which case (if any, by this point) the session belongs to.
+
+        Emitted once the LLM call already happened, before the store save is attempted, so a real
+        model cost is always logged even if the save then replays or conflicts — the spend already
+        occurred regardless of what the client is told. Every field is present on every line,
+        ``FakeNlu`` turns included, so the shape a log consumer parses never varies; only the
+        values are zero/``None`` when no real call happened. A model the price table does not
+        know about never aborts the turn: ``cost_usd`` raising is caught, a warning names the
+        model, and this line logs ``cost_usd=None`` rather than propagating past the caller.
+        """
+        if accounting is None:
+            model: str | None = None
+            prompt_version: str | None = None
+            input_tokens = 0
+            output_tokens = 0
+            latency_ms = 0.0
+            cost: Decimal | None = Decimal(0)
+        else:
+            model = accounting.model
+            prompt_version = accounting.prompt_version
+            input_tokens = accounting.input_tokens
+            output_tokens = accounting.output_tokens
+            latency_ms = accounting.latency_ms
+            try:
+                cost = cost_usd(accounting.model, accounting.input_tokens, accounting.output_tokens)
+            except KeyError:
+                # An unpriced model must never abort the turn: the customer's own outcome (a
+                # filed case, a handoff) does not depend on the cost log line completing. The
+                # warning is what an operator sees to add the missing price.
+                logger.warning("turn_cost_unpriced model=%s", accounting.model)
+                cost = None
+        logger.info(
+            "turn_completed session_id=%s case_number=%s model=%s prompt_version=%s "
+            "input_tokens=%s output_tokens=%s latency_ms=%s cost_usd=%s",
+            state.session_id,
+            state.last_case_number,
+            model,
+            prompt_version,
+            input_tokens,
+            output_tokens,
+            latency_ms,
+            cost,
+        )
 
     def _session_id(self) -> str:
         assert self._principal is not None  # noqa: S101 - set at the top of handle_turn
@@ -944,7 +1010,7 @@ class DialogueController:
 
     def _replay_recompute(self, state: DialogueState) -> RenderEnvelope:
         """Recompute a replayed turn's reply exactly as the original turn was, unless the
-        understanding port's own dependency is unreachable right now (E9): that failure is not
+        understanding port's own dependency is unreachable right now: that failure is not
         the customer's ambiguity, and recomputing it needs the same dependency that just failed,
         so it renders a generic acknowledgment instead of recomputing — without touching persisted
         state or writing a new outbox row, since replay never mutates state and a retried replay
@@ -952,8 +1018,12 @@ class DialogueController:
         """
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
+        # A replay's own re-understanding is not a new turn (per-turn accounting is scoped to
+        # handle_turn's own call in _start_turn); its accounting, if any, is not logged again here.
         try:
-            result = self._understanding.understand(request.text, language_hint=state.lang)
+            result, _replay_accounting = self._understanding.understand(
+                request.text, language_hint=state.lang
+            )
         except UnderstandingUnavailable:
             logger.warning(
                 "llm_understanding_unavailable_replay session_id=%s request_id=%s",
