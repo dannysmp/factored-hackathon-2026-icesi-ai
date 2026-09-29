@@ -115,12 +115,14 @@ if [ -n "\${DEMO_AGENT_ACCESS_CODE}" ] && [ -n "\${AGENT_SESSION_SIGNING_KEY}" ]
 aws ecr get-login-password --region ${INFRA_REGION} | docker login --username AWS --password-stdin "\${ECR_REGISTRY}"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+pg_role="\${POSTGRES_USER:-dispute_intake}"
+pg_db="\${POSTGRES_DB:-dispute_intake}"
 for _ in \$(seq 1 10); do
-  docker compose exec -T postgres pg_isready -U dispute_intake >/dev/null 2>&1 && break
+  docker compose exec -T postgres pg_isready -U "\${pg_role}" >/dev/null 2>&1 && break
   sleep 3
 done
-echo "ALTER ROLE dispute_intake PASSWORD :'pw'" | docker compose exec -T postgres \
-  psql -v ON_ERROR_STOP=1 -v pw="\${POSTGRES_PASSWORD}" -U dispute_intake -d dispute_intake
+echo "ALTER ROLE \${pg_role} PASSWORD :'pw'" | docker compose exec -T postgres \
+  psql -v ON_ERROR_STOP=1 -v pw="\${POSTGRES_PASSWORD}" -U "\${pg_role}" -d "\${pg_db}"
 SCRIPT
 )"
 
