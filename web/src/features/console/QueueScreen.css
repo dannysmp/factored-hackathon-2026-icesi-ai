@@ -2,6 +2,9 @@
    dominant element on this screen — every other control (filters, banner) reads smaller and in
    the subtle text color, tokens throughout (ADR-19), nothing hardcoded. */
 
+/* The standard visually-hidden idiom (WebAIM): a fixed, universal technique, not a design-scale
+   value — its 1px/-1px literals are a deliberate, narrow exception to "every value reads a token"
+   (ADR-19), the same way `tokens.css` itself never tokenizes an idiom's own constants. */
 .sr-only {
   position: absolute;
   width: 1px;
