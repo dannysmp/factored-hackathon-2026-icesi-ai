@@ -11,8 +11,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+# Third-party libraries
+import pytest
+
 # Local modules
-from app.conversation.model_renderer import LlmRenderer
+from app.conversation.model_renderer import LlmRenderer, RenderUnavailable
 from app.domain.policy.models import TransactionStatus
 from app.llm.client import FakeLlm, LlmRequestRejected
 from contracts.service_v1.envelope import (
@@ -46,11 +49,14 @@ def _envelope() -> RenderEnvelope:
     )
 
 
-def test_render_returns_none_when_the_llm_call_fails() -> None:
+def test_render_raises_render_unavailable_when_the_llm_call_fails() -> None:
+    """The call itself failing is a distinct outcome from a response that parsed to nothing
+    usable: the caller needs to tell the two apart to log an accurate fallback reason."""
     llm = FakeLlm(responses=[LlmRequestRejected("no access")])
     renderer = LlmRenderer(llm, model="claude-sonnet-5")
 
-    assert renderer.render(_envelope()) is None
+    with pytest.raises(RenderUnavailable):
+        renderer.render(_envelope())
 
 
 def test_render_returns_none_when_the_tool_did_not_return_text() -> None:

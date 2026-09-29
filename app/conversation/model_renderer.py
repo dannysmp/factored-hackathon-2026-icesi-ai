@@ -7,7 +7,7 @@ Overview
 Writes one customer reply through the LLM port: the envelope's intent and the closed set of
 placeholders it may cite (never a grounded value itself, only the field names —
 ``app.conversation.verifier`` substitutes the actual values afterward), forced through a tool call,
-with the same bounded-repair-then-``None`` discipline ``LlmNlu`` uses for understanding. Nothing
+with the same bounded-repair-or-raise discipline ``LlmNlu`` uses for understanding. Nothing
 downstream can tell a real model or ``FakeLlm`` produced the candidate.
 
 Scope
@@ -24,10 +24,12 @@ Design Principles
 - The model never sees a grounded value: the prompt states only the intent and the field *names*
   this envelope allows and requires, never a fact, a decision or a source. There is nothing here
   for the model to already know a figure from.
-- One bounded repair, never a re-ask: a candidate whose text overruns the contract's length bound
-  is truncated once and re-validated; anything else invalid, or the call itself failing, returns
-  ``None`` for the caller to fall back to the fixed-wording template — the same "one question, then
-  a safe default" discipline ``LlmNlu`` already uses for understanding.
+- Two distinct outcomes for the caller to tell apart, matching ``LlmNlu``'s own split: the call
+  itself failing (the provider or its circuit breaker could not be reached) raises
+  ``RenderUnavailable``, never swallowed into the same outcome as a response that arrived but
+  wasn't usable. A candidate whose text overruns the contract's length bound is truncated once and
+  re-validated; anything else invalid returns ``None`` instead — the call completed, it just
+  produced nothing the caller can use.
 - Structured output only, matching the LLM port's own design: the model is forced to call
   ``write_reply``, never asked for free text directly.
 - Every call logs its own outcome (a failure, or the model and prompt version with whether the
@@ -35,7 +37,9 @@ Design Principles
 
 Runtime Contract
 ----------------
-``LlmRenderer(llm, *, model, prompt=None)`` with ``render(envelope) -> CandidateReply | None``.
+``LlmRenderer(llm, *, model, prompt=None)`` with ``render(envelope) -> CandidateReply | None``,
+raising ``RenderUnavailable`` when the call itself could not be completed. ``RenderUnavailable``
+(exception).
 """
 
 from __future__ import annotations
@@ -107,6 +111,13 @@ def _parse(tool_input: Mapping[str, object]) -> CandidateReply | None:
         return None
 
 
+class RenderUnavailable(Exception):
+    """The model call itself could not be completed — the provider or the circuit breaker in
+    front of it could not be reached, even after retrying. Distinct from a call that completed but
+    produced nothing usable, which returns ``None`` instead: the caller reports the two outcomes
+    differently, so a fallback log line states which one actually happened."""
+
+
 class LlmRenderer:
     """Writes one candidate reply through the LLM port."""
 
@@ -126,10 +137,17 @@ class LlmRenderer:
         self._prompt = prompt or load_prompt(_PROMPT_NAME)
 
     def render(self, envelope: RenderEnvelope) -> CandidateReply | None:
-        """Write a candidate reply for ``envelope``, or ``None`` for the caller to fall back on.
+        """Write a candidate reply for ``envelope``, or ``None`` when it produced nothing usable.
 
         No customer text ever reaches this call: everything the prompt states comes from the
         envelope's own intent and its closed set of allowed and required field names.
+
+        Raises
+        ------
+        RenderUnavailable
+            The underlying call raised ``LlmError`` — the provider or the circuit breaker in
+            front of it could not be reached, even after retrying. Distinct from ``None``, which
+            means the call completed but produced no usable candidate.
         """
         allowed = INTENT_ALLOWED_FIELDS[envelope.intent]
         required = INTENT_REQUIRED_FIELDS[envelope.intent]
@@ -149,7 +167,7 @@ class LlmRenderer:
         )
         try:
             result = self._llm.complete(request)
-        except LlmError:
+        except LlmError as error:
             logger.warning(
                 "model_render_call_failed model=%s prompt_version=%s intent=%s request_id=%s",
                 self._model,
@@ -157,7 +175,7 @@ class LlmRenderer:
                 envelope.intent.value,
                 current_request_id(),
             )
-            return None
+            raise RenderUnavailable(str(error)) from error
         candidate = _parse(result.tool_input)
         logger.info(
             "model_render_call model=%s prompt_version=%s intent=%s outcome=%s request_id=%s",
