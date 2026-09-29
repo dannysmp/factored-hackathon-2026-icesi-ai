@@ -31,8 +31,14 @@ from app.persistence.migrate import apply_migrations
 from app.retrieval.lexical import LexicalRetriever
 from contracts.service_v1.envelope import Intent, Slot
 from evals.models import Case, CaseCategory
-from evals.runner.baselines.b1 import _MAX_TOOL_ROUNDS, build_b1_dependencies, run_case, run_cases
-from evals.runner.baselines.naive_agent_client import NaiveAgentClient
+from evals.runner.baselines.b1 import (
+    _MAX_TOOL_ROUNDS,
+    _log_call_completed,
+    build_b1_dependencies,
+    run_case,
+    run_cases,
+)
+from evals.runner.baselines.naive_agent_client import NaiveAgentClient, NaiveAgentTurn
 from evals.scoring import score_case
 
 _NOW = datetime(2026, 6, 18, 15, 0, tzinfo=UTC)
@@ -252,6 +258,34 @@ def test_run_case_logs_the_real_cost_of_every_call_it_makes(
         assert "input_tokens=10 output_tokens=5" in record.message
         assert "cost_usd=" in record.message
         assert "cost_usd=None" not in record.message  # _MODEL is a priced, allow-listed model
+
+
+def test_an_unpriced_model_never_aborts_the_batch(caplog: pytest.LogCaptureFixture) -> None:
+    """A model missing from app.llm.pricing's table must not turn a real batch run into a crash:
+    the call is still logged, only a warning names the pricing gap — mirroring
+    test_dialogue_controller.py::test_an_unpriced_model_never_aborts_the_turn's own rule for P,
+    applied here to B1's own accounting. NaiveAgentTurn is constructed directly, bypassing
+    NaiveAgentClient's own allow-list check, since this tests _log_call_completed's own fallback,
+    not model selection."""
+    turn = NaiveAgentTurn(
+        text="",
+        tool_calls=(),
+        stop_reason="end_turn",
+        model="claude-opus-4",  # not in app.llm.pricing's table
+        input_tokens=100,
+        output_tokens=20,
+        latency_ms=250.0,
+    )
+
+    with caplog.at_level(logging.INFO):
+        _log_call_completed("session-1", "turn-0001", turn)
+
+    warnings = [r for r in caplog.records if r.message.startswith("b1_call_cost_unpriced")]
+    assert len(warnings) == 1
+    assert "model=claude-opus-4" in warnings[0].message
+    completed = [r for r in caplog.records if r.message.startswith("b1_call_completed")]
+    assert len(completed) == 1
+    assert "cost_usd=None" in completed[0].message
 
 
 @pytest.mark.integration
