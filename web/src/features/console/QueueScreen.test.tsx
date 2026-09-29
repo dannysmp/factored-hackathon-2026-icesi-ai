@@ -74,4 +74,26 @@ describe('QueueScreen', () => {
     await screen.findAllByRole('row')
     expect(await axe(container)).toHaveNoViolations()
   })
+
+  it('has no automatically detectable accessibility violations while loading', async () => {
+    const client: QueueClient = { fetchQueue: () => new Promise(() => undefined) }
+    const { container } = render(<QueueScreen client={client} />)
+
+    await screen.findByRole('status')
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('has no automatically detectable accessibility violations in the error state', async () => {
+    const { container } = render(<QueueScreen client={FAILING_CLIENT} />)
+
+    await screen.findByRole('alert')
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('has no automatically detectable accessibility violations when the queue is empty', async () => {
+    const { container } = render(<QueueScreen client={new FixtureQueueClient(EMPTY_QUEUE)} />)
+
+    await screen.findByText('No hay tickets abiertos en este momento.')
+    expect(await axe(container)).toHaveNoViolations()
+  })
 })

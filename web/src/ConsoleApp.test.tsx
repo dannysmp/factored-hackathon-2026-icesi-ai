@@ -68,4 +68,17 @@ describe('ConsoleApp', () => {
     await screen.findByLabelText('Persona')
     expect(await axe(container)).toHaveNoViolations()
   })
+
+  it('has no automatically detectable accessibility violations once the queue renders', async () => {
+    stubTheWholeFlow()
+    const user = userEvent.setup()
+    const { container } = render(<ConsoleApp />)
+
+    await screen.findByLabelText('Persona')
+    await user.type(screen.getByLabelText('Access code'), 'agent-code')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    await screen.findByRole('region', { name: 'Cola de casos escalados' })
+
+    expect(await axe(container)).toHaveNoViolations()
+  })
 })
