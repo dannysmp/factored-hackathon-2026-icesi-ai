@@ -55,12 +55,11 @@ carries it, not a promise about a later one.
   synthetic subset. What has not happened yet is the first full `make evaluate` run itself and its
   recorded report — the pieces exist, but no evidence-producing run against the complete golden
   set has been executed.
-- **The human-agent console is not yet live.** The queue and ticket-detail screens, and the
-  backend's read routes for them, both exist, but neither is wired into the running application
-  yet: the frontend renders from fixture data (`web/src/ConsoleApp.tsx`'s own comment states this
-  plainly), and `app.main.create_app` does not register the console's routes, so an agent who
-  signs in has nothing live to reach. The customer-facing chat, by contrast, is fully wired end to
-  end.
+- **The human-agent console is now live, read-only.** The queue and ticket-detail screens draw
+  from real backend data (`LiveQueueClient`, `LiveTicketDetailClient`), and `app.main.create_app`
+  registers the console's routes whenever the agent demo broker is enabled — the same flag that
+  gates whether an agent token can ever be issued in the first place. It remains a viewer: no
+  write action exists yet, matching its own design (ADR-17).
 - **Structured logging runs across the service and every CLI entrypoint, including a configuration
   failure at start-up.** Every line carries a stable event name, the request's trace id and, once
   authenticated, its session id, with any card-shaped digit run redacted before the line is
