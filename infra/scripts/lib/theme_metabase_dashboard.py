@@ -108,6 +108,11 @@ _ROW_HEIGHT_TEXT = 2
 _ROW_HEIGHT_CHART = 6
 _WIDTH = 12
 
+# Generous but bounded: this talks to Metabase on the same host (loopback) or a local container,
+# never over the open internet, so a hang here means Metabase itself is stuck, not slow network —
+# worth surfacing quickly rather than letting a stuck deploy script run indefinitely.
+_TIMEOUT_SECONDS = 30
+
 
 def _request(
     base_url: str,
@@ -126,11 +131,15 @@ def _request(
     if session_id is not None:
         request.add_header("X-Metabase-Session", session_id)
     try:
-        with urllib.request.urlopen(request) as response:  # noqa: S310 — scheme checked above
+        with urllib.request.urlopen(  # noqa: S310 — scheme checked above
+            request, timeout=_TIMEOUT_SECONDS
+        ) as response:
             raw = response.read()
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"{method} {path} failed ({error.code}): {detail}") from error
+    except urllib.error.URLError as error:
+        raise RuntimeError(f"{method} {path} could not reach {base_url}: {error.reason}") from error
     return json.loads(raw) if raw else None
 
 

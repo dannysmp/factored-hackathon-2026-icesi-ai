@@ -15,6 +15,7 @@ AWS provisioning for the deployed stack (ADR-13: one EC2 host, ECR, docker compo
 | `scripts/07-teardown.sh` | Reverses `04-launch-instance.sh`: terminates the tagged instance, releases its Elastic IP, deletes its security group. Leaves the OIDC role, the instance role and the ECR repositories in place. |
 | `scripts/08-deploy-metabase.sh` | Creates Metabase's own database and role, sets `analytics_reader`'s password, brings up the `metabase` service, completes its first-run admin setup and connects the `analytics` schema — then swaps in the Caddyfile that routes the `dashboard.` subdomain to it, only once all of that has succeeded (ADR-11). Idempotent: re-running it against an already-provisioned deployment reconciles credentials and the Caddy config without repeating setup. Once Metabase is healthy, it also captures and logs a `docker stats --no-stream` reading of all five services sharing the host (ADR-11's own capacity requirement). |
 | `scripts/09-configure-error-alarm.sh` | A CloudWatch metric filter counting error-level lines in the application's log group (`/dispute-intake/app`, created if absent) and an alarm that trips past a threshold in one evaluation window. No notification action is attached yet — no paging channel exists in this project. Authored ahead of log shipping (the CloudWatch agent) landing; running it against the live account is for whichever slice stands that up. |
+| `scripts/10-configure-metabase-dashboard.sh` | Creates or updates the operations dashboard's panels, each pairing a chart card (colored from `web/src/styles/tokens.css`'s design tokens) with a text card naming its business question. Every card and the dashboard itself are found by name and updated in place if they already exist, so a redeploy converges instead of duplicating panels. Needs `08-deploy-metabase.sh` already run (the admin account and the `analytics` datasource connection). Full native theming (logo, app name, instance-wide colors) is a paid Metabase feature this deployment has no license for — see `docs/limitations.md`. |
 
 Every script is idempotent (safe to re-run; an existing resource with the right name is left as
 is or reconciled, never duplicated) and refuses to run against any profile or region but
@@ -32,9 +33,9 @@ smoke test is exactly when a host must not be left running unattended; turn it o
 deployment meant to persist.
 
 The `deploy_metabase` input (default off) adds a job on top of the base deployment: runs
-`08-deploy-metabase.sh`, then `06-smoke-test.sh --dashboard`. Left off for a base-stack-only smoke
-exercise; turn it on alongside `teardown_after: false` for a deployment meant to persist and carry
-the dashboard.
+`08-deploy-metabase.sh`, then `10-configure-metabase-dashboard.sh`, then
+`06-smoke-test.sh --dashboard`. Left off for a base-stack-only smoke exercise; turn it on alongside
+`teardown_after: false` for a deployment meant to persist and carry the dashboard.
 
 **One-time prerequisites, before the first run:**
 - Scripts `01`–`04` already run once against the account.

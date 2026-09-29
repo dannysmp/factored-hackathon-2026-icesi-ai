@@ -112,7 +112,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["app", "contracts", "evals", "models", "pipelines"]
+source = ["app", "contracts", "evals", "infra/scripts/lib", "models", "pipelines"]
 
 [tool.coverage.report]
 # Combined line+branch floor; the standard asks for >=85% lines and >=80% branches.
