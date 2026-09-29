@@ -43,7 +43,7 @@ def _extract_rotation_block() -> str:
     content = DEPLOY_SCRIPT.read_text()
     match = re.search(
         r"docker compose -f docker-compose\.yml -f docker-compose\.prod\.yml up -d\n"
-        r"(?P<block>.+?)\nSCRIPT\n",
+        r'(?P<block>.+?-d "\\\$\{pg_db\}"\n)',
         content,
         re.S,
     )
@@ -51,8 +51,8 @@ def _extract_rotation_block() -> str:
         "the wait/rotate block was not found in 05-deploy.sh -- has it moved or been removed?"
     )
     assert "ALTER ROLE" in match.group("block"), (
-        "the block between 'up -d' and the heredoc terminator no longer contains a "
-        "password rotation statement -- has it been removed?"
+        "the block between 'up -d' and the rotation statement's own closing line no longer "
+        "contains a password rotation statement -- has it been removed?"
     )
     # Undo the unquoted heredoc's own escaping of command substitutions ("\$" -> "$"), the
     # same processing bash performs when 05-deploy.sh builds the remote script it sends over SSM.

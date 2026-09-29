@@ -32,6 +32,12 @@
 #   step (05-deploy.sh) derives `DEMO_SIGNIN_ENABLED`/`DEMO_AGENT_SIGNIN_ENABLED`
 #   from whether the corresponding SSM parameters exist, not from a separate
 #   toggle — creating the access codes is what turns sign-in on.
+#   `backend`'s seed mount is read-only and matches `app.persistence.load_seed`'s
+#   own default `--gold` path exactly (`data/gold/ops_seed`, resolved against
+#   the image's `/app` working directory), so the deploy step's one-off
+#   `docker compose run` invocations need no extra flag to find it. The
+#   directory is populated by the deploy step itself, from this project's own
+#   seed bucket (11-create-seed-bucket.sh), never baked into the image.
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #   (the deploy pipeline, a later slice, sets the environment variables above
@@ -54,6 +60,8 @@ services:
       DEMO_AGENT_SIGNIN_ENABLED: ${DEMO_AGENT_SIGNIN_ENABLED:-false}
       DEMO_AGENT_ACCESS_CODE: ${DEMO_AGENT_ACCESS_CODE:-}
       AGENT_SESSION_SIGNING_KEY: ${AGENT_SESSION_SIGNING_KEY:-}
+    volumes:
+      - ./seed/ops_seed:/app/data/gold/ops_seed:ro
     depends_on:
       postgres:
         condition: service_healthy

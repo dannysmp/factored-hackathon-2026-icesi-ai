@@ -39,8 +39,32 @@
 #   `DEMO_AGENT_SIGNIN_ENABLED` are derived on the host from whether the
 #   corresponding access code resolved to a non-empty value, not from a
 #   separate toggle this script or its caller would need to remember to set.
+#   After the stack is up, this script also migrates and seeds the database:
+#   the host syncs the already-built operational seed (three Parquet files
+#   and its manifest, never committed — `data/` is git-ignored) from this
+#   project's own seed bucket (11-create-seed-bucket.sh), using the host's
+#   own instance role — the CI role that calls this script never touches the
+#   seed, same secret-minimization boundary as every value above. Migrations
+#   and the load itself run with `docker compose run --rm`, a fresh one-off
+#   container using the backend image with a different command, never
+#   `docker compose exec` against the long-running `backend` service: that
+#   service's own startup (`app.main.create_app`) validates every demo
+#   persona against a seeded customer when demo sign-in is enabled (ADR-18)
+#   and fails closed before binding a port if the database is still empty —
+#   exactly the state right after `up -d` on a freshly launched instance —
+#   so `backend` would still be crash-looping, unreachable by `exec`, at the
+#   moment this step needs to run. `load_seed` itself is the one thing that
+#   verifies the seed's checksum against its manifest and applies the
+#   privacy-scanned pipeline output atomically (one transaction, truncate
+#   then reload) — this script only ever moves the already-built artifact
+#   and invokes that loader, never re-derives or re-touches the data. The
+#   explicit `restart backend` after seeding is what turns a still
+#   crash-looping container into a healthy one on this same run, rather than
+#   waiting out Docker's own exponential restart backoff.
 #   Idempotent: `docker compose up -d` reconciles a running stack to the new
-#   image tag rather than erroring on one already up.
+#   image tag rather than erroring on one already up; `load_seed` truncates
+#   and reloads in one transaction, so a redeploy against an already-seeded
+#   database never duplicates rows.
 # Usage:
 #   IMAGE_TAG=<sha> infra/scripts/05-deploy.sh
 # =============================================================================
@@ -66,6 +90,7 @@ readonly SSM_SECRET_PREFIX="/transaction-disputes/prod"
 # cross-job propagation. Resolving it fresh here sidesteps that rather than fighting it.
 account_id="$(aws sts get-caller-identity --query Account --output text)"
 readonly ECR_REGISTRY="${account_id}.dkr.ecr.${INFRA_REGION}.amazonaws.com"
+readonly SEED_BUCKET="dispute-intake-ops-seed-${account_id}"
 
 instance_id="$(aws ec2 describe-instances \
   --filters "Name=tag:${INFRA_TAG_KEY},Values=${INFRA_TAG_VALUE}" "Name=instance-state-name,Values=running" \
@@ -123,6 +148,14 @@ for _ in \$(seq 1 10); do
 done
 echo "ALTER ROLE \${pg_role} PASSWORD :'pw'" | docker compose exec -T postgres \
   psql -v ON_ERROR_STOP=1 -v pw="\${POSTGRES_PASSWORD}" -U "\${pg_role}" -d "\${pg_db}"
+mkdir -p /opt/dispute-intake/seed/ops_seed
+aws s3 sync "s3://${SEED_BUCKET}/ops_seed/" /opt/dispute-intake/seed/ops_seed/
+chmod -R a+rX /opt/dispute-intake/seed
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -T backend \
+  python -m app.persistence.migrate
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -T backend \
+  python -m app.persistence.load_seed
+docker compose -f docker-compose.yml -f docker-compose.prod.yml restart backend
 SCRIPT
 )"
 
