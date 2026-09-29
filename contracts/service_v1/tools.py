@@ -288,8 +288,17 @@ class ToolPort(Protocol):
     def get_case(self, case_number: str) -> CaseRecord | ToolFailure | None:
         """The session customer's own case ``case_number``, or ``None`` if there is no match."""
 
-    def evaluate_dispute(self, request: EvaluateDisputeRequest) -> PolicyDecision | ToolFailure:
-        """The policy decision for ``request``, computed fresh; no side effect."""
+    def evaluate_dispute(
+        self, request: EvaluateDisputeRequest
+    ) -> PolicyDecision | ToolFailure | None:
+        """The policy decision for ``request``, computed fresh; no side effect.
+
+        ``None`` is a compatible addition to this pre-freeze contract, matching
+        ``get_transaction``/``get_case``'s own shape: ``request.transaction_ref`` resolving to no
+        row, or to one this session's customer does not own, is a normal matchless result (this
+        contract's own Design Principles), never a ``ToolFailure`` — reserved for what the store
+        itself could not do.
+        """
 
     def create_dispute_case(
         self, request: CreateDisputeCaseRequest

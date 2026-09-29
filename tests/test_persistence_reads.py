@@ -263,9 +263,11 @@ def test_get_case_returns_the_session_customers_own_row(dsn: str) -> None:
 
 
 @pytest.mark.integration
-def test_evaluate_dispute_answers_the_same_failure_for_a_foreign_and_a_missing_reference(
+def test_evaluate_dispute_answers_the_same_matchless_result_for_a_foreign_and_a_missing_reference(
     dsn: str,
 ) -> None:
+    """A normal matchless result (AC-E4-06): None either way, never a ToolFailure — reserved for
+    what the store itself could not do, not for a reference that simply does not resolve."""
     sink = _RecordingSink(dsn)
     port = _port(dsn, sink, customer_id="CLI-A")
 
@@ -276,9 +278,8 @@ def test_evaluate_dispute_answers_the_same_failure_for_a_foreign_and_a_missing_r
         EvaluateDisputeRequest(transaction_ref="TRX-NOBODY", category="unrecognized_charge")
     )
 
-    assert isinstance(foreign, ToolFailure) and isinstance(missing, ToolFailure)
-    assert (foreign.cause, foreign.retryable) == (missing.cause, missing.retryable)
-    assert foreign.retryable is False
+    assert foreign is None
+    assert missing is None
 
 
 @pytest.mark.integration
@@ -290,7 +291,7 @@ def test_evaluate_dispute_decides_on_the_session_customers_own_transaction(dsn: 
         EvaluateDisputeRequest(transaction_ref="TRX-A2", category="unrecognized_charge")
     )
 
-    assert not isinstance(decision, ToolFailure)
+    assert decision is not None and not isinstance(decision, ToolFailure)
     assert decision.outcome.value == "eligible"
     assert sink.records[-1].action.value == "dispute_evaluated"
     assert sink.records[-1].reason_code is not None
@@ -307,7 +308,7 @@ def test_evaluate_dispute_reads_an_open_case_for_the_transaction_from_the_store(
         EvaluateDisputeRequest(transaction_ref="TRX-A1", category="unrecognized_charge")
     )
 
-    assert not isinstance(decision, ToolFailure)
+    assert decision is not None and not isinstance(decision, ToolFailure)
     assert decision.outcome.value == "ineligible"
     assert decision.reason_code.value == "duplicate_open_case"
 
