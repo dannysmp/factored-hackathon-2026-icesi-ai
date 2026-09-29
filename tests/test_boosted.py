@@ -171,6 +171,21 @@ def _dataset(*, separating: bool) -> tuple[list[dict[str, Any]], dict[str, str]]
     return rows, customer_of
 
 
+def _spy_on_fit_transform_row_counts(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Patches `ColumnTransformer.fit_transform` to record each call's row count, then calls
+    through to the real implementation — the shape a test needs to prove a fit saw only the rows
+    it should have, without changing what actually gets fitted."""
+    fit_row_counts: list[int] = []
+    original_fit_transform = ColumnTransformer.fit_transform
+
+    def spy(self: ColumnTransformer, x: np.ndarray, *args: Any, **kwargs: Any) -> np.ndarray:
+        fit_row_counts.append(x.shape[0])
+        return original_fit_transform(self, x, *args, **kwargs)  # type: ignore[no-any-return]
+
+    monkeypatch.setattr(ColumnTransformer, "fit_transform", spy)
+    return fit_row_counts
+
+
 def test_the_ablation_reports_both_feature_sets_and_both_models(tmp_path: Path) -> None:
     rows, _ = _dataset(separating=True)
     mart = _write_mart(tmp_path / "m.parquet", rows)
@@ -197,14 +212,7 @@ def test_the_ablation_fits_the_preprocessor_on_training_rows_only(
     train_rows = sum(1 for row in rows if row["split"] == "train")
     mart = _write_mart(tmp_path / "m.parquet", rows)
 
-    fit_row_counts: list[int] = []
-    original_fit_transform = ColumnTransformer.fit_transform
-
-    def spy(self: ColumnTransformer, x: np.ndarray, *args: Any, **kwargs: Any) -> np.ndarray:
-        fit_row_counts.append(x.shape[0])
-        return original_fit_transform(self, x, *args, **kwargs)  # type: ignore[no-any-return]
-
-    monkeypatch.setattr(ColumnTransformer, "fit_transform", spy)
+    fit_row_counts = _spy_on_fit_transform_row_counts(monkeypatch)
     con = duckdb.connect()
     try:
         column_types = _column_types(con, str(mart))
@@ -286,14 +294,7 @@ def test_the_bootstrap_fits_the_preprocessor_on_training_rows_only(
     mart = _write_mart(tmp_path / "m.parquet", rows)
     silver = _write_silver(tmp_path / "silver", customer_of)
 
-    fit_row_counts: list[int] = []
-    original_fit_transform = ColumnTransformer.fit_transform
-
-    def spy(self: ColumnTransformer, x: np.ndarray, *args: Any, **kwargs: Any) -> np.ndarray:
-        fit_row_counts.append(x.shape[0])
-        return original_fit_transform(self, x, *args, **kwargs)  # type: ignore[no-any-return]
-
-    monkeypatch.setattr(ColumnTransformer, "fit_transform", spy)
+    fit_row_counts = _spy_on_fit_transform_row_counts(monkeypatch)
     con = duckdb.connect()
     try:
         column_types = _column_types(con, str(mart))
