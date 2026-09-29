@@ -162,6 +162,26 @@ _OPEN_CASE_STATUSES = (CaseStatus.OPEN.value, CaseStatus.IN_REVIEW.value)
 _IDEMPOTENCY_CONSTRAINT = "cases_customer_idempotency_key_unique"
 _OPEN_CASE_CONSTRAINT = "cases_transaction_id_open_unique"
 
+# contracts.service_v1.tools.TransactionFact.merchant's own bound; the store's own column
+# (migration 0001, VARCHAR(150)) is wider, so a stored value can exceed the contract's shape.
+_MERCHANT_MAX_LENGTH = 80
+
+
+def _clamp_merchant(value: str | None) -> str | None:
+    """A stored ``merchant_name`` fit to ``TransactionFact.merchant``'s own bound.
+
+    Truncates a value over the contract's length, the same repair
+    ``app.conversation.llm_understanding``'s ``_LENGTH_REPAIRS`` already applies to a model's own
+    overlong guess at this same field; merchant text is inert descriptive data to every reader of
+    it (never a policy input, never an instruction channel), so shortening it changes nothing
+    about correctness or safety, only how much of it a customer sees. A blank or whitespace-only
+    value normalizes to ``None`` (absent), matching the contract's own "absent, not empty" rule.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped[:_MERCHANT_MAX_LENGTH] if stripped else None
+
 
 def _new_case_number(domain_date: date) -> str:
     """A short, readable case number: what a customer quotes on the phone (E4-F3)."""
@@ -310,7 +330,7 @@ class PostgresToolPort:
         return TransactionFact(
             ref=row.transaction_id,
             occurred_on=row.transaction_date.date(),
-            merchant=row.merchant_name,
+            merchant=_clamp_merchant(row.merchant_name),
             description=None,
             amount=self._disclosed_amount(row.amount_usd, row.amount_usd_provenance),
             product=ProductLabel(name=row.product_type or "unknown", last4=row.last4),
