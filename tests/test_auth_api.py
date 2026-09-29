@@ -32,8 +32,10 @@ from pydantic import SecretStr  # Secrets in injected settings
 # Local modules
 from app.api.auth import principal_of
 from app.config import AppEnvironment, ConfigError, Settings, load_settings
-from app.main import create_app
+from app.domain.calendar import DomainCalendar
+from app.main import AgentConsolePorts, create_app
 from app.security.signin_audit import SignInAuditRecord
+from contracts.service_v1.console import QueueFilters, QueueResponse, TicketDetail
 
 START = datetime(2026, 9, 26, 12, 0, 0, tzinfo=UTC)
 LOGIN_KEY = "test-login-key-0123456789"
@@ -49,6 +51,36 @@ class _NoOpAuditSink:
 
     def record(self, entry: SignInAuditRecord) -> None:
         pass
+
+
+class _UnreachableAgentConsole:
+    """An ``AgentConsolePorts``-shaped bundle whose methods are never actually called: these
+    tests are about the agent broker's own signing-key and enable/disable behavior, not the
+    console's read routes, and injecting this avoids requiring a real ``DATABASE_URL`` just to
+    build the routes' collaborators."""
+
+    def list_tickets(self, filters: QueueFilters, *, calendar: DomainCalendar) -> QueueResponse:
+        raise NotImplementedError
+
+    def get_ticket_detail(
+        self, ticket_ref: str, *, calendar: DomainCalendar
+    ) -> TicketDetail | None:
+        raise NotImplementedError
+
+    def packet_viewed(self, **kwargs: object) -> None:
+        raise NotImplementedError
+
+    def timeline_viewed(self, **kwargs: object) -> None:
+        raise NotImplementedError
+
+
+def _agent_console() -> AgentConsolePorts:
+    unreachable = _UnreachableAgentConsole()
+    return AgentConsolePorts(
+        queue=unreachable,
+        ticket_detail=unreachable,
+        audit=unreachable,
+    )
 
 
 def _always_active(customer_id: str) -> str | None:
@@ -592,12 +624,14 @@ def test_without_an_agent_signing_key_local_runs_with_a_throw_away_key_and_other
         clock=clock,
         customer_lookup=_always_active,
         signin_audit=_NoOpAuditSink(),
+        agent_console=_agent_console(),
     )
     other = create_app(
         _agent_broker_settings(agent_session_signing_key=None, app_env=AppEnvironment.LOCAL),
         clock=clock,
         customer_lookup=_always_active,
         signin_audit=_NoOpAuditSink(),
+        agent_console=_agent_console(),
     )
     issued = TestClient(local, raise_server_exceptions=False).post(
         "/v1/auth/demo-agent-sessions",
@@ -615,6 +649,7 @@ def test_without_an_agent_signing_key_local_runs_with_a_throw_away_key_and_other
                 clock=clock,
                 customer_lookup=_always_active,
                 signin_audit=_NoOpAuditSink(),
+                agent_console=_agent_console(),
             )
 
 
@@ -627,6 +662,7 @@ def test_the_agent_broker_starts_and_serves_when_the_customer_broker_is_disabled
         clock=clock,
         customer_lookup=_always_active,
         signin_audit=_NoOpAuditSink(),
+        agent_console=_agent_console(),
     )
     client = TestClient(app_instance, raise_server_exceptions=False)
 

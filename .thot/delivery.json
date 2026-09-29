@@ -1,7 +1,7 @@
 {
   "plan": {
     "source": "plan/PROJECT_PLAN.md",
-    "epic_heading": "^### (E\\d+) — (.+)$"
+    "epic_heading": "^### (E\\d+) \u2014 (.+)$"
   },
   "tracker": {
     "provider": "jira",
@@ -12,13 +12,16 @@
       "in_progress": "In Progress",
       "approved": "In Review",
       "done": "Done"
+    },
+    "epic_overrides": {
+      "71": "E4"
     }
   },
   "docs": {
     "provider": "confluence",
     "site": "https://dannysmp.atlassian.net",
     "space": "FH26",
-    "root_title": "Transaction Disputes — Project documentation",
+    "root_title": "Transaction Disputes \u2014 Project documentation",
     "pages": [
       {
         "title": "Executive summary",

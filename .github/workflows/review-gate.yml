@@ -22,13 +22,27 @@
 # A rename counts for both its old and its new path.
 # It also keeps exactly one review label on the PR, so its state is visible at a glance:
 #   review: approved · review: changes requested · review: pending · review: identity mismatch
-# Make `review-gate` a required status check on the base branch. Merging stays a human action.
+# Make `review-gate` a required status check on the base branch, restricted to the GitHub
+# Actions source. Merging stays a human action.
+#
+# The workflow runs on pull_request_target, so the copy that evaluates a PR is always the
+# one on the DEFAULT branch: a PR can't weaken the gate by editing this file. It never
+# checks out or runs the PR's code; it only reads the PR through the GitHub API.
+# Report and note markers count only as the first line of a comment, so a comment that
+# quotes a marker elsewhere never satisfies the gate.
+#
+# Limitations:
+# - Markers are checked against the maintainer account, which every agent also posts
+#   as; the gate proves that a report exists for the head commit, not which role wrote it.
+# - A malformed ownership map on the default branch leaves every PR pending, including
+#   the PR that fixes it; recovery is a merge with the ruleset temporarily relaxed.
+# - Path patterns support `*`, `**` and `**/` only; `?`, `[]` and `{}` are literal.
 # =============================================================================
 
 name: Review gate
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
   issue_comment:
     types: [created, edited, deleted]
@@ -46,7 +60,7 @@ concurrency:
 jobs:
   gate:
     name: review-gate
-    if: github.event_name == 'pull_request' || github.event.issue.pull_request
+    if: github.event_name == 'pull_request_target' || github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v7
@@ -132,7 +146,7 @@ jobs:
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: number, per_page: 100,
             });
-            const marker = /<!--\s*staff-reviewer:\s*verdict=([A-Z_]+)\s+sha=([0-9a-f]{40})\s+round=(\d+)\s*-->/;
+            const marker = /^\s*<!--\s*staff-reviewer:\s*verdict=([A-Z_]+)\s+sha=([0-9a-f]{40})\s+round=(\d+)\s*-->/;
 
             let latest = null;
             for (const c of comments) {
@@ -162,7 +176,7 @@ jobs:
             }
             // Glob to pattern: `**/` matches zero or more directories, `**` any path, `*` one
             // segment; every other character is literal.
-            const escape = (text) => text.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+            const escape = (text) => text.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
             const globToRegex = (glob) => {
               let out = '';
               for (let i = 0; i < glob.length;) {
@@ -182,7 +196,7 @@ jobs:
               const paths = [...new Set(files.flatMap(f => [f.filename, f.previous_filename].filter(Boolean)))];
               const touched = paths.filter(name => patterns.some(p => p.test(name)));
               if (touched.length) {
-                const noteMarker = /<!--\s*architect:\s*verdict=(CONFORMS|DEVIATION)\s+sha=([0-9a-f]{40})\s*-->/;
+                const noteMarker = /^\s*<!--\s*architect:\s*verdict=(CONFORMS|DEVIATION)\s+sha=([0-9a-f]{40})\s*-->/;
                 let note = null;
                 for (const c of comments) {
                   if (c.user?.login !== process.env.REPORT_AUTHOR) continue;

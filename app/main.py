@@ -30,6 +30,11 @@ Design Principles
 - The turns route's own heavy dependencies (a database connection, an LLM provider key) are
   resolved lazily, inside its per-request factory, never at start-up: an app that never calls
   ``/v1/turns`` — most tests, a bare health check — never needs them configured.
+- The console's own read routes (``app.api.agent``), when the agent demo broker is enabled, are
+  the opposite: their collaborators (the queue, the ticket detail and the audit sink) are built
+  eagerly, here, like every other collaborator that only needs ``DATABASE_URL`` — a missing one
+  is a start-up error, not a first-request surprise (``AgentConsolePorts``,
+  ``_default_agent_console``).
 - Configuration resolves first, and structured JSON logging installs immediately after — not
   before it, since the service version and environment logging carries come from that same
   configuration. A configuration failure itself is still captured as a JSON line, not only an
@@ -64,6 +69,7 @@ from __future__ import annotations
 import functools  # Binds the DSN into the default customer lookup
 import logging  # Structured events
 import secrets  # Throw-away signing key for local runs
+from dataclasses import dataclass  # The agent console's own test-injection bundle
 
 # Third-party libraries
 from fastapi import APIRouter, FastAPI, Request  # Web framework
@@ -73,6 +79,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException  # Rout
 from starlette.responses import Response  # Handler return type
 
 # Local modules
+from app.api.agent import (  # The console's own queue and ticket-detail routes
+    ConsoleAuditSink,
+    QueuePort,
+    TicketDetailPort,
+    build_agent_router,
+)
 from app.api.auth import TEST_SESSIONS_PATH, CustomerLookup, build_auth_router  # Auth routes
 from app.api.demo_signin import (  # Demo broker routes
     AGENT_SESSIONS_PATH,
@@ -108,12 +120,16 @@ from app.observability.logging import (  # Structured logging, installed once
     configure_logging_from_settings,
 )
 from app.persistence.audit import PostgresAuditSink
+from app.persistence.console_audit import PostgresConsoleAuditSink  # The console's own audit write
 from app.persistence.customers import customer_status  # The sandbox login's existence check
 from app.persistence.dialogue_store import PostgresDialogueStore
+from app.persistence.dialogue_turn_log import PostgresDialogueTurnLog
 from app.persistence.handoff_outbox import PostgresHandoffOutbox
+from app.persistence.handoff_queue import PostgresHandoffQueue
 from app.persistence.ops_meta import read_data_as_of  # The seed's own reference date
 from app.persistence.reads import PostgresToolPort
 from app.persistence.signin_audit import PostgresSignInAuditSink  # The demo broker's audit store
+from app.persistence.ticket_detail import PostgresTicketDetail
 from app.reliability.breaker import InMemoryCircuitBreaker  # Shared per dependency
 from app.reliability.retry import RetriedLlmClient, RetryPolicy  # Bounded retry
 from app.reliability.tool_port import RetriedToolPort  # Bounded retry for the tool port
@@ -233,6 +249,17 @@ def _domain_calendar(settings: Settings, *, clock: Clock) -> DomainCalendar:
         raise ConfigError(str(exc)) from exc
 
 
+@dataclass(frozen=True, slots=True)
+class AgentConsolePorts:
+    """The three collaborators the console's own routes read through (``app.api.agent``),
+    bundled so a test can inject one hermetic value instead of three, the same way
+    ``controller_factory`` and ``signin_audit`` are already injectable."""
+
+    queue: QueuePort
+    ticket_detail: TicketDetailPort
+    audit: ConsoleAuditSink
+
+
 def _default_customer_lookup(settings: Settings) -> CustomerLookup:
     """The sandbox login's real, store-backed customer check (AC-E4-47).
 
@@ -243,6 +270,51 @@ def _default_customer_lookup(settings: Settings) -> CustomerLookup:
     """
     dsn = settings.require_database_url().get_secret_value()
     return functools.partial(customer_status, dsn)
+
+
+def _default_agent_console(
+    settings: Settings, *, calendar: DomainCalendar, retriever: LexicalRetriever, clock: Clock
+) -> AgentConsolePorts:
+    """The console's real, store-backed queue, ticket-detail and audit collaborators.
+
+    Raises
+    ------
+    ConfigError
+        ``DATABASE_URL`` is not configured; the console has nothing to read from without it.
+    """
+    dsn = settings.require_database_url().get_secret_value()
+    queue = PostgresHandoffQueue(
+        dsn,
+        contact_days_priority=settings.post_handoff_contact_days_priority,
+        contact_days_default=settings.post_handoff_contact_days_default,
+    )
+    ticket_detail = PostgresTicketDetail(
+        dsn, retriever=retriever, queue=queue, turn_log=PostgresDialogueTurnLog(dsn)
+    )
+    audit = PostgresConsoleAuditSink(
+        dsn, sink=PostgresAuditSink(dsn), calendar=calendar, clock=clock
+    )
+    return AgentConsolePorts(queue=queue, ticket_detail=ticket_detail, audit=audit)
+
+
+def _build_agent_router(
+    settings: Settings,
+    agent_console: AgentConsolePorts | None,
+    *,
+    calendar: DomainCalendar,
+    retriever: LexicalRetriever,
+    clock: Clock,
+) -> APIRouter:
+    """The console's own routes, built on ``agent_console`` or, when omitted, the real,
+    store-backed collaborators (see ``_default_agent_console``)."""
+    ports = (
+        agent_console
+        if agent_console is not None
+        else _default_agent_console(settings, calendar=calendar, retriever=retriever, clock=clock)
+    )
+    return build_agent_router(
+        queue=ports.queue, ticket_detail=ports.ticket_detail, calendar=calendar, audit=ports.audit
+    )
 
 
 def _build_anthropic_client(settings: Settings) -> AnthropicLlmClient:
@@ -451,6 +523,7 @@ def create_app(
     customer_lookup: CustomerLookup | None = None,
     controller_factory: ControllerFactory | None = None,
     signin_audit: SignInAuditSink | None = None,
+    agent_console: AgentConsolePorts | None = None,
 ) -> FastAPI:
     """Build the FastAPI application.
 
@@ -474,6 +547,10 @@ def create_app(
         Where either demo broker records every sign-in attempt, customer and agent alike; tests
         inject a fake one. When omitted and either broker is enabled, the real, store-backed one
         is built from ``DATABASE_URL``.
+    agent_console : AgentConsolePorts | None
+        The console's own queue, ticket-detail and audit collaborators; tests inject a hermetic
+        bundle. When omitted and the agent demo broker is enabled, the real, store-backed ones are
+        built from ``DATABASE_URL``.
 
     Returns
     -------
@@ -558,13 +635,27 @@ def create_app(
             attempt_limiter=AttemptLimiter(clock=clock),
         )
 
+    # The console's own two read routes (ADR-17), gated on the same flag as the only broker that
+    # can ever mint an agent token — a second flag would gate the same precondition twice with no
+    # scenario where they should disagree.
+    agent_router = (
+        _build_agent_router(
+            resolved, agent_console, calendar=calendar, retriever=retriever, clock=clock
+        )
+        if resolved.demo_agent_signin_enabled
+        else None
+    )
+
     # Middleware: the last one added is the outermost. The body-size cap runs after the request
     # context (so its own refusal still carries a request id) and before session authentication
     # (so an oversized body is refused before a JWT is ever verified).
     app.add_middleware(
         SessionAuthMiddleware,
         sessions=sessions,
-        audience_by_prefix={"/v1": "customer"},
+        # Longest-matching-prefix (ADR-18): "/v1/agent" is unreachable when no agent token can
+        # ever be issued (the broker's own flag is off), so listing it here unconditionally costs
+        # nothing and keeps this map's shape independent of which brokers happen to be enabled.
+        audience_by_prefix={"/v1": "customer", "/v1/agent": "agent"},
         public_paths=public_paths,
     )
     app.add_middleware(BodySizeLimitMiddleware)
@@ -613,5 +704,7 @@ def create_app(
         app.include_router(agent_demo_router)
     if demo_persona_router is not None:
         app.include_router(demo_persona_router)
+    if agent_router is not None:
+        app.include_router(agent_router)
 
     return app
