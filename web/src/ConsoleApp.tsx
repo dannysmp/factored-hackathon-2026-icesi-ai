@@ -1,21 +1,11 @@
+import { useMemo } from 'react'
 import type { JSX } from 'react'
 import { QueueScreen } from './features/console/QueueScreen'
 import { TicketDetailScreen } from './features/console/TicketDetailScreen'
-import { FixtureQueueClient } from './features/console/client'
-import { FixtureTicketDetailClient } from './features/console/ticketDetailClient'
-import { DEMO_QUEUE, DEMO_TICKET_DETAILS } from './features/console/fixtures'
+import { LiveQueueClient } from './features/console/client'
+import { LiveTicketDetailClient } from './features/console/ticketDetailClient'
 import { useConsoleNavigation } from './features/console/useConsoleNavigation'
 import { SignInScreen } from './features/sign-in/SignInScreen'
-
-// Built once, at module scope: a client is a resource (frontend standard, section 5). The
-// queue's and the ticket-detail's own read routes (`GET /v1/agent/queue`,
-// `GET /v1/agent/tickets/{ticket_ref}`) are not wired into the running application yet (their
-// shared router's `ConsoleAuditSink` dependency has no real implementation) — see
-// `app/api/agent.py`'s own docstring — so a live client has nothing to call. These fixtures are
-// the two screens' data source until that follow-up slice lands live clients alongside the live
-// wiring; the session token below is not read by either yet for that same reason.
-const queueClient = new FixtureQueueClient(DEMO_QUEUE)
-const ticketDetailClient = new FixtureTicketDetailClient(DEMO_TICKET_DETAILS)
 
 /**
  * The console shell: the agent demonstration sign-in (AC-E10-14, its own broker and access code,
@@ -28,6 +18,11 @@ const ticketDetailClient = new FixtureTicketDetailClient(DEMO_TICKET_DETAILS)
  * specifically so `selectedTicketRef`'s independence from `session` (AC-E10-08) is directly unit
  * tested — see that hook's own docstring.
  *
+ * The two live clients are built once per signed-in session, not on every render (frontend
+ * standard, section 5): a new sign-in (a new token) is a new session in every sense, so a new
+ * client for it is correct, not wasteful — the same rule the customer chat's own `LiveChatClient`
+ * follows in `App.tsx`.
+ *
  * The heading is fixed Spanish (D91: the console stays fixed-Spanish); `SignInScreen` itself is
  * not yet on the trilingual `useT` hook chat and sign-in are moving to (a separate, already-
  * assigned slice) — see Known Gaps.
@@ -35,7 +30,16 @@ const ticketDetailClient = new FixtureTicketDetailClient(DEMO_TICKET_DETAILS)
 export function ConsoleApp(): JSX.Element {
   const { session, setSession, selectedTicketRef, setSelectedTicketRef } = useConsoleNavigation()
 
-  if (session === null) {
+  const queueClient = useMemo(
+    () => (session === null ? null : new LiveQueueClient(session)),
+    [session],
+  )
+  const ticketDetailClient = useMemo(
+    () => (session === null ? null : new LiveTicketDetailClient(session)),
+    [session],
+  )
+
+  if (session === null || queueClient === null || ticketDetailClient === null) {
     return (
       <main>
         <h1>Consola del agente</h1>

@@ -1,11 +1,13 @@
-/** Component test: the console shell walks agent sign-in into the queue, with no accessibility
- * violations at either step. The agent sign-in is a mocked `fetch`; the queue itself is the
- * module-scope fixture client. */
+/** Component test: the console shell walks agent sign-in into the queue and a ticket's detail,
+ * with no accessibility violations at any step. Every request (sign-in, queue, ticket detail) is
+ * a mocked `fetch`, serving the same fixture data `web/src/features/console/fixtures.ts` already
+ * validates against the real contracts. */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConsoleApp } from './ConsoleApp'
+import { DEMO_QUEUE, DEMO_TICKET_DETAILS } from './features/console/fixtures'
 
 const PERSONAS_BODY = {
   personas: [{ slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' }],
@@ -17,15 +19,26 @@ const SESSION_BODY = {
   expires_in: 3600,
 }
 
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status })
+}
+
 function stubTheWholeFlow(): void {
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) => {
       if (url === '/v1/auth/demo-personas') {
-        return Promise.resolve(new Response(JSON.stringify(PERSONAS_BODY), { status: 200 }))
+        return Promise.resolve(jsonResponse(200, PERSONAS_BODY))
       }
       if (url === '/v1/auth/demo-agent-sessions') {
-        return Promise.resolve(new Response(JSON.stringify(SESSION_BODY), { status: 200 }))
+        return Promise.resolve(jsonResponse(201, SESSION_BODY))
+      }
+      if (url === '/v1/agent/queue') {
+        return Promise.resolve(jsonResponse(200, DEMO_QUEUE))
+      }
+      const [firstDetail] = DEMO_TICKET_DETAILS
+      if (firstDetail !== undefined && url === `/v1/agent/tickets/${firstDetail.item.ticket_ref}`) {
+        return Promise.resolve(jsonResponse(200, firstDetail))
       }
       throw new Error(`unexpected fetch: ${url}`)
     }),
@@ -47,7 +60,7 @@ describe('ConsoleApp', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows the queue once the agent signs in', async () => {
+  it('shows the real queue once the agent signs in', async () => {
     stubTheWholeFlow()
     const user = userEvent.setup()
     render(<ConsoleApp />)
@@ -56,12 +69,12 @@ describe('ConsoleApp', () => {
     await user.type(screen.getByLabelText('Access code'), 'agent-code')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(
-      await screen.findByRole('region', { name: 'Cola de casos escalados' }),
-    ).toBeInTheDocument()
+    const [firstItem] = DEMO_QUEUE.items
+    expect(firstItem).toBeDefined()
+    expect(await screen.findByText(firstItem?.ticket_ref ?? '')).toBeInTheDocument()
   })
 
-  it('shows a ticket’s detail once its reference is clicked, then returns to the queue', async () => {
+  it('shows a ticket’s real detail once its reference is clicked, then returns to the queue', async () => {
     stubTheWholeFlow()
     const user = userEvent.setup()
     render(<ConsoleApp />)
@@ -77,7 +90,10 @@ describe('ConsoleApp', () => {
 
     await user.click(firstTicketRefButton)
 
+    const [firstDetail] = DEMO_TICKET_DETAILS
+    expect(firstDetail).toBeDefined()
     expect(await screen.findByRole('region', { name: 'Detalle del ticket' })).toBeInTheDocument()
+    expect(await screen.findByText(firstDetail?.packet.request_summary ?? '')).toBeInTheDocument()
     expect(
       screen.queryByRole('region', { name: 'Cola de casos escalados' }),
     ).not.toBeInTheDocument()
