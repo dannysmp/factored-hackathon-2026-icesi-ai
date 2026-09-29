@@ -40,12 +40,16 @@ carries it, not a promise about a later one.
 
 ## Conversation and evaluation
 
-- **The evaluation harness can define and score a case, but cannot yet run one.** The golden set
-  (135 scripted cases across every category the evaluation plan names), the scoring formulas and
-  an independent oracle that recomputes the policy decision for a stored case row all exist. The
-  piece that executes a case against a running system variant, the two baseline systems it compares
-  against, the failure injector and the judge that scores language and grounding quality do not
-  exist yet. No evaluation report can be produced until they do.
+- **The evaluation harness can now run a case, not only define and score one.** The golden set
+  (135 scripted cases across every category the evaluation plan names), the scoring formulas, an
+  independent oracle that recomputes the policy decision for a stored case row, the runner that
+  executes a case against a running system variant, both baseline systems (B0, B1) and the failure
+  injector all exist. A 16-case adversarial slice (prompt injection, poisoned retrieval,
+  cross-customer access) now runs on every change, against the proposed system and B0, over
+  synthetic seed data only, and blocks merge on any case turning unsafe. What is still missing is
+  the LLM judge that scores language, tone and grounding quality, and a full run of the complete
+  golden set against all three variants: no evaluation report (`reports/evaluation.md`) can be
+  produced until those exist.
 - **The human-agent console is not yet built.** The customer-facing chat exists; the read-only
   queue view a human agent would use to handle an escalated case does not.
 - **Structured logging now runs across the service and every CLI entrypoint**: every line carries
