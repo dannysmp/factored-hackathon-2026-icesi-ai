@@ -488,6 +488,27 @@ def test_a_handoff_case_missing_its_expected_reason_code_in_the_packet_is_not_us
 
 
 @pytest.mark.integration
+def test_a_handoff_case_with_a_different_reason_code_in_the_packet_is_not_useful(
+    dsn: str,
+) -> None:
+    """A packet backed by *some* reason code is not the same as one backed by the *right* one —
+    without this, a check that only asked "is there any reason code at all" would pass every
+    test in this file just as well as the real exact-match check does."""
+    _file_a_handoff(dsn, reason_codes=(ReasonCode.ESCALATE_REPEAT_COMPLAINER.value,))
+    transcript = RunTranscript(
+        case=_handoff_case(expected_reason_code=ReasonCode.ESCALATE_FRAUD_CLAIM),
+        session_id=SESSION_ID,
+        replies=(_reply(handoff_ticket="T-100", end_session=True),),
+        latencies_seconds=(0.4,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is True
+    assert result.useful_handoff_packet is False
+
+
+@pytest.mark.integration
 def test_packet_is_useful_returns_false_for_a_ticket_with_no_outbox_row_at_all(dsn: str) -> None:
     """Direct unit test of the helper's own defensive branch: ``score_case`` never reaches it
     (an unbacked ticket already short-circuits ``useful_handoff_packet`` to False beforehand),
