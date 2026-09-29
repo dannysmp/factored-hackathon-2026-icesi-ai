@@ -28,10 +28,11 @@ Design Principles
 - Eligibility is an explicit, exhaustive allow-list of ``TemplateId``s, not just "the intent has
   fields to cite": some handoff variants carry safety-relevant wording a generic model-rendered
   sentence would weaken, and ``RenderEnvelope`` carries nothing that would still tell them apart
-  once ``template_id`` is stripped for model mode; a zero-case dispute-status reply is not just
-  ineligible but contractually unbuildable in model mode at all. Every purely procedural template
-  (a greeting, a clarification, a farewell, a cancellation) is excluded too, since it has no
-  grounded content to gain from model wording.
+  once ``template_id`` is stripped for model mode; a zero-case dispute-status reply and an
+  unregistered handoff are excluded by this list as a deliberate scope choice, not because the
+  contract refuses to build either envelope in model mode (it permits both, from facts alone).
+  Every purely procedural template (a greeting, a clarification, a farewell, a cancellation) is
+  excluded too, since it has no grounded content to gain from model wording.
 - Never guesses on failure: a verifier rejection, a ``None`` from the model renderer, and an
   ineligible template all take the exact same path — render the already-built template envelope,
   unchanged.
@@ -60,9 +61,10 @@ from contracts.service_v1.envelope import RenderEnvelope, TemplateId
 
 logger = logging.getLogger(__name__)
 
-# Every template eligible for model rendering. Deliberately excludes: NO_CASE_FOUND (the contract
-# itself refuses to build a zero-case dispute_status envelope in model mode at all, per
-# _intent_has_what_it_states); HANDOFF_CARD_LOSS, HANDOFF_REQUESTED, HANDOFF_NOT_REGISTERED and
+# Every template eligible for model rendering. Deliberately excludes: NO_CASE_FOUND and
+# HANDOFF_NOT_REGISTERED (the contract itself permits building a model-mode envelope for either
+# state from facts alone, but nothing here elects to render one through the model yet — an explicit
+# scope choice, not a contract-level impossibility); HANDOFF_CARD_LOSS, HANDOFF_REQUESTED and
 # FILING_UNVERIFIED (their wording carries safety-relevant or procedural content a generic
 # model-rendered sentence can't distinguish from HANDOFF_REVIEW's own, since RenderEnvelope carries
 # nothing that would tell them apart once template_id is stripped for model mode); REFUSE_* (the

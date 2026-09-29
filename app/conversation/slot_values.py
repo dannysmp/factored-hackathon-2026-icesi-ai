@@ -44,7 +44,11 @@ sentence: nothing in ``RenderEnvelope`` (as opposed to the agent-only ``Envelope
 fraud escalation from an ordinary one, and some handoff templates (a card-loss report, a customer's
 own request) are contractually never model-rendered at all (see
 ``app.conversation.reply.MODEL_ELIGIBLE_TEMPLATES``) precisely because their wording is
-safety-relevant, not a review notice a generic sentence could stand in for.
+safety-relevant, not a review notice a generic sentence could stand in for. ``OUTCOME_STATEMENT``
+for ``Intent.DISPUTE_STATUS`` is the same shape: one of exactly two fixed sentences (a case exists,
+or none does), not a per-case summary — every ``INTENT_REQUIRED_FIELDS`` entry only guarantees a
+field is *present*, never that its wording adapts to the specific facts beyond what the field's own
+name promises.
 """
 
 from __future__ import annotations
@@ -74,6 +78,21 @@ _HANDOFF_OUTCOME_STATEMENT: dict[str, str] = {
     "es": "Un asesor debe revisar esto.",
     "pt": "Um atendente precisa analisar isso.",
     "en": "A person must review this.",
+}
+
+# The generic sentence a model-eligible dispute_status reply always states, whether or not a case
+# exists, matching the template renderer's own ``_dispute_status`` intro and ``_no_case_found``
+# text: the one grounded field every state of the intent carries, since the case-specific fields
+# (case_number, case_status, filed_on) exist only when a case does.
+_DISPUTE_STATUS_OUTCOME_STATEMENT: dict[str, str] = {
+    "es": "Estos son sus casos recientes.",
+    "pt": "Estes são seus casos recentes.",
+    "en": "Here are your recent cases.",
+}
+_NO_CASE_FOUND_OUTCOME_STATEMENT: dict[str, str] = {
+    "es": "No encontré ningún caso con esos datos en su cuenta.",
+    "pt": "Não encontrei nenhum caso com esses dados em sua conta.",
+    "en": "I couldn't find a case matching that on your account.",
 }
 
 
@@ -136,6 +155,12 @@ def _dispute_status(e: RenderEnvelope) -> tuple[SlotValue, ...]:
         entries.append(
             SlotValue(field=GroundedField.FILED_ON, value=format_date(case.filed_on, e.lang))
         )
+    statement = (
+        _DISPUTE_STATUS_OUTCOME_STATEMENT[e.lang]
+        if e.facts.cases
+        else _NO_CASE_FOUND_OUTCOME_STATEMENT[e.lang]
+    )
+    entries.append(SlotValue(field=GroundedField.OUTCOME_STATEMENT, value=statement))
     return tuple(entries)
 
 
