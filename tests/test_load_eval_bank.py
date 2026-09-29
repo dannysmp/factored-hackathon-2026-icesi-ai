@@ -22,6 +22,7 @@ import pytest
 from app.persistence import load_eval_bank as load_eval_bank_module
 from app.persistence.load_eval_bank import (
     EvalBankLoadResult,
+    _read_manifest,
     _read_table,
     _verify_output_digests,
     load_eval_bank,
@@ -106,6 +107,89 @@ def test_load_eval_bank_refuses_a_tampered_output_before_ever_connecting(tmp_pat
     (tmp_path / TRANSACTIONS_NAME).write_bytes(b"tampered content")
     with pytest.raises(ValueError, match="does not match its manifest digest"):
         load_eval_bank("postgresql://unreachable.invalid/nowhere", tmp_path)
+
+
+def test_read_manifest_raises_when_the_manifest_is_not_a_json_object(tmp_path: Path) -> None:
+    (tmp_path / MANIFEST_NAME).write_text(json.dumps(["not", "an", "object"]), encoding="utf-8")
+    with pytest.raises(ValueError, match="is not a JSON object"):
+        _read_manifest(tmp_path)
+
+
+def test_verify_output_digests_raises_when_the_manifest_carries_no_digests(tmp_path: Path) -> None:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / MANIFEST_NAME).write_text(json.dumps({}), encoding="utf-8")
+    with pytest.raises(ValueError, match="carries no output_sha256"):
+        _verify_output_digests(tmp_path)
+
+
+def test_verify_output_digests_raises_when_a_later_output_is_missing(tmp_path: Path) -> None:
+    """Distinct from the manifest itself being missing: the manifest and an earlier output both
+    exist, but a later table in load order was never written (or was since deleted)."""
+    _write_tiny_eval_bank_output(tmp_path)
+    (tmp_path / TRANSACTIONS_NAME).unlink()
+    with pytest.raises(FileNotFoundError, match="run the eval-bank build first"):
+        _verify_output_digests(tmp_path)
+
+
+def test_verify_output_digests_raises_when_one_table_has_no_recorded_digest(tmp_path: Path) -> None:
+    """Distinct from the manifest carrying no output_sha256 map at all: the map exists but is
+    missing the entry for one specific table."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    digests: dict[str, str] = {}
+    for name in (CUSTOMERS_NAME, PRODUCTS_NAME):
+        path = tmp_path / name
+        path.write_bytes(f"content of {name}".encode())
+        digests[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    (tmp_path / TRANSACTIONS_NAME).write_bytes(b"content of transactions")
+    (tmp_path / MANIFEST_NAME).write_text(json.dumps({"output_sha256": digests}), encoding="utf-8")
+    with pytest.raises(ValueError, match="carries no digest for"):
+        _verify_output_digests(tmp_path)
+
+
+def test_main_refuses_when_settings_are_invalid_and_no_dsn_is_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without --dsn, a fully invalid settings load is refused too, not just a missing DSN."""
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "too-short")
+
+    with pytest.raises(SystemExit):
+        main([])
+
+
+def test_main_uses_the_dsn_argument_even_with_an_unrelated_invalid_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit --dsn must not be blocked by a setting that DSN resolution never reads."""
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "too-short")
+    seen: dict[str, object] = {}
+
+    def fake_load_eval_bank(dsn: str, gold: Path) -> EvalBankLoadResult:
+        seen["dsn"] = dsn
+        return EvalBankLoadResult(rows={}, quarantined=())
+
+    monkeypatch.setattr(load_eval_bank_module, "load_eval_bank", fake_load_eval_bank)
+
+    exit_code = main(["--dsn", "postgresql://from-argument"])
+
+    assert exit_code == 0
+    assert seen["dsn"] == "postgresql://from-argument"
+
+
+def test_main_falls_back_to_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DATABASE_URL is used when --dsn is not given."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://env-only")
+    seen: dict[str, object] = {}
+
+    def fake_load_eval_bank(dsn: str, gold: Path) -> EvalBankLoadResult:
+        seen["dsn"] = dsn
+        return EvalBankLoadResult(rows={}, quarantined=())
+
+    monkeypatch.setattr(load_eval_bank_module, "load_eval_bank", fake_load_eval_bank)
+
+    exit_code = main([])
+
+    assert exit_code == 0
+    assert seen["dsn"] == "postgresql://env-only"
 
 
 def test_load_eval_bank_raises_when_the_eval_bank_has_not_been_built(tmp_path: Path) -> None:
