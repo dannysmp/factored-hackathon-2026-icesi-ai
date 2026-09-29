@@ -62,7 +62,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     outputs:
       image_tag: ${{ steps.tag.outputs.image_tag }}
-      ecr_registry: ${{ steps.registry.outputs.ecr_registry }}
+      # No ecr_registry output: GitHub Actions silently blanks a job output built from the
+      # account id once AWS_ACCOUNT_ID is a registered secret ("Skip output '...' since it may
+      # contain secret", matched by value). Jobs that need it resolve it themselves instead
+      # (infra/scripts/05-deploy.sh does, matching this job's own step below).
     steps:
       - name: Check out the repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -136,7 +139,6 @@ jobs:
       - name: Bring the compose stack up on the host, over SSM
         id: deploy
         env:
-          ECR_REGISTRY: ${{ needs.build-scan-push.outputs.ecr_registry }}
           IMAGE_TAG: ${{ needs.build-scan-push.outputs.image_tag }}
         run: |
           host_name="$(infra/scripts/05-deploy.sh)"
