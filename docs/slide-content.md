@@ -68,13 +68,16 @@ file itself.
   evaluation plan names (normal, ambiguous, unsupported, human-required, multilingual,
   adversarial), each case stating its own provenance — observed, team-generated or injected — so a
   reader never has to guess where a case's wording came from.
-- **The harness can define and score a case; it cannot yet run one against a live system.** The
-  scoring formulas and an independent oracle that recomputes the policy decision for a stored case
-  both exist; the runner that executes a case end to end, the two baseline systems it compares
-  against, the failure injector and the language-and-grounding judge do not exist yet.
+- **The harness can now run a case, not only define and score one.** Every piece a full report
+  needs exists: the scoring formulas, an independent oracle that recomputes the policy decision for
+  a stored case, the runner, both baseline systems (B0, B1), the failure injector, and the LLM
+  judge with its human-validated agreement sample. A 16-case adversarial slice runs on every change
+  and blocks merge on any case turning unsafe; the full 32-case adversarial set can also run
+  outside CI, against real, loaded data.
 - Consequence for this slide: **no evaluation report exists yet**, and this slide states that
-  plainly rather than showing a number that was not measured. The report this slide will carry, once
-  the harness runs, is `reports/evaluation-report.md`.
+  plainly rather than showing a number that was not measured — every piece exists, but the first
+  full run against the complete 135-case golden set has not been executed. The report this slide
+  will carry, once that run completes, is `reports/evaluation.md`.
 - What is measured today instead: the deterministic checks that do not need the harness to run —
   authorization tests, the confirmation and verification tests, and the reason-code coverage of
   the policy engine itself, all passing in the test suite this release ships with.
@@ -84,9 +87,19 @@ file itself.
 - Stated in full in `docs/limitations.md`; the headline items:
   - The source data is Spanish-only; every Portuguese and English case and corpus document is
     team-generated, disclosed as such wherever it appears.
+  - No native Portuguese speaker reviewed the Portuguese wording; a briefed reviewer agent flags
+    unnatural phrasing for the team to correct instead, and never assigns the labels the system is
+    scored against.
   - The transaction risk model does not route any case today — calibration found no threshold that
     clears the precision floor at a small enough routed share, and this is recorded as a negative
     result, not an oversight. A fraud claim still always escalates regardless.
+  - Filing windows are counted on the bank's single operating time zone (America/Bogota), not each
+    customer's own local calendar date — a customer elsewhere could see a slightly different day
+    count near a deadline.
+  - A document number a customer types unprompted into free text is not detected or redacted — a
+    deliberate by-design choice, since a document number carries no check digit a detector could
+    key on, not an oversight; every other field the system reads is a closed enum or a narrowly
+    patterned value that cannot carry one.
   - The human-agent console is a viewer; narrow audited writes are the first work scheduled after
     this release.
 - The route to operation is the technology evolution matrix (`plan/docs/architecture.md`): every
