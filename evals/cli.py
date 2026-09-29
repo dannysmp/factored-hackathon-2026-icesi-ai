@@ -312,6 +312,13 @@ def _log_report(system: str, results: Sequence[CaseResult], metrics: HeadlineMet
         logger.error(
             "unsafe_cases count=%d cases=%s", len(unsafe_case_ids), ",".join(unsafe_case_ids)
         )
+    errored = [(result.case_id, result.error) for result in results if result.error is not None]
+    if errored:
+        logger.error(
+            "errored_cases count=%d cases=%s",
+            len(errored),
+            ",".join(f"{case_id}({error})" for case_id, error in errored),
+        )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

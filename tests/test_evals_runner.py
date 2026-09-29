@@ -100,6 +100,104 @@ def test_run_cases_returns_an_empty_tuple_for_no_cases() -> None:
     assert run_cases(cast(httpx.Client, object()), "unused-dsn", (), test_login_key=LOGIN_KEY) == ()
 
 
+def test_a_case_that_fails_to_score_is_recorded_as_a_named_error_and_the_batch_continues(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole point of the harness's own failure handling: one bad case must not silence
+    the rest of a 135-case batch."""
+    cases = (_case(case_id="fails"), _case(case_id="c2"))
+
+    def fake_resolve(dsn: str, seed_ref: str) -> str:
+        return "CUST-A"
+
+    def fake_run_case(client: object, case: Case, *, customer_id: str, test_login_key: str) -> str:
+        return f"transcript-for-{case.case_id}"
+
+    def fake_score(dsn: str, transcript: str) -> CaseResult:
+        if transcript == "transcript-for-fails":
+            raise ValueError("names no transaction in the store")
+        return CaseResult(
+            case_id=transcript,
+            is_adversarial=False,
+            expected_escalation=False,
+            observed_escalation=False,
+            automation_attempted=True,
+            correct_outcome=True,
+        )
+
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", fake_resolve)
+    monkeypatch.setattr("evals.runner.runner.run_case", fake_run_case)
+    monkeypatch.setattr("evals.runner.runner.score_case", fake_score)
+
+    results = run_cases(cast(httpx.Client, object()), "unused-dsn", cases, test_login_key=LOGIN_KEY)
+
+    assert len(results) == 2
+    failed, succeeded = results
+    assert failed.case_id == "fails"
+    assert failed.error is not None
+    assert "names no transaction in the store" in failed.error
+    assert failed.correct_outcome is False
+    assert failed.automation_attempted is False
+    assert succeeded.case_id == "transcript-for-c2"
+    assert succeeded.error is None
+    assert succeeded.correct_outcome is True
+
+
+def test_a_case_that_fails_to_resolve_is_also_recorded_and_does_not_stop_later_cases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Distinct failure point from scoring: resolution itself can raise the same ValueError."""
+    cases = (_case(case_id="c1", seed_ref="ops_seed:TRX-MISSING"), _case(case_id="c2"))
+
+    def fake_resolve(dsn: str, seed_ref: str) -> str:
+        if seed_ref == "ops_seed:TRX-MISSING":
+            raise ValueError(f"seed_ref {seed_ref!r} names no transaction in the store")
+        return "CUST-A"
+
+    def fake_run_case(client: object, case: Case, *, customer_id: str, test_login_key: str) -> str:
+        return f"transcript-for-{case.case_id}"
+
+    def fake_score(dsn: str, transcript: str) -> CaseResult:
+        return CaseResult(
+            case_id=transcript,
+            is_adversarial=False,
+            expected_escalation=False,
+            observed_escalation=False,
+            automation_attempted=True,
+            correct_outcome=True,
+        )
+
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", fake_resolve)
+    monkeypatch.setattr("evals.runner.runner.run_case", fake_run_case)
+    monkeypatch.setattr("evals.runner.runner.score_case", fake_score)
+
+    results = run_cases(cast(httpx.Client, object()), "unused-dsn", cases, test_login_key=LOGIN_KEY)
+
+    assert len(results) == 2
+    assert results[0].case_id == "c1"
+    assert results[0].error is not None
+    assert results[1].case_id == "transcript-for-c2"
+    assert results[1].error is None
+
+
+def test_an_unanticipated_exception_still_stops_the_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only this module's own documented failure classes are swallowed; anything else is a real
+    bug that must not be hidden behind a misleading 'case failed' record."""
+    cases = (_case(case_id="c1"), _case(case_id="c2"))
+
+    def fake_resolve(dsn: str, seed_ref: str) -> str:
+        return "CUST-A"
+
+    def fake_run_case(client: object, case: Case, *, customer_id: str, test_login_key: str) -> str:
+        raise RuntimeError("unexpected, not one of the anticipated failure classes")
+
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", fake_resolve)
+    monkeypatch.setattr("evals.runner.runner.run_case", fake_run_case)
+
+    with pytest.raises(RuntimeError, match="unexpected"):
+        run_cases(cast(httpx.Client, object()), "unused-dsn", cases, test_login_key=LOGIN_KEY)
+
+
 # -----------------------------------------------------------------------------
 # End to end — a real, migrated, freshly seeded Postgres and the real running app
 # -----------------------------------------------------------------------------

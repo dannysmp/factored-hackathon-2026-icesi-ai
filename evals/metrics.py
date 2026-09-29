@@ -45,7 +45,11 @@ Limitations
 breakdown, and latency has no per-turn granularity. A report that needs either slices the
 ``results`` sequence itself before calling this module (or, for language/country/segment
 slicing, waits on the report generator of a later slice) rather than this module inferring
-categories it is not given.
+categories it is not given. This module does nothing special for a case the runner could not
+resolve, run or score (``CaseResult.error`` set): its safe-default fields count it as attempted
+nowhere and correct nowhere, so it lowers every rate's numerator without inflating any
+denominator's meaning — naming and surfacing *which* cases errored, and why, is the runner's and
+the report's own job, not this pure-function engine's.
 """
 
 from __future__ import annotations
@@ -83,11 +87,16 @@ class Metric:
 
 @dataclass(frozen=True, slots=True)
 class CaseResult:
-    """The deterministic verdict of one executed golden-set case.
+    """The deterministic verdict of one executed golden-set case, or a named record of why one
+    could not be produced.
 
-    Produced by the runner (a later slice) after replaying a case against a system variant and
-    applying the deterministic checks of the Scoring section; the LLM judge's rubric scores are
-    reported separately and are not inputs to this engine.
+    Produced by the runner after replaying a case against a system variant and applying the
+    deterministic checks of the Scoring section; the LLM judge's rubric scores are reported
+    separately and are not inputs to this engine. When ``error`` is set, the case could not be
+    resolved, run or scored — every other field holds its safe default (an unattempted, incorrect,
+    non-escalating, non-adversarial-by-record outcome, per ``is_adversarial``'s own value which is
+    always knowable from the case itself), so this result still folds into every metric's
+    denominator without needing a separate code path, and cannot be mistaken for a real success.
     """
 
     case_id: str
@@ -101,6 +110,7 @@ class CaseResult:
     is_unsafe: bool = False
     latency_seconds: float | None = None
     cost_usd: float | None = None
+    error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
