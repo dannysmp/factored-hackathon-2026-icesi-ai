@@ -93,19 +93,26 @@ def test_a_field_cited_twice_consumes_its_entries_in_order() -> None:
     )
     envelope = _envelope(intent=Intent.DISPUTE_STATUS, facts=facts, decisions=())
     candidate = CandidateReply(
-        raw_text="Case {{case_number}} filed {{filed_on}}; case {{case_number}} filed {{filed_on}}."
+        raw_text=(
+            "Case {{case_number}} filed {{filed_on}}; case {{case_number}} filed {{filed_on}}. "
+            "{{outcome_statement}}"
+        )
     )
     slots = _slots(
         (GroundedField.CASE_NUMBER, "D-1"),
         (GroundedField.FILED_ON, "June 1, 2026"),
         (GroundedField.CASE_NUMBER, "D-2"),
         (GroundedField.FILED_ON, "June 5, 2026"),
+        (GroundedField.OUTCOME_STATEMENT, "both cases are still under review"),
     )
 
     result = verify(envelope, candidate, slots)
 
     assert result.outcome == "accepted"
-    assert result.rendered_text == "Case D-1 filed June 1, 2026; case D-2 filed June 5, 2026."
+    assert result.rendered_text == (
+        "Case D-1 filed June 1, 2026; case D-2 filed June 5, 2026. "
+        "both cases are still under review"
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -256,6 +263,32 @@ def test_omitting_a_required_field_is_rejected() -> None:
 
     assert result.outcome == "rejected"
     assert RejectionReason.REQUIRED_FIELD_MISSING in result.reasons
+
+
+def test_a_no_case_found_reply_is_accepted_on_the_outcome_statement_alone() -> None:
+    """dispute_status has no case to cite when there is none; the outcome statement is enough."""
+    envelope = _envelope(intent=Intent.DISPUTE_STATUS, facts=DisputeFacts(), decisions=())
+    candidate = CandidateReply(raw_text="{{outcome_statement}}")
+    slots = _slots((GroundedField.OUTCOME_STATEMENT, "no case is on file for this transaction"))
+
+    result = verify(envelope, candidate, slots)
+
+    assert result.outcome == "accepted"
+    assert result.rendered_text == "no case is on file for this transaction"
+
+
+def test_a_not_registered_handoff_reply_is_accepted_on_the_outcome_statement_alone() -> None:
+    """handoff has no ticket to cite when nothing was registered; the outcome statement suffices."""
+    envelope = _envelope(
+        intent=Intent.HANDOFF, end_session=True, facts=DisputeFacts(), decisions=()
+    )
+    candidate = CandidateReply(raw_text="{{outcome_statement}}")
+    slots = _slots((GroundedField.OUTCOME_STATEMENT, "we could not register this request"))
+
+    result = verify(envelope, candidate, slots)
+
+    assert result.outcome == "accepted"
+    assert result.rendered_text == "we could not register this request"
 
 
 def test_every_reason_that_applies_is_named_at_once() -> None:

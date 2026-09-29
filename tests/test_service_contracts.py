@@ -943,6 +943,14 @@ def test_dispute_status_needs_cases_unless_it_says_there_are_none() -> None:
         _envelope(intent=Intent.DISPUTE_STATUS, template_id=TemplateId.DISPUTE_STATUS)
 
 
+def test_dispute_status_can_say_there_are_none_from_model_mode_facts_alone() -> None:
+    """Model mode never sets a template_id, so the no-case state rests on the cases fact itself."""
+    assert (
+        _envelope(intent=Intent.DISPUTE_STATUS, render_mode="model", template_id=None).facts.cases
+        == ()
+    )
+
+
 def test_a_case_is_not_expected_to_answer_before_it_was_filed() -> None:
     """The expected response date is on or after the filing date."""
     with pytest.raises(ValidationError, match="before filed_on"):
@@ -991,6 +999,15 @@ def test_a_handoff_that_was_not_registered_names_no_ticket() -> None:
     assert unregistered.facts.ticket_ref is None
     with pytest.raises(ValidationError, match="names its ticket exactly when"):
         _handoff(template_id=TemplateId.HANDOFF_NOT_REGISTERED)
+
+
+def test_a_handoff_can_say_nothing_was_registered_from_model_mode_facts_alone() -> None:
+    """Model mode never sets a template_id, so "not registered" rests on the ticket fact itself."""
+    unregistered = _handoff(
+        render_mode="model", template_id=None, facts=DisputeFacts(), decisions=()
+    )
+
+    assert unregistered.facts.ticket_ref is None
 
 
 def test_a_routed_handoff_needs_an_escalate_decision_and_no_handoff_reads_as_eligible() -> None:

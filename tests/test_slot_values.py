@@ -16,6 +16,7 @@ from app.conversation.renderer import INELIGIBLE_TEXT
 from app.conversation.slot_values import slot_values_for
 from app.domain.policy.models import DisputeCategory, Outcome, TransactionStatus
 from contracts.service_v1.envelope import (
+    INTENT_REQUIRED_FIELDS,
     CaseFact,
     CustomerReason,
     Decision,
@@ -104,6 +105,24 @@ def test_dispute_status_lists_one_entry_set_per_case() -> None:
         entry.value for entry in values.entries if entry.field is GroundedField.CASE_NUMBER
     ]
     assert case_numbers == ["D-0", "D-1", "D-2"]
+    assert GroundedField.OUTCOME_STATEMENT in {entry.field for entry in values.entries}
+
+
+def test_dispute_status_states_the_outcome_whether_or_not_a_case_exists() -> None:
+    """The required field is present in both states, and the wording differs between them."""
+    case = CaseFact(case_number="D-1", status="Open", filed_on=_DOMAIN_DATE, transaction_ref="tx-1")
+    with_case = slot_values_for(
+        _envelope(intent=Intent.DISPUTE_STATUS, facts=DisputeFacts(cases=(case,)))
+    )
+    without_case = slot_values_for(_envelope(intent=Intent.DISPUTE_STATUS, facts=DisputeFacts()))
+
+    with_case_statement = next(
+        e.value for e in with_case.entries if e.field is GroundedField.OUTCOME_STATEMENT
+    )
+    without_case_statement = next(
+        e.value for e in without_case.entries if e.field is GroundedField.OUTCOME_STATEMENT
+    )
+    assert with_case_statement != without_case_statement
 
 
 def test_filing_result_omits_expected_response_when_absent() -> None:
@@ -253,3 +272,83 @@ def test_procedural_intents_produce_no_entries() -> None:
             template_id=template_id,
         )
         assert slot_values_for(envelope).entries == ()
+
+
+def _buildable_states() -> list[RenderEnvelope]:
+    """One envelope per intent's buildable state — two for the intents that have more than one."""
+    transaction = TransactionFact(
+        ref="tx-1",
+        occurred_on=date(2026, 6, 1),
+        merchant="Tienda",
+        amount=Money(amount=Decimal("10.00"), currency="MXN"),
+        product=ProductLabel(name="Visa", last4="1234"),
+        status=TransactionStatus.APPROVED,
+    )
+    case = CaseFact(case_number="D-1", status="Open", filed_on=_DOMAIN_DATE, transaction_ref="tx-1")
+    source = SourceRef(
+        section_id="overview",
+        corpus_version="1",
+        titles=(
+            LocalizedTitle(lang="es", text="Resumen"),
+            LocalizedTitle(lang="pt", text="Resumo"),
+            LocalizedTitle(lang="en", text="Overview"),
+        ),
+    )
+    eligible = Decision(
+        outcome=Outcome.ELIGIBLE,
+        customer_reason=CustomerReason.ELIGIBLE,
+        policy_version="2",
+        requires_confirmation=True,
+    )
+    ineligible = Decision(
+        outcome=Outcome.INELIGIBLE,
+        customer_reason=CustomerReason.WINDOW_EXPIRED,
+        policy_version="2",
+    )
+    escalate = Decision(
+        outcome=Outcome.ESCALATE, customer_reason=CustomerReason.NEEDS_REVIEW, policy_version="2"
+    )
+    return [
+        _envelope(intent=Intent.CLARIFY),
+        _envelope(
+            intent=Intent.PRESENT_TRANSACTIONS,
+            facts=DisputeFacts(transactions=(transaction,), candidate_count=1),
+        ),
+        _envelope(
+            intent=Intent.CONFIRM_FILING,
+            facts=DisputeFacts(
+                transactions=(transaction,),
+                candidate_count=1,
+                selected_ref="tx-1",
+                category=DisputeCategory.FRAUD_CLAIM,
+            ),
+            decisions=(eligible,),
+        ),
+        _envelope(intent=Intent.FILING_RESULT, facts=DisputeFacts(cases=(case,))),
+        _envelope(intent=Intent.INELIGIBLE, decisions=(ineligible,)),
+        _envelope(intent=Intent.DISPUTE_STATUS, facts=DisputeFacts(cases=(case,))),
+        _envelope(intent=Intent.DISPUTE_STATUS, facts=DisputeFacts()),
+        _envelope(intent=Intent.POLICY_ANSWER, sources=(source,)),
+        _envelope(intent=Intent.ABSTAIN),
+        _envelope(
+            intent=Intent.REFUSE, render_mode="template", template_id=TemplateId.REFUSE_UNSUPPORTED
+        ),
+        _envelope(
+            intent=Intent.HANDOFF,
+            end_session=True,
+            facts=DisputeFacts(ticket_ref="T-100"),
+            decisions=(escalate,),
+        ),
+        _envelope(intent=Intent.HANDOFF, end_session=True, facts=DisputeFacts(), decisions=()),
+        _envelope(intent=Intent.FAREWELL, end_session=True),
+    ]
+
+
+def test_every_required_field_is_satisfiable_from_the_envelope_alone() -> None:
+    """A field ``INTENT_REQUIRED_FIELDS`` names can never fail for want of a value to substitute,
+    in every state the contract actually lets that intent build in — not just the states these
+    other tests happen to exercise."""
+    for envelope in _buildable_states():
+        produced = {entry.field for entry in slot_values_for(envelope).entries}
+        required = INTENT_REQUIRED_FIELDS[envelope.intent]
+        assert required <= produced, f"{envelope.intent}: missing {required - produced}"
