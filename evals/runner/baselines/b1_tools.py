@@ -53,11 +53,11 @@ Runtime Contract
 ``TOOL_SCHEMAS``: the seven Anthropic tool schemas, in a fixed order.
 ``B1ToolDispatcher(tool_port, retriever, outbox, policy, calendar, clock, *, customer_id, lang)``.
 ``dispatch(call, *, session_id, turn_id, trace_id) -> str``, the tool-result text for the model.
-``start_turn()``: clears the this-turn decision list ``handoff``'s reason-code lookup reads; the
-caller (the conversation loop) calls this once per customer turn, before dispatching that turn's
-tool-call rounds.
-``handoff_ticket``: the most recent handoff's ticket reference, or ``None``; the caller reads this
-after a turn to know whether to end the run.
+``start_turn()``: clears the this-turn decision list ``handoff``'s reason-code lookup reads, and
+the last turn's handoff ticket; the caller (the conversation loop) calls this once per customer
+turn, before dispatching that turn's tool-call rounds.
+``handoff_ticket``: the current turn's handoff ticket reference, or ``None``; the caller reads
+this after a turn to know whether to end the run.
 
 Limitations
 -----------
@@ -253,8 +253,10 @@ class B1ToolDispatcher:
     _decisions_this_turn: list[PolicyDecision] = field(default_factory=list, init=False)
 
     def start_turn(self) -> None:
-        """Reset the per-turn decision list ``handoff``'s reason-code lookup reads."""
+        """Reset the per-turn decision list ``handoff``'s reason-code lookup reads, and the last
+        turn's handoff ticket, so it does not carry into a later turn's synthetic reply."""
         self._decisions_this_turn = []
+        self.handoff_ticket = None
 
     def dispatch(self, call: ToolCall, *, session_id: str, turn_id: str, trace_id: str) -> str:
         """Execute ``call`` and return the tool-result text the model reads next.
