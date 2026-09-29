@@ -74,6 +74,13 @@ carries it, not a promise about a later one.
   the code is not, by itself, a security boundary; it is a demonstration convenience layered on
   top of real authentication and authorization, which are enforced regardless of whether the code
   is known.
+- **The BI dashboard's logo, application name and instance-wide colors are not themed.** Metabase
+  gates its native application-branding settings (application name, logo, favicon and
+  instance-wide color overrides) behind a paid Pro or Enterprise license, and this deployment runs
+  the open-source edition with no such license. What the open-source edition does expose — each
+  panel's own chart colors, a text card naming its business question, and panel order — is applied
+  from the design-token palette instead, verified in
+  [`reports/dashboard-theme-checklist.md`](../reports/dashboard-theme-checklist.md).
 
 ## Security posture
 
