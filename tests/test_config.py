@@ -32,6 +32,7 @@ _ENV_KEYS = (
     "LLM_PROVIDER",
     "NLU_MODEL",
     "RENDER_MODEL",
+    "JUDGE_MODEL",
     "ANTHROPIC_API_KEY",
     "SESSION_SIGNING_KEY",
     "SESSION_TTL_SECONDS",
@@ -76,6 +77,7 @@ def test_defaults_are_valid_and_pinned() -> None:
     assert settings.llm_provider is LlmProvider.ANTHROPIC
     assert settings.nlu_model in ALLOWED_MODELS
     assert settings.render_model in ALLOWED_MODELS
+    assert settings.judge_model in ALLOWED_MODELS
     assert settings.anthropic_api_key is None
 
 
@@ -84,7 +86,7 @@ def test_allow_list_holds_exactly_the_two_pinned_models() -> None:
     assert sorted(ALLOWED_MODELS) == ["claude-haiku-4-5-20251001", "claude-sonnet-5"]
 
 
-@pytest.mark.parametrize("key", ["NLU_MODEL", "RENDER_MODEL"])
+@pytest.mark.parametrize("key", ["NLU_MODEL", "RENDER_MODEL", "JUDGE_MODEL"])
 @pytest.mark.parametrize("model", ["claude-opus-5-5", "claude-fable-5-1"])
 def test_larger_model_tiers_are_refused(
     monkeypatch: pytest.MonkeyPatch, key: str, model: str
@@ -130,8 +132,9 @@ def test_env_file_is_read_when_present(tmp_path: Path) -> None:
         ("LLM_PROVIDER", "openai"),
         ("NLU_MODEL", "gpt-4o"),
         ("RENDER_MODEL", "claude-sonnet-4"),
+        ("JUDGE_MODEL", "gpt-4o"),
     ],
-    ids=["environment", "log-level", "provider", "nlu-model", "render-model"],
+    ids=["environment", "log-level", "provider", "nlu-model", "render-model", "judge-model"],
 )
 def test_invalid_value_fails_fast_naming_the_key(
     monkeypatch: pytest.MonkeyPatch, key: str, value: str

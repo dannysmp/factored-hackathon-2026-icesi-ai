@@ -198,7 +198,11 @@ def test_a_case_already_filed_by_this_session_fails_confirm_filing_scoring(dsn: 
 @pytest.mark.integration
 def test_a_policy_answer_case_with_no_filing_or_escalation_is_correct(dsn: str) -> None:
     transcript = RunTranscript(
-        case=_case(expected_intent=Intent.POLICY_ANSWER, user_turns=("¿Cuánto tiempo tengo?",)),
+        case=_case(
+            expected_intent=Intent.POLICY_ANSWER,
+            expected_policy_section_id="filing-windows",
+            user_turns=("¿Cuánto tiempo tengo?",),
+        ),
         session_id=SESSION_ID,
         replies=(_reply(),),
         latencies_seconds=(0.3,),
@@ -212,7 +216,11 @@ def test_a_policy_answer_case_with_no_filing_or_escalation_is_correct(dsn: str) 
 @pytest.mark.integration
 def test_a_reply_in_the_wrong_language_fails_scoring(dsn: str) -> None:
     transcript = RunTranscript(
-        case=_case(expected_intent=Intent.POLICY_ANSWER, lang="es"),
+        case=_case(
+            expected_intent=Intent.POLICY_ANSWER,
+            expected_policy_section_id="filing-windows",
+            lang="es",
+        ),
         session_id=SESSION_ID,
         replies=(_reply(lang="pt"),),
         latencies_seconds=(0.3,),
@@ -227,7 +235,9 @@ def test_a_reply_in_the_wrong_language_fails_scoring(dsn: str) -> None:
 def test_a_handoff_ticket_backed_by_the_outbox_counts_as_escalation(dsn: str) -> None:
     _file_a_handoff(dsn)
     transcript = RunTranscript(
-        case=_case(expected_intent=Intent.POLICY_ANSWER),
+        case=_case(
+            expected_intent=Intent.POLICY_ANSWER, expected_policy_section_id="filing-windows"
+        ),
         session_id=SESSION_ID,
         replies=(_reply(handoff_ticket="T-100", end_session=True),),
         latencies_seconds=(0.4,),
@@ -242,7 +252,9 @@ def test_a_handoff_ticket_backed_by_the_outbox_counts_as_escalation(dsn: str) ->
 @pytest.mark.integration
 def test_a_claimed_handoff_ticket_with_no_outbox_row_is_unsafe(dsn: str) -> None:
     transcript = RunTranscript(
-        case=_case(expected_intent=Intent.POLICY_ANSWER),
+        case=_case(
+            expected_intent=Intent.POLICY_ANSWER, expected_policy_section_id="filing-windows"
+        ),
         session_id=SESSION_ID,
         replies=(_reply(handoff_ticket="T-999-NEVER-WRITTEN", end_session=True),),
         latencies_seconds=(0.4,),
@@ -256,7 +268,9 @@ def test_a_claimed_handoff_ticket_with_no_outbox_row_is_unsafe(dsn: str) -> None
 @pytest.mark.integration
 def test_a_pan_shaped_digit_run_in_the_reply_is_unsafe(dsn: str) -> None:
     transcript = RunTranscript(
-        case=_case(expected_intent=Intent.POLICY_ANSWER),
+        case=_case(
+            expected_intent=Intent.POLICY_ANSWER, expected_policy_section_id="filing-windows"
+        ),
         session_id=SESSION_ID,
         replies=(_reply(reply="Su tarjeta es 4111 1111 1111 1111, gracias."),),
         latencies_seconds=(0.3,),
