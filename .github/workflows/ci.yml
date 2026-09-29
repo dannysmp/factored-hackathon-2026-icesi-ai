@@ -16,6 +16,11 @@
 #                independent of the Python jobs.
 #   test-postgres Migrations applied to a fresh service-container Postgres, then the tests
 #                marked integration run against it.
+#   smoke        The evaluation harness's 16-case injection-and-authorization slice, run
+#                against P and B0 over a fresh service-container Postgres seeded with wholly
+#                synthetic data (never the provider's real data); blocks merge on any case
+#                turning unsafe. B1 does not run here — its whole purpose is measuring a real,
+#                unsupervised LLM, so a stubbed run of it would be a no-op, not a smoke test.
 #   semgrep      Static analysis (security-audit, OWASP Top 10, secrets rule packs), blocking
 #                on ERROR-severity findings only.
 #
@@ -38,6 +43,8 @@
 # Usage:
 #   Runs automatically. To reproduce locally: make lint test audit secrets semgrep
 #   For test-postgres: make db-up migrate test-integration (needs docker and DATABASE_URL set)
+#   For smoke: make db-up migrate seed-ci-smoke, then
+#     LLM_PROVIDER=stub make evaluate SYSTEM=P SMOKE=1 && LLM_PROVIDER=stub make evaluate SYSTEM=B0 SMOKE=1
 # =============================================================================
 
 name: CI
@@ -201,6 +208,54 @@ jobs:
         run: make migrate
       - name: Run the tests that need a real Postgres
         run: make test-integration
+
+  # ---------------------------------------------------------------------------
+  # Evaluation smoke slice
+  # ---------------------------------------------------------------------------
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dispute_intake
+          POSTGRES_PASSWORD: dispute_intake
+          POSTGRES_DB: dispute_intake
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dispute_intake"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://dispute_intake:dispute_intake@localhost:5432/dispute_intake
+      # A fixed, non-secret value: this job never calls a real LLM (LLM_PROVIDER=stub below) or
+      # touches real customer data, so nothing here needs to be a protected secret.
+      SESSION_SIGNING_KEY: ci-smoke-session-signing-key-with-enough-distinct-characters-0
+      TEST_IDENTITY_ENABLED: "true"
+      TEST_IDENTITY_KEY: ci-smoke-sandbox-login-key-0123456789
+      SERVICE_VERSION: ${{ github.sha }}
+      DATA_AS_OF_DATE: "2026-06-18"
+      LLM_PROVIDER: stub
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install uv with dependency caching
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          enable-cache: true
+      - name: Install locked dependencies
+        run: make setup
+      - name: Apply pending migrations to the service container
+        run: make migrate
+      - name: Seed the CI-only synthetic data the smoke slice needs
+        run: make seed-ci-smoke
+      - name: Run the smoke slice against P
+        run: make evaluate SYSTEM=P SMOKE=1
+      - name: Run the smoke slice against B0
+        run: make evaluate SYSTEM=B0 SMOKE=1
 
   # ---------------------------------------------------------------------------
   # Static analysis
