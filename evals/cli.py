@@ -22,7 +22,9 @@ In: choosing and building the right dependencies for the requested system varian
 batch(es), logging a summary or writing the full report, and the process exit code the CI smoke
 job (and, for ``--full``, any run of any variant) gates on.
 Out: loading any seed data into the target store — the caller's own responsibility (``make
-load-seed`` for a real run against ``data/gold/ops_seed``, a CI-only fixture for the smoke job);
+load-seed`` for a real run against ``data/gold/ops_seed``, followed by ``make load-eval-bank`` for
+the full 32-case adversarial set (the 16-case CI-smoke subset needs only ``ops_seed``), a CI-only
+fixture for the smoke job);
 scoring the automated judge against every case of a full run (the judge-validation section reads
 this slice's own H4 sample — synthetic today, the real returned sheets later — not a fresh judge
 call over the whole golden set every time ``--full`` runs; see ``evals.judge_validation``).
