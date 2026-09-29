@@ -138,14 +138,17 @@ def _most_recent_day_of_month(reference_date: date, day: int) -> date | None:
 def _resolve_year(day: int, month: int, year: int | None, reference_date: date) -> date | None:
     """A numeric date's own year, when it has one; otherwise the reference date's year, or the
     year before it when that combination would fall after the reference date — a transaction date
-    is always in the past."""
+    is always in the past. An explicit year that is still in the future is rejected outright:
+    unlike the no-year case, there is no sensible earlier year to fall back to when the customer
+    stated one themselves."""
     if year is not None:
         if year < _TWO_DIGIT_YEAR_CUTOFF:
             year += 2000
         try:
-            return date(year, month, day)
+            candidate = date(year, month, day)
         except ValueError:
             return None
+        return candidate if candidate <= reference_date else None
     try:
         candidate = date(reference_date.year, month, day)
     except ValueError:

@@ -171,6 +171,14 @@ def test_a_numeric_date_with_an_explicit_year_that_does_not_exist_resolves_to_no
     assert resolve("30/02/2026", language="es", reference_date=_REFERENCE_DATE) is None
 
 
+def test_a_numeric_date_with_an_explicit_future_year_resolves_to_nothing() -> None:
+    """A transaction date is never in the future — an explicit year does not override that, and
+    unlike the no-year case there is no sensible earlier year to fall back to: the customer stated
+    this year themselves, so guessing a different one would be inventing a fact, not resolving
+    one."""
+    assert resolve("03/04/2027", language="es", reference_date=_REFERENCE_DATE) is None
+
+
 def test_a_numeric_date_with_no_year_that_never_exists_resolves_to_nothing() -> None:
     """The same day-never-exists case, without a stated year: neither this year's nor a fallback
     year's construction can succeed, so there is no year to fall back to."""
