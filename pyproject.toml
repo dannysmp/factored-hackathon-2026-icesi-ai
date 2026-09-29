@@ -80,6 +80,10 @@ ignore = ["PLR0913"]
 # Table and column names here come only from the fixed seed-output registry and the Parquet
 # files' own headers (written by pipelines.ops_seed, reviewed there), never from a request.
 "app/persistence/load_seed.py" = ["S608"]
+# Same reason: column names come only from the eval bank's own Parquet headers (written by
+# pipelines.eval_bank, reviewed there); table names and the upsert conflict key are literal
+# strings this module's own call sites pass, never request input.
+"app/persistence/load_eval_bank.py" = ["S608"]
 # Same reason: table names come only from pipelines.gold's own fixed MART_NAMES, column names
 # only from the gold marts' own Parquet headers (written by pipelines.gold, reviewed there).
 "pipelines/analytics_load.py" = ["S608"]

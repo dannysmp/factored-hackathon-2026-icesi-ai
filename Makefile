@@ -64,6 +64,9 @@ eval-bank: ## Write the frozen evaluation scenario bank
 load-seed: ## Load the built operational seed into Postgres (needs DATABASE_URL, already migrated)
 	$(RUN) python -m app.persistence.load_seed
 
+load-eval-bank: ## Load the built eval bank into Postgres, additively (run after load-seed for a full evaluation run)
+	$(RUN) python -m app.persistence.load_eval_bank
+
 load-analytics: ## Load the dispute-demand marts into the Postgres analytics schema (needs DATABASE_URL, already migrated)
 	$(RUN) python -m pipelines.analytics_load
 
