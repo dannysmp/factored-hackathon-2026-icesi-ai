@@ -8,14 +8,15 @@ AWS provisioning for the deployed stack (ADR-13: one EC2 host, ECR, docker compo
 |---|---|
 | `scripts/01-create-oidc-role.sh` | The GitHub Actions OIDC provider and the CI deploy role (`dispute-intake-ci-deploy`): trust scoped to this repository's own workflows, permissions scoped to ECR push on the two repositories below and to SSM commands against instances tagged for this project — no static AWS keys anywhere (ADR-13). |
 | `scripts/02-create-ecr-repos.sh` | `dispute-intake-backend` and `dispute-intake-web`: scan-on-push, immutable tags, untagged images expire after 7 days. Postgres and Metabase use their own official images and need no repository here. |
-| `scripts/03-create-instance-role.sh` | The EC2 instance's own role (`dispute-intake-instance`): reachable by Systems Manager (so a deploy needs no SSH key), read access to this project's own SSM path prefix (`/transaction-disputes/prod/*`, where the model API key already lives) and its decryption, pull access to this project's own two ECR repositories, and CloudWatch Logs write. No S3 access: serving never queries the data lake, so this role does not need it. |
+| `scripts/03-create-instance-role.sh` | The EC2 instance's own role (`dispute-intake-instance`): reachable by Systems Manager (so a deploy needs no SSH key), read access to this project's own SSM path prefix (`/transaction-disputes/prod/*`, where the model API key already lives) and its decryption, pull access to this project's own two ECR repositories, read access to this project's own seed bucket (`11-create-seed-bucket.sh` — never the data provider's own data lake, which this role still cannot reach), and CloudWatch Logs write. |
 | `scripts/04-launch-instance.sh` | A security group open on 80/443 only, a `t3.large` instance in the default VPC with Docker installed by its user data, and a static Elastic IP. |
-| `scripts/05-deploy.sh` | Brings the compose stack up on the tagged host over SSM (no SSH): embeds the current `docker-compose.yml`, `docker-compose.prod.yml` and `infra/Caddyfile` in the command; the host reads its own secrets from SSM with its own role, including the demo sign-in access codes when they exist (ADR-18) — absent, sign-in just stays disabled, nothing fails. Prints the sslip.io host name on success. |
+| `scripts/05-deploy.sh` | Brings the compose stack up on the tagged host over SSM (no SSH): embeds the current `docker-compose.yml`, `docker-compose.prod.yml` and `infra/Caddyfile` in the command; the host reads its own secrets from SSM with its own role, including the demo sign-in access codes when they exist (ADR-18) — absent, sign-in just stays disabled, nothing fails. Then syncs the built operational seed from the seed bucket and runs migrations and the seed load as one-off containers (never `exec` into the long-running `backend`, which can still be crash-looping on a fresh database — see the script's own header), and restarts `backend` so it picks up the now-seeded database on this same run. Prints the sslip.io host name on success. |
 | `scripts/06-smoke-test.sh` | Proves the deployed path answers over HTTPS: the health endpoint and the web static page, retrying while Caddy's certificate issuance and the containers' own start-up catch up. Its `--dashboard` flag additionally proves the `dashboard.` subdomain reaches Metabase. |
 | `scripts/07-teardown.sh` | Reverses `04-launch-instance.sh`: terminates the tagged instance, releases its Elastic IP, deletes its security group. Leaves the OIDC role, the instance role and the ECR repositories in place. |
 | `scripts/08-deploy-metabase.sh` | Creates Metabase's own database and role, sets `analytics_reader`'s password, brings up the `metabase` service, completes its first-run admin setup and connects the `analytics` schema — then swaps in the Caddyfile that routes the `dashboard.` subdomain to it, only once all of that has succeeded (ADR-11). Idempotent: re-running it against an already-provisioned deployment reconciles credentials and the Caddy config without repeating setup. Once Metabase is healthy, it also captures and logs a `docker stats --no-stream` reading of all five services sharing the host (ADR-11's own capacity requirement). |
 | `scripts/09-configure-error-alarm.sh` | A CloudWatch metric filter counting error-level lines in the application's log group (`/dispute-intake/app`, created if absent) and an alarm that trips past a threshold in one evaluation window. No notification action is attached yet — no paging channel exists in this project. Authored ahead of log shipping (the CloudWatch agent) landing; running it against the live account is for whichever slice stands that up. |
 | `scripts/10-configure-metabase-dashboard.sh` | Creates or updates the operations dashboard's panels, each pairing a chart card (colored from `web/src/styles/tokens.css`'s design tokens) with a text card naming its business question. Every card and the dashboard itself are found by name and updated in place if they already exist, so a redeploy converges instead of duplicating panels. Needs `08-deploy-metabase.sh` already run (the admin account and the `analytics` datasource connection). Full native theming (logo, app name, instance-wide colors) is a paid Metabase feature this deployment has no license for — see `docs/limitations.md`. |
+| `scripts/11-create-seed-bucket.sh` | A private, versioned, default-encrypted S3 bucket (`dispute-intake-ops-seed-<account>`) holding the built operational seed — a curated, already-masked derivative (`pipelines.ops_seed`), never the data provider's own raw data. Block Public Access on all four settings; the repository is public, this bucket must never be. Prints the bucket name on success. Not torn down by `07-teardown.sh`, the same as the OIDC role, the instance role and the ECR repositories. |
 
 Every script is idempotent (safe to re-run; an existing resource with the right name is left as
 is or reconciled, never duplicated) and refuses to run against any profile or region but
@@ -46,6 +47,13 @@ The `deploy_metabase` input (default off) adds a job on top of the base deployme
   above — `05-deploy.sh` fails before bringing the stack up if it's missing, rather than falling
   through to the base compose file's own local-development default (issue #149: a deployed
   Postgres must never run on a hardcoded, publicly-known password).
+- The seed bucket exists (`infra/scripts/11-create-seed-bucket.sh`) and carries the built
+  operational seed: after any rebuild (`make pipeline && make seed`, a developer's own local
+  profile, matching the same boundary the data provider's own credentials already observe —
+  never CI, never the host), `aws s3 sync data/gold/ops_seed/
+  s3://dispute-intake-ops-seed-<account>/ops_seed/`. Without this, `05-deploy.sh`'s seed-load
+  step fails at its checksum check (`app.persistence.load_seed` refuses to load a directory
+  missing its manifest) rather than silently starting with an empty database.
 - A GitHub Actions repository secret named `AWS_ACCOUNT_ID` holds the account's plain numeric ID,
   so the workflow can compose the CI deploy role's ARN without ever writing the number into this
   repository.
@@ -112,7 +120,14 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml config   # valid
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d    # the deploy step runs this
 docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.metabase.yml \
   up -d metabase   # 08-deploy-metabase.sh runs this, after creating its database and role
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm backend \
+  python -m app.persistence.migrate       # 05-deploy.sh runs this and the load below, after up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm backend \
+  python -m app.persistence.load_seed
 ```
+
+`backend`'s `./seed/ops_seed:/app/data/gold/ops_seed:ro` mount is what `run`, above, reads from —
+populated by `05-deploy.sh`'s own `aws s3 sync` from the seed bucket, never baked into the image.
 
 `ECR_REGISTRY`, `IMAGE_TAG`, `ANTHROPIC_API_KEY`, `SESSION_SIGNING_KEY`, `POSTGRES_PASSWORD`,
 `DEMO_SIGNIN_ACCESS_CODE`, `DEMO_AGENT_ACCESS_CODE`, `AGENT_SESSION_SIGNING_KEY` and `HOST_NAME`

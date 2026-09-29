@@ -7,10 +7,11 @@
 #   Systems Manager (so CI can deploy without SSH keys), read the model API
 #   key and any other secret under this project's own SSM path prefix, pull
 #   this project's own two images from ECR (nothing else in the registry),
-#   and write its logs to CloudWatch. No S3 access: serving never queries the
-#   data lake (data-plan, "Source inventory and role in this workflow"), so
-#   this role does not need it; add it explicitly, with a named bucket, if
-#   that ever changes. Bedrock invoke is added the same way when adopted.
+#   read the built operational seed from this project's own seed bucket
+#   (11-create-seed-bucket.sh) — a curated, already-masked derivative, never
+#   the data provider's own data lake, which this role still cannot reach —
+#   and write its logs to CloudWatch. Bedrock invoke is added the same way
+#   when adopted.
 # Design:
 #   Idempotent; the SSM path prefix is the one governed value this script
 #   hardcodes, matching the parameter the maintainer already created.
@@ -31,6 +32,7 @@ readonly SSM_PATH_PREFIX="/transaction-disputes/prod"
 readonly LOG_GROUP="/dispute-intake/app"
 
 account_id="$(aws sts get-caller-identity --query Account --output text)"
+readonly SEED_BUCKET="dispute-intake-ops-seed-${account_id}"
 
 trust_policy='{
   "Version": "2012-10-17",
@@ -75,6 +77,12 @@ permissions_policy=$(cat <<JSON
       "Effect": "Allow",
       "Action": ["ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"],
       "Resource": "arn:aws:ecr:${INFRA_REGION}:${account_id}:repository/dispute-intake-*"
+    },
+    {
+      "Sid": "ReadOpsSeed",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::${SEED_BUCKET}", "arn:aws:s3:::${SEED_BUCKET}/*"]
     }
   ]
 }
