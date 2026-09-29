@@ -30,6 +30,11 @@ Design Principles
 - The turns route's own heavy dependencies (a database connection, an LLM provider key) are
   resolved lazily, inside its per-request factory, never at start-up: an app that never calls
   ``/v1/turns`` — most tests, a bare health check — never needs them configured.
+- The console's own read routes (``app.api.agent``), when the agent demo broker is enabled, are
+  the opposite: their collaborators (the queue, the ticket detail and the audit sink) are built
+  eagerly, here, like every other collaborator that only needs ``DATABASE_URL`` — a missing one
+  is a start-up error, not a first-request surprise (``AgentConsolePorts``,
+  ``_default_agent_console``).
 - Structured JSON logging (``app.observability.logging``) is installed before anything else runs,
   so every event this factory or a route logs, including a start-up failure, is already a JSON
   line carrying the service's own identity and version.
