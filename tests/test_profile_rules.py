@@ -242,6 +242,23 @@ def test_values_are_listed_only_for_columns_with_few_distinct_values(
     assert len(column.top_values) == listed
 
 
+def test_a_null_group_counts_toward_the_distinct_value_listing_limit(tmp_path: Path) -> None:
+    """25 non-null distinct values pass the count(DISTINCT) gate on their own (nulls are excluded
+    from it), but the actual listing groups a null into its own '<null>' bucket — 26 groups in
+    total — and is withheld the same as any column with 26 distinct values."""
+    rows = [{"branch_id": f"B{i}", "branch_type": f"Type{i}"} for i in range(25)]
+    rows.append({"branch_id": "B25"})  # branch_type left empty: a null row
+    write_dimension(tmp_path, "branches", rows)
+
+    column = next(
+        c for c in _table(profile_data(tmp_path), "branches").columns if c.name == "branch_type"
+    )
+
+    assert column.distinct_count == 25
+    assert column.nulls == 1
+    assert column.top_values == ()
+
+
 # -----------------------------------------------------------------------------
 # Lateness
 # -----------------------------------------------------------------------------
