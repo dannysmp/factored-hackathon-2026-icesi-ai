@@ -179,6 +179,40 @@ def test_re_hydrates_the_verified_transaction_live(
 
 
 @pytest.mark.integration
+def test_a_merchant_name_over_the_contracts_bound_is_truncated_not_a_crash(
+    outbox: PostgresHandoffOutbox, reader: PostgresTicketDetail, dsn: str
+) -> None:
+    """The live re-hydration reads the store's own row fresh, so a merchant name over the
+    contract's 80-character bound (the store's own column allows up to 150) must be clamped here
+    too, the same way app.persistence.reads already is — this module reads the same table into
+    the same-named, separately-defined envelope.TransactionFact contract."""
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO transactions (transaction_id, customer_id, product_id, "
+            "transaction_date, transaction_type, merchant_name, amount, currency, amount_usd, "
+            "amount_usd_provenance, transaction_status) VALUES "
+            "('TRX-LONG', 'CLI-1234', 'PRD-1', '2026-06-08 09:00:00', 'Purchase', %s, 100.00, "
+            "'USD', 100.00, 'reported', 'Approved')",
+            ("A" * 150,),
+        )
+    fact = TransactionFact(
+        ref="TRX-LONG",
+        occurred_on=date(2026, 6, 8),
+        merchant="A Merchant",  # the packet's own frozen value; re-hydration reads the store live
+        amount=Money(amount=Decimal("100.00"), currency="USD"),
+        product=ProductLabel(name="Tarjeta de crédito", last4="4321"),
+        status=PolicyTransactionStatus.APPROVED,
+    )
+    ticket_ref = _record(outbox, _content(verified_facts=(fact,)), turn_id="t-long")
+
+    detail = reader.get_ticket_detail(ticket_ref, calendar=_TODAY)
+
+    assert detail is not None
+    assert len(detail.packet.verified_facts) == 1
+    assert detail.packet.verified_facts[0].merchant == "A" * 80
+
+
+@pytest.mark.integration
 def test_a_transaction_that_no_longer_resolves_yields_no_fact_rather_than_failing(
     outbox: PostgresHandoffOutbox, reader: PostgresTicketDetail, dsn: str
 ) -> None:

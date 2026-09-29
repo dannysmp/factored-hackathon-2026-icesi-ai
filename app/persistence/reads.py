@@ -162,6 +162,45 @@ _OPEN_CASE_STATUSES = (CaseStatus.OPEN.value, CaseStatus.IN_REVIEW.value)
 _IDEMPOTENCY_CONSTRAINT = "cases_customer_idempotency_key_unique"
 _OPEN_CASE_CONSTRAINT = "cases_transaction_id_open_unique"
 
+# Both contracts.service_v1.tools.TransactionFact.merchant and its distinct, same-named sibling
+# contracts.service_v1.envelope.TransactionFact.merchant share this bound; the store's own column
+# (migration 0001, VARCHAR(150)) is wider, so a stored value can exceed either contract's shape.
+# Shared with app.persistence.ticket_detail, the only other module that re-hydrates this field
+# from the same table straight into a TransactionFact of its own.
+MERCHANT_MAX_LENGTH = 80
+
+
+def clamp_merchant(value: str | None) -> str | None:
+    """A stored ``merchant_name`` fit to either ``TransactionFact.merchant``'s own bound.
+
+    Truncates a value over the contract's length, the same repair
+    ``app.conversation.llm_understanding``'s ``_LENGTH_REPAIRS`` already applies to a model's own
+    overlong guess at this same field; merchant text is inert descriptive data to every reader of
+    it (never a policy input, never an instruction channel), so shortening it changes nothing
+    about correctness or safety, only how much of it a customer sees. A blank or whitespace-only
+    value normalizes to ``None`` (absent), matching the contract's own "absent, not empty" rule.
+    A truncation logs a warning naming only the lengths involved and the request id, never the
+    value, so a future data-profiling pass has real evidence of how often a stored merchant name
+    actually exceeds the contract's bound, and the line still carries the request identifier
+    every operational log line in this codebase does (``SECURITY.md``).
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    if len(stripped) > MERCHANT_MAX_LENGTH:
+        # The value itself is never logged (it may be long for any reason, injected or not; PII
+        # minimization applies regardless) — only that a clamp fired and by how much, so a future
+        # data-profiling pass has real evidence of how often this happens.
+        logger.warning(
+            "merchant_name_truncated original_length=%d kept_length=%d request_id=%s",
+            len(stripped),
+            MERCHANT_MAX_LENGTH,
+            current_request_id(),
+        )
+    return stripped[:MERCHANT_MAX_LENGTH]
+
 
 def _new_case_number(domain_date: date) -> str:
     """A short, readable case number: what a customer quotes on the phone (E4-F3)."""
@@ -310,7 +349,7 @@ class PostgresToolPort:
         return TransactionFact(
             ref=row.transaction_id,
             occurred_on=row.transaction_date.date(),
-            merchant=row.merchant_name,
+            merchant=clamp_merchant(row.merchant_name),
             description=None,
             amount=self._disclosed_amount(row.amount_usd, row.amount_usd_provenance),
             product=ProductLabel(name=row.product_type or "unknown", last4=row.last4),
