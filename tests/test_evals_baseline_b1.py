@@ -13,6 +13,7 @@ extended here to script more than one call in a row (this module's own loop, unl
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
@@ -197,6 +198,60 @@ def test_run_case_answers_a_policy_question_via_one_tool_round(
 
     result = score_case(dsn, transcript)
     assert result.correct_outcome is True
+
+
+@pytest.mark.integration
+def test_run_case_logs_the_real_cost_of_every_call_it_makes(
+    dsn: str, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Unlike P, B1's own client discards its token counts once send() returns; this is the only
+    place that spend is ever recorded, so a real evaluation run's B1 cost must be computable from
+    these lines alone, the same guarantee E9 already established for P's own turn_completed."""
+    stub = _StubAnthropic(
+        [
+            _response(
+                [_tool_use_block("get_policy", {"query": "cuánto tiempo tengo"}, block_id="t1")],
+                stop_reason="tool_use",
+            ),
+            _response(
+                [_text_block("Tiene 60 días para presentar la disputa.")], stop_reason="end_turn"
+            ),
+        ]
+    )
+    settings = _settings(database_url=SecretStr(dsn))
+    calendar = DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING)
+    _real_client, dispatcher, session_id = build_b1_dependencies(
+        settings,
+        policy=load_policy(),
+        retriever=retriever,
+        calendar=calendar,
+        clock=lambda: _NOW,
+        customer_id="CLI-B1-LOOP",
+        lang="es",
+        model=_MODEL,
+    )
+    client = NaiveAgentClient(SecretStr("unused"), model=_MODEL, client=stub)  # type: ignore[arg-type]
+    case = Case(
+        case_id="b1-loop-01",
+        category=CaseCategory.NORMAL,
+        lang="es",
+        provenance="observed",
+        seed_ref="ops_seed:CLI-B1-LOOP",
+        user_turns=("¿Cuánto tiempo tengo para presentar una disputa?",),
+        expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
+    )
+
+    with caplog.at_level(logging.INFO):
+        run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
+
+    call_logs = [r for r in caplog.records if r.message.startswith("b1_call_completed")]
+    assert len(call_logs) == 2  # one tool-call round, then the final text reply
+    for record in call_logs:
+        assert f"model={_MODEL}" in record.message
+        assert "input_tokens=10 output_tokens=5" in record.message
+        assert "cost_usd=" in record.message
+        assert "cost_usd=None" not in record.message  # _MODEL is a priced, allow-listed model
 
 
 @pytest.mark.integration
