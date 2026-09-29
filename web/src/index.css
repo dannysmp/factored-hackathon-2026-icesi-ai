@@ -1,15 +1,13 @@
-/* Base styles: light/dark support and a system font stack. No design system yet — the chat
-   feature that needs one is a later slice. */
-:root {
-  color-scheme: light dark;
-}
+/* Base styles, reading the design tokens (ADR-19): color scheme, font stack and text color come
+   from the token file so every surface starts from the same source, before any per-component
+   retrofit. */
+@import './styles/tokens.css';
 
 body {
   margin: 0;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  color: var(--color-text);
+  background-color: var(--color-bg);
 }

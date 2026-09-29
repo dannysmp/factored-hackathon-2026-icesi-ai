@@ -1,0 +1,51 @@
+/* Styling for the vendored Radix tabs primitive, reading only tokens from src/styles/tokens.css
+   (ADR-19) — no literal color, spacing or font-size value here. */
+
+.tabs-list {
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: var(--border-width-thin) solid var(--color-border);
+  /* A queue's language/trigger labels can outgrow a narrow viewport (AC-E10-20's mobile
+     breakpoint): scroll horizontally rather than wrap or overflow the page, keeping every tab
+     reachable by keyboard and touch instead of silently clipping one. */
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+
+.tabs-trigger {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-body);
+  color: var(--color-text-subtle);
+  border-bottom: var(--border-width-emphasis) solid transparent;
+  white-space: nowrap;
+  transition:
+    color var(--motion-duration-fast) var(--motion-easing),
+    border-color var(--motion-duration-fast) var(--motion-easing);
+}
+
+.tabs-trigger[data-state='active'] {
+  color: var(--color-text);
+  font-weight: var(--font-weight-emphasis);
+  border-bottom-color: var(--color-accent);
+}
+
+.tabs-trigger:disabled {
+  color: var(--color-text-subtle);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tabs-content {
+  padding-block-start: var(--space-4);
+}
+
+.tabs-content:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
