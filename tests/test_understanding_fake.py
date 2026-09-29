@@ -10,16 +10,24 @@ from __future__ import annotations
 import pytest
 
 from app.conversation.understanding import FakeNlu
-from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent
+from contracts.service_v1.envelope import Lang
+from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult
 
 _NLU = FakeNlu()
 
 
+def _understand(text: str, *, language_hint: Lang | None = None) -> NluResult:
+    """``FakeNlu.understand`` never produces accounting; tests here only need the result."""
+    result, accounting = _NLU.understand(text, language_hint=language_hint)
+    assert accounting is None
+    return result
+
+
 def test_empty_text_is_unusable() -> None:
     """Blank input is treated the same as output that failed to validate."""
-    result = _NLU.understand("   ", language_hint=None)
+    result = _understand("   ")
 
-    assert result == type(result).unusable()
+    assert result == NluResult.unusable()
 
 
 @pytest.mark.parametrize(
@@ -47,7 +55,7 @@ def test_empty_text_is_unusable() -> None:
 )
 def test_keyword_rules_classify_the_expected_intent(text: str, intent: NluIntent) -> None:
     """Each scripted phrase is read as the intent it names."""
-    result = _NLU.understand(text, language_hint=None)
+    result = _understand(text, language_hint=None)
 
     assert result.intent is intent
 
@@ -69,7 +77,7 @@ def test_confirmation_answers_are_read_from_a_closed_set(
     text: str, answer: ConfirmationAnswer
 ) -> None:
     """A bare yes, no or ambiguous acknowledgement are told apart."""
-    result = _NLU.understand(text, language_hint=None)
+    result = _understand(text, language_hint=None)
 
     assert result.intent is NluIntent.CONFIRMATION
     assert result.confirmation is answer
@@ -77,14 +85,14 @@ def test_confirmation_answers_are_read_from_a_closed_set(
 
 def test_a_yes_with_a_change_is_not_read_as_a_bare_confirmation() -> None:
     """AC-E5-21: 'sí, pero...' is not the clean yes the bare pattern matches."""
-    result = _NLU.understand("sí, pero cambien la fecha", language_hint=None)
+    result = _understand("sí, pero cambien la fecha", language_hint=None)
 
     assert result.confirmation is None
 
 
 def test_a_switch_language_request_names_the_requested_language() -> None:
     """An explicit request to change language is told apart from merely mentioning one."""
-    result = _NLU.understand("¿podemos hablar en portugués?", language_hint=None)
+    result = _understand("¿podemos hablar en portugués?", language_hint=None)
 
     assert result.intent is NluIntent.SWITCH_LANGUAGE
     assert result.requested_language == "pt"
@@ -92,7 +100,7 @@ def test_a_switch_language_request_names_the_requested_language() -> None:
 
 def test_mentioning_a_language_without_asking_to_switch_is_not_a_switch_request() -> None:
     """Naming a language is not the same as asking to change to it."""
-    result = _NLU.understand("mi tarjeta es de crédito, en español por favor", language_hint=None)
+    result = _understand("mi tarjeta es de crédito, en español por favor", language_hint=None)
 
     assert result.intent is not NluIntent.SWITCH_LANGUAGE
 
@@ -107,21 +115,21 @@ def test_mentioning_a_language_without_asking_to_switch_is_not_a_switch_request(
 )
 def test_the_language_is_detected_from_keywords(text: str, language: str) -> None:
     """Each language's own vocabulary is enough to identify it."""
-    result = _NLU.understand(text, language_hint=None)
+    result = _understand(text, language_hint=None)
 
     assert result.language == language
 
 
 def test_a_language_hint_breaks_a_tie_when_nothing_is_detected() -> None:
     """With no keyword match at all, the hint carries the language forward."""
-    result = _NLU.understand("123456", language_hint="pt")
+    result = _understand("123456", language_hint="pt")
 
     assert result.language == "pt"
 
 
 def test_a_policy_question_carries_the_query_text() -> None:
     """The policy query is available for the retrieval step to search with."""
-    result = _NLU.understand(
+    result = _understand(
         "¿cuánto tiempo tengo para disputar un cargo duplicado?", language_hint=None
     )
 

@@ -12,8 +12,14 @@ from __future__ import annotations
 import pytest
 
 from app.conversation.llm_understanding import LlmNlu
-from app.conversation.understanding import UnderstandingUnavailable
-from app.llm.client import FakeLlm, LlmRequestRejected, LlmUnavailable
+from app.conversation.understanding import TurnAccounting, UnderstandingUnavailable
+from app.llm.client import (
+    CompletionRequest,
+    CompletionResult,
+    FakeLlm,
+    LlmRequestRejected,
+    LlmUnavailable,
+)
 from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult
 
 _MODEL = "claude-haiku-4-5-20251001"
@@ -37,7 +43,7 @@ def test_a_well_formed_tool_call_maps_to_a_validated_nlu_result() -> None:
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result = nlu.understand("no reconozco un cargo de Amazon", language_hint="es")
+    result, accounting = nlu.understand("no reconozco un cargo de Amazon", language_hint="es")
 
     assert result.intent is NluIntent.FILE_DISPUTE
     assert result.confidence == 0.82
@@ -45,6 +51,9 @@ def test_a_well_formed_tool_call_maps_to_a_validated_nlu_result() -> None:
     assert result.transaction.merchant == "Amazon"
     assert str(result.transaction.amount) == "125.50"
     assert result.transaction.currency == "MXN"
+    assert accounting == TurnAccounting(
+        model=_MODEL, prompt_version="1", input_tokens=0, output_tokens=0, latency_ms=0.0
+    )
 
 
 def test_empty_text_is_unusable_without_calling_the_model() -> None:
@@ -52,14 +61,15 @@ def test_empty_text_is_unusable_without_calling_the_model() -> None:
     llm = FakeLlm(responses=[])
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result = nlu.understand("   ", language_hint="es")
+    result, accounting = nlu.understand("   ", language_hint="es")
 
     assert result == NluResult.unusable()
+    assert accounting is None
     assert llm.requests == []
 
 
 def test_a_transient_port_failure_raises_understanding_unavailable() -> None:
-    """A transient failure (E9) is not the customer's own ambiguity: it is raised, not folded
+    """A transient failure is not the customer's own ambiguity: it is raised, not folded
     into ``unusable()``, so the caller never spends a clarification-budget attempt on an outage."""
     llm = FakeLlm(responses=[LlmUnavailable("timed out")])
     nlu = LlmNlu(llm, model=_MODEL)
@@ -74,9 +84,10 @@ def test_a_permanent_port_failure_still_becomes_unusable_understanding() -> None
     llm = FakeLlm(responses=[LlmRequestRejected("bad credentials")])
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result = nlu.understand("hola", language_hint=None)
+    result, accounting = nlu.understand("hola", language_hint=None)
 
     assert result == NluResult.unusable()
+    assert accounting is None
 
 
 def test_a_tool_call_missing_a_required_field_falls_back_to_unusable() -> None:
@@ -84,9 +95,10 @@ def test_a_tool_call_missing_a_required_field_falls_back_to_unusable() -> None:
     llm = FakeLlm(responses=[{"confidence": 0.9, "mentions_second_dispute": False}])
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result = nlu.understand("algo", language_hint="es")
+    result, accounting = nlu.understand("algo", language_hint="es")
 
     assert result == NluResult.unusable()
+    assert accounting is not None  # the call itself completed; only the arguments were incomplete
 
 
 def test_an_overlong_free_text_field_is_truncated_and_repaired() -> None:
@@ -103,7 +115,7 @@ def test_an_overlong_free_text_field_is_truncated_and_repaired() -> None:
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result = nlu.understand("un cargo grande", language_hint="es")
+    result, _accounting = nlu.understand("un cargo grande", language_hint="es")
 
     assert result.intent is NluIntent.FILE_DISPUTE
     assert result.transaction.merchant == "A" * 80
@@ -123,7 +135,7 @@ def test_an_invalid_enum_value_is_nulled_and_repaired() -> None:
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result = nlu.understand("hola", language_hint="es")
+    result, _accounting = nlu.understand("hola", language_hint="es")
 
     assert result.intent is NluIntent.SMALL_TALK
     assert result.language is None
@@ -142,7 +154,7 @@ def test_an_out_of_range_choice_is_nulled_and_repaired() -> None:
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result = nlu.understand("el noveno", language_hint="es")
+    result, _accounting = nlu.understand("el noveno", language_hint="es")
 
     # choice=None together with intent=CHOICE fails the contract's own slot-ownership rule, so
     # this is a case a bounded repair cannot rescue: the whole result falls back to unusable.
@@ -162,7 +174,7 @@ def test_a_confirmation_that_belongs_to_its_intent_maps_cleanly() -> None:
     )
     nlu = LlmNlu(llm, model=_MODEL)
 
-    result = nlu.understand("sí, confirmo", language_hint="es")
+    result, _accounting = nlu.understand("sí, confirmo", language_hint="es")
 
     assert result.confirmation is ConfirmationAnswer.YES
 
@@ -202,3 +214,30 @@ def test_a_missing_language_hint_is_rendered_as_unknown_not_left_blank() -> None
     nlu.understand("algo", language_hint=None)
 
     assert "unknown" in llm.requests[0].user_text
+
+
+def test_a_successful_calls_accounting_matches_the_completions_own_fields() -> None:
+    """Every field of ``TurnAccounting`` is a direct copy of the completion's own, not derived."""
+
+    class _FixedResultLlm:
+        def complete(self, request: CompletionRequest) -> CompletionResult:
+            return CompletionResult(
+                tool_input={
+                    "intent": "unclear",
+                    "confidence": 0.2,
+                    "mentions_second_dispute": False,
+                },
+                model=request.model,
+                prompt_version=request.prompt_version,
+                input_tokens=120,
+                output_tokens=40,
+                latency_ms=812.5,
+            )
+
+    nlu = LlmNlu(_FixedResultLlm(), model=_MODEL)
+
+    _result, accounting = nlu.understand("algo", language_hint="es")
+
+    assert accounting == TurnAccounting(
+        model=_MODEL, prompt_version="1", input_tokens=120, output_tokens=40, latency_ms=812.5
+    )

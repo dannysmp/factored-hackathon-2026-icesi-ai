@@ -33,7 +33,7 @@ Design Principles
 - Structured JSON logging (``app.observability.logging``) is installed before anything else runs,
   so every event this factory or a route logs, including a start-up failure, is already a JSON
   line carrying the service's own identity and version.
-- Bounded retries and one circuit breaker per external dependency (E9) sit in front of the LLM
+- Bounded retries and one circuit breaker per external dependency sit in front of the LLM
   client and the tool port, built once and shared across every turn the app serves — never rebuilt
   per request, since breaker state held on an object rebuilt every request could never trip.
 
@@ -47,8 +47,10 @@ Authentication routes: see ``app.api.auth``. The turns route: see ``app.api.turn
 
 Limitations
 -----------
-Per-turn cost and latency metrics are not implemented yet; every log line already carries a trace
-id and, once authenticated, a session id (``app.observability.logging``).
+Tracing is not implemented yet; every log line already carries a trace id and, once
+authenticated, a session id (``app.observability.logging``), and per-turn cost and latency are
+already logged from the dialogue controller (``app.conversation.controller``,
+``app.observability.turn_metrics``).
 """
 
 from __future__ import annotations
@@ -104,9 +106,9 @@ from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.ops_meta import read_data_as_of  # The seed's own reference date
 from app.persistence.reads import PostgresToolPort
 from app.persistence.signin_audit import PostgresSignInAuditSink  # The demo broker's audit store
-from app.reliability.breaker import InMemoryCircuitBreaker  # E9: shared per dependency
-from app.reliability.retry import RetriedLlmClient, RetryPolicy  # E9: bounded retry
-from app.reliability.tool_port import RetriedToolPort  # E9: bounded retry for the tool port
+from app.reliability.breaker import InMemoryCircuitBreaker  # Shared per dependency
+from app.reliability.retry import RetriedLlmClient, RetryPolicy  # Bounded retry
+from app.reliability.tool_port import RetriedToolPort  # Bounded retry for the tool port
 from app.retrieval.lexical import LexicalRetriever
 from app.security.demo_personas import (  # The demo broker's persona list
     PersonaList,
@@ -278,7 +280,7 @@ def _controller_factory(
 
     Every dependency that needs ``DATABASE_URL`` or an LLM provider key is resolved inside the
     returned closure, not here (see the module's own Design Principles): building the factory
-    itself never requires them. The LLM client and both circuit breakers (E9) are the one
+    itself never requires them. The LLM client and both circuit breakers are the one
     exception to "built inside the closure" — they are built once, here, and shared by every
     call the closure makes for the lifetime of this app: breaker state held on an object rebuilt
     every request would reset every request and could never trip.
