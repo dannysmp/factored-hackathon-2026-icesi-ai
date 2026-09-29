@@ -10,7 +10,7 @@ AWS provisioning for the deployed stack (ADR-13: one EC2 host, ECR, docker compo
 | `scripts/02-create-ecr-repos.sh` | `dispute-intake-backend` and `dispute-intake-web`: scan-on-push, immutable tags, untagged images expire after 7 days. Postgres and Metabase use their own official images and need no repository here. |
 | `scripts/03-create-instance-role.sh` | The EC2 instance's own role (`dispute-intake-instance`): reachable by Systems Manager (so a deploy needs no SSH key), read access to this project's own SSM path prefix (`/transaction-disputes/prod/*`, where the model API key already lives) and its decryption, pull access to this project's own two ECR repositories, and CloudWatch Logs write. No S3 access: serving never queries the data lake, so this role does not need it. |
 | `scripts/04-launch-instance.sh` | A security group open on 80/443 only, a `t3.large` instance in the default VPC with Docker installed by its user data, and a static Elastic IP. |
-| `scripts/05-deploy.sh` | Brings the compose stack up on the tagged host over SSM (no SSH): embeds the current `docker-compose.yml`, `docker-compose.prod.yml` and `infra/Caddyfile` in the command; the host reads its own two secrets from SSM with its own role. Prints the sslip.io host name on success. |
+| `scripts/05-deploy.sh` | Brings the compose stack up on the tagged host over SSM (no SSH): embeds the current `docker-compose.yml`, `docker-compose.prod.yml` and `infra/Caddyfile` in the command; the host reads its own secrets from SSM with its own role, including the demo sign-in access codes when they exist (ADR-18) — absent, sign-in just stays disabled, nothing fails. Prints the sslip.io host name on success. |
 | `scripts/06-smoke-test.sh` | Proves the deployed path answers over HTTPS: the health endpoint and the web static page, retrying while Caddy's certificate issuance and the containers' own start-up catch up. Its `--dashboard` flag additionally proves the `dashboard.` subdomain reaches Metabase. |
 | `scripts/07-teardown.sh` | Reverses `04-launch-instance.sh`: terminates the tagged instance, releases its Elastic IP, deletes its security group. Leaves the OIDC role, the instance role and the ECR repositories in place. |
 | `scripts/08-deploy-metabase.sh` | Creates Metabase's own database and role, sets `analytics_reader`'s password, brings up the `metabase` service, completes its first-run admin setup and connects the `analytics` schema — then swaps in the Caddyfile that routes the `dashboard.` subdomain to it, only once all of that has succeeded (ADR-11). Idempotent: re-running it against an already-provisioned deployment reconciles credentials and the Caddy config without repeating setup. Once Metabase is healthy, it also captures and logs a `docker stats --no-stream` reading of all five services sharing the host (ADR-11's own capacity requirement). |
@@ -44,6 +44,17 @@ the dashboard.
   so the workflow can compose the CI deploy role's ARN without ever writing the number into this
   repository.
 
+**Optional prerequisites, to turn on real sign-in** (ADR-18) — a deployment without these still
+succeeds; the backend just runs with both sign-in brokers disabled, same as every smoke run so
+far. Written the same way, via `infra/scripts/put-secret.sh`, all read by `05-deploy.sh`:
+- `demo-signin-access-code` — the customer broker's shared secret (at least 16 characters).
+  Creating it is what turns `DEMO_SIGNIN_ENABLED` on; there is no separate toggle to set.
+- `demo-agent-access-code` and `agent-session-signing-key` — the agent broker's own access code
+  and the key that signs agent session tokens (`agent-session-signing-key` needs at least 32
+  characters, at least 8 distinct — `openssl rand -hex 32 | infra/scripts/put-secret.sh
+  agent-session-signing-key`). Both must exist together to turn `DEMO_AGENT_SIGNIN_ENABLED` on;
+  either alone leaves it off.
+
 **Additional one-time prerequisites, before the first run with `deploy_metabase` enabled** — each
 written the same way, via `infra/scripts/put-secret.sh`:
 - `metabase-db-password` — Metabase's own application-database password.
@@ -63,9 +74,10 @@ written the same way, via `infra/scripts/put-secret.sh`:
 
 - **Running the scripts against AWS by hand.** They are prepared and reviewed here; the deploy
   workflow is what actually invokes them.
-- **The demonstration sign-in access codes** and the Metabase administrator credentials: created
-  under the same `/transaction-disputes/prod/*` SSM prefix, the same way, when each is first
-  needed — never in this repo.
+- **The actual secret values** — the demonstration sign-in access codes, the agent
+  session-signing key, the Metabase administrator credentials: created under the same
+  `/transaction-disputes/prod/*` SSM prefix, the same way, when each is first needed — never in
+  this repo. Only the deploy pipeline's own wiring to read them lives here.
 
 ## The host name
 
@@ -91,10 +103,12 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compos
   up -d metabase   # 08-deploy-metabase.sh runs this, after creating its database and role
 ```
 
-`ECR_REGISTRY`, `IMAGE_TAG`, `ANTHROPIC_API_KEY`, `SESSION_SIGNING_KEY` and `HOST_NAME` are read
-from the environment; the deploy pipeline sets them (each secret by reading its SSM parameter by
-name, never printing its value). Metabase's own `MB_DB_PASS` and `MB_SESSION_SECRET_KEY` are read
-the same way, by `08-deploy-metabase.sh`.
+`ECR_REGISTRY`, `IMAGE_TAG`, `ANTHROPIC_API_KEY`, `SESSION_SIGNING_KEY`, `DEMO_SIGNIN_ACCESS_CODE`,
+`DEMO_AGENT_ACCESS_CODE`, `AGENT_SESSION_SIGNING_KEY` and `HOST_NAME` are read from the
+environment; the deploy pipeline sets them (each secret by reading its SSM parameter by name,
+never printing its value — the three demo sign-in ones resolve to an empty string when their
+parameter doesn't exist yet, not an error). Metabase's own `MB_DB_PASS` and `MB_SESSION_SECRET_KEY`
+are read the same way, by `08-deploy-metabase.sh`.
 
 `infra/Caddyfile.with-metabase` is the Caddyfile that also routes the dashboard subdomain; it
 replaces the plain `infra/Caddyfile` on the host only once Metabase's first-run setup has
