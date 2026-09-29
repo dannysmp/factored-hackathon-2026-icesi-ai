@@ -386,6 +386,7 @@ def test_a_truncation_logs_a_warning_naming_only_the_lengths(
     assert len(warnings) == 1
     assert "original_length=150" in warnings[0].message
     assert "kept_length=80" in warnings[0].message
+    assert "request_id=" in warnings[0].message  # SECURITY.md: every operational line carries one
     assert overlong not in warnings[0].message
 
 

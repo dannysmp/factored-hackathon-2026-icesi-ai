@@ -179,9 +179,10 @@ def clamp_merchant(value: str | None) -> str | None:
     it (never a policy input, never an instruction channel), so shortening it changes nothing
     about correctness or safety, only how much of it a customer sees. A blank or whitespace-only
     value normalizes to ``None`` (absent), matching the contract's own "absent, not empty" rule.
-    A truncation logs a warning naming only the lengths involved, never the value, so a future
-    data-profiling pass has real evidence of how often a stored merchant name actually exceeds
-    the contract's bound.
+    A truncation logs a warning naming only the lengths involved and the request id, never the
+    value, so a future data-profiling pass has real evidence of how often a stored merchant name
+    actually exceeds the contract's bound, and the line still carries the request identifier
+    every operational log line in this codebase does (``SECURITY.md``).
     """
     if value is None:
         return None
@@ -193,9 +194,10 @@ def clamp_merchant(value: str | None) -> str | None:
         # minimization applies regardless) — only that a clamp fired and by how much, so a future
         # data-profiling pass has real evidence of how often this happens.
         logger.warning(
-            "merchant_name_truncated original_length=%d kept_length=%d",
+            "merchant_name_truncated original_length=%d kept_length=%d request_id=%s",
             len(stripped),
             MERCHANT_MAX_LENGTH,
+            current_request_id(),
         )
     return stripped[:MERCHANT_MAX_LENGTH]
 
