@@ -170,7 +170,7 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
       reference_date: '2026-06-18',
       created_at: '2026-06-16T18:15:00Z',
       language: 'en',
-      needs_language_routing: false,
+      needs_language_routing: true,
       trigger: 'customer_request',
       customer: { first_name: 'Emma', masked_id: '****91' },
       category: 'duplicate_charge',

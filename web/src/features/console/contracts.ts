@@ -136,7 +136,11 @@ export type Slot = z.infer<typeof SlotSchema>
  * (`Money.model_dump_json()` emits `"250.00"`, never a JSON number, to keep exact precision). */
 export const MoneySchema = z
   .object({
-    amount: z.string().regex(/^\d{1,12}\.\d{2}$/),
+    // `decimal_places=2` on the Python side bounds the fraction at *most* two digits; it is not
+    // a fixed width, and Python's own `Decimal` serialization never pads trailing zeros back in
+    // (`Decimal('250')` emits `"250"`, not `"250.00"`) — confirmed against a live
+    // `Money(...).model_dump_json()` call, for 0, 1 and 2 fraction digits.
+    amount: z.string().regex(/^\d{1,12}(\.\d{1,2})?$/),
     currency: z.string().regex(/^[A-Z]{3}$/),
   })
   .strict()
@@ -259,6 +263,12 @@ export const HandoffPacketSchema = z
     open_questions: z.array(OpenQuestionSchema).default([]),
   })
   .strict()
+  // `_language_flag_follows_the_language` (contracts/service_v1/handoff.py): Portuguese and
+  // English flag the packet so the console can route it — the flag is true exactly when the
+  // language is not Spanish, never independently of it.
+  .refine((packet) => packet.needs_language_routing === (packet.language !== 'es'), {
+    message: 'needs_language_routing must be true exactly when language is not es',
+  })
 export type HandoffPacket = z.infer<typeof HandoffPacketSchema>
 
 /** `TimelineEntry` (contracts/service_v1/console.py) — never message text (AC-E10-05). */
