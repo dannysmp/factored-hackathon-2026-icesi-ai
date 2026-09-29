@@ -138,9 +138,7 @@ def _is_header(columns: tuple[str, ...], spec: TableSpec) -> bool:
         return False
     declared = set(spec.column_names)
     first_extra = next((i for i, name in enumerate(columns) if name not in declared), None)
-    if first_extra is not None and any(name in declared for name in columns[first_extra:]):
-        return False
-    return True
+    return first_extra is None or not any(name in declared for name in columns[first_extra:])
 
 
 def _partition_day(relative: str, table_name: str) -> tuple[date | None, bool]:
