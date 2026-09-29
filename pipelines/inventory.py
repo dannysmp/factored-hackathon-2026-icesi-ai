@@ -125,12 +125,22 @@ def _read_header(path: Path) -> tuple[tuple[str, ...] | None, bool]:
 def _is_header(columns: tuple[str, ...], spec: TableSpec) -> bool:
     """True when ``columns`` looks like the header of ``spec``'s files rather than a data row.
 
-    Every name must be an identifier and the primary-key columns must be present. A file that
-    lacks its header row would otherwise put its first data row into the report as column names.
+    Every name must be an identifier and the primary-key columns must be present. A name outside
+    the declared columns (a provider's own later addition, say) is tolerated only as a trailing
+    extra, after every declared name already in ``columns`` — one appearing earlier looks like a
+    data row whose values happen to be identifier-shaped, not a header with a genuine extension
+    column. A file that lacks its header row would otherwise put its first data row into the
+    report as column names.
     """
-    return all(_IDENTIFIER.fullmatch(name) for name in columns) and set(spec.primary_key) <= set(
-        columns
-    )
+    if not all(_IDENTIFIER.fullmatch(name) for name in columns):
+        return False
+    if not set(spec.primary_key) <= set(columns):
+        return False
+    declared = set(spec.column_names)
+    first_extra = next((i for i, name in enumerate(columns) if name not in declared), None)
+    if first_extra is not None and any(name in declared for name in columns[first_extra:]):
+        return False
+    return True
 
 
 def _partition_day(relative: str, table_name: str) -> tuple[date | None, bool]:
