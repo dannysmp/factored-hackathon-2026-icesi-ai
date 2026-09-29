@@ -142,7 +142,9 @@ class RetriedToolPort:
     def get_case(self, case_number: str) -> CaseRecord | ToolFailure | None:
         return self._call(Tool.GET_CASE, lambda: self._inner.get_case(case_number))
 
-    def evaluate_dispute(self, request: EvaluateDisputeRequest) -> PolicyDecision | ToolFailure:
+    def evaluate_dispute(
+        self, request: EvaluateDisputeRequest
+    ) -> PolicyDecision | ToolFailure | None:
         return self._call(Tool.EVALUATE_DISPUTE, lambda: self._inner.evaluate_dispute(request))
 
     def create_dispute_case(

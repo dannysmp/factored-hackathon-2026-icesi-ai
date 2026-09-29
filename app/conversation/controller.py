@@ -586,7 +586,7 @@ class DialogueController:
             tool_contracts.Tool.EVALUATE_DISPUTE,
             EvaluateDisputeRequest(transaction_ref=state.selected_ref, category=state.category),
         )
-        if isinstance(decision, ToolFailure):
+        if isinstance(decision, ToolFailure) or decision is None:
             return self._tool_failure_handoff(state, tool=tool_contracts.Tool.EVALUATE_DISPUTE)
         if decision.outcome is not Outcome.ELIGIBLE:
             return self._present_non_eligible(state, state.category, decision)
@@ -725,7 +725,7 @@ class DialogueController:
             tool_contracts.Tool.EVALUATE_DISPUTE,
             EvaluateDisputeRequest(transaction_ref=ref, category=category),
         )
-        if isinstance(decision, ToolFailure):
+        if isinstance(decision, ToolFailure) or decision is None:
             return self._tool_failure_handoff(state, tool=tool_contracts.Tool.EVALUATE_DISPUTE)
         if decision.outcome is not Outcome.ELIGIBLE:
             return self._present_non_eligible(state, category, decision)

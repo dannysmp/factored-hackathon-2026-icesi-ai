@@ -560,11 +560,15 @@ class PostgresToolPort:
             row = cur.fetchone()
         return row[0] if row is not None else None
 
-    def evaluate_dispute(self, request: EvaluateDisputeRequest) -> PolicyDecision | ToolFailure:
+    def evaluate_dispute(
+        self, request: EvaluateDisputeRequest
+    ) -> PolicyDecision | ToolFailure | None:
         """The policy decision for ``request``, computed fresh; no side effect.
 
         A ``transaction_ref`` that does not exist or belongs to another customer answers with
-        the same ``ToolFailure`` either way (AC-E4-06); see the module's Design Principles.
+        the same ``None`` either way (AC-E4-06); see the module's Design Principles. ``None`` is a
+        normal matchless result, never a ``ToolFailure`` — reserved for what the store itself
+        could not do.
         """
         try:
             resolved = self._resolve_transaction(request.transaction_ref)
@@ -575,13 +579,14 @@ class PostgresToolPort:
         # Resolved but not owned by this session's customer, and resolved to nothing at all,
         # must cost the same number of store round-trips: a query run only for an owned
         # transaction is a timing side-channel that tells a caller a foreign reference exists,
-        # even though the response body is identical either way (AC-E4-06, issue #73).
+        # even though the response body is identical either way (AC-E4-06, issue #73). That
+        # symmetry rests on the shared code path above, not on which value each branch returns.
         if resolved is None:
             self._write_audit(AuditAction.TRANSACTION_VIEWED, None)
-            return ToolFailure(tool=ToolName.EVALUATE_DISPUTE, cause="error", retryable=False)
+            return None
         if not resolved.owned:
             self._write_audit(AuditAction.TRANSACTION_PROBED, None)
-            return ToolFailure(tool=ToolName.EVALUATE_DISPUTE, cause="error", retryable=False)
+            return None
 
         try:
             has_open_case = self._open_case_number_for(request.transaction_ref) is not None
