@@ -193,23 +193,33 @@ def redact_pan(text: str) -> PanRedaction:
     return PanRedaction(masked="".join(pieces), found=True)
 
 
-def safe_hex_suffix(nbytes: int = 4, *, preceding_digits: int = 0) -> str:
-    """An uppercase random hex string that cannot combine with ``preceding_digits`` digits
-    immediately before it into a card-shaped run.
+def _longest_digit_run(text: str) -> int:
+    """The length of the longest maximal run of decimal digits anywhere in ``text``."""
+    return max((len(run) for run in re.findall(r"\d+", text)), default=0)
 
-    A customer-facing reference number built as ``<preceding-digits>-<this suffix>`` (this
-    project's ``T-YYYYMMDD-XXXXXXXX`` handoff tickets and ``CASE-YYYYMMDD-XXXXXXXX`` case numbers)
-    joins the two halves with a hyphen — a character :func:`redact_pan`'s own digit-run detector
-    also treats as joining. A hex suffix whose leading characters happen to all be digits (no
-    ``A``-``F``) then combines with the digits before it into one run; once that run reaches this
-    module's own ``_MIN_PAN_DIGITS`` floor, it is occasionally Luhn-valid purely by chance, and a
-    plain reference number gets treated as a leaked card number. This is regenerated until its
-    leading digit run is short enough that no combination with ``preceding_digits`` reaches that
-    floor, rather than trusting a probability this project has already seen fail in practice.
+
+def safe_hex_suffix(nbytes: int = 4, *, preceding_digits: int = 0) -> str:
+    """An uppercase random hex string with no digit run — on its own, or combined with
+    ``preceding_digits`` digits immediately before it — long enough to be card-shaped.
+
+    Two things can go wrong with a random hex string used in a customer-facing identifier, and
+    this guards against both:
+
+    - Joined right after a run of digits with no separator :func:`redact_pan`'s own detector
+      treats as breaking a run (a hyphen, for instance — the join this project's
+      ``T-YYYYMMDD-XXXXXXXX`` handoff tickets and ``CASE-YYYYMMDD-XXXXXXXX`` case numbers use), a
+      suffix whose leading characters happen to all be digits (no ``A``-``F``) extends that run.
+    - Entirely on its own, once a suffix is long enough (``request_id``'s 16-character suffix, not
+      joined to anything), a run of digits can reach the floor without ever touching either edge.
+
+    Both failures mean the same thing: some maximal digit run — considering ``preceding_digits``
+    real digits glued to this suffix's own start — reaches this module's own ``_MIN_PAN_DIGITS``
+    floor, and is then occasionally Luhn-valid purely by chance, so a plain identifier gets treated
+    as a leaked card number. This is regenerated until no such run exists, rather than trusting a
+    probability this project has already seen fail in practice twice.
     """
-    max_leading_digits = max(0, _MIN_PAN_DIGITS - preceding_digits - 1)
     while True:
         candidate = secrets.token_hex(nbytes).upper()
-        leading_digits = len(candidate) - len(candidate.lstrip("0123456789"))
-        if leading_digits <= max_leading_digits:
+        probe = ("0" * preceding_digits) + candidate
+        if _longest_digit_run(probe) < _MIN_PAN_DIGITS:
             return candidate

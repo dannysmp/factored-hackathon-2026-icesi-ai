@@ -62,7 +62,6 @@ from __future__ import annotations
 # Standard libraries
 import logging  # Structured events about refused sessions
 import re  # Safe shape of a client-supplied request identifier
-import secrets  # Generated request identifiers
 from collections.abc import Iterable, Mapping, MutableMapping  # Types of ASGI messages
 from contextvars import ContextVar  # Request identifier visible to loggers
 
@@ -70,6 +69,7 @@ from contextvars import ContextVar  # Request identifier visible to loggers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send  # ASGI protocol types
 
 # Local modules
+from app.llm.masking import safe_hex_suffix  # A suffix that can't look card-shaped in a log line
 from app.security.errors import ErrorCode, ProblemError, problem_response  # Failure format
 from app.security.sessions import (  # Session verification
     AgentPrincipal,
@@ -156,7 +156,7 @@ class RequestContextMiddleware:
         request_id = (
             supplied
             if supplied is not None and REQUEST_ID_PATTERN.fullmatch(supplied)
-            else f"req_{secrets.token_hex(8)}"
+            else f"req_{safe_hex_suffix(nbytes=8).lower()}"
         )
         _state(scope)["request_id"] = request_id
         token = _request_id.set(request_id)
