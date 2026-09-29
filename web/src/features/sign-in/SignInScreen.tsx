@@ -4,6 +4,7 @@ import type { DemoPersonaSummary } from './contracts'
 import type { Lang } from '../customer-chat/contracts'
 import type { SignInAudience } from './api'
 import { fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
+import styles from './SignInScreen.module.css'
 
 type DirectoryStatus = 'loading' | 'ready' | 'error'
 
@@ -78,7 +79,7 @@ export function SignInScreen({
 
   if (directoryStatus === 'loading') {
     return (
-      <p aria-live="polite" role="status">
+      <p className={styles.status} aria-live="polite" role="status">
         Loading the demonstration sign-in…
       </p>
     )
@@ -86,46 +87,66 @@ export function SignInScreen({
 
   if (directoryStatus === 'error') {
     return (
-      <div role="alert">
+      <div role="alert" className={styles.error}>
         <p>The demonstration sign-in could not be reached. Please try again.</p>
       </div>
     )
   }
 
   return (
-    <section aria-label="Demonstration sign-in">
-      <p>This is a demonstration. Sign in with one of the personas below.</p>
-      <form onSubmit={handleSubmit}>
-        <label htmlFor={personaFieldId}>Persona</label>
-        <select
-          id={personaFieldId}
-          value={selectedSlug}
-          disabled={submitting}
-          onChange={(event) => {
-            setSelectedSlug(event.target.value)
-          }}
+    <section aria-label="Demonstration sign-in" className={styles.screen}>
+      <p className={styles.intro}>
+        This is a demonstration. Sign in with one of the personas below.
+      </p>
+      <form className={styles.form} onSubmit={handleSubmit}>
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor={personaFieldId}>
+            Persona
+          </label>
+          <select
+            id={personaFieldId}
+            className={styles.select}
+            value={selectedSlug}
+            disabled={submitting}
+            onChange={(event) => {
+              setSelectedSlug(event.target.value)
+            }}
+          >
+            {personas.map((persona) => (
+              <option key={persona.slug} value={persona.slug}>
+                {persona.display_name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor={accessCodeFieldId}>
+            Access code
+          </label>
+          <input
+            id={accessCodeFieldId}
+            type="password"
+            className={styles.accessCode}
+            value={accessCode}
+            disabled={submitting}
+            onChange={(event) => {
+              setAccessCode(event.target.value)
+            }}
+          />
+        </div>
+
+        {signInError !== null && (
+          <p role="alert" className={styles.formError}>
+            {signInError}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          className={styles.submit}
+          disabled={submitting || selectedSlug === '' || accessCode === ''}
         >
-          {personas.map((persona) => (
-            <option key={persona.slug} value={persona.slug}>
-              {persona.display_name}
-            </option>
-          ))}
-        </select>
-
-        <label htmlFor={accessCodeFieldId}>Access code</label>
-        <input
-          id={accessCodeFieldId}
-          type="password"
-          value={accessCode}
-          disabled={submitting}
-          onChange={(event) => {
-            setAccessCode(event.target.value)
-          }}
-        />
-
-        {signInError !== null && <p role="alert">{signInError}</p>}
-
-        <button type="submit" disabled={submitting || selectedSlug === '' || accessCode === ''}>
           Sign in
         </button>
       </form>
