@@ -114,6 +114,36 @@ def test_header_that_is_not_utf8_is_counted_not_fatal(tmp_path: Path) -> None:
     assert inventory.header_variants == ()
 
 
+def test_a_header_with_an_undeclared_column_before_a_declared_one_is_invalid(
+    tmp_path: Path,
+) -> None:
+    """A data row whose values happen to be identifier-shaped and cover the primary key must not
+    be mistaken for a header just because it also includes an undeclared name — unless that name
+    comes strictly after every declared one, it looks like a data row, not a genuine header with
+    a trailing extension column."""
+    path = tmp_path / "transactions/year=2025/month=01/day=10/transactions_20250110.csv"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"transaction_id,unexpected_extra_column,customer_id\n")
+
+    inventory = scan_table(tmp_path, table("transactions"))
+
+    assert inventory.header_variants == ()
+    assert inventory.invalid_headers == 1
+
+
+def test_a_header_with_a_trailing_undeclared_column_is_still_valid(tmp_path: Path) -> None:
+    """An undeclared name appearing only after every declared one is tolerated: a provider's own
+    later extension column, not evidence the row is data rather than a header."""
+    path = tmp_path / "transactions/year=2025/month=01/day=10/transactions_20250110.csv"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"transaction_id,customer_id,trailing_extra_column\n")
+
+    inventory = scan_table(tmp_path, table("transactions"))
+
+    assert inventory.invalid_headers == 0
+    assert len(inventory.header_variants) == 1
+
+
 def test_files_without_a_byte_order_mark_are_not_counted(tmp_path: Path) -> None:
     """Only files that start with the mark contribute to the byte-order-mark count."""
     path = tmp_path / "branches.csv"
