@@ -18,8 +18,7 @@
 #   Idempotent: `docker compose up -d` reconciles a running stack to the new
 #   image tag rather than erroring on one already up.
 # Usage:
-#   ECR_REGISTRY=<account>.dkr.ecr.us-east-1.amazonaws.com IMAGE_TAG=<sha> \
-#     infra/scripts/05-deploy.sh
+#   IMAGE_TAG=<sha> infra/scripts/05-deploy.sh
 # =============================================================================
 
 set -euo pipefail
@@ -29,12 +28,20 @@ source lib/common.sh
 require_profile
 require_live_credentials
 
-: "${ECR_REGISTRY:?ECR_REGISTRY must be set}"
 : "${IMAGE_TAG:?IMAGE_TAG must be set}"
 
 REPO_ROOT="$(cd ../.. && pwd)"
 readonly REPO_ROOT
 readonly SSM_SECRET_PREFIX="/transaction-disputes/prod"
+
+# Resolved here, not taken as an input: GitHub Actions silently blanks a job output whose value
+# contains a registered secret ("Skip output '...' since it may contain secret"), and it matches
+# by value, not by where the value came from — passing this account-id-derived string as a
+# cross-job output is silently unusable once AWS_ACCOUNT_ID is a registered secret. A step within
+# the same job that builds the identical string is unaffected, since masking only blocks the
+# cross-job propagation. Resolving it fresh here sidesteps that rather than fighting it.
+account_id="$(aws sts get-caller-identity --query Account --output text)"
+readonly ECR_REGISTRY="${account_id}.dkr.ecr.${INFRA_REGION}.amazonaws.com"
 
 instance_id="$(aws ec2 describe-instances \
   --filters "Name=tag:${INFRA_TAG_KEY},Values=${INFRA_TAG_VALUE}" "Name=instance-state-name,Values=running" \
