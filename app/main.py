@@ -98,7 +98,10 @@ from app.domain.policy.loader import load_policy
 from app.domain.policy.models import Policy
 from app.llm.anthropic_client import AnthropicLlmClient
 from app.llm.client import LlmClient  # The port the retried client implements
-from app.observability.logging import configure_logging  # Structured logging, installed once
+from app.observability.logging import (  # Structured logging, installed once
+    configure_logging,
+    configure_logging_from_settings,
+)
 from app.persistence.audit import PostgresAuditSink
 from app.persistence.customers import customer_status  # The sandbox login's existence check
 from app.persistence.dialogue_store import PostgresDialogueStore
@@ -136,6 +139,26 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # Composition
 # -----------------------------------------------------------------------------
+
+
+def _load_settings_or_log_and_raise() -> Settings:
+    """Load settings, emitting a structured event first if that fails.
+
+    Logging is not installed yet at this point in the factory, so a load failure would otherwise
+    surface as an unstructured traceback with no queryable event; a fallback logger is installed
+    just for this one critical line.
+
+    Raises
+    ------
+    ConfigError
+        Naming every invalid key, never its value; re-raised after the event is logged.
+    """
+    try:
+        return load_settings()
+    except ConfigError as exc:
+        configure_logging_from_settings(None)
+        logger.critical("config_invalid detail=%s", exc)
+        raise
 
 
 def _signing_key(settings: Settings) -> SecretStr:
@@ -464,8 +487,8 @@ def create_app(
         Either demo broker is enabled and its persona file is missing, malformed, or names a persona
         that does not resolve to an Active seeded customer.
     """
-    # Resolve configuration once, failing fast before any route is registered
-    resolved = settings if settings is not None else load_settings()
+    # Resolve configuration once, failing fast before any route is registered.
+    resolved = settings if settings is not None else _load_settings_or_log_and_raise()
     configure_logging(
         resolved.log_level,
         service_version=resolved.service_version,

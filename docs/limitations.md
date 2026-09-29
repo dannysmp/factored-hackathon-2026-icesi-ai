@@ -52,12 +52,13 @@ carries it, not a promise about a later one.
   produced until those exist.
 - **The human-agent console is not yet built.** The customer-facing chat exists; the read-only
   queue view a human agent would use to handle an escalated case does not.
-- **Structured logging now runs across the service and every CLI entrypoint**: every line carries
-  a stable event name, the request's trace id and, once authenticated, its session id, with any
-  card-shaped digit run redacted before the line is written. **One start-up path is still not
-  covered**: configuration is loaded before logging is installed, so a configuration failure at
-  start-up still surfaces as an unstructured crash instead of a structured event; an operator
-  watching only the process output would see a traceback, not a queryable event, at that moment.
+- **Structured logging runs across the service and every CLI entrypoint, including a configuration
+  failure at start-up.** Every line carries a stable event name, the request's trace id and, once
+  authenticated, its session id, with any card-shaped digit run redacted before the line is
+  written. A configuration failure is caught before logging would otherwise be installed, so it
+  still emits a structured `config_invalid` event (naming the failing setting, never its value)
+  through a fallback logger before the process exits, rather than surfacing only as an
+  unstructured traceback.
 
 ## Deployment
 
