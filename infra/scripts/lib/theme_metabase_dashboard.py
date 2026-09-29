@@ -1,27 +1,49 @@
 #!/usr/bin/env python3
-"""Create or update the operations dashboard's panels, styled from the design-token palette.
+"""
+Operations Dashboard Theming
+=============================
 
-Stdlib only (``urllib.request``), matching every other Metabase-provisioning step in this
-directory: no package the deployed host doesn't already have. Run against Metabase's own HTTP
-API, on whichever host can reach it (loopback on the deployed host; a throwaway local container
-during development) — never against the database directly.
+Overview
+--------
+Creates or updates the operations dashboard's panels, styled from the design-token palette. Each
+panel pairs a text card naming its business question with a chart card whose series colors come
+from ``web/src/styles/tokens.css``'s light-mode hex values (Metabase renders one fixed theme, so
+the light-mode value is the one that applies).
 
-Each panel pairs a text card naming its business question with a chart card whose series colors
-come from ``web/src/styles/tokens.css``'s light-mode hex values (Metabase renders one fixed
-theme, so the light-mode value is the one that applies). Full "native" theming (logo, app name,
-instance-wide brand colors) is a paid Metabase feature this deployment doesn't have a license
-for — see ``docs/limitations.md`` — so this script scopes to what the open-source edition
-actually exposes: per-panel chart colors, content and layout.
+Scope
+-----
+In: the four panels defined below, each paired with a chart card and a text card, and the
+dashboard that holds them.
+Out: full native theming (logo, app name, instance-wide brand colors) — a paid Metabase feature
+this deployment doesn't have a license for; see ``docs/limitations.md``. Creating the underlying
+gold marts (``pipelines/gold.py``) or the Metabase admin account and datasource connection
+(``08-deploy-metabase.sh``, a prerequisite this script assumes already ran).
 
-Every step checks for an existing row by name before creating one, and updates it in place if
-found — the same convention ``08-deploy-metabase.sh`` already uses for the role, database and
-datasource connection — so re-running this script (every redeploy) converges to exactly the
-panels defined below, never duplicating them.
+Design Principles
+------------------
+- Stdlib only (``urllib.request``): no package the deployed host doesn't already have, matching
+  every other Metabase-provisioning step in this directory.
+- Every step checks for an existing row by name before creating one, and updates it in place if
+  found — the same convention ``08-deploy-metabase.sh`` already uses for the role, database and
+  datasource connection — so re-running this script (every redeploy) converges to exactly the
+  panels defined below, never duplicating them.
+- Prints a markdown checklist to stdout: one row per panel, naming its business question, the
+  mart it reads, its chart type, and the token/hex color actually confirmed on the card by
+  reading it back from the API — the same "prove what was actually written" discipline the
+  mart-load parity check already applies to row counts and checksums.
 
-Prints a markdown checklist to stdout: one row per panel, naming its business question, the mart
-it reads, its chart type, and the token/hex color actually confirmed on the card by reading it
-back from the API — the same "prove what was actually written" discipline the mart-load parity
-check already applies to row counts and checksums.
+Runtime Contract
+-----------------
+``main()``: reads ``MB_BASE_URL``, ``MB_ADMIN_EMAIL``, ``MB_ADMIN_PASSWORD`` from the environment,
+signs in, upserts every panel and the dashboard, and writes the checklist to stdout. Run against
+Metabase's own HTTP API, on whichever host can reach it (loopback on the deployed host; a
+throwaway local container during development) — never against the database directly.
+
+Limitations
+-----------
+Runs against a throwaway local Metabase container in this repository's own verification; running
+it against the real deployed instance is a deploy-time action
+(``10-configure-metabase-dashboard.sh`` over SSM), not something exercised from here.
 """
 
 from __future__ import annotations

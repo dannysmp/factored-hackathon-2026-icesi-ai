@@ -10,3 +10,4 @@ Generated reports. `make` targets rebuild them from the data and the code.
 | `risk-features.md` | `make features` | Yes: the periods, the features and their coverage, the columns left out on purpose and why |
 | `risk-signal.md` | `python -m pipelines.risk_signal` | Yes: fraud prevalence per band of the amount, hour and velocity features, training and validation periods only |
 | `workflow-analysis.md` | `make analyze` | Yes: dispute demand, resolution, sentiment, handling cost and target outcomes; the source of every figure quoted elsewhere |
+| `dashboard-theme-checklist.md` | `infra/scripts/10-configure-metabase-dashboard.sh` | Yes: each operations-dashboard panel's business question, mart and chart color, confirmed by reading it back from Metabase's own API |
