@@ -13,8 +13,8 @@ Scope
 -----
 In: listing and filtering ``handoff_outbox`` rows into ``QueueItem``s, computing each one's age and
 promised contact date against a supplied domain calendar.
-Out: one ticket's full packet and timeline (``TicketDetail`` — a later change, needing live
-transaction re-resolution and corpus source titles the queue view never touches), the console's own
+Out: one ticket's full packet and timeline (``app.persistence.ticket_detail``, needing live
+transaction re-resolution and corpus source titles this module never touches), the console's own
 routes and the audit-of-agent-reads write they must perform (ADR-17), writing to the outbox at all
 (``app.persistence.handoff_outbox``).
 
@@ -36,7 +36,10 @@ Design Principles
 Runtime Contract
 ----------------
 ``PostgresHandoffQueue(dsn, *, contact_days_priority, contact_days_default)`` with
-``list_tickets(filters, *, calendar) -> QueueResponse``.
+``list_tickets(filters, *, calendar) -> QueueResponse`` and
+``get_ticket(ticket_ref, *, calendar) -> QueueItem | None`` (unlike ``list_tickets``, not filtered
+by status — a resolved or rejected ticket a console session already had selected must still
+resolve, AC-E10-08).
 """
 
 from __future__ import annotations
@@ -139,3 +142,20 @@ class PostgresHandoffQueue:
             reference_date_origin=ReferenceDateOrigin(calendar.origin.value),
             items=tuple(items),
         )
+
+    def get_ticket(self, ticket_ref: str, *, calendar: DomainCalendar) -> QueueItem | None:
+        """One ticket by reference, whatever its status — a selected ticket that has since left
+        the open queue (resolved, rejected) must still resolve here (AC-E10-08), unlike
+        ``list_tickets``, which excludes both on purpose."""
+        with (
+            psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
+            conn.cursor() as cur,
+        ):
+            # The column list is a closed set of module constants, never request text, matching
+            # `_build_query`'s own justification above.
+            cur.execute(
+                f"SELECT {_COLUMNS} FROM handoff_outbox WHERE ticket_ref = %s",  # noqa: S608
+                (ticket_ref,),
+            )
+            row = cur.fetchone()
+        return None if row is None else self._row_to_item(row, calendar=calendar)
