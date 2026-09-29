@@ -34,6 +34,14 @@ describe('QueueItemSchema', () => {
   it('refuses a negative age', () => {
     expect(() => QueueItemSchema.parse({ ...BASE_ITEM, age_days: -1 })).toThrow()
   })
+
+  it('refuses a malformed reference_date, matching what the overdue comparison assumes', () => {
+    expect(() => QueueItemSchema.parse({ ...BASE_ITEM, reference_date: '18/06/2026' })).toThrow()
+  })
+
+  it('refuses a malformed created_at', () => {
+    expect(() => QueueItemSchema.parse({ ...BASE_ITEM, created_at: 'not a timestamp' })).toThrow()
+  })
 })
 
 describe('QueueResponseSchema', () => {

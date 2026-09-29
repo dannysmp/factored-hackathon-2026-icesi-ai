@@ -49,9 +49,13 @@ export const QueueItemSchema = z
     language: LangSchema,
     category: DisputeCategorySchema.nullable().default(null),
     status: TicketStatusSchema,
-    created_at: z.string().min(1),
-    reference_date: z.string().min(1),
-    promised_contact_by: z.string().min(1),
+    created_at: z.iso.datetime(),
+    // A plain ISO date (`YYYY-MM-DD`), not just a non-empty string: `QueueTable.tsx`'s own
+    // overdue check compares `reference_date`/`promised_contact_by` lexicographically, which is
+    // only a correct date comparison for well-formed ISO dates — the schema now enforces the
+    // shape that comparison already assumed.
+    reference_date: z.iso.date(),
+    promised_contact_by: z.iso.date(),
     age_days: z.number().int().min(0),
     priority: z.boolean(),
   })
@@ -60,7 +64,7 @@ export type QueueItem = z.infer<typeof QueueItemSchema>
 
 export const QueueResponseSchema = z
   .object({
-    reference_date: z.string().min(1),
+    reference_date: z.iso.date(),
     reference_date_origin: ReferenceDateOriginSchema,
     items: z.array(QueueItemSchema),
   })
