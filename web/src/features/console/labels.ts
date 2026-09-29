@@ -6,7 +6,15 @@
  * shown to the agent through `LANGUAGE_LABELS`, a small fixed Spanish-name lookup, not translated
  * through any per-viewer language mechanism.
  */
-import type { DisputeCategory, HandoffTrigger, Intent, Slot, TicketStatus } from './contracts'
+import type {
+  DisputeCategory,
+  HandoffTrigger,
+  Intent,
+  ReasonCode,
+  Slot,
+  TicketStatus,
+  TransactionStatus,
+} from './contracts'
 import type { Lang } from '../customer-chat/contracts'
 
 export const TRIGGER_LABELS: Record<HandoffTrigger, string> = {
@@ -45,7 +53,7 @@ export const LANGUAGE_LABELS: Record<Lang, string> = {
 
 /** `ReasonCode` (app/domain/policy/models.py) — every code the policy engine can return, shown
  * verbatim to the agent (AC-E10-02: "evidence: reason codes"). */
-export const REASON_CODE_LABELS: Record<string, string> = {
+export const REASON_CODE_LABELS: Record<ReasonCode, string> = {
   eligible: 'Elegible',
   product_out_of_scope: 'Producto fuera de alcance',
   transaction_type_not_disputable: 'Tipo de transacción no disputable',
@@ -64,7 +72,7 @@ export const REASON_CODE_LABELS: Record<string, string> = {
 }
 
 /** `TransactionStatus` (app/domain/policy/models.py) — the source's own transaction status. */
-export const TRANSACTION_STATUS_LABELS: Record<string, string> = {
+export const TRANSACTION_STATUS_LABELS: Record<TransactionStatus, string> = {
   Approved: 'Aprobada',
   Declined: 'Declinada',
   Pending: 'Pendiente',
