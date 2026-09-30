@@ -138,9 +138,16 @@ cd /opt/dispute-intake
 export ECR_REGISTRY='${ECR_REGISTRY}'
 export IMAGE_TAG='${IMAGE_TAG}'
 export HOST_NAME='${HOST_NAME}'
-export ANTHROPIC_API_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/anthropic-api-key --with-decryption --query Parameter.Value --output text)"
-export SESSION_SIGNING_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/session-signing-key --with-decryption --query Parameter.Value --output text)"
-export POSTGRES_PASSWORD="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/postgres-password --with-decryption --query Parameter.Value --output text)"
+# A plain assignment on its own line, then a separate "export VAR", not "export VAR=\"\$(...)\"":
+# combined with export (or local/declare/readonly), the exit status of a failing command
+# substitution is masked by the exit status of export itself, so "set -e" would never see the
+# failure and would carry on with an empty value instead of refusing the deploy.
+ANTHROPIC_API_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/anthropic-api-key --with-decryption --query Parameter.Value --output text)"
+export ANTHROPIC_API_KEY
+SESSION_SIGNING_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/session-signing-key --with-decryption --query Parameter.Value --output text)"
+export SESSION_SIGNING_KEY
+POSTGRES_PASSWORD="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/postgres-password --with-decryption --query Parameter.Value --output text)"
+export POSTGRES_PASSWORD
 resolve_optional_secret() {
   # "ParameterNotFound" is a stable error-type token the AWS CLI itself defines, not a
   # locale-dependent message string -- present in its output the same way regardless of
@@ -166,9 +173,15 @@ resolve_optional_secret() {
   rm -f "\${err_file}"
   exit 1
 }
-export DEMO_SIGNIN_ACCESS_CODE="\$(resolve_optional_secret demo-signin-access-code)"
-export DEMO_AGENT_ACCESS_CODE="\$(resolve_optional_secret demo-agent-access-code)"
-export AGENT_SESSION_SIGNING_KEY="\$(resolve_optional_secret agent-session-signing-key)"
+# Same split-assignment reason as above: "export VAR=\"\$(resolve_optional_secret ...)\"" would
+# mask the "exit 1" resolve_optional_secret itself returns on a genuine SSM error, hiding it
+# behind the exit status of export.
+DEMO_SIGNIN_ACCESS_CODE="\$(resolve_optional_secret demo-signin-access-code)"
+export DEMO_SIGNIN_ACCESS_CODE
+DEMO_AGENT_ACCESS_CODE="\$(resolve_optional_secret demo-agent-access-code)"
+export DEMO_AGENT_ACCESS_CODE
+AGENT_SESSION_SIGNING_KEY="\$(resolve_optional_secret agent-session-signing-key)"
+export AGENT_SESSION_SIGNING_KEY
 export DEMO_SIGNIN_ENABLED=false
 if [ -n "\${DEMO_SIGNIN_ACCESS_CODE}" ]; then export DEMO_SIGNIN_ENABLED=true; fi
 export DEMO_AGENT_SIGNIN_ENABLED=false
