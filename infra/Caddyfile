@@ -10,6 +10,15 @@
 #   hardcoded: today it is `<elastic-ip-with-dashes>.sslip.io`, so no domain
 #   purchase or DNS setup is needed; a real domain replaces it later by
 #   changing this one value.
+#   The backend routes carry the same request-body limit the application
+#   layer already enforces (`app/security/middleware.py`'s
+#   `MAX_BODY_BYTES = 64 * 1024`) — a bound at the edge protects the host
+#   before the application ever sees an oversized body. Given as a raw
+#   byte count (`65536`), not `64KB`: Caddy's `max_size` parses `KB` as
+#   decimal (1000 bytes), so `64KB` would reject at 64,000 bytes, a
+#   stricter, non-matching cutoff — verified against a real Caddy instance
+#   (a body of exactly 65536 bytes passes; 65537 is refused, identical to
+#   the application's own "exceeds the limit" comparison).
 # Usage:
 #   Copied to the host by the deploy pipeline alongside docker-compose.prod.yml; not run
 #   directly from this repository.
@@ -21,6 +30,9 @@
 	# /v1/auth/* at the root, not under /api) all route here.
 	@backend path /api/* /health/* /v1/*
 	handle @backend {
+		request_body {
+			max_size 65536
+		}
 		reverse_proxy backend:8000
 	}
 

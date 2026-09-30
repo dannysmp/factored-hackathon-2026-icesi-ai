@@ -68,8 +68,30 @@ check_reachable() {
   return 1
 }
 
+# Proves the proxy's own 64 KiB request-body limit (infra/Caddyfile) actually rejects an
+# oversized body with 413, before it ever reaches the backend -- not just that the Caddyfile
+# declares one.
+check_body_size_limit() {
+  local url="$1" attempt=1 status oversized_body
+  oversized_body="$(head -c 70000 /dev/zero | tr '\0' 'a')"
+  while (( attempt <= MAX_ATTEMPTS )); do
+    status="$(curl --silent --show-error --max-time 10 -o /dev/null -w '%{http_code}' \
+      -X POST -H "Content-Type: application/json" --data "${oversized_body}" "${url}" 2>/dev/null || echo "000")"
+    if [[ "${status}" == "413" ]]; then
+      log "ok: ${url} rejected a 70000-byte body with 413"
+      return 0
+    fi
+    log "attempt ${attempt}: ${url} returned ${status} for an oversized body, expected 413"
+    attempt=$((attempt + 1))
+    sleep "${RETRY_SECONDS}"
+  done
+  log "refusing: ${url} never rejected an oversized body with 413 within $((MAX_ATTEMPTS * RETRY_SECONDS))s"
+  return 1
+}
+
 check "/health/live" '"live"'
 check "/" "<"
+check_body_size_limit "${BASE_URL}/health/live"
 
 if [[ "${2:-}" == "--dashboard" ]]; then
   check_reachable "https://dashboard.${HOST_NAME}/api/health"
