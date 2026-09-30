@@ -36,11 +36,14 @@ Design Principles
 - The body-size cap runs before session authentication: an oversized body is refused before a JWT
   is ever verified, and it counts bytes actually read off the wire, never a client-stated
   ``Content-Length`` alone.
-- **Each read off the wire is bounded, not just the total size.** A client that trickles in
-  near-zero-byte chunks with ``more_body`` forever would otherwise hold the draining loop (and the
-  connection behind it) open indefinitely without ever crossing the byte cap — a slow-loris-style
-  resource hold distinct from the size cap above. Each individual ``receive()`` call is bounded by
-  ``BODY_READ_TIMEOUT_SECONDS``; a client that goes quiet mid-body is refused, not left to wait.
+- **The whole drain is bounded by one deadline, not a per-read idle timeout.** A client that
+  trickles in near-zero-byte chunks with ``more_body`` forever would otherwise hold the draining
+  loop (and the connection behind it) open indefinitely without ever crossing the byte cap — a
+  slow-loris-style resource hold distinct from the size cap above. A per-message idle timeout
+  alone would not close this: a client pacing itself just inside that timeout on every message
+  resets the clock forever. ``BODY_READ_TIMEOUT_SECONDS`` instead bounds the entire drain
+  (``_drain``) as one operation, so the total time to deliver a body is capped regardless of how
+  it is paced.
 
 Runtime Contract
 ----------------
@@ -191,8 +194,8 @@ class RequestContextMiddleware:
 
 
 class BodySizeLimitMiddleware:
-    """Refuses an HTTP request whose body exceeds ``MAX_BODY_BYTES``, or whose read stalls past
-    ``BODY_READ_TIMEOUT_SECONDS``.
+    """Refuses an HTTP request whose body exceeds ``MAX_BODY_BYTES``, or whose whole drain takes
+    longer than ``BODY_READ_TIMEOUT_SECONDS``.
 
     Counts bytes actually read off the wire, never a client-supplied ``Content-Length`` alone (a
     header a client can omit or understate, notably under chunked transfer encoding). The whole
@@ -213,29 +216,13 @@ class BodySizeLimitMiddleware:
         self._max_bytes = max_bytes
         self._read_timeout_seconds = read_timeout_seconds
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Handle one request; other scopes (WebSocket, lifespan) pass through unchanged."""
-        if scope["type"] != "http":
-            await self._app(scope, receive, send)
-            return
-
+    async def _drain(self, receive: Receive) -> tuple[list[Message], ProblemError | None]:
+        """Read the whole body, buffering it. Returns the buffered messages and, if the size cap
+        was exceeded, the refusal to send instead of running the downstream app."""
         buffered: list[Message] = []
         total = 0
         while True:
-            try:
-                message = await asyncio.wait_for(receive(), timeout=self._read_timeout_seconds)
-            except TimeoutError:
-                logger.warning("body_read_timed_out request_id=%s", current_request_id())
-                problem = ProblemError(
-                    ErrorCode.REQUEST_TIMEOUT,
-                    408,
-                    "The request took too long",
-                    f"The request body must arrive within {self._read_timeout_seconds} seconds.",
-                )
-                request_id = str(_state(scope).get("request_id", "-"))
-                response = problem_response(problem, request_id)
-                await response(scope, receive, send)
-                return
+            message = await receive()
             buffered.append(message)
             if message["type"] != "http.request":
                 break
@@ -248,12 +235,42 @@ class BodySizeLimitMiddleware:
                     "The request body is too large",
                     f"The body must be at most {self._max_bytes} bytes.",
                 )
-                request_id = str(_state(scope).get("request_id", "-"))
-                response = problem_response(problem, request_id)
-                await response(scope, receive, send)
-                return
+                return buffered, problem
             if not message.get("more_body", False):
                 break
+        return buffered, None
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Handle one request; other scopes (WebSocket, lifespan) pass through unchanged."""
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        try:
+            buffered, problem = await asyncio.wait_for(
+                self._drain(receive), timeout=self._read_timeout_seconds
+            )
+        except TimeoutError:
+            # One deadline for the whole drain, not per read: a client trickling in evenly paced
+            # small chunks forever would otherwise reset an idle timeout on every message and
+            # never be caught (the exact case the read-timeout gap was reported for).
+            logger.warning("body_read_timed_out request_id=%s", current_request_id())
+            problem = ProblemError(
+                ErrorCode.REQUEST_TIMEOUT,
+                408,
+                "The request took too long",
+                f"The request body must arrive within {self._read_timeout_seconds} seconds.",
+            )
+            request_id = str(_state(scope).get("request_id", "-"))
+            response = problem_response(problem, request_id)
+            await response(scope, receive, send)
+            return
+
+        if problem is not None:
+            request_id = str(_state(scope).get("request_id", "-"))
+            response = problem_response(problem, request_id)
+            await response(scope, receive, send)
+            return
 
         index = 0
 

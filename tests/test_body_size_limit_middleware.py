@@ -145,6 +145,44 @@ def test_a_stalled_read_is_refused_with_a_request_timeout() -> None:
     assert body["code"] == ErrorCode.REQUEST_TIMEOUT.value
 
 
+def test_a_slowly_paced_trickle_is_refused_once_the_whole_drain_exceeds_the_deadline() -> None:
+    """A client that never stalls any single read, but paces small chunks just inside a per-read
+    window forever, is still refused once the whole drain takes too long — a per-read idle timeout
+    alone would let this client reset the clock on every message and never be caught. Bounded to 5
+    chunks so a regression here fails a downstream-app assertion quickly rather than hanging."""
+    chunks_sent = 0
+
+    async def trickling_receive() -> MutableMapping[str, Any]:
+        nonlocal chunks_sent
+        await asyncio.sleep(0.03)  # Comfortably inside any single-read window
+        chunks_sent += 1
+        return {"type": "http.request", "body": b"x", "more_body": chunks_sent < 5}
+
+    async def downstream_app(scope: Any, receive: Any, send: Any) -> None:
+        raise AssertionError("the downstream app must never run once the deadline is exceeded")
+
+    middleware = BodySizeLimitMiddleware(
+        downstream_app, max_bytes=1024 * 1024, read_timeout_seconds=0.1
+    )
+
+    sent: list[MutableMapping[str, Any]] = []
+
+    async def fake_send(message: MutableMapping[str, Any]) -> None:
+        sent.append(message)
+
+    scope: MutableMapping[str, Any] = {
+        "type": "http",
+        "path": "/echo",
+        "headers": [],
+        "method": "POST",
+        "state": {},
+    }
+    asyncio.run(middleware(scope, trickling_receive, fake_send))
+
+    assert sent[0]["status"] == 408
+    assert chunks_sent >= 2  # more than one message was read before the overall deadline fired
+
+
 def test_a_read_that_completes_within_the_timeout_is_not_refused() -> None:
     """A slower-than-instant, but still timely, chunk is not mistaken for a stall."""
     client = TestClient(_app(max_bytes=1024))
