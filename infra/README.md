@@ -17,6 +17,7 @@ AWS provisioning for the deployed stack (ADR-13: one EC2 host, ECR, docker compo
 | `scripts/09-configure-error-alarm.sh` | A CloudWatch metric filter counting error-level lines in the application's log group (`/dispute-intake/app`, created if absent) and an alarm that trips past a threshold in one evaluation window. No notification action is attached yet — no paging channel exists in this project. Authored ahead of log shipping (the CloudWatch agent) landing; running it against the live account is for whichever slice stands that up. |
 | `scripts/10-configure-metabase-dashboard.sh` | Creates or updates the operations dashboard's panels, each pairing a chart card (colored from `web/src/styles/tokens.css`'s design tokens) with a text card naming its business question. Every card and the dashboard itself are found by name and updated in place if they already exist, so a redeploy converges instead of duplicating panels. Needs `08-deploy-metabase.sh` already run (the admin account and the `analytics` datasource connection). Full native theming (logo, app name, instance-wide colors) is a paid Metabase feature this deployment has no license for — see `docs/limitations.md`. |
 | `scripts/11-create-seed-bucket.sh` | A private, versioned, default-encrypted S3 bucket (`dispute-intake-ops-seed-<account>`) holding the built operational seed — a curated, already-masked derivative (`pipelines.ops_seed`), never the data provider's own raw data. Block Public Access on all four settings; the repository is public, this bucket must never be. Prints the bucket name on success. Not torn down by `07-teardown.sh`, the same as the OIDC role, the instance role and the ECR repositories. |
+| `scripts/12-hardening-check.sh` | The post-deploy hardening check (ADR-13): probes the live address over the real network and refuses if TLS 1.1 or below is accepted, `Strict-Transport-Security` is missing or its `max-age` is under 15,552,000, the `Content-Security-Policy` is missing or report-only, `Server`/`X-Powered-By` carry a version token on any route, or a session cookie (if one is ever set — this deployment's sessions are bearer tokens, so none is) is missing `Secure`, `HttpOnly` or `SameSite=Strict`/`Lax`. Reads nothing from `infra/Caddyfile`; every check is a real request against the deployed edge. |
 
 Every script is idempotent (safe to re-run; an existing resource with the right name is left as
 is or reconciled, never duplicated) and refuses to run against any profile or region but
@@ -27,11 +28,11 @@ each other, but `04` needs `03`'s instance profile to exist.
 
 `.github/workflows/deploy.yml`, triggered manually (`workflow_dispatch`) against `main`: builds
 both images, scans each with Trivy (fails the run on a fixable HIGH or CRITICAL finding), pushes
-to ECR, runs `05-deploy.sh` (over SSM, no SSH), then `06-smoke-test.sh`. The `teardown_after`
-input (default on) runs `07-teardown.sh` at the end — a run gated only by this input and whether
-the run was manually cancelled, never by whether an earlier step failed, since a failed deploy or
-smoke test is exactly when a host must not be left running unattended; turn it off for a
-deployment meant to persist.
+to ECR, runs `05-deploy.sh` (over SSM, no SSH), then `06-smoke-test.sh`, then
+`12-hardening-check.sh`. The `teardown_after` input (default on) runs `07-teardown.sh` at the end
+— a run gated only by this input and whether the run was manually cancelled, never by whether an
+earlier step failed, since a failed deploy, smoke test or hardening check is exactly when a host
+must not be left running unattended; turn it off for a deployment meant to persist.
 
 The `deploy_metabase` input (default off) adds a job on top of the base deployment: runs
 `08-deploy-metabase.sh`, then `10-configure-metabase-dashboard.sh`, then
