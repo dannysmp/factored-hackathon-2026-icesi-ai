@@ -80,14 +80,9 @@ call, and the cap is a permission invariant this tool enforces itself, not calle
 Limitations
 -----------
 One connection per call, matching this codebase's other persistence modules; no pooling yet
-(see ``app.persistence.audit``'s own Limitations). ``is_repeat_complainer`` is always ``False``:
-the serving store's ``customers`` table carries no such column (``pipelines.ops_seed`` computes
-the fact only to select which customers the seed carries, not into a queryable field), so a
-policy decision at this slice never routes on it in the running service — the seed's own
-selection guarantees at least one repeat complainer exists to evaluate, but its evaluation
-through this port cannot yet reflect the fact. ``risk_score`` is always ``None``: risk routing is
-switched off in the shipped policy, and wiring the real risk-features lookup is out of scope
-here. Both are flagged in the pull request for a decision on whether they need their own slice.
+(see ``app.persistence.audit``'s own Limitations). ``risk_score`` is always ``None``: risk routing
+is switched off in the shipped policy, and wiring the real risk-features lookup is out of scope
+here, flagged in the pull request for a decision on whether it needs its own slice.
 ``description`` on every ``TransactionFact`` is always ``None``: the serving store carries no
 separate description column, only ``merchant_name``. The case-insert transaction and the audit
 write are two separate store connections, not one atomic transaction (matching
@@ -599,6 +594,21 @@ class PostgresToolPort:
             row = cur.fetchone()
         return row[0] if row is not None else None
 
+    def _is_repeat_complainer(self) -> bool:
+        """This session's own customer's point-in-time repeat-complainer flag (ADR-15), as the
+        seed carried it: never recomputed here from ``complaints``, which this store's own scope
+        does not read."""
+        with (
+            psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
+            conn.cursor() as cur,
+        ):
+            cur.execute(
+                "SELECT is_repeat_complainer FROM customers WHERE customer_id = %s",
+                (self._customer_id,),
+            )
+            row = cur.fetchone()
+        return bool(row[0]) if row is not None else False
+
     def evaluate_dispute(
         self, request: EvaluateDisputeRequest
     ) -> PolicyDecision | ToolFailure | None:
@@ -629,6 +639,7 @@ class PostgresToolPort:
 
         try:
             has_open_case = self._open_case_number_for(request.transaction_ref) is not None
+            is_repeat_complainer = self._is_repeat_complainer()
         except psycopg.Error:
             self._log_failure("evaluate_dispute_failed")
             return ToolFailure(tool=ToolName.EVALUATE_DISPUTE, cause="error")
@@ -647,7 +658,7 @@ class PostgresToolPort:
             product_type=resolved.product_type or "",
             amount_usd=amount_usd,
             nlu_confidence=1.0,
-            is_repeat_complainer=False,
+            is_repeat_complainer=is_repeat_complainer,
             has_open_case_for_transaction=has_open_case,
             risk_score=None,
         )
