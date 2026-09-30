@@ -334,9 +334,9 @@ def test_a_real_request_id_collision_is_regenerated(monkeypatch: pytest.MonkeyPa
     covers). ``722263483763217e`` is a real value ``secrets.token_hex(8)`` produced: 15 of its 16
     characters are digits, and ``redact_pan`` flags it when embedded in a real request id
     (``req_722263483763217e``) exactly as this project's structured logs would carry it. This run
-    happens to start at the suffix's own first character — the *leading*-only check this function
-    had before this round would also have caught this particular example; the next test isolates
-    a run that starts later, which that earlier check would have missed."""
+    happens to start at the suffix's own first character — this function's earlier, leading-only
+    implementation would also have caught this particular example; the next test isolates a run
+    that starts later, which that earlier implementation would have missed."""
     collision = "722263483763217e"
     assert redact_pan(f"req_{collision}").found  # the vulnerability, confirmed
 
