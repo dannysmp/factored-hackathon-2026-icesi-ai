@@ -36,14 +36,18 @@ not as a second scoring key.
 
 Design Principles
 -----------------
-- **Two vantage points, never a third.** Every check reads either ``TurnResponse``'s own fields
-  (``next_expected``, ``handoff_ticket``, ``lang``) or the store's own tables (``cases``,
-  ``handoff_outbox``, ``dialogue_state``), by direct query — the same pattern
-  ``evals.runner.seed_resolution`` already uses for the same reason: this is harness-only code, and
-  going through the production ``PostgresToolPort`` here would write spurious audit records into
-  the same log the conversation under test uses. Reading ``dialogue_state`` stays inside the
-  store vantage point, not a third one: it is dialogue bookkeeping the store already persists, not
-  the envelope, a decision or a reason code, so it does not reopen ADR-2's boundary.
+- **Every vantage point this module reads is one the transport under test actually exposes.**
+  Most checks read either ``TurnResponse``'s own fields (``next_expected``, ``handoff_ticket``,
+  ``lang``) or the store's own tables (``cases``, ``handoff_outbox``, ``dialogue_state``), by
+  direct query — the same pattern ``evals.runner.seed_resolution`` already uses for the same
+  reason: this is harness-only code, and going through the production ``PostgresToolPort`` here
+  would write spurious audit records into the same log the conversation under test uses. Reading
+  ``dialogue_state`` is still a store read, not a new vantage point: it is dialogue bookkeeping the
+  store already persists, not the envelope, a decision or a reason code, so it does not reopen
+  ADR-2's boundary. ``RunTranscript.confirmed_target`` is the one deliberate exception, and only
+  for a system the harness drives in-process rather than over HTTP (B1) — see the
+  ``CONFIRM_FILING`` bullet below for why that is a different vantage point on the same question,
+  not a looser one.
 - **``next_expected`` is a structural signal, not a text guess.** A ``CONFIRM_FILING`` reply is the
   only reply that ever sets ``next_expected`` to ``Slot.CONFIRMATION`` — checking that field is a
   contract-level assertion, not parsing rendered wording, and it is only ever true when the policy
@@ -52,12 +56,18 @@ Design Principles
   not expose.
 - **A ``CONFIRM_FILING`` case's target is checked, not just that some confirmable state was
   reached.** ``next_expected is Slot.CONFIRMATION`` alone cannot tell a correct run from one that
-  reached confirmation for the *wrong* transaction or category. ``app.conversation.state``'s own
-  invariant — a session's ``selected_ref``/``category`` are set once and never reset once chosen —
-  means ``dialogue_state`` still names exactly the pending-confirmation target at the point every
-  ``CONFIRM_FILING`` case's script stops (before any filing), so ``_dialogue_state_matches`` reads
-  it back and compares it against the case's own ``seed_ref`` and ``expected_category``, the same
-  verify-before-report discipline already applied to a claimed handoff ticket. This assumes the
+  reached confirmation for the *wrong* transaction or category. Which vantage point can prove that
+  differs by transport, not by system: P and B0 are a black box over HTTP (``TurnResponse`` never
+  exposes the decision, ADR-2), so ``_dialogue_state_matches`` reads ``dialogue_state`` back after
+  the run — ``app.conversation.state``'s own invariant (a session's ``selected_ref``/``category``
+  are set once and never reset once chosen) means it still names exactly the pending-confirmation
+  target at the point every ``CONFIRM_FILING`` case's script stops (before any filing). B1 is not a
+  black box to the harness — the harness *is* B1's own caller, in-process, and already holds the
+  tool port's grounded ``PolicyDecision`` the moment it reaches a confirmable state — so
+  ``RunTranscript.confirmed_target`` carries that fact directly instead, and ``score_case`` prefers
+  it over the store read when a runner sets it. Same question, same verify-before-report discipline
+  already applied to a claimed handoff ticket, answered from whichever vantage point that
+  transport actually exposes — never a looser check for one system than another. This assumes the
   case's script stops at the confirmation turn, as every ``CONFIRM_FILING`` case does today; a
   future case whose script continues into an actual filing belongs to the still-deferred
   ``FILING_RESULT``/oracle path instead (see Limitations), not this check.
@@ -101,7 +111,7 @@ Design Principles
 
 Runtime Contract
 -----------------
-``RunTranscript(case, session_id, replies, latencies_seconds)``.
+``RunTranscript(case, session_id, replies, latencies_seconds, confirmed_target=None)``.
 ``score_case(dsn, transcript) -> CaseResult``.
 ``expected_escalation_for(case) -> bool``: whether a correct run of ``case`` is expected to
 escalate — the one fact about a ``CaseResult`` still knowable when a case could not be run or
@@ -154,12 +164,22 @@ from evals.models import Case  # The case a transcript belongs to
 
 @dataclass(frozen=True, slots=True)
 class RunTranscript:
-    """One case's recorded run: every reply the system gave, in order, and how long each took."""
+    """One case's recorded run: every reply the system gave, in order, and how long each took.
+
+    ``confirmed_target`` names the transaction and category the run actually reached confirmation
+    for, when the runner already holds that fact in-process (B1: the harness is B1's own caller,
+    so it already has the tool port's grounded ``PolicyDecision`` — see
+    ``evals.runner.baselines.b1_tools.B1ToolDispatcher.last_confirmable_decision``). ``None`` for a
+    system reached only as a black box over HTTP (P, B0), where ``score_case`` instead reads
+    ``dialogue_state`` back after the run — the same "did the run actually confirm the case's own
+    scripted target" question, answered from whichever vantage point that transport exposes.
+    """
 
     case: Case
     session_id: str
     replies: tuple[TurnResponse, ...]
     latencies_seconds: tuple[float, ...]
+    confirmed_target: tuple[str, DisputeCategory] | None = None
 
     def __post_init__(self) -> None:
         if not self.replies:
@@ -236,7 +256,7 @@ def _dialogue_state_matches(
         row = cur.fetchone()
         if row is None:
             return False
-        return row[0] == expected_ref and row[1] == expected_category.value
+        return bool(row[0] == expected_ref and row[1] == expected_category.value)
 
 
 def _packet_is_useful(dsn: str, case: Case, ticket_ref: str) -> bool:
@@ -316,17 +336,18 @@ def score_case(dsn: str, transcript: RunTranscript) -> CaseResult:
 
     if case.expected_intent is Intent.CONFIRM_FILING:
         assert case.expected_category is not None  # noqa: S101 -- enforced by Case's own validator
+        expected_target = (case.seed_ref.removeprefix("ops_seed:"), case.expected_category)
+        target_matches = (
+            transcript.confirmed_target == expected_target
+            if transcript.confirmed_target is not None
+            else _dialogue_state_matches(dsn, transcript.session_id, *expected_target)
+        )
         correct_outcome = (
             final_reply.next_expected is Slot.CONFIRMATION
             and not filed_a_case
             and not observed_escalation
             and lang_matches
-            and _dialogue_state_matches(
-                dsn,
-                transcript.session_id,
-                case.seed_ref.removeprefix("ops_seed:"),
-                case.expected_category,
-            )
+            and target_matches
         )
     elif case.expected_intent is Intent.REFUSE:
         correct_outcome = (

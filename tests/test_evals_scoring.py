@@ -177,9 +177,7 @@ def _file_a_handoff(
 
 @pytest.mark.integration
 def test_a_confirm_filing_case_reaching_confirmation_is_correct(dsn: str) -> None:
-    _set_dialogue_state(
-        dsn, selected_ref="TRX-TEST", category=DisputeCategory.UNRECOGNIZED_CHARGE
-    )
+    _set_dialogue_state(dsn, selected_ref="TRX-TEST", category=DisputeCategory.UNRECOGNIZED_CHARGE)
     transcript = RunTranscript(
         case=_case(expected_intent=Intent.CONFIRM_FILING),
         session_id=SESSION_ID,
@@ -244,6 +242,45 @@ def test_a_confirm_filing_case_with_no_dialogue_state_row_is_incorrect(dsn: str)
         session_id=SESSION_ID,
         replies=(_reply(next_expected=Slot.CONFIRMATION),),
         latencies_seconds=(0.5,),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is False
+
+
+@pytest.mark.integration
+def test_a_confirm_filing_case_with_a_matching_confirmed_target_is_correct_without_dialogue_state(
+    dsn: str,
+) -> None:
+    """B1 never writes dialogue_state at all (it is not a black box to the harness the way P and
+    B0 are over HTTP); RunTranscript.confirmed_target carries the same fact instead, and
+    score_case must prefer it — no dialogue_state row exists here at all."""
+    transcript = RunTranscript(
+        case=_case(expected_intent=Intent.CONFIRM_FILING),
+        session_id=SESSION_ID,
+        replies=(_reply(next_expected=Slot.CONFIRMATION),),
+        latencies_seconds=(0.5,),
+        confirmed_target=("TRX-TEST", DisputeCategory.UNRECOGNIZED_CHARGE),
+    )
+
+    result = score_case(dsn, transcript)
+
+    assert result.correct_outcome is True
+
+
+@pytest.mark.integration
+def test_a_confirm_filing_case_with_a_mismatched_confirmed_target_is_incorrect(dsn: str) -> None:
+    """The same gap the dialogue_state check closes for P and B0, closed for B1's own vantage
+    point too: a confirmed_target naming the wrong transaction must not score as correct, even
+    with a real dialogue_state row that would otherwise have matched."""
+    _set_dialogue_state(dsn, selected_ref="TRX-TEST", category=DisputeCategory.UNRECOGNIZED_CHARGE)
+    transcript = RunTranscript(
+        case=_case(expected_intent=Intent.CONFIRM_FILING),
+        session_id=SESSION_ID,
+        replies=(_reply(next_expected=Slot.CONFIRMATION),),
+        latencies_seconds=(0.5,),
+        confirmed_target=("TRX-SOME-OTHER-TRANSACTION", DisputeCategory.UNRECOGNIZED_CHARGE),
     )
 
     result = score_case(dsn, transcript)
