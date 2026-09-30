@@ -17,8 +17,9 @@ function itemsForView(items: readonly QueueItem[], view: TriggerView): QueueItem
 
 /**
  * The console's handoff queue (AC-E10-01): every screen state rendered deliberately (loading,
- * error with a retry, empty, and the filtered table), matching `ChatFeature`'s own rule that a
- * blank screen or a raw error is never acceptable (AC-E10-18).
+ * error with a retry, empty, a background refetch over already-loaded data, and the filtered
+ * table), matching `ChatFeature`'s own rule that a blank screen or a raw error is never acceptable
+ * (AC-E10-18).
  *
  * Fixed Spanish copy, not a catalog entry (D91): the console stays fixed-Spanish and never
  * imports the trilingual `useT` hook chat and sign-in use.
@@ -44,12 +45,19 @@ export function QueueScreen({
     )
   }
 
-  // Four distinct, non-overlapping treatments (AC-E10-18): the initial load, a truly empty queue,
-  // and the filters-plus-table view, which may itself show a lesser "nothing for this filter"
-  // message (`QueueTable`'s own) without losing the filters that got it there — a different
-  // state from having no tickets at all.
+  // Distinct, non-overlapping treatments (AC-E10-18): the initial load, a truly empty queue, and
+  // the filters-plus-table view, which may itself show a lesser "nothing for this filter" message
+  // (`QueueTable`'s own) without losing the filters that got it there — a different state from
+  // having no tickets at all. `showUpdating`, below, adds a further treatment once a filter
+  // refetch is in flight over data already on screen.
   const showLoading = queue.status === 'loading' && queue.referenceDate === null
   const showEmpty = queue.status === 'ready' && queue.items.length === 0
+  // A language-filter change re-issues the fetch without clearing the already-loaded table
+  // (`useQueue`'s own `setLanguage` keeps `items`/`referenceDate`, only flips `status`), so the
+  // filters and the (still-stale) table stay visible during a refetch — this affordance is the
+  // only signal that a request is actually in flight, distinct from `showLoading`'s own first-load
+  // treatment, which replaces the table entirely rather than sitting alongside it.
+  const showUpdating = queue.status === 'loading' && queue.referenceDate !== null
 
   return (
     <section className="queue-screen" aria-label="Cola de casos escalados">
@@ -64,6 +72,11 @@ export function QueueScreen({
       {showLoading && (
         <p aria-live="polite" role="status">
           Cargando la cola…
+        </p>
+      )}
+      {showUpdating && (
+        <p className="queue-updating" aria-live="polite" role="status">
+          Actualizando…
         </p>
       )}
       {showEmpty && <p>No hay tickets abiertos en este momento.</p>}

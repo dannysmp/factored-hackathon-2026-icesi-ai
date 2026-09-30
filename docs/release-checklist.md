@@ -1,6 +1,6 @@
 # Release checklist
 
-This checklist states each obligation of a release and names the evidence a reviewer can open. A row is checked off only with its evidence linked. The evidence is produced for the release and linked at the release commit, so some artifacts named here, such as the model cards, the limitations report and the rehearsal checklist, are written as the release is prepared. The delivery date is 2026-10-05. Every row is verified before the freeze, 23:59 America/Bogota on 2026-10-04; the rows that check a live link are checked once more immediately before the release is announced, and that second check is recorded with its time.
+This checklist states each obligation of a release and names the evidence a reviewer can open. A row is checked off only with its evidence linked. Every artifact that already exists is linked directly from its row. The evidence is produced for the release and linked at the release commit, so some artifacts named here — the rehearsal checklist, the slide content checklist and the two clean-account run records — are written as the release is prepared and have no link yet. The delivery date is 2026-10-05. Every row is verified before the freeze, 23:59 America/Bogota on 2026-10-04; the rows that check a live link are checked once more immediately before the release is announced, and that second check is recorded with its time.
 
 ## Repository
 
@@ -10,9 +10,9 @@ This checklist states each obligation of a release and names the evidence a revi
 | The full history has no secret or private record | The history scan report from the release commit, and the last diff read by a person | [ ] |
 | No credential, key or environment file is tracked | The scan report; a listing of tracked files | [ ] |
 | The README leads from the problem to a running demonstration without a question | A person who did not write it follows it from a clean checkout | [ ] |
-| Every model card, the limitations and remaining-work report and the demonstration scripts are present | The files at the release commit | [ ] |
-| Inputs are labeled real, de-identified, synthetic or team-generated | The data-use section of the README | [ ] |
-| No private record appears in any request to an external model | The request-capture test result | [ ] |
+| Every model card, the limitations and remaining-work report and the demonstration scripts are present | [The model card](../models/model_card.json), [the limitations and remaining-work report](limitations.md) and [the demonstration scripts](demo-scripts.md), each at the release commit | [ ] |
+| Inputs are labeled real, de-identified, synthetic or team-generated | [The data-use section of the README](../README.md#where-each-input-comes-from) | [ ] |
+| No private record appears in any request to an external model | [The request-capture test result](../tests/test_request_capture_pii.py) | [ ] |
 
 ## Deployed system
 
@@ -25,7 +25,7 @@ This checklist states each obligation of a release and names the evidence a revi
 | A push to the main branch deploys and passes the smoke test | The pipeline run | [ ] |
 | The stack is reproduced from a clean account with the written commands, then torn down | The two clean-account run records | [ ] |
 | No long-lived cloud key exists in the repository or the pipeline | The pipeline configuration; the scan report | [ ] |
-| The demonstration sign-in can be switched off, and the switch has been tried | The runbook entry with the date of the trial | [ ] |
+| The demonstration sign-in can be switched off, and the switch has been tried | [The runbook entry](../infra/README.md#turning-the-demonstration-sign-in-off), with the date of the trial | [ ] |
 
 ## Slides
 
@@ -53,12 +53,12 @@ Every requirement is checked with a link to its evidence.
 |---|---|---|
 | Working system for a banking environment | The deployed link and the demonstration paths | [ ] |
 | Focused workflow, end to end | The scope statement; the demonstration paths | [ ] |
-| Data-backed problem selection | The workflow analysis report and the command that regenerates it | [ ] |
+| Data-backed problem selection | [The workflow analysis report](../reports/workflow-analysis.md) and `make analyze`, the command that regenerates it | [ ] |
 | Baseline and improvement on the same workload | The evaluation report, proposed system against both baselines | [ ] |
-| Privacy, explainability, fairness, reliability, scalability by design | The security and privacy, reliability and capacity sections; the ASVS Level 1 checklist; the disparity analysis in the evaluation report | [ ] |
+| Privacy, explainability, fairness, reliability, scalability by design | The security and privacy, reliability and capacity sections; [the ASVS Level 1 checklist](asvs-level1-checklist.md); the disparity analysis in the evaluation report | [ ] |
 | Explicit trade-offs | The decision records; the evaluation report | [ ] |
 | Where AI and where deterministic logic | The decision records; the rule-based baseline comparison | [ ] |
-| Three demonstration paths | The demonstration scripts; the rehearsal checklist | [ ] |
+| Three demonstration paths | [The demonstration scripts](demo-scripts.md); the rehearsal checklist | [ ] |
 | Spanish and Portuguese, English added, language limits reported | The evaluation report by language; the limitations report | [ ] |
 | Context, clarification and grounded answers | The conversation criteria results; the policy-question results | [ ] |
 | Tools, and only verified actions reported | The tool layer tests; the verification results | [ ] |
@@ -72,7 +72,7 @@ Every requirement is checked with a link to its evidence.
 | Tracing, retries, safe fallback, reproducible setup | The chaos test results; the quickstart | [ ] |
 | Capacity limits, monitoring, access, retention, remaining work | The capacity, retention and remaining-work sections | [ ] |
 | Explanations from records | The audit timeline of a synthetic conversation, identifiers masked | [ ] |
-| Provided data only; labeled inputs; no private records externally | The data-use section; the request-capture test | [ ] |
+| Provided data only; labeled inputs; no private records externally | [The data-use section](../README.md#where-each-input-comes-from); [the request-capture test](../tests/test_request_capture_pii.py) | [ ] |
 | Authentication and per-customer access | The authorization tests | [ ] |
 | Mock services documented | The contract and limitations of the case service and the demonstration sign-in | [ ] |
 | The model does not invent policy; risk separated from policy | The grounding checks; the model card | [ ] |

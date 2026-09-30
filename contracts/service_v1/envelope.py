@@ -412,12 +412,15 @@ class AgentDecision(ContractModel):
 
 
 class RiskEvidence(ContractModel):
-    """A risk score with its uncertainty and the base rate it is read against."""
+    """A risk score with its uncertainty, the base rate it is read against, and the routing
+    threshold it was compared to — the policy's own decision line, not merely the score alone,
+    so a reader can see why a score did or did not route to a person, once risk routing is on."""
 
     score: Rate
     interval_low: Rate
     interval_high: Rate
     base_rate: Rate
+    threshold: Rate
 
     @model_validator(mode="after")
     def _interval_brackets_the_score(self) -> RiskEvidence:

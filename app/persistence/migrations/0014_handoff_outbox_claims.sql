@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 0013 — who currently holds a ticket
+-- Migration 0014 — who currently holds a ticket
 -- =============================================================================
 -- claimed_by/claimed_at track a ticket's current claim, the first of the narrow agent writes. This
 -- pairs with, and is orthogonal to, handoff_outbox.status (0008): status is the ticket's own

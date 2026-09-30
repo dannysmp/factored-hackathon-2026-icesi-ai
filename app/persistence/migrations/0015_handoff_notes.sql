@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 0014 — an agent's own notes on a ticket
+-- Migration 0015 — an agent's own notes on a ticket
 -- =============================================================================
 -- handoff_notes follows the same (ticket_ref, ord) shape handoff_actions/handoff_open_questions/
 -- handoff_reason_codes already use for a ticket's bounded repeating parts (0006). Insert-only from

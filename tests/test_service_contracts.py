@@ -410,9 +410,11 @@ def test_a_source_reference_has_one_title_per_language() -> None:
 
 def test_a_risk_score_lies_within_its_interval() -> None:
     """A score outside its own uncertainty interval is a malformed record."""
-    assert RiskEvidence(score=0.4, interval_low=0.3, interval_high=0.5, base_rate=0.001)
+    assert RiskEvidence(
+        score=0.4, interval_low=0.3, interval_high=0.5, base_rate=0.001, threshold=0.6
+    )
     with pytest.raises(ValidationError, match="between interval_low and interval_high"):
-        RiskEvidence(score=0.9, interval_low=0.3, interval_high=0.5, base_rate=0.001)
+        RiskEvidence(score=0.9, interval_low=0.3, interval_high=0.5, base_rate=0.001, threshold=0.6)
 
 
 def test_tool_unavailable_is_a_typed_result() -> None:
@@ -501,7 +503,9 @@ def _routed_envelope() -> Envelope:
                 ),
             ),
             nlu_confidence=0.91,
-            risk=RiskEvidence(score=0.4, interval_low=0.3, interval_high=0.5, base_rate=0.001),
+            risk=RiskEvidence(
+                score=0.4, interval_low=0.3, interval_high=0.5, base_rate=0.001, threshold=0.6
+            ),
         ),
     )
 

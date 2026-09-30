@@ -23,8 +23,10 @@ function formatMoney(amount: string, currency: string): string {
 
 /**
  * The packet (AC-E10-02): request, verified facts, actions taken or refused, evidence (reason
- * codes, policy version, source sections, and the risk score with its uncertainty and base rate
- * when there is one), open questions, the customer's language, and the data reference date.
+ * codes, policy version, source sections, and the risk score with its uncertainty, base rate and
+ * routing threshold when there is one), open questions, the customer's language, and the data
+ * reference date. The risk score always renders with a disclosure that it is a synthetic-data
+ * estimate, not a real fraud signal — wherever the score appears, the caveat appears with it.
  *
  * `TransactionFact`/`ProductLabel` carry no document number or full card/account number at all
  * (`contracts/service_v1/envelope.py`) — nothing here can expose one (AC-E10-05).
@@ -130,6 +132,10 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
       {packet.evidence.risk !== null && (
         <>
           <h4>Puntaje de riesgo</h4>
+          <p>
+            Este puntaje es una estimación calculada con datos sintéticos, no con datos reales de
+            fraude.
+          </p>
           <dl>
             <dt>Puntaje</dt>
             <dd>{packet.evidence.risk.score.toFixed(2)}</dd>
@@ -140,6 +146,8 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
             </dd>
             <dt>Tasa base</dt>
             <dd>{packet.evidence.risk.base_rate.toFixed(2)}</dd>
+            <dt>Umbral de escalamiento</dt>
+            <dd>{packet.evidence.risk.threshold.toFixed(2)}</dd>
           </dl>
         </>
       )}

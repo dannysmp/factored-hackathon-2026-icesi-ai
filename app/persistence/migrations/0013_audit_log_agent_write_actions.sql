@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 0012 — the narrow agent writes join the audit trail
+-- Migration 0013 — the narrow agent writes join the audit trail
 -- =============================================================================
 -- ticket_claimed, ticket_released, ticket_note_added and case_status_set are the four narrow,
 -- audited agent writes (ADR-17): claim or release a ticket, add a note, set a case's

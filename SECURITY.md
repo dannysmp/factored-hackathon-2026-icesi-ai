@@ -1,4 +1,4 @@
-# Security Policy
+# Security policy
 
 Dispute Intake is designed to handle customer identity, transaction and case data. This document
 states the requirements every change is held to and, separately, which controls exist in the

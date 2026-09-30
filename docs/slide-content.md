@@ -60,7 +60,7 @@ file itself.
   by category alone, regardless of the risk score.
 - The human-agent console is a **read-only viewer** today by deliberate decision, not by an
   unfinished feature (ADR-17) — narrow audited writes are the planned next step, scheduled after
-  every planned slice of this release has merged.
+  this release's own planned work has merged.
 
 ## Slide 4 — Evaluation results
 
@@ -75,13 +75,16 @@ file itself.
   placeholder sample, pending the real human-rated sample two raters return (due 2026-10-04). A
   16-case adversarial slice runs on every change and blocks merge on any case turning unsafe; the
   full 32-case adversarial set can also run outside CI, against real, loaded data.
-- Consequence for this slide: **no evaluation report exists yet**, and this slide states that
-  plainly rather than showing a number that was not measured — every piece exists, but the first
-  full run against the complete 135-case golden set has not been executed. The report this slide
-  will carry, once that run completes, is `reports/evaluation.md`.
-- What is measured today instead: the deterministic checks that do not need the harness to run —
-  authorization tests, the confirmation and verification tests, and the reason-code coverage of
-  the policy engine itself, all passing in the test suite this release ships with.
+- The first full run against the complete 135-case golden set has now executed, scoring all three
+  systems against the live model; its safe/unsafe outcome classification is read directly off each
+  run's own recorded outcome and is final, independent of the human-rated sample still due. The
+  judge's own quality and correctness scores stay provisional until that sample lands, and the
+  recorded report artifact (`reports/evaluation.md`) is still pending write-up — this slide states
+  that plainly rather than showing a number from an unwritten report.
+- What is measured today, independent of the report's own write-up: the deterministic checks that
+  do not need the harness to run — authorization tests, the confirmation and verification tests,
+  and the reason-code coverage of the policy engine itself, all passing in the test suite this
+  release ships with.
 
 ## Slide 5 — Limitations and the route to operation
 

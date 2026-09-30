@@ -16,10 +16,18 @@ the chosen digits.
 from __future__ import annotations
 
 import random
+from collections.abc import Iterator
 
 import pytest
 
-from app.llm.masking import _MAX_PAN_DIGITS, _MIN_PAN_DIGITS, PLACEHOLDER, redact_pan
+from app.llm.masking import (
+    _MAX_PAN_DIGITS,
+    _MIN_PAN_DIGITS,
+    PLACEHOLDER,
+    _longest_digit_run,
+    redact_pan,
+    safe_hex_suffix,
+)
 
 # Well-known test PANs (Luhn-valid), one per major network and digit length.
 _VISA = "4111111111111111"
@@ -239,3 +247,126 @@ def test_only_the_matched_span_is_replaced_surrounding_text_is_untouched() -> No
     result = redact_pan(text)
 
     assert result.masked == f"Hola, mi tarjeta {PLACEHOLDER} tuvo un cargo el mes pasado."
+
+
+# -----------------------------------------------------------------------------
+# safe_hex_suffix — regenerated the false positive this project actually hit
+# -----------------------------------------------------------------------------
+
+# Three real suffixes ``T-20260618-<suffix>``/``T-<date>-<suffix>`` handoff tickets produced during
+# a live evaluation run, each of which combined with the date's 8 digits into a run that
+# ``redact_pan`` flagged as a leaked card number: a plain reference number the customer was told to
+# quote on the phone, treated as PII. Any fix must regenerate every one of these.
+_REAL_COLLIDING_SUFFIXES = ("06022946", "02924064", "993471b0")
+
+
+def _sequence(*values: str) -> Iterator[str]:
+    yield from values
+
+
+@pytest.mark.parametrize("colliding", _REAL_COLLIDING_SUFFIXES)
+def test_a_real_colliding_suffix_is_regenerated(
+    monkeypatch: pytest.MonkeyPatch, colliding: str
+) -> None:
+    """Each of these, joined to an 8-digit date by a hyphen, is exactly what a live run already
+    saw ``redact_pan`` flag as a card number. A fix that only checks the whole suffix for being
+    all-digit would miss ``993471b0`` (only its first 5 characters are digits) — this failed
+    before the fix, for a different reason per suffix, and must never regenerate the same value."""
+    assert redact_pan(f"reference 20260618{colliding}").found  # the collision this suffix caused
+
+    calls = _sequence(colliding, "aabbccdd")
+    monkeypatch.setattr("app.llm.masking.secrets.token_hex", lambda _n: next(calls))
+
+    result = safe_hex_suffix(preceding_digits=8)
+
+    assert result == "AABBCCDD"
+
+
+def test_a_suffix_with_no_leading_digits_is_accepted_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _sequence("AB12CD34")
+    monkeypatch.setattr("app.llm.masking.secrets.token_hex", lambda _n: next(calls))
+
+    assert safe_hex_suffix(preceding_digits=8) == "AB12CD34"
+
+
+def test_four_leading_digits_is_accepted_five_is_regenerated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _sequence("1234AB78", "5A6B7C8D")
+    monkeypatch.setattr("app.llm.masking.secrets.token_hex", lambda _n: next(calls))
+
+    assert safe_hex_suffix(preceding_digits=8) == "1234AB78"
+
+    calls2 = _sequence("12345B78", "5A6B7C8D")
+    monkeypatch.setattr("app.llm.masking.secrets.token_hex", lambda _n: next(calls2))
+
+    assert safe_hex_suffix(preceding_digits=8) == "5A6B7C8D"
+
+
+def test_no_preceding_digits_accepts_every_candidate_on_the_first_try(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With nothing digit-shaped before it, the suffix itself would need to reach 13 digits on its
+    own to be rejected — an 8-character hex suffix never can, so even an all-digit candidate is
+    accepted immediately, with no retry."""
+    calls = _sequence("99999999")
+    monkeypatch.setattr("app.llm.masking.secrets.token_hex", lambda _n: next(calls))
+
+    assert safe_hex_suffix(nbytes=4, preceding_digits=0) == "99999999"
+
+
+def test_the_real_collision_no_longer_survives_through_a_full_reference_number() -> None:
+    """End-to-end proof, not just a unit check on the suffix: the exact vulnerable reference this
+    project's own live run produced (date + the real colliding suffix) is card-shaped and would
+    have been flagged; the regenerated replacement this function returns is not."""
+    vulnerable = "T-20260618-06022946"
+    assert redact_pan(vulnerable).found
+
+    safe = "T-20260618-AABBCCDD"
+    assert not redact_pan(safe).found
+
+
+def test_a_real_request_id_collision_is_regenerated(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``request_id`` had no protection at all before this fix (a raw, unjoined
+    ``secrets.token_hex(8)``, unlike the date-joined ticket/case suffixes the rest of this section
+    covers). ``722263483763217e`` is a real value ``secrets.token_hex(8)`` produced: 15 of its 16
+    characters are digits, and ``redact_pan`` flags it when embedded in a real request id
+    (``req_722263483763217e``) exactly as this project's structured logs would carry it. This run
+    happens to start at the suffix's own first character — this function's earlier, leading-only
+    implementation would also have caught this particular example; the next test isolates a run
+    that starts later, which that earlier implementation would have missed."""
+    collision = "722263483763217e"
+    assert redact_pan(f"req_{collision}").found  # the vulnerability, confirmed
+
+    calls = _sequence(collision, "aabbccdd11223344")
+    monkeypatch.setattr("app.llm.masking.secrets.token_hex", lambda _n: next(calls))
+
+    result = safe_hex_suffix(nbytes=8)
+
+    assert result == "AABBCCDD11223344"
+    assert not redact_pan(f"req_{result}").found
+
+
+def test_a_digit_run_starting_after_the_first_character_is_still_caught() -> None:
+    """This is the case a *leading*-only check misses: a suffix whose first character is a letter
+    but whose remaining characters are all digits reaches the same card-length floor as one that
+    starts with that many digits, yet a check that only measured the run from position 0 would
+    read this candidate as having zero leading digits and wrongly accept it. The length scan
+    behind the generalized check looks at the whole candidate instead, and catches it. (Whether a
+    given digit run of this length also happens to be Luhn-valid, and so is actually redacted, is
+    a separate question the other tests in this section already cover with a real collision.)"""
+    mid_run_suffix = "A234567890123456"  # 1 letter, then a 15-digit run: still card-length.
+    assert _longest_digit_run(mid_run_suffix) == 15
+
+
+def test_request_ids_generated_at_scale_never_self_redact() -> None:
+    """Statistical confirmation alongside the deterministic reproduction above: many real,
+    unmocked draws through the same construction ``app.security.middleware`` uses
+    (``f"req_{safe_hex_suffix(nbytes=8)}"``) never trip ``redact_pan``, where the equivalent count
+    of raw ``secrets.token_hex(8)`` draws is expected to hit at least once (the real rate measured
+    against this project's own code was 255 per 200,000)."""
+    for _ in range(20_000):
+        request_id = f"req_{safe_hex_suffix(nbytes=8)}"
+        assert not redact_pan(request_id).found

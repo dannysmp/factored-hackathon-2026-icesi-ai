@@ -11,7 +11,10 @@ and replaced with a fixed placeholder; nothing else in the text is touched.
 
 Scope
 -----
-In: the digit-run detector and the redaction it applies.
+In: the digit-run detector and the redaction it applies; ``safe_hex_suffix``, generating a
+reference-number suffix guaranteed never to combine with the digits before it into something this
+detector would itself flag — the one other place in this project that needs to reason about the
+same digit-run rule, not a second implementation of it.
 Out: what a caller does with masked text (the LLM port), and masking of any other field kind
 (none exists yet: this slice's only outbound free text is the customer's message to the NLU
 adapter; a future caller that sends another masked field, for example a name or a contact detail,
@@ -47,6 +50,8 @@ Runtime Contract
 ----------------
 ``redact_pan(text) -> PanRedaction`` with ``masked`` (the text to send) and ``found`` (whether
 anything was redacted, for the request-capture fixture and for accounting).
+``safe_hex_suffix(nbytes=4, *, preceding_digits=0) -> str``, an uppercase hex string of
+``2 * nbytes`` characters.
 
 Limitations
 -----------
@@ -61,6 +66,7 @@ from __future__ import annotations
 
 # Standard libraries
 import re  # Locating maximal digit-and-separator runs
+import secrets  # Generating a reference suffix that cannot look card-shaped
 from dataclasses import dataclass  # Immutable result
 
 PLACEHOLDER = "[card-number-redacted]"
@@ -185,3 +191,35 @@ def redact_pan(text: str) -> PanRedaction:
         cursor = end
     pieces.append(text[cursor:])
     return PanRedaction(masked="".join(pieces), found=True)
+
+
+def _longest_digit_run(text: str) -> int:
+    """The length of the longest maximal run of decimal digits anywhere in ``text``."""
+    return max((len(run) for run in re.findall(r"\d+", text)), default=0)
+
+
+def safe_hex_suffix(nbytes: int = 4, *, preceding_digits: int = 0) -> str:
+    """An uppercase random hex string with no digit run — on its own, or combined with
+    ``preceding_digits`` digits immediately before it — long enough to be card-shaped.
+
+    Two things can go wrong with a random hex string used in a customer-facing identifier, and
+    this guards against both:
+
+    - Joined right after a run of digits with no separator :func:`redact_pan`'s own detector
+      treats as breaking a run (a hyphen, for instance — the join this project's
+      ``T-YYYYMMDD-XXXXXXXX`` handoff tickets and ``CASE-YYYYMMDD-XXXXXXXX`` case numbers use), a
+      suffix whose leading characters happen to all be digits (no ``A``-``F``) extends that run.
+    - Entirely on its own, once a suffix is long enough (``request_id``'s 16-character suffix, not
+      joined to anything), a run of digits can reach the floor without ever touching either edge.
+
+    Both failures mean the same thing: some maximal digit run — considering ``preceding_digits``
+    real digits glued to this suffix's own start — reaches this module's own ``_MIN_PAN_DIGITS``
+    floor, and is then occasionally Luhn-valid purely by chance, so a plain identifier gets treated
+    as a leaked card number. This is regenerated until no such run exists, rather than trusting a
+    probability this project has already seen fail in practice twice.
+    """
+    while True:
+        candidate = secrets.token_hex(nbytes).upper()
+        probe = ("0" * preceding_digits) + candidate
+        if _longest_digit_run(probe) < _MIN_PAN_DIGITS:
+            return candidate

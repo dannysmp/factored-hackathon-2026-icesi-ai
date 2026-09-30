@@ -1,8 +1,8 @@
-# web/
+# Web frontend
 
-React chat UI and human-agent console (ADR-10). The customer chat is replayed against a scripted
-fixture conversation for now; the live endpoint is a later slice, gated on the demonstration
-sign-in broker and the conversation store.
+React chat UI and human-agent console (ADR-10). After sign-in, the customer chat runs against the
+real, live turn endpoint (`LiveChatClient`); a scripted fixture conversation (`FixtureChatClient`)
+remains for component tests only, never the running app.
 
 ## Stack
 
@@ -22,18 +22,18 @@ sign-in broker and the conversation store.
 - ESLint is pinned to `^9` rather than the current `^10`, because `eslint-plugin-jsx-a11y@6.10.2`
   does not yet declare `10` in its peer range. Move both together once a jsx-a11y release
   supports it.
-- The `web` CI job has no dependency-vulnerability scan yet (the architect's note on this slice);
-  add one once a real HTTP client adds supply-chain surface beyond `react`/`react-dom`/`zod`.
+- The `web` CI job has no dependency-vulnerability scan yet; add one once a real HTTP client adds
+  supply-chain surface beyond `react`/`react-dom`/`zod`.
 
 ## Customer chat
 
 `src/features/customer-chat/` is a self-contained feature (frontend standard, section 2):
-`contracts.ts` (the Zod schemas), `client.ts` (the `ChatClient` seam and its only implementation,
-`FixtureChatClient`, which replays `fixtures.ts`'s scripted English conversation), `useConversation.ts`
-(the turn-by-turn state) and `components/` (the reference-date banner, the message list with a
-polite live region, numbered choice buttons, the confirmation button, the text form). The live
-`ChatClient` implementation, against the real turn endpoint, is a later slice: this one only
-defines the seam it will fill.
+`contracts.ts` (the Zod schemas), `client.ts` (the `ChatClient` seam and its two implementations —
+`LiveChatClient`, the real HTTP client against `POST /v1/turns` behind a demo session, which the
+running app uses; `FixtureChatClient`, which replays `fixtures.ts`'s scripted English conversation
+for component tests only), `useConversation.ts` (the turn-by-turn state) and `components/` (the
+reference-date banner, the message list with a polite live region, numbered choice buttons, the
+confirmation button, the text form).
 
 ## Commands
 

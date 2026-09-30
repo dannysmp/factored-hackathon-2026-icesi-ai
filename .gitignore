@@ -29,6 +29,7 @@ htmlcov/
 !/reports/risk-signal.md
 !/reports/ops-seed.md
 !/reports/dashboard-theme-checklist.md
+!/reports/evaluation.md
 
 # Editor, OS and agent worktrees
 .DS_Store

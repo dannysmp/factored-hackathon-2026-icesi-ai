@@ -344,6 +344,10 @@ def _limitations_section(report: EvaluationReport) -> str:
         "example a business-savings projection from cost inputs) is computed by this slice.",
         "- The failure gallery reports which deterministic check failed, not a deeper root-cause "
         "classification.",
+        "- Cost per attempted case and cost per successful automated resolution are always "
+        '"not defined": `evals.scoring.score_case` never populates a `CaseResult`\'s `cost_usd` '
+        "(per-case cost accounting is a later increment's job); a system's real spend is only "
+        "computable from its own structured logs, not from this report.",
         f"- Reference date: {report.reference_date} (source: {report.reference_date_source}, "
         f"bank time zone: {report.bank_timezone}).",
     ]

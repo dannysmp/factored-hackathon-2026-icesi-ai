@@ -156,9 +156,10 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         "0009_handoff_outbox_content_fingerprint",
         "0010_customer_repeat_complainer",
         "0011_audit_log_agent_id",
-        "0012_audit_log_agent_write_actions",
-        "0013_handoff_outbox_claims",
-        "0014_handoff_notes",
+        "0012_handoff_outbox_risk_threshold",
+        "0013_audit_log_agent_write_actions",
+        "0014_handoff_outbox_claims",
+        "0015_handoff_notes",
     )
 
     again = apply_migrations(dsn)
