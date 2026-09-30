@@ -1,0 +1,296 @@
+"""
+H4 Judge Validation Tests
+===========================
+
+Component: ``evals.h4_judge_validation``. Hermetic throughout: the judge is always ``FakeLlm``, and
+every rater sheet is a small, committed fixture (``tests/fixtures/h4_case_sheet_rater{1,2}.csv``),
+never the real, private returned sheets.
+"""
+
+from __future__ import annotations
+
+# Standard libraries
+from pathlib import Path
+from typing import Any
+
+# Third-party libraries
+import pytest
+
+# Local modules
+from app.llm.client import FakeLlm
+from contracts.service_v1.envelope import Intent
+from evals.h4_judge_validation import (
+    RaterCaseRow,
+    _as_rater_scores,
+    _check_same_prepared_packet,
+    apply_real_judge_validation,
+    load_rater_sheet,
+    score_with_judge,
+)
+from evals.judge import LlmJudge
+from evals.judge_validation import compute_agreement
+from evals.metrics import CaseResult, compute_headline_metrics
+from evals.models import Case, CaseCategory
+from evals.repeated_runs import compute_variability
+from evals.report import EvaluationReport, SystemResult, Versions, render_markdown
+
+_MODEL = "claude-sonnet-5"
+_FIXTURES = Path(__file__).parent / "fixtures"
+_RATER_1_CSV = _FIXTURES / "h4_case_sheet_rater1.csv"
+_RATER_2_CSV = _FIXTURES / "h4_case_sheet_rater2.csv"
+
+
+def _row(**overrides: Any) -> RaterCaseRow:
+    values: dict[str, Any] = {
+        "case_id": "J-01",
+        "language": "es",
+        "category": "normal",
+        "user_turns": ("No reconozco un cargo.",),
+        "system_replies": ("Su disputa fue presentada.",),
+        "facts_and_sources": "Case CASE-001 filed.",
+        "role": "Rater 1",
+        "grounding": 2,
+        "language_quality": 2,
+        "clarification": None,
+        "comment": "",
+    }
+    return RaterCaseRow(**{**values, **overrides})
+
+
+# -----------------------------------------------------------------------------
+# load_rater_sheet
+# -----------------------------------------------------------------------------
+
+
+def test_load_rater_sheet_parses_every_column() -> None:
+    rows = load_rater_sheet(_RATER_1_CSV)
+    assert [row.case_id for row in rows] == ["J-01", "J-02", "J-03"]
+
+    j01 = rows[0]
+    assert j01.language == "es"
+    assert j01.category == "normal"
+    assert j01.user_turns == (
+        "No reconozco un cargo en mi tarjeta.",
+        "Sí, quiero presentar la disputa.",
+    )
+    assert j01.system_replies == (
+        "Su disputa fue presentada con el caso CASE-001.",
+        "La respuesta esperada es antes del 2026-10-01.",
+    )
+    assert j01.role == "Rater 1"
+    assert j01.grounding == 2
+    assert j01.clarification is None  # "NA" in the sheet
+
+    j02 = rows[1]
+    assert j02.comment == "Minor added phrase not in the record"
+
+    j03 = rows[2]
+    assert j03.clarification == 2  # scored, not NA — an ambiguous-category case
+
+
+def test_load_rater_sheet_rejects_an_out_of_range_score(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.csv"
+    bad.write_text(
+        "case_id,language,category,user_turns,system_replies,facts_and_sources,role,"
+        "grounding,language_quality,clarification,comment\n"
+        "J-99,es,normal,x,y,z,Rater 1,3,2,NA,\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="grounding must be 0, 1 or 2"):
+        load_rater_sheet(bad)
+
+
+# -----------------------------------------------------------------------------
+# _check_same_prepared_packet, via score_with_judge's own caller contract
+# -----------------------------------------------------------------------------
+
+
+def test_check_same_prepared_packet_passes_for_the_real_fixture_pair() -> None:
+    """The module's own consistency check, exercised the same way main() exercises it, against
+    the two real fixture files."""
+    rater1 = load_rater_sheet(_RATER_1_CSV)
+    rater2 = load_rater_sheet(_RATER_2_CSV)
+    _check_same_prepared_packet(rater1, rater2)  # must not raise
+
+
+def test_check_same_prepared_packet_raises_on_mismatched_facts() -> None:
+    rater1 = (_row(case_id="J-01", facts_and_sources="Case CASE-001 filed."),)
+    rater2 = (_row(case_id="J-01", facts_and_sources="Case CASE-999 filed instead."),)
+    with pytest.raises(ValueError, match="disagree on system_replies/facts_and_sources"):
+        _check_same_prepared_packet(rater1, rater2)
+
+
+def test_check_same_prepared_packet_raises_on_different_case_ids() -> None:
+    rater1 = (_row(case_id="J-01"), _row(case_id="J-02"))
+    rater2 = (_row(case_id="J-01"),)
+    with pytest.raises(ValueError, match="cover different case ids"):
+        _check_same_prepared_packet(rater1, rater2)
+
+
+# -----------------------------------------------------------------------------
+# score_with_judge
+# -----------------------------------------------------------------------------
+
+
+def test_score_with_judge_calls_once_per_row_with_the_sheets_own_data() -> None:
+    rows = load_rater_sheet(_RATER_1_CSV)
+    llm = FakeLlm(
+        responses=[
+            {"grounding": 2, "language_quality": 2, "rationale": "Grounded, clear."},
+            {"grounding": 1, "language_quality": 1, "rationale": "Missing case number."},
+            {"grounding": 2, "language_quality": 2, "clarification": 2, "rationale": "Good ask."},
+        ]
+    )
+    judge = LlmJudge(llm, model=_MODEL)
+
+    verdicts = score_with_judge(rows, judge)
+
+    assert [v.case_id for v in verdicts] == ["J-01", "J-02", "J-03"]
+    assert verdicts[0].clarification is None
+    assert verdicts[2].clarification == 2
+    # The judge was given the sheet's own captured replies/facts, not re-derived from anywhere.
+    sent = llm.requests[0]
+    assert "Su disputa fue presentada con el caso CASE-001" in sent.user_text
+    assert "Case CASE-001 filed for transaction TRX-001" in sent.user_text
+
+
+# -----------------------------------------------------------------------------
+# End-to-end agreement, against the real fixture pair
+# -----------------------------------------------------------------------------
+
+
+def test_full_flow_computes_agreement_and_flags_the_demoted_dimension() -> None:
+    """grounding and clarification both stay above threshold; language_quality is deliberately
+    constructed to fall below it (rater 1 disagrees with the judge on J-02, rater 2 does not) —
+    the fixture pair's whole point is to exercise the demotion path for real, not just the happy
+    path every other dimension already covers."""
+    rater1 = load_rater_sheet(_RATER_1_CSV)
+    rater2 = load_rater_sheet(_RATER_2_CSV)
+    llm = FakeLlm(
+        responses=[
+            {"grounding": 2, "language_quality": 2, "rationale": "J-01: grounded, clear."},
+            {"grounding": 1, "language_quality": 1, "rationale": "J-02: missing case number."},
+            {"grounding": 2, "language_quality": 2, "clarification": 2, "rationale": "J-03: good."},
+        ]
+    )
+    judge = LlmJudge(llm, model=_MODEL)
+    judge_verdicts = score_with_judge(rater1, judge)
+
+    agreement = compute_agreement(
+        _as_rater_scores(rater1), _as_rater_scores(rater2), judge_verdicts
+    )
+    by_dimension = {entry.dimension: entry for entry in agreement}
+
+    assert by_dimension["grounding"].rater_to_rater == 1.0
+    assert by_dimension["grounding"].demoted is False
+
+    lq = by_dimension["language_quality"]
+    assert lq.rater_to_rater == pytest.approx(2 / 3)
+    assert lq.rater1_to_judge == pytest.approx(2 / 3)  # below 0.8
+    assert lq.rater2_to_judge == 1.0
+    assert lq.demoted is True
+
+    clarification = by_dimension["clarification"]
+    assert clarification.rater_to_rater == 1.0  # only J-03 is comparable
+    assert clarification.demoted is False
+
+
+# -----------------------------------------------------------------------------
+# apply_real_judge_validation
+# -----------------------------------------------------------------------------
+
+
+def _minimal_report(**overrides: Any) -> EvaluationReport:
+    headline = compute_variability(
+        [
+            compute_headline_metrics(
+                (
+                    CaseResult(
+                        case_id="C1",
+                        is_adversarial=False,
+                        expected_escalation=False,
+                        observed_escalation=False,
+                        automation_attempted=True,
+                        correct_outcome=True,
+                    ),
+                )
+            )
+        ]
+    )
+    system = SystemResult(
+        system="P",
+        run_count=1,
+        variability=headline,
+        case_results=(),
+        flips=(),
+        judge_verdicts=(),
+    )
+    versions = Versions(
+        nlu_model=_MODEL,
+        render_model=_MODEL,
+        judge_model=_MODEL,
+        nlu_prompt_version="1",
+        render_prompt_version="1",
+        judge_prompt_version="1",
+        policy_version="2",
+        git_sha="abc1234",
+    )
+    case = Case(
+        case_id="norm-es-001",
+        category=CaseCategory.NORMAL,
+        lang="es",
+        provenance="team_generated",
+        seed_ref="ops_seed:CLI-1",
+        user_turns=("¿Cuánto tiempo tengo?",),
+        expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
+    )
+    defaults: dict[str, Any] = {
+        "versions": versions,
+        "golden_cases": (case,),
+        "systems": (system,),
+        "judge_validation": (),
+        "judge_validation_provenance": "team_generated_synthetic",
+        "reference_date": "2026-06-18",
+        "reference_date_source": "seeded data",
+        "bank_timezone": "America/Bogota",
+    }
+    return EvaluationReport(**{**defaults, **overrides})
+
+
+def test_apply_real_judge_validation_replaces_section_7_and_drops_the_stale_bullet() -> None:
+    before_report = _minimal_report()
+    before_text = render_markdown(before_report)
+    assert "Pending H4" in before_text
+    assert "pending the real H4 human sample" in before_text
+
+    rater1 = load_rater_sheet(_RATER_1_CSV)
+    rater2 = load_rater_sheet(_RATER_2_CSV)
+    llm = FakeLlm(
+        responses=[
+            {"grounding": 2, "language_quality": 2, "rationale": "ok"},
+            {"grounding": 1, "language_quality": 1, "rationale": "ok"},
+            {"grounding": 2, "language_quality": 2, "clarification": 2, "rationale": "ok"},
+        ]
+    )
+    judge = LlmJudge(llm, model=_MODEL)
+    agreement = compute_agreement(
+        _as_rater_scores(rater1), _as_rater_scores(rater2), score_with_judge(rater1, judge)
+    )
+
+    after_text = apply_real_judge_validation(before_text, agreement)
+
+    assert "Pending H4" not in after_text
+    assert "pending the real H4 human sample" not in after_text
+    assert "Judge-validation sample provenance: `human`." in after_text
+    assert "yes (human-only in this report)" in after_text  # language_quality's own demotion
+
+    # Every other section is untouched: the same "after" text, rendered directly from a report
+    # that already carried the real agreement and human provenance, matches exactly.
+    same_report = _minimal_report(judge_validation=agreement, judge_validation_provenance="human")
+    assert after_text == render_markdown(same_report)
+
+
+def test_apply_real_judge_validation_raises_on_an_unrecognized_report_shape() -> None:
+    with pytest.raises(ValueError, match="cannot recognize"):
+        apply_real_judge_validation("not a real report at all", agreement=())

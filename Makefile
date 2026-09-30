@@ -19,7 +19,8 @@ SEMGREP_VERSION := 1.178.0
 .PHONY: help setup lint format test test-all secrets semgrep audit run clean \
         profile pipeline analyze features corpus corpus-check train evaluate up \
         db-up db-down migrate check-migrations check-infra-scripts test-integration seed \
-        eval-bank load-seed load-analytics reset-demo-personas seed-ci-smoke
+        eval-bank load-seed load-analytics reset-demo-personas seed-ci-smoke \
+        judge-validation
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -124,6 +125,11 @@ train: ## Run the risk signal probe, the boosted-model comparison and calibratio
 
 evaluate: ## Run the evaluation harness: make evaluate SYSTEM={P|B0|B1} [SMOKE=1], or make evaluate FULL=1 [SMOKE=1]
 	$(RUN) python -m evals.cli $(if $(FULL),--full,--system $(SYSTEM)) $(if $(SMOKE),--smoke,)
+
+judge-validation: ## Score the returned H4 sample with the real judge and patch reports/evaluation.md (needs ANTHROPIC_API_KEY)
+	$(RUN) python -m evals.h4_judge_validation \
+		$(if $(RATER1),--rater1 $(RATER1),) $(if $(RATER2),--rater2 $(RATER2),) \
+		$(if $(REPORT),--report $(REPORT),)
 
 seed-ci-smoke: ## Seed the CI-only synthetic data the smoke slice needs (needs DATABASE_URL, migrated)
 	$(RUN) python -m tests.fixtures.ci_smoke_seed
