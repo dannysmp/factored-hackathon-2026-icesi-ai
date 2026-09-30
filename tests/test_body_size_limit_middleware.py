@@ -10,6 +10,7 @@ from __future__ import annotations
 
 # Standard libraries
 import asyncio
+import json
 from collections.abc import Mapping, MutableMapping
 from typing import Any
 
@@ -110,3 +111,44 @@ def test_a_body_split_across_several_asgi_messages_is_replayed_whole() -> None:
 
     assert received == [b"first-second-third"]
     assert sent[0]["status"] == 200
+
+
+def test_a_stalled_read_is_refused_with_a_request_timeout() -> None:
+    """A client that never delivers its next chunk (slow-loris style) is refused once the read
+    stalls past the timeout, rather than holding the loop open indefinitely."""
+
+    async def stalling_receive() -> MutableMapping[str, Any]:
+        await asyncio.sleep(10)  # Far longer than the middleware's own short timeout below
+        return {"type": "http.request", "body": b"", "more_body": False}  # pragma: no cover
+
+    async def downstream_app(scope: Any, receive: Any, send: Any) -> None:
+        raise AssertionError("the downstream app must never run for a stalled read")
+
+    middleware = BodySizeLimitMiddleware(downstream_app, max_bytes=1024, read_timeout_seconds=0.05)
+
+    sent: list[MutableMapping[str, Any]] = []
+
+    async def fake_send(message: MutableMapping[str, Any]) -> None:
+        sent.append(message)
+
+    scope: MutableMapping[str, Any] = {
+        "type": "http",
+        "path": "/echo",
+        "headers": [],
+        "method": "POST",
+        "state": {},
+    }
+    asyncio.run(middleware(scope, stalling_receive, fake_send))
+
+    assert sent[0]["status"] == 408
+    body = json.loads(b"".join(m["body"] for m in sent if m["type"] == "http.response.body"))
+    assert body["code"] == ErrorCode.REQUEST_TIMEOUT.value
+
+
+def test_a_read_that_completes_within_the_timeout_is_not_refused() -> None:
+    """A slower-than-instant, but still timely, chunk is not mistaken for a stall."""
+    client = TestClient(_app(max_bytes=1024))
+
+    response = client.post("/echo", content=b"on time")
+
+    assert response.status_code == 200
