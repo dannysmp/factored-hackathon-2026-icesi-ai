@@ -27,6 +27,7 @@
       "compose/**",
       "**/Dockerfile*",
       "app/security/**",
+      "app/api/**",
       "app/tools/**",
       "app/audit/**",
       "app/llm/**",

@@ -84,7 +84,7 @@ jobs:
             const LABELS = {
               approved:  { name: 'review: approved',          color: '1a7f37', description: 'Staff review approved; awaiting maintainer merge' },
               changes:   { name: 'review: changes requested', color: 'cf222e', description: 'Staff review requested changes; programmer to fix and resubmit' },
-              pending:   { name: 'review: pending',           color: 'bf8700', description: 'No staff review for the current head commit yet' },
+              pending:   { name: 'review: pending',           color: 'bf8700', description: 'Awaiting staff review or architecture note for the current head commit' },
               identity:  { name: 'review: identity mismatch', color: '8250df', description: 'PR or commits are not under the maintainer account' },
             };
             const setLabel = async (key) => {
@@ -143,6 +143,7 @@ jobs:
               return;
             }
 
+            // 2. Reports: find the latest staff-reviewer report posted for this exact head SHA.
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: number, per_page: 100,
             });
@@ -226,7 +227,7 @@ jobs:
                 + (architecture.required && !architecture.note ? '; architecture note also required' : '');
             } else if (architecture.required && !architecture.note) {
               state = 'pending';
-              description = `Staff review passed; architecture note required (${architecture.touched.length} contract path(s) changed)`;
+              description = `Staff review passed; architecture note required (${architecture.touched.length} governed path(s) changed)`;
               target_url = latest.url;
             } else {
               state = 'success';
