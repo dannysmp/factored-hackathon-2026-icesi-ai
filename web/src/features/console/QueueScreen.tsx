@@ -16,9 +16,10 @@ function itemsForView(items: readonly QueueItem[], view: TriggerView): QueueItem
 }
 
 /**
- * The console's handoff queue (AC-E10-01): every screen state rendered deliberately (loading,
- * error with a retry, empty, and the filtered table), matching `ChatFeature`'s own rule that a
- * blank screen or a raw error is never acceptable (AC-E10-18).
+ * The console's handoff queue (AC-E10-01): every screen state rendered deliberately (the initial
+ * load, error with a retry, empty, the filtered table, and a filter-triggered refetch over the
+ * table already on screen), matching `ChatFeature`'s own rule that a blank screen or a raw error
+ * is never acceptable (AC-E10-18).
  *
  * Fixed Spanish copy, not a catalog entry (D91): the console stays fixed-Spanish and never
  * imports the trilingual `useT` hook chat and sign-in use.
@@ -44,12 +45,18 @@ export function QueueScreen({
     )
   }
 
-  // Four distinct, non-overlapping treatments (AC-E10-18): the initial load, a truly empty queue,
-  // and the filters-plus-table view, which may itself show a lesser "nothing for this filter"
-  // message (`QueueTable`'s own) without losing the filters that got it there — a different
-  // state from having no tickets at all.
+  // Non-overlapping treatments (AC-E10-18): the initial load, a truly empty queue, and the
+  // filters-plus-table view, which may itself show a lesser "nothing for this filter" message
+  // (`QueueTable`'s own) without losing the filters that got it there — a different state from
+  // having no tickets at all.
   const showLoading = queue.status === 'loading' && queue.referenceDate === null
   const showEmpty = queue.status === 'ready' && queue.items.length === 0
+  // A language-filter change re-issues the fetch without clearing referenceDate/items (useQueue
+  // keeps the previous response visible while the new one is in flight), so this is a distinct
+  // fifth state from the initial load above: the table stays on screen, showing the previous
+  // response, with an inline affordance saying a refetch is under way rather than no feedback at
+  // all while a new response arrives.
+  const isRefetching = queue.status === 'loading' && queue.referenceDate !== null
 
   return (
     <section className="queue-screen" aria-label="Cola de casos escalados">
@@ -68,15 +75,22 @@ export function QueueScreen({
       )}
       {showEmpty && <p>No hay tickets abiertos en este momento.</p>}
       {!showLoading && !showEmpty && (
-        <QueueFilters
-          language={queue.language}
-          onLanguageChange={queue.setLanguage}
-          triggerView={triggerView}
-          onTriggerViewChange={setTriggerView}
-          renderTable={(view) => (
-            <QueueTable items={itemsForView(queue.items, view)} onSelectTicket={onSelectTicket} />
+        <>
+          {isRefetching && (
+            <p aria-live="polite" role="status">
+              Actualizando…
+            </p>
           )}
-        />
+          <QueueFilters
+            language={queue.language}
+            onLanguageChange={queue.setLanguage}
+            triggerView={triggerView}
+            onTriggerViewChange={setTriggerView}
+            renderTable={(view) => (
+              <QueueTable items={itemsForView(queue.items, view)} onSelectTicket={onSelectTicket} />
+            )}
+          />
+        </>
       )}
     </section>
   )
