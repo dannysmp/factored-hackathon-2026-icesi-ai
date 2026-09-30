@@ -106,7 +106,7 @@ _OUTBOX_COLUMNS = (
     "trace_id, reference_date, created_at_utc, language, trigger, customer_first_name, "
     "customer_masked_id, category, request_summary, verified_transaction_ref, "
     "attempted_action_action, attempted_action_result, existing_case_number, policy_version, "
-    "risk_score, risk_interval_low, risk_interval_high, risk_base_rate"
+    "risk_score, risk_interval_low, risk_interval_high, risk_base_rate, risk_threshold"
 )
 
 
@@ -136,6 +136,7 @@ class _OutboxRow:
     risk_interval_low: float | None
     risk_interval_high: float | None
     risk_base_rate: float | None
+    risk_threshold: float | None
 
 
 class PostgresTicketDetail:
@@ -312,6 +313,7 @@ class PostgresTicketDetail:
                 interval_low=row.risk_interval_low,
                 interval_high=row.risk_interval_high,
                 base_rate=row.risk_base_rate,
+                threshold=row.risk_threshold,
             )
             if row.risk_score is not None
             else None

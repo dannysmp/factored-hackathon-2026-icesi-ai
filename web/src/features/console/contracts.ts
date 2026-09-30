@@ -193,13 +193,15 @@ export const SourceRefSchema = z
 export type SourceRef = z.infer<typeof SourceRefSchema>
 
 /** `RiskEvidence` (contracts/service_v1/envelope.py) — AC-E10-02 requires the score, its
- * uncertainty interval and the base rate shown together; never the score alone. */
+ * uncertainty interval, the base rate and the routing threshold shown together; never the score
+ * alone. */
 export const RiskEvidenceSchema = z
   .object({
     score: z.number().min(0).max(1),
     interval_low: z.number().min(0).max(1),
     interval_high: z.number().min(0).max(1),
     base_rate: z.number().min(0).max(1),
+    threshold: z.number().min(0).max(1),
   })
   .strict()
 export type RiskEvidence = z.infer<typeof RiskEvidenceSchema>

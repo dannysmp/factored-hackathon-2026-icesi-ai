@@ -154,6 +154,7 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         "0008_audit_log_console_read_actions",
         "0008_console_read_support",
         "0009_handoff_outbox_content_fingerprint",
+        "0010_handoff_outbox_risk_threshold",
     )
 
     again = apply_migrations(dsn)

@@ -315,7 +315,9 @@ def test_actions_open_questions_and_reason_codes_round_trip_in_order(
 def test_risk_evidence_round_trips_when_present(
     outbox: PostgresHandoffOutbox, reader: PostgresTicketDetail
 ) -> None:
-    risk = RiskEvidence(score=0.7, interval_low=0.6, interval_high=0.8, base_rate=0.1)
+    risk = RiskEvidence(
+        score=0.7, interval_low=0.6, interval_high=0.8, base_rate=0.1, threshold=0.75
+    )
     ticket_ref = _record(
         outbox,
         _content(trigger=HandoffTrigger.RISK_SCORE, risk=risk),

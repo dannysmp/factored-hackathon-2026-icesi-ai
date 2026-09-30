@@ -131,7 +131,9 @@ def test_a_replay_with_different_risk_is_refused(outbox: PostgresHandoffOutbox) 
         _record(
             outbox,
             _content(
-                risk=RiskEvidence(score=0.9, interval_low=0.8, interval_high=0.95, base_rate=0.01)
+                risk=RiskEvidence(
+                    score=0.9, interval_low=0.8, interval_high=0.95, base_rate=0.01, threshold=0.85
+                )
             ),
         )
 
