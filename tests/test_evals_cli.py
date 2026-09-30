@@ -16,6 +16,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import psycopg
 import pytest
@@ -24,11 +25,14 @@ from pydantic import SecretStr
 import evals.cli
 from app.config import ConfigError, LlmProvider, load_settings
 from app.domain.calendar import DateOrigin, DomainCalendar
+from app.domain.policy.models import DisputeCategory
 from app.persistence.migrate import apply_migrations
+from contracts.service_v1.envelope import Intent
 from evals.cli import _fmt, _require_test_login_key, _select_cases, main
 from evals.golden.case_sheet import ALL_CASES
+from evals.judge import LlmJudge
 from evals.metrics import NOT_DEFINED, CaseResult, Metric
-from evals.models import Case
+from evals.models import Case, CaseCategory
 from evals.runner.smoke import SMOKE_CASE_IDS
 from tests.fixtures.ci_smoke_seed import seed_ci_smoke_data
 
@@ -149,6 +153,34 @@ def _full_result(
     )
 
 
+def _case(**overrides: Any) -> Case:
+    values: dict[str, Any] = {
+        "case_id": "c1",
+        "category": CaseCategory.NORMAL,
+        "lang": "es",
+        "provenance": "observed",
+        "seed_ref": "ops_seed:TRX-1",
+        "user_turns": ("No reconozco un cargo.",),
+        "expected_intent": Intent.CONFIRM_FILING,
+        "expected_category": DisputeCategory.UNRECOGNIZED_CHARGE,
+    }
+    return Case(**{**values, **overrides})
+
+
+# Never actually called in these hermetic tests: every ``_full_result`` leaves ``reply_text``
+# unset, so ``_score_with_judge`` skips every case before it would reach ``judge.score(...)``.
+_UNUSED_JUDGE = cast(LlmJudge, None)
+
+
+class _CapturedAnthropicLlmClient:
+    """Stands in for AnthropicLlmClient in the ``--full`` hermetic tests: records what it was
+    built with instead of touching the real Anthropic SDK, matching
+    ``_CapturedNaiveAgentClient``'s own pattern below."""
+
+    def __init__(self, api_key: SecretStr) -> None:
+        self.api_key = api_key
+
+
 def _patch_full_report_dependencies(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -160,25 +192,30 @@ def _patch_full_report_dependencies(
         nlu_model="claude-haiku-4-5-20251001",
         render_model="claude-sonnet-5",
         judge_model="claude-sonnet-5",
+        require_anthropic_key=lambda: SecretStr("sk-test-unused"),
     )
     monkeypatch.setattr(evals.cli, "load_settings", lambda: fake_settings)
+    monkeypatch.setattr(evals.cli, "AnthropicLlmClient", _CapturedAnthropicLlmClient)
     monkeypatch.setattr(
         evals.cli,
         "_resolve_calendar",
         lambda settings, *, clock: DomainCalendar(date(2026, 6, 18), DateOrigin.SETTING),
     )
     p_iterator = iter(p_runs)
-    monkeypatch.setitem(evals.cli._RUNNERS, "P", lambda settings, cases: next(p_iterator))
+    monkeypatch.setitem(evals.cli._RUNNERS, "P", lambda settings, cases, **kwargs: next(p_iterator))
     monkeypatch.setitem(evals.cli._RUNNERS, "B0", lambda settings, cases: b0_run)
     monkeypatch.setitem(evals.cli._RUNNERS, "B1", lambda settings, cases: b1_run)
 
 
 def test_build_system_result_reports_no_flips_for_a_single_run() -> None:
-    result = evals.cli._build_system_result("B0", [(_full_result("c1"),)])
+    result = evals.cli._build_system_result(
+        "B0", [(_full_result("c1"),)], (_case(case_id="c1"),), _UNUSED_JUDGE
+    )
 
     assert result.run_count == 1
     assert result.flips == ()
     assert result.case_results == (_full_result("c1"),)
+    assert result.judge_verdicts == ()  # B0 is never in _JUDGED_SYSTEMS
 
 
 def test_build_system_result_reports_flips_across_repeated_runs() -> None:
@@ -188,13 +225,15 @@ def test_build_system_result_reports_flips_across_repeated_runs() -> None:
         (_full_result("c1", correct_outcome=True),),
     ]
 
-    result = evals.cli._build_system_result("P", runs)
+    result = evals.cli._build_system_result("P", runs, (_case(case_id="c1"),), _UNUSED_JUDGE)
 
     assert result.run_count == 3
     assert len(result.flips) == 1
     assert result.flips[0].case_id == "c1"
     # The failure gallery shows only the last run, not an arbitrary earlier one.
     assert result.case_results == runs[-1]
+    # None of these results captured a transcript, so nothing reaches the judge at all.
+    assert result.judge_verdicts == ()
 
 
 def test_full_and_system_are_mutually_exclusive() -> None:
@@ -237,8 +276,10 @@ def test_full_smoke_narrows_the_case_set_and_discloses_it_in_the_report(
 
     def _capturing_runner(
         system: str,
-    ) -> Callable[[object, Sequence[Case]], tuple[CaseResult, ...]]:
-        def runner(settings: object, cases: Sequence[Case]) -> tuple[CaseResult, ...]:
+    ) -> Callable[..., tuple[CaseResult, ...]]:
+        def runner(
+            settings: object, cases: Sequence[Case], **kwargs: object
+        ) -> tuple[CaseResult, ...]:
             captured_cases[system] = tuple(cases)
             return (_full_result("c1"),)
 
