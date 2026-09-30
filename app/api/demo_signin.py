@@ -104,7 +104,11 @@ AGENT_TTL = timedelta(minutes=60)
 # live session under it risks the duplicate-open-case contamination Arch C8 names for customers,
 # and a confusing shared queue view for agents. The same defaults serve both brokers; each gets
 # its own ``IssuanceLimiter`` instance, so the caps never share counters across audiences.
-DEFAULT_ADDRESS_CAP = 3
+# The address cap covers the customer persona roster (5, personas/demo_personas_v1.yaml) with no
+# headroom to spare against the smaller agent roster (2): one real visitor stepping through every
+# customer persona in one sitting -- a real evaluation session's own shape -- must not be refused
+# by its own earlier, still-live sessions before reaching the last one.
+DEFAULT_ADDRESS_CAP = 5
 DEFAULT_GLOBAL_CAP = 50
 DEFAULT_PERSONA_CAP = 1
 
@@ -147,7 +151,24 @@ class DemoPersonaDirectory(BaseModel):
 
 
 def _client_address(request: Request) -> str:
-    """The connecting address, or a fixed placeholder when none is available."""
+    """The real connecting address, trusting the reverse proxy's own X-Forwarded-For.
+
+    The backend is reachable only from Caddy, over the internal compose network (infra/Caddyfile;
+    never exposed to the internet directly) -- Caddy is the sole, trusted first hop, and its own
+    ``reverse_proxy`` directive sets X-Forwarded-For to the address it saw on its own accepted
+    connection, verified against a real Caddy instance (a caller-supplied value in the same
+    header does not survive: Caddy replaces it, not appends to it). Only the last entry is
+    trusted, in case a future hop ever does append rather than replace. Without the assumption
+    that ``request.client.host`` is a real client identity, every visitor collapses onto the one
+    address Caddy connects from, silently turning the per-address issuance cap below into a cap
+    on the whole deployment instead of on each caller -- the fallback below (no header, or an
+    empty one) keeps unproxied local runs and the existing test suite working exactly as before.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        last = forwarded.rsplit(",", 1)[-1].strip()
+        if last:
+            return last
     return request.client.host if request.client else "unknown"
 
 
