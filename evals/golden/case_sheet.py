@@ -124,6 +124,7 @@ def _row(case: Case) -> dict[str, str]:
         ),
         "injected_failure": (
             f"{case.injected_failure.tool.value}:{case.injected_failure.cause}"
+            f":retryable={str(case.injected_failure.retryable).lower()}"
             if case.injected_failure
             else ""
         ),

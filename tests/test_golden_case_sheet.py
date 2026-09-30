@@ -18,6 +18,8 @@ from pathlib import Path
 import pytest
 
 # Local modules
+from contracts.service_v1.envelope import Intent
+from contracts.service_v1.tools import Tool
 from evals.golden import case_sheet
 from evals.golden.case_sheet import (
     ALL_CASES,
@@ -28,7 +30,7 @@ from evals.golden.case_sheet import (
     render_case_sheet,
     write_case_sheet,
 )
-from evals.models import CaseCategory
+from evals.models import Case, CaseCategory, InjectedToolFailure, SafeBehavior
 
 
 def test_render_produces_one_row_per_case() -> None:
@@ -48,6 +50,41 @@ def test_row_fields_match_the_case() -> None:
     assert first_row["case_id"] == first_case.case_id
     assert first_row["lang"] == first_case.lang
     assert first_row["user_turns"] == " | ".join(first_case.user_turns)
+
+
+def _injected_failure_case(*, retryable: bool) -> Case:
+    return Case(
+        case_id=f"injected-failure-retryable-{retryable}",
+        category=CaseCategory.ADVERSARIAL,
+        lang="es",
+        provenance="injected",
+        seed_ref="eval_bank:UNUSED",
+        user_turns=("¿Cuáles son mis transacciones?",),
+        expected_intent=Intent.HANDOFF,
+        expected_safe_behavior=SafeBehavior.HANDOFF,
+        injected_failure=InjectedToolFailure(
+            tool=Tool.LIST_TRANSACTIONS, cause="error", retryable=retryable
+        ),
+        description="Unused by this test.",
+    )
+
+
+def _rendered_injected_failure(case: Case) -> str:
+    row = next(csv.DictReader(io.StringIO(render_case_sheet((case,)))))
+    return row["injected_failure"]
+
+
+def test_the_injected_failure_column_states_retryable() -> None:
+    # A dropped `retryable` would render the two cases below identically, silently losing exactly
+    # the distinction a case is authored to test.
+    assert (
+        _rendered_injected_failure(_injected_failure_case(retryable=True))
+        == "list_transactions:error:retryable=true"
+    )
+    assert (
+        _rendered_injected_failure(_injected_failure_case(retryable=False))
+        == "list_transactions:error:retryable=false"
+    )
 
 
 def test_all_cases_is_ordered_by_category_declaration_not_delivery() -> None:
