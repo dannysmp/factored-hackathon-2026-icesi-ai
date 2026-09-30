@@ -38,16 +38,29 @@ Design Principles
 -----------------
 - **Two vantage points, never a third.** Every check reads either ``TurnResponse``'s own fields
   (``next_expected``, ``handoff_ticket``, ``lang``) or the store's own tables (``cases``,
-  ``handoff_outbox``), by direct query — the same pattern ``evals.runner.seed_resolution`` already
-  uses for the same reason: this is harness-only code, and going through the production
-  ``PostgresToolPort`` here would write spurious audit records into the same log the conversation
-  under test uses.
+  ``handoff_outbox``, ``dialogue_state``), by direct query — the same pattern
+  ``evals.runner.seed_resolution`` already uses for the same reason: this is harness-only code, and
+  going through the production ``PostgresToolPort`` here would write spurious audit records into
+  the same log the conversation under test uses. Reading ``dialogue_state`` stays inside the
+  store vantage point, not a third one: it is dialogue bookkeeping the store already persists, not
+  the envelope, a decision or a reason code, so it does not reopen ADR-2's boundary.
 - **``next_expected`` is a structural signal, not a text guess.** A ``CONFIRM_FILING`` reply is the
   only reply that ever sets ``next_expected`` to ``Slot.CONFIRMATION`` — checking that field is a
   contract-level assertion, not parsing rendered wording, and it is only ever true when the policy
   decision was eligible (every ``CONFIRM_FILING``-expecting case in the golden set today declares
   ``expected_reason_code=ReasonCode.ELIGIBLE``), so it stands in for the reason code the API does
   not expose.
+- **A ``CONFIRM_FILING`` case's target is checked, not just that some confirmable state was
+  reached.** ``next_expected is Slot.CONFIRMATION`` alone cannot tell a correct run from one that
+  reached confirmation for the *wrong* transaction or category. ``app.conversation.state``'s own
+  invariant — a session's ``selected_ref``/``category`` are set once and never reset once chosen —
+  means ``dialogue_state`` still names exactly the pending-confirmation target at the point every
+  ``CONFIRM_FILING`` case's script stops (before any filing), so ``_dialogue_state_matches`` reads
+  it back and compares it against the case's own ``seed_ref`` and ``expected_category``, the same
+  verify-before-report discipline already applied to a claimed handoff ticket. This assumes the
+  case's script stops at the confirmation turn, as every ``CONFIRM_FILING`` case does today; a
+  future case whose script continues into an actual filing belongs to the still-deferred
+  ``FILING_RESULT``/oracle path instead (see Limitations), not this check.
 - **A claimed handoff is verified, never trusted.** ``TurnResponse.handoff_ticket`` is read back
   against ``handoff_outbox`` before it counts as an escalation, matching the verify-before-report
   discipline the rest of this codebase applies to every other write.
@@ -113,7 +126,12 @@ conversation is not caught by this module; that finer-grained judgment stays the
 computed until a system variant that calls a paid model runs through this scorer (P's own NLU is
 the only such caller today; token accounting is a later increment's job). ``latency_seconds`` is
 the case's total wall time (the sum of every turn's own latency), since ``CaseResult`` carries one
-figure per case, not one per turn.
+figure per case, not one per turn. ``_dialogue_state_matches`` grounds a ``CONFIRM_FILING`` case's
+transaction and category, but not its reason code: every such case today declares
+``expected_reason_code=ReasonCode.ELIGIBLE``, and ``dialogue_state`` carries no reason-code column
+to verify it against before a case is actually filed — a genuine, still-disclosed gap distinct
+from the one this module now closes, not something a future increment should assume was already
+covered here.
 """
 
 from __future__ import annotations
@@ -126,6 +144,7 @@ from typing import Literal
 import psycopg
 
 # Local modules
+from app.domain.policy.models import DisputeCategory  # The confirm-filing target's own category
 from app.llm.masking import redact_pan  # The one PAN-shaped-digit-run detector this project trusts
 from contracts.service_v1.api import TurnResponse  # One turn's customer-facing reply
 from contracts.service_v1.envelope import Intent, Slot  # Expected intent; the confirmation signal
@@ -196,6 +215,28 @@ def _handoff_ticket_is_backed(dsn: str, session_id: str, ticket_ref: str) -> boo
             (session_id, ticket_ref),
         )
         return cur.fetchone() is not None
+
+
+def _dialogue_state_matches(
+    dsn: str, session_id: str, expected_ref: str, expected_category: DisputeCategory
+) -> bool:
+    """Whether this session's own ``dialogue_state`` still names ``expected_ref``/
+    ``expected_category`` as the pending-confirmation target.
+
+    ``app.conversation.state``'s own invariant — a session's ``selected_ref``/``category`` are set
+    once and never reset once chosen — means these two columns still hold exactly the pending
+    confirmation's target at the point every ``CONFIRM_FILING`` case's script stops today, before
+    any filing (see the module's own Design Principles for why this is not a third vantage point).
+    """
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT selected_ref, category FROM dialogue_state WHERE session_id = %s",
+            (session_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return False
+        return row[0] == expected_ref and row[1] == expected_category.value
 
 
 def _packet_is_useful(dsn: str, case: Case, ticket_ref: str) -> bool:
@@ -274,11 +315,18 @@ def score_case(dsn: str, transcript: RunTranscript) -> CaseResult:
     expected_escalation = expected_escalation_for(case)
 
     if case.expected_intent is Intent.CONFIRM_FILING:
+        assert case.expected_category is not None  # noqa: S101 -- enforced by Case's own validator
         correct_outcome = (
             final_reply.next_expected is Slot.CONFIRMATION
             and not filed_a_case
             and not observed_escalation
             and lang_matches
+            and _dialogue_state_matches(
+                dsn,
+                transcript.session_id,
+                case.seed_ref.removeprefix("ops_seed:"),
+                case.expected_category,
+            )
         )
     elif case.expected_intent is Intent.REFUSE:
         correct_outcome = (

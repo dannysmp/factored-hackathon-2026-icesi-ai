@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from app.domain.policy.models import ReasonCode
+from app.domain.policy.models import DisputeCategory, ReasonCode
 from contracts.service_v1.envelope import Intent
 from evals.golden.normal import CASES
 from evals.models import CaseCategory
@@ -53,6 +53,32 @@ def test_filed_dispute_cases_expect_confirm_filing_and_eligible() -> None:
     assert len(filed) == 29
     assert all(case.expected_intent is Intent.CONFIRM_FILING for case in filed)
     assert all(case.expected_reason_code is ReasonCode.ELIGIBLE for case in filed)
+
+
+#: Each filed-dispute case_id's own infix names its dispute category; a case moved into the wrong
+#: group in evals/golden/normal.py would state a category its own id disagrees with.
+_CATEGORY_INFIX = {
+    "unrecognized": DisputeCategory.UNRECOGNIZED_CHARGE,
+    "wrongamt": DisputeCategory.WRONG_AMOUNT,
+    "duplicate": DisputeCategory.DUPLICATE_CHARGE,
+    "service": DisputeCategory.SERVICE_NOT_RECEIVED,
+}
+
+
+def test_filed_dispute_cases_declare_the_category_their_own_case_id_names() -> None:
+    filed = [case for case in CASES if case.seed_ref.startswith("ops_seed:TRX-")]
+    counts = Counter(case.expected_category for case in filed)
+    assert counts == {
+        DisputeCategory.UNRECOGNIZED_CHARGE: 10,
+        DisputeCategory.WRONG_AMOUNT: 7,
+        DisputeCategory.DUPLICATE_CHARGE: 5,
+        DisputeCategory.SERVICE_NOT_RECEIVED: 7,
+    }
+    for case in filed:
+        infix = next(infix for infix in _CATEGORY_INFIX if infix in case.case_id)
+        assert case.expected_category is _CATEGORY_INFIX[infix], (
+            f"{case.case_id} declares {case.expected_category}, but its own id names {infix}"
+        )
 
 
 def test_policy_answer_cases_expect_policy_answer_and_no_reason_code() -> None:

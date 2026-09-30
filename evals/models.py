@@ -56,7 +56,10 @@ from enum import StrEnum  # Closed sets: category, safe behavior
 from typing import Literal  # The provenance label
 
 # Local modules
-from app.domain.policy.models import ReasonCode  # Expected policy-engine reason, when applicable
+from app.domain.policy.models import (  # Expected policy-engine reason and dispute category
+    DisputeCategory,
+    ReasonCode,
+)
 from contracts.service_v1.envelope import Intent, Lang  # Expected reply intent; case language
 from contracts.service_v1.tools import Tool  # Which tool an injected failure targets
 
@@ -135,7 +138,9 @@ class Case:
         `data/gold/eval_bank` identifier for a frozen scenario built for this harness (in
         particular, every injected adversarial condition — an orphan transaction, a null field,
         a poisoned merchant name — lives in `eval_bank`, since `ops_seed` is not built to hold
-        one).
+        one). A `CONFIRM_FILING` case's `seed_ref` names exactly one `ops_seed:TRX-...`
+        transaction — the one `expected_category` names a correct run as confirming filing for
+        (see `_exactly_confirm_filing_cases_declare_a_target`).
     user_turns
         The customer's scripted lines, in order, in `lang`.
     expected_intent
@@ -157,6 +162,14 @@ class Case:
         this field promotes that knowledge from `description` prose to a checked value. Not
         validated against the real corpus files here (`Case` stays I/O-free, per the module's own
         rule); a test resolves every declared id against `corpus_index.load_chunks` instead.
+    expected_category
+        The dispute category a correct run confirms filing for; required exactly when
+        `expected_intent` is `Intent.CONFIRM_FILING`, forbidden otherwise (see
+        `_exactly_confirm_filing_cases_declare_a_target`). Grounds `correct_outcome`'s check in
+        which transaction and category a run actually reached confirmation for, not merely that
+        some confirmable state was reached — `seed_ref` already names the one transaction a
+        `CONFIRM_FILING` case's filing targets (see below), so this field states the other half of
+        that target without a second, redundant reference.
     injected_failure
         Set only for a case whose scripted condition is a tool call failing mid-flow; the runner's
         failure injector reads it to fail exactly that tool for this case's run. `None` for every
@@ -176,6 +189,7 @@ class Case:
     expected_reason_code: ReasonCode | None = None
     expected_safe_behavior: SafeBehavior | None = None
     expected_policy_section_id: str | None = None
+    expected_category: DisputeCategory | None = None
     injected_failure: InjectedToolFailure | None = None
     description: str = ""
 
@@ -186,6 +200,7 @@ class Case:
             raise ValueError("user_turns must hold at least one turn")
         self._exactly_adversarial_cases_declare_a_safe_behavior()
         self._exactly_policy_answers_declare_a_section()
+        self._exactly_confirm_filing_cases_declare_a_target()
 
     def _exactly_adversarial_cases_declare_a_safe_behavior(self) -> None:
         """`expected_safe_behavior` is set if and only if the case is adversarial."""
@@ -204,6 +219,20 @@ class Case:
             raise ValueError("a policy-answer case must declare expected_policy_section_id")
         if has_section and not is_policy_answer:
             raise ValueError("expected_policy_section_id is policy-answer-only")
+
+    def _exactly_confirm_filing_cases_declare_a_target(self) -> None:
+        """`expected_category` is set if and only if the reply is a filing confirmation, and a
+        `CONFIRM_FILING` case's `seed_ref` names exactly one transaction to confirm it for."""
+        is_confirm_filing = self.expected_intent is Intent.CONFIRM_FILING
+        has_category = self.expected_category is not None
+        if is_confirm_filing and not has_category:
+            raise ValueError("a confirm-filing case must declare expected_category")
+        if has_category and not is_confirm_filing:
+            raise ValueError("expected_category is confirm-filing-only")
+        if is_confirm_filing and not self.seed_ref.startswith("ops_seed:TRX-"):
+            raise ValueError(
+                "a confirm-filing case's seed_ref must name exactly one ops_seed transaction"
+            )
 
     @property
     def is_adversarial(self) -> bool:
