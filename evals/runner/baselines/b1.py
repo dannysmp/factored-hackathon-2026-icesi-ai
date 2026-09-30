@@ -54,9 +54,14 @@ Design Principles
   this transport actually exposes, never a looser check than P's or B0's own.
 - **One case's failure never silences the rest of the batch**, the same rule
   ``evals.runner.runner.run_cases`` applies: a case that fails to resolve or score with
-  ``ValueError`` or ``NotImplementedError`` is recorded as a named ``CaseResult.error``
-  (``evals.scoring.error_result``) instead of stopping the run; any other exception still
-  propagates.
+  ``ValueError``, ``NotImplementedError`` or ``LlmUnavailable`` is recorded as a named
+  ``CaseResult.error`` (``evals.scoring.error_result``) instead of stopping the run; any other
+  exception still propagates. ``LlmUnavailable`` is B1's own addition to the two failure classes
+  the HTTP runner already anticipates: a real Anthropic API call can time out, hit a rate limit or
+  answer with a 5xx independently of anything about the case itself, and one such transient blip
+  must not cost the batch every case still queued behind it — the same reasoning that already
+  puts ``httpx.HTTPStatusError`` (P and B0's own equivalent, surfaced through the turns endpoint)
+  on the HTTP runner's list.
 
 Runtime Contract
 -----------------
@@ -75,6 +80,15 @@ explicitly — the evaluation plan's "same model" wording does not say which of 
 models (understanding vs. rendering) that means for a single unified agent role, and this module
 does not decide it either; the caller (the CLI wiring, a following increment) names one from the
 allow-list.
+``run_cases`` still propagates, uncaught, a ``LlmRequestRejected`` raised by
+``anthropic.RequestTooLargeError`` — a case whose accumulated conversation grows past the
+provider's own request-byte limit (a pathological tool-call loop, an unusually long scripted case)
+would abort the batch rather than being recorded and skipped, since this failure class is grouped
+with the account-level causes ``_CASE_FAILURES`` deliberately excludes. No golden-set case today
+is anywhere near that limit, so this is a real, open gap rather than a demonstrated one; tracked as
+a follow-up rather than closed here, since distinguishing it cleanly needs a narrower exception (or
+a status-code check) in ``app.llm.client``/``app.llm.anthropic_client``, which is architect-review
+territory this module's own scope does not reach.
 """
 
 from __future__ import annotations
@@ -89,6 +103,7 @@ from app.config import AppEnvironment, ConfigError, Settings
 from app.conversation.renderer import reference_date_line  # Pure; the same line P renders
 from app.domain.calendar import DomainCalendar
 from app.domain.policy.models import Policy
+from app.llm.client import LlmUnavailable  # A transient provider failure, safe to retry later
 from app.llm.pricing import cost_usd  # Per-call cost accounting, the same table P's own turns use
 from app.persistence.audit import PostgresAuditSink
 from app.persistence.handoff_outbox import PostgresHandoffOutbox
@@ -112,7 +127,19 @@ _TIMEOUT_SECONDS = 30.0
 
 #: The batch's own documented, anticipated per-case failure modes — anything else still
 #: propagates and stops the run, the same rule ``evals.runner.runner.run_cases`` applies.
-_CASE_FAILURES: tuple[type[Exception], ...] = (ValueError, NotImplementedError)
+#: ``LlmUnavailable`` (a timeout, a rate limit, a 5xx from the real Anthropic API) is B1's own
+#: addition to the set the HTTP runner already catches: P and B0 surface the same class of
+#: provider failure as ``httpx.HTTPStatusError`` through the turns endpoint, already anticipated
+#: there; B1 calls the provider directly, so it needs the same failure named in its own terms.
+#: ``LlmRequestRejected`` is deliberately not included here for its own usual causes (bad
+#: credentials, no model access) — an account-level problem recurs identically for every case in
+#: the batch, so stopping the run outright surfaces it once, loudly, rather than recording the
+#: same failure 135 times over. It is a narrower exception than that framing alone covers, though:
+#: ``NaiveAgentClient`` raises it for ``anthropic.RequestTooLargeError`` too (a 413, the request
+#: exceeding the provider's byte limit), which is driven by one case's own accumulated
+#: conversation, not the account — this gap is real and open, not closed by this decision; see the
+#: module's own Limitations.
+_CASE_FAILURES: tuple[type[Exception], ...] = (ValueError, NotImplementedError, LlmUnavailable)
 
 _SYSTEM_PROMPT = (
     "You are a bank customer service assistant. A customer will describe a problem with a "
@@ -342,9 +369,10 @@ def run_cases(
     the tool dispatcher and session id are rebuilt per case: B1ToolDispatcher is scoped to one
     customer and language, and a case's own seed_ref and lang may each differ from the last case's.
 
-    A case that fails to resolve or score with ``ValueError`` or ``NotImplementedError`` (a
-    malformed ``seed_ref``, an unscored ``expected_intent``) is recorded as a named
-    ``CaseResult.error`` instead of stopping the batch; any other exception still propagates.
+    A case that fails to resolve, run or score with ``ValueError``, ``NotImplementedError`` or
+    ``LlmUnavailable`` (a malformed ``seed_ref``, an unscored ``expected_intent``, a transient
+    failure from the real Anthropic API) is recorded as a named ``CaseResult.error`` instead of
+    stopping the batch; any other exception still propagates.
 
     Raises
     ------
