@@ -36,8 +36,11 @@ must not be left running unattended; turn it off for a deployment meant to persi
 
 The `deploy_metabase` input (default off) adds a job on top of the base deployment: runs
 `08-deploy-metabase.sh`, then `10-configure-metabase-dashboard.sh`, then
-`06-smoke-test.sh --dashboard`. Left off for a base-stack-only smoke exercise; turn it on alongside
-`teardown_after: false` for a deployment meant to persist and carry the dashboard.
+`06-smoke-test.sh --dashboard`, then `12-hardening-check.sh` again — `08-deploy-metabase.sh`
+swaps the deployed Caddy config to add the dashboard subdomain, so the hardening check runs a
+second time against that new config, not only against the one the base job already proved. Left
+off for a base-stack-only smoke exercise; turn it on alongside `teardown_after: false` for a
+deployment meant to persist and carry the dashboard.
 
 **One-time prerequisites, before the first run:**
 - Scripts `01`–`04` already run once against the account.
@@ -138,9 +141,11 @@ parameter by name, never printing its value — `POSTGRES_PASSWORD` is mandatory
 string when their parameter doesn't exist yet, not an error). Metabase's own `MB_DB_PASS` and
 `MB_SESSION_SECRET_KEY` are read the same way, by `08-deploy-metabase.sh`.
 
-`infra/Caddyfile.with-metabase` is the Caddyfile that also routes the dashboard subdomain; it
-replaces the plain `infra/Caddyfile` on the host only once Metabase's first-run setup has
-succeeded (ADR-11), never before — see `08-deploy-metabase.sh`'s own header for why.
+`infra/Caddyfile.dashboard-block` is the dashboard subdomain's own site block; `08-deploy-
+metabase.sh` deploys it appended onto the real `infra/Caddyfile` (never a second, separately
+maintained copy of the app's own site block, which could drift and silently lose hardening) once
+Metabase's first-run setup has succeeded (ADR-11), never before — see that script's own header
+for why.
 
 ## Capacity
 

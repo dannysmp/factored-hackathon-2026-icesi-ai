@@ -12,6 +12,10 @@
 #   The Metabase dashboard is a separate, opt-in job on top of the same
 #   deployment: `deploy_metabase` leaves it out of a base-stack-only smoke
 #   exercise, and stands it up alongside a deployment meant to persist.
+#   `08-deploy-metabase.sh` swaps the deployed Caddy config, so the
+#   hardening check runs a second time after that job too — the same
+#   config change that opens the dashboard subdomain must not be the one
+#   place the hardening baseline silently regresses.
 #
 # Security posture:
 #   No static AWS keys: the job assumes infra/scripts/01-create-oidc-role.sh's
@@ -176,6 +180,9 @@ jobs:
 
       - name: Smoke test the dashboard subdomain over HTTPS
         run: infra/scripts/06-smoke-test.sh "${{ needs.deploy-and-smoke-test.outputs.host_name }}" --dashboard
+
+      - name: Re-run the post-deploy hardening check after the Caddy config swap
+        run: infra/scripts/12-hardening-check.sh "${{ needs.deploy-and-smoke-test.outputs.host_name }}"
 
   teardown:
     name: teardown
