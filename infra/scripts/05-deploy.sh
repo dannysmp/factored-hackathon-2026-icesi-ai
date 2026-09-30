@@ -142,6 +142,12 @@ export ANTHROPIC_API_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/a
 export SESSION_SIGNING_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/session-signing-key --with-decryption --query Parameter.Value --output text)"
 export POSTGRES_PASSWORD="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/postgres-password --with-decryption --query Parameter.Value --output text)"
 resolve_optional_secret() {
+  # "ParameterNotFound" is a stable error-type token the AWS CLI itself defines, not a
+  # locale-dependent message string -- present in its output the same way regardless of
+  # AWS_DEFAULT_OUTPUT or the locale in use, so matching it directly is safe. A fresh mktemp
+  # per call, rather than a fixed path, means concurrent calls (the three optional secrets, if
+  # this were ever parallelized) never share an error file, so none can overwrite what another
+  # wrote.
   local name="\$1" value err_file
   err_file="\$(mktemp)"
   if value="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/"\${name}" --with-decryption \
