@@ -5,7 +5,7 @@
 -- handoff_reason_codes already use for a ticket's bounded repeating parts (0006). Insert-only from
 -- the application; it needs no append-only trigger of its own the way audit_log/signin_audit do —
 -- each note-add is already, independently and immutably recorded in audit_log via
--- ticket_note_added (0012), which is the compliance trail. This table is the note's own current
+-- ticket_note_added (0013), which is the compliance trail. This table is the note's own current
 -- home for the console to read back, not the record of the fact that it was added.
 
 CREATE TABLE handoff_notes (
