@@ -46,9 +46,10 @@ readonly AMI_PARAMETER="/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-d
 # unassociated addresses (a small ongoing cost, not a correctness or security issue; the
 # association step below still converges on one IP per instance). Not fixed with a lock here,
 # because nothing in this project's actual invocation model triggers concurrent runs — these
-# scripts are run manually, one at a time, or from a single `workflow_dispatch` job, never from
-# multiple simultaneous callers (`infra/README.md`'s documented invocation). Add a lock (e.g. a
-# DynamoDB conditional-write lock) before that changes, not before.
+# scripts are run manually, one at a time, or from a single `workflow_dispatch` job serialized by
+# `deploy.yml`'s own `concurrency: group: deploy` guard, never from multiple simultaneous callers.
+# Add a lock (e.g. a DynamoDB conditional-write lock) before that invocation model changes, not
+# before.
 ensure_elastic_ip() {
   local instance_id="$1"
   local allocation_id public_ip associated_instance
