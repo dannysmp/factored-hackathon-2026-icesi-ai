@@ -325,13 +325,18 @@ jobs:
         run: docker build -t dispute-intake-backend:ci -f Dockerfile .
       - name: Confirm every runtime-read directory actually reached the image
         # Catches the class of bug the Dockerfile/.dockerignore's own allow-list already missed
-        # twice (personas/, then prompts/): a file the app reads from disk at serving time,
-        # never exercised by the other jobs here since they all run against the source tree
-        # directly, not this image. Import from inside a real container, not the checkout.
+        # three times (personas/, prompts/, then pipelines/): a file or package the app reads or
+        # imports from disk at serving time or at deploy-time, never exercised by the other jobs
+        # here since they all run against the source tree directly, not this image. Import from
+        # inside a real container, not the checkout. load_seed/load_eval_bank are never invoked
+        # by the running service (app.main never imports either); they are the deploy pipeline's
+        # own one-off migrate/seed containers, imported here only to prove the data dependency
+        # group and pipelines/ actually reached this image, not to exercise their real loading.
         run: |
           docker run --rm dispute-intake-backend:ci python -c "
           from app.security.demo_personas import load_personas
           from app.llm.prompts import load_prompt
+          from app.persistence import load_seed, load_eval_bank
           load_personas()
           for name in ('nlu_v1', 'render_v1', 'judge_v1'):
               load_prompt(name)
