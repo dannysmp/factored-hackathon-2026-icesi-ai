@@ -1,4 +1,4 @@
-/** Component test: the queue screen's four states (AC-E10-18) and its accessibility. */
+/** Component test: the queue screen's states (AC-E10-18) and its accessibility. */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
