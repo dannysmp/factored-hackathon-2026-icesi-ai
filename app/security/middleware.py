@@ -36,13 +36,22 @@ Design Principles
 - The body-size cap runs before session authentication: an oversized body is refused before a JWT
   is ever verified, and it counts bytes actually read off the wire, never a client-stated
   ``Content-Length`` alone.
+- **The whole drain is bounded by one deadline, not a per-read idle timeout.** A client that
+  trickles in near-zero-byte chunks with ``more_body`` forever would otherwise hold the draining
+  loop (and the connection behind it) open indefinitely without ever crossing the byte cap — a
+  slow-loris-style resource hold distinct from the size cap above. A per-message idle timeout
+  alone would not close this: a client pacing itself just inside that timeout on every message
+  resets the clock forever. ``BODY_READ_TIMEOUT_SECONDS`` instead bounds the entire drain
+  (``_drain``) as one operation, so the total time to deliver a body is capped regardless of how
+  it is paced.
 
 Runtime Contract
 ----------------
 ``RequestContextMiddleware(app)`` sets ``scope["state"]["request_id"]`` and the ``X-Request-ID``
 header.
-``BodySizeLimitMiddleware(app, max_bytes=MAX_BODY_BYTES)`` refuses a request body over the limit
-with ``PAYLOAD_TOO_LARGE`` (413).
+``BodySizeLimitMiddleware(app, max_bytes=MAX_BODY_BYTES, read_timeout_seconds=
+BODY_READ_TIMEOUT_SECONDS)`` refuses a request body over the limit with ``PAYLOAD_TOO_LARGE``
+(413), or a read that stalls past the timeout with ``REQUEST_TIMEOUT`` (408).
 ``SessionAuthMiddleware(app, sessions, audience_by_prefix, public_paths)`` sets
 ``scope["state"]["principal"]``.
 ``current_request_id()`` returns the identifier of the request being handled.
@@ -60,6 +69,7 @@ connection may see it close rather than a clean pipelined reply to its next requ
 from __future__ import annotations
 
 # Standard libraries
+import asyncio  # Bounding how long a slow client may hold the body-draining loop open
 import logging  # Structured events about refused sessions
 import re  # Safe shape of a client-supplied request identifier
 from collections.abc import Iterable, Mapping, MutableMapping  # Types of ASGI messages
@@ -85,6 +95,7 @@ REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9._-]{8,64}")
 API_PREFIX = "/v1"
 MAX_TOKEN_LENGTH = 2048
 MAX_BODY_BYTES = 64 * 1024
+BODY_READ_TIMEOUT_SECONDS = 10.0
 
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 _session_id: ContextVar[str | None] = ContextVar("session_id", default=None)
@@ -183,7 +194,8 @@ class RequestContextMiddleware:
 
 
 class BodySizeLimitMiddleware:
-    """Refuses an HTTP request whose body exceeds ``MAX_BODY_BYTES``.
+    """Refuses an HTTP request whose body exceeds ``MAX_BODY_BYTES``, or whose whole drain takes
+    longer than ``BODY_READ_TIMEOUT_SECONDS``.
 
     Counts bytes actually read off the wire, never a client-supplied ``Content-Length`` alone (a
     header a client can omit or understate, notably under chunked transfer encoding). The whole
@@ -193,16 +205,20 @@ class BodySizeLimitMiddleware:
     verified), after the request-context middleware (so the refusal still carries a request id).
     """
 
-    def __init__(self, app: ASGIApp, *, max_bytes: int = MAX_BODY_BYTES) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_bytes: int = MAX_BODY_BYTES,
+        read_timeout_seconds: float = BODY_READ_TIMEOUT_SECONDS,
+    ) -> None:
         self._app = app
         self._max_bytes = max_bytes
+        self._read_timeout_seconds = read_timeout_seconds
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Handle one request; other scopes (WebSocket, lifespan) pass through unchanged."""
-        if scope["type"] != "http":
-            await self._app(scope, receive, send)
-            return
-
+    async def _drain(self, receive: Receive) -> tuple[list[Message], ProblemError | None]:
+        """Read the whole body, buffering it. Returns the buffered messages and, if the size cap
+        was exceeded, the refusal to send instead of running the downstream app."""
         buffered: list[Message] = []
         total = 0
         while True:
@@ -219,12 +235,42 @@ class BodySizeLimitMiddleware:
                     "The request body is too large",
                     f"The body must be at most {self._max_bytes} bytes.",
                 )
-                request_id = str(_state(scope).get("request_id", "-"))
-                response = problem_response(problem, request_id)
-                await response(scope, receive, send)
-                return
+                return buffered, problem
             if not message.get("more_body", False):
                 break
+        return buffered, None
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Handle one request; other scopes (WebSocket, lifespan) pass through unchanged."""
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        try:
+            buffered, problem = await asyncio.wait_for(
+                self._drain(receive), timeout=self._read_timeout_seconds
+            )
+        except TimeoutError:
+            # One deadline for the whole drain, not per read: a client trickling in evenly paced
+            # small chunks forever would otherwise reset an idle timeout on every message and
+            # never be caught (the exact case the read-timeout gap was reported for).
+            logger.warning("body_read_timed_out request_id=%s", current_request_id())
+            problem = ProblemError(
+                ErrorCode.REQUEST_TIMEOUT,
+                408,
+                "The request took too long",
+                f"The request body must arrive within {self._read_timeout_seconds} seconds.",
+            )
+            request_id = str(_state(scope).get("request_id", "-"))
+            response = problem_response(problem, request_id)
+            await response(scope, receive, send)
+            return
+
+        if problem is not None:
+            request_id = str(_state(scope).get("request_id", "-"))
+            response = problem_response(problem, request_id)
+            await response(scope, receive, send)
+            return
 
         index = 0
 
