@@ -50,6 +50,12 @@ export function QueueScreen({
   // state from having no tickets at all.
   const showLoading = queue.status === 'loading' && queue.referenceDate === null
   const showEmpty = queue.status === 'ready' && queue.items.length === 0
+  // A language-filter change re-issues the fetch without clearing the already-loaded table
+  // (`useQueue`'s own `setLanguage` keeps `items`/`referenceDate`, only flips `status`), so the
+  // filters and the (still-stale) table stay visible during a refetch — this affordance is the
+  // only signal that a request is actually in flight, distinct from `showLoading`'s own first-load
+  // treatment, which replaces the table entirely rather than sitting alongside it.
+  const showUpdating = queue.status === 'loading' && queue.referenceDate !== null
 
   return (
     <section className="queue-screen" aria-label="Cola de casos escalados">
@@ -64,6 +70,11 @@ export function QueueScreen({
       {showLoading && (
         <p aria-live="polite" role="status">
           Cargando la cola…
+        </p>
+      )}
+      {showUpdating && (
+        <p className="queue-updating" aria-live="polite" role="status">
+          Actualizando…
         </p>
       )}
       {showEmpty && <p>No hay tickets abiertos en este momento.</p>}

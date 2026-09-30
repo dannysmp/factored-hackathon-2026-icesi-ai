@@ -66,6 +66,33 @@ describe('QueueScreen', () => {
     expect(screen.getAllByRole('row')).toHaveLength(DEMO_QUEUE.items.length + 1)
   })
 
+  it('shows an updating affordance over the still-visible table during a filter refetch', async () => {
+    const user = userEvent.setup()
+    let callCount = 0
+    const client: QueueClient = {
+      fetchQueue: (filters) => {
+        callCount += 1
+        // The first call (initial load) resolves; the second (the language change below) never
+        // does, freezing the screen mid-refetch so the still-stale table and the affordance can
+        // both be asserted on at once.
+        if (callCount === 1) {
+          return new FixtureQueueClient(DEMO_QUEUE).fetchQueue(filters)
+        }
+        return new Promise(() => undefined)
+      },
+    }
+    render(<QueueScreen client={client} onSelectTicket={vi.fn()} />)
+    await screen.findAllByRole('row')
+
+    await user.selectOptions(screen.getByLabelText('Idioma'), 'pt')
+
+    expect(screen.getByRole('status')).toHaveTextContent('Actualizando')
+    // The table itself is still the last-loaded (unfiltered) rows, not cleared or replaced: the
+    // language filter's own effect on the row count only lands once the refetch resolves, which
+    // this test's second call deliberately never does.
+    expect(screen.getAllByRole('row')).toHaveLength(DEMO_QUEUE.items.length + 1)
+  })
+
   it('narrows the table by language', async () => {
     const user = userEvent.setup()
     render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={vi.fn()} />)
@@ -97,6 +124,27 @@ describe('QueueScreen', () => {
     const { container } = render(<QueueScreen client={client} onSelectTicket={vi.fn()} />)
 
     await screen.findByRole('status')
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('has no automatically detectable accessibility violations while updating', async () => {
+    const user = userEvent.setup()
+    let callCount = 0
+    const client: QueueClient = {
+      fetchQueue: (filters) => {
+        callCount += 1
+        if (callCount === 1) {
+          return new FixtureQueueClient(DEMO_QUEUE).fetchQueue(filters)
+        }
+        return new Promise(() => undefined)
+      },
+    }
+    const { container } = render(<QueueScreen client={client} onSelectTicket={vi.fn()} />)
+    await screen.findAllByRole('row')
+
+    await user.selectOptions(screen.getByLabelText('Idioma'), 'pt')
+    await screen.findByText('Actualizando…')
+
     expect(await axe(container)).toHaveNoViolations()
   })
 
