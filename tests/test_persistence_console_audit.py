@@ -144,6 +144,30 @@ def test_packet_viewed_writes_the_tickets_real_customer_id_and_the_agents_own_se
 
 
 @pytest.mark.integration
+def test_packet_viewed_writes_the_agents_own_identity_too(
+    dsn: str, outbox: PostgresHandoffOutbox, sink: PostgresConsoleAuditSink
+) -> None:
+    """ADR-17: an agent read is audited with the agent's own identity, not only the session that
+    carried it — a session is ephemeral, but the identity must survive it."""
+    ticket_ref, _ = _ticket(outbox, customer_id="CLI-9999")
+
+    sink.packet_viewed(
+        agent_id="AGT-42",
+        session_id=_AGENT_SESSION_ID,
+        ticket_ref=ticket_ref,
+        packet=_packet_for(ticket_ref),
+    )
+
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT agent_id FROM audit_log WHERE action = %s", (AuditAction.PACKET_VIEWED.value,)
+        )
+        row = cur.fetchone()
+    assert row is not None
+    assert row[0] == "AGT-42"
+
+
+@pytest.mark.integration
 def test_timeline_viewed_writes_a_record_too(
     dsn: str, outbox: PostgresHandoffOutbox, sink: PostgresConsoleAuditSink
 ) -> None:

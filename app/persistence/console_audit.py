@@ -29,6 +29,10 @@ Design Principles
   is the *customer's* session from the original conversation; `AuditAction`'s own docstring is
   explicit that a console read's `session_id` is the agent's. The caller (`app.api.agent`) passes
   it; this module never reads the outbox's own session_id column at all.
+- **`agent_id` is recorded, not only carried.** A session is ephemeral (the agent sign-in broker's
+  revocation store is in-memory, ADR-18); `agent_id` is the durable identity ADR-17 requires every
+  agent read to be audited with, so it goes into `AuditRecord` itself, not just this call's own
+  parameters.
 - **`tool_result_hash` hashes what was actually shown**, the same rule every other read audits
   under (`app.persistence.reads`'s own `_hash(result)`): the packet for `PACKET_VIEWED`, the
   timeline for `TIMELINE_VIEWED` — never a placeholder, so the audit trail can later prove what an
@@ -111,7 +115,13 @@ class PostgresConsoleAuditSink:
         return _TicketIdentity(customer_id=customer_id, trace_id=trace_id)
 
     def _record(
-        self, *, session_id: str, ticket_ref: str, action: AuditAction, result: object
+        self,
+        *,
+        agent_id: str,
+        session_id: str,
+        ticket_ref: str,
+        action: AuditAction,
+        result: object,
     ) -> None:
         identity = self._ticket_identity(ticket_ref)
         self._sink.record(
@@ -123,16 +133,15 @@ class PostgresConsoleAuditSink:
                 tool_result_hash=_hash(result),
                 occurred_at=self._clock(),
                 domain_date=self._calendar.reference_date,
+                agent_id=agent_id,
             )
         )
 
     def packet_viewed(
         self, *, agent_id: str, session_id: str, ticket_ref: str, packet: HandoffPacket
     ) -> None:
-        # `agent_id` is not part of `AuditRecord` — the audit trail's own identity is
-        # customer_id/session_id, matching every other action; kept in the signature only because
-        # `ConsoleAuditSink` (app.api.agent) declares it for every implementation.
         self._record(
+            agent_id=agent_id,
             session_id=session_id,
             ticket_ref=ticket_ref,
             action=AuditAction.PACKET_VIEWED,
@@ -148,6 +157,7 @@ class PostgresConsoleAuditSink:
         timeline: tuple[TimelineEntry, ...],
     ) -> None:
         self._record(
+            agent_id=agent_id,
             session_id=session_id,
             ticket_ref=ticket_ref,
             action=AuditAction.TIMELINE_VIEWED,
