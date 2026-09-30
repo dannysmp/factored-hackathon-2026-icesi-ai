@@ -335,14 +335,15 @@ class PostgresHandoffOutbox:
                 created_at_utc, language, trigger, customer_first_name, customer_masked_id,
                 category, request_summary, verified_transaction_ref, attempted_action_action,
                 attempted_action_result, existing_case_number, policy_version, risk_score,
-                risk_interval_low, risk_interval_high, risk_base_rate, content_fingerprint
+                risk_interval_low, risk_interval_high, risk_base_rate, risk_threshold,
+                content_fingerprint
             ) VALUES (
                 %(ticket_ref)s, %(customer_id)s, %(session_id)s, %(trace_id)s, %(turn_id)s,
                 %(reference_date)s, %(created_at)s, %(language)s, %(trigger)s, %(first_name)s,
                 %(masked_id)s, %(category)s, %(request_summary)s, %(verified_transaction_ref)s,
                 %(attempted_action)s, %(attempted_result)s, %(existing_case_number)s,
                 %(policy_version)s, %(risk_score)s, %(risk_low)s, %(risk_high)s, %(risk_base)s,
-                %(fingerprint)s
+                %(risk_threshold)s, %(fingerprint)s
             )
             """,
             {
@@ -374,6 +375,7 @@ class PostgresHandoffOutbox:
                 "risk_low": risk.interval_low if risk is not None else None,
                 "risk_high": risk.interval_high if risk is not None else None,
                 "risk_base": risk.base_rate if risk is not None else None,
+                "risk_threshold": risk.threshold if risk is not None else None,
                 "fingerprint": fingerprint,
             },
         )

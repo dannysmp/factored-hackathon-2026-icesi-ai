@@ -28,7 +28,7 @@ describe('PacketPanel', () => {
     expect(screen.getByText(fact?.merchant ?? '', { exact: false })).toBeInTheDocument()
   })
 
-  it('shows the risk score together with its interval and base rate, never the score alone', () => {
+  it('shows the risk score together with its interval, base rate and threshold, never the score alone', () => {
     render(<PacketPanel packet={FIRST.packet} />)
 
     const { risk } = FIRST.packet.evidence
@@ -37,16 +37,24 @@ describe('PacketPanel', () => {
     }
     expect(screen.getByText(risk.score.toFixed(2))).toBeInTheDocument()
     expect(screen.getByText(risk.base_rate.toFixed(2))).toBeInTheDocument()
+    expect(screen.getByText(risk.threshold.toFixed(2))).toBeInTheDocument()
     expect(
       screen.getByText(`${risk.interval_low.toFixed(2)} – ${risk.interval_high.toFixed(2)}`),
     ).toBeInTheDocument()
   })
 
-  it('shows no risk section when the packet carries none', () => {
+  it('discloses that the risk score is a synthetic-data estimate, in Spanish, wherever it appears', () => {
+    render(<PacketPanel packet={FIRST.packet} />)
+
+    expect(screen.getByText(/estimación calculada con datos sintéticos/)).toBeInTheDocument()
+  })
+
+  it('shows no risk section, and no synthetic-data disclosure, when the packet carries none', () => {
     render(<PacketPanel packet={SECOND.packet} />)
 
     expect(SECOND.packet.evidence.risk).toBeNull()
     expect(screen.queryByText('Puntaje de riesgo')).not.toBeInTheDocument()
+    expect(screen.queryByText(/estimación calculada con datos sintéticos/)).not.toBeInTheDocument()
   })
 
   it("shows a source's title in the ticket's own language, not the console's fixed Spanish", () => {
