@@ -410,3 +410,13 @@ def test_limitations_names_pending_h4_only_when_not_human() -> None:
 
     assert "pending the real H4" in synthetic.split("## 9.")[1]
     assert "pending the real H4" not in human.split("## 9.")[1]
+
+
+def test_limitations_explains_why_cost_per_case_is_always_not_defined() -> None:
+    """Unconditional, unlike the H4/scope-note bullets: cost_usd is never populated regardless of
+    which systems or provenance a report carries."""
+    text = render_markdown(_report())
+    section = text.split("## 9.")[1]
+
+    assert "cost_usd" in section
+    assert "never populates" in section
