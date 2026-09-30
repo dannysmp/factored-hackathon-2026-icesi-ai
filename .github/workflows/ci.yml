@@ -15,6 +15,9 @@
 #                main has nothing left to compare against).
 #   gate-scripts Executed fixture test of the review gate's glob translation
 #                (.github/scripts/glob-match.js), independent of the other jobs.
+#   infra-scripts-lint Shellcheck and a bash-3.2 syntax check (bash -n under macOS's own
+#                default /bin/bash, the same interpreter shellcheck's own parser once let a
+#                real syntax break through) against every infra/scripts/*.sh.
 #   web          The web/ package's own lint, test (with its coverage gate) and build,
 #                independent of the Python jobs.
 #   test-postgres Migrations applied to a fresh service-container Postgres, then the tests
@@ -51,6 +54,8 @@
 # Usage:
 #   Runs automatically. To reproduce locally: make lint test audit secrets semgrep
 #   For migration-prefixes: make check-migrations (BASE defaults to origin/main)
+#   For infra-scripts-lint: make check-infra-scripts (needs shellcheck; bash -n runs under
+#     whatever /bin/bash the machine ships, which is bash 3.2 on macOS)
 #   For test-postgres: make db-up migrate test-integration (needs docker and DATABASE_URL set)
 #   For smoke: make db-up migrate seed-ci-smoke, then
 #     LLM_PROVIDER=stub make evaluate SYSTEM=P SMOKE=1 && LLM_PROVIDER=stub make evaluate SYSTEM=B0 SMOKE=1
@@ -181,6 +186,20 @@ jobs:
           node-version: "22"
       - name: Run the glob translation's fixture test
         run: node .github/scripts/glob-match.test.js
+
+  # ---------------------------------------------------------------------------
+  # Infra scripts
+  # ---------------------------------------------------------------------------
+  infra-scripts-lint:
+    name: infra-scripts-lint
+    runs-on: macos-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install shellcheck
+        run: brew install shellcheck
+      - name: Shellcheck and a bash-3.2 syntax check on every infra script
+        run: make check-infra-scripts
 
   # ---------------------------------------------------------------------------
   # Web
