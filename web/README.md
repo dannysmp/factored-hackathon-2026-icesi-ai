@@ -1,8 +1,8 @@
 # Web frontend
 
-React chat UI and human-agent console (ADR-10). The customer chat is replayed against a scripted
-fixture conversation for now; a live endpoint, gated on the demonstration sign-in broker and the
-conversation store, comes next.
+React chat UI and human-agent console (ADR-10). After sign-in, the customer chat runs against the
+real, live turn endpoint (`LiveChatClient`); a scripted fixture conversation (`FixtureChatClient`)
+remains for component tests only, never the running app.
 
 ## Stack
 
@@ -28,12 +28,12 @@ conversation store, comes next.
 ## Customer chat
 
 `src/features/customer-chat/` is a self-contained feature (frontend standard, section 2):
-`contracts.ts` (the Zod schemas), `client.ts` (the `ChatClient` seam and its only implementation,
-`FixtureChatClient`, which replays `fixtures.ts`'s scripted English conversation), `useConversation.ts`
-(the turn-by-turn state) and `components/` (the reference-date banner, the message list with a
-polite live region, numbered choice buttons, the confirmation button, the text form). A live
-`ChatClient` implementation, against the real turn endpoint, comes later; this one only defines
-the seam it will fill.
+`contracts.ts` (the Zod schemas), `client.ts` (the `ChatClient` seam and its two implementations —
+`LiveChatClient`, the real HTTP client against `POST /v1/turns` behind a demo session, which the
+running app uses; `FixtureChatClient`, which replays `fixtures.ts`'s scripted English conversation
+for component tests only), `useConversation.ts` (the turn-by-turn state) and `components/` (the
+reference-date banner, the message list with a polite live region, numbered choice buttons, the
+confirmation button, the text form).
 
 ## Commands
 
