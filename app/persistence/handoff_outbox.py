@@ -66,7 +66,6 @@ from __future__ import annotations
 import hashlib  # The stored content fingerprint
 import json  # Canonical serialization the fingerprint is computed over
 import logging  # Progress events, never print
-import secrets  # Unguessable suffix of a generated ticket reference
 from dataclasses import fields  # Every HandoffContent field, without naming them by hand
 from datetime import date  # The reference date the packet used
 
@@ -77,6 +76,7 @@ from pydantic import BaseModel  # Every nested contract value HandoffContent can
 
 # Local modules
 from app.conversation.handoff import HandoffContent, build_packet, mask_customer_id
+from app.llm.masking import safe_hex_suffix  # A suffix that can't look card-shaped once joined
 from app.security.middleware import current_request_id  # Correlates a log line to its request
 from contracts.service_v1.handoff import HandoffPacket  # The packet this module writes
 
@@ -141,7 +141,8 @@ def content_fingerprint(content: HandoffContent) -> str:
 
 def _new_ticket_ref(reference_date: date) -> str:
     """A short, readable ticket reference: what a customer quotes on the phone."""
-    return f"T-{reference_date:%Y%m%d}-{secrets.token_hex(4).upper()}"
+    date_digits = reference_date.strftime("%Y%m%d")
+    return f"T-{date_digits}-{safe_hex_suffix(preceding_digits=len(date_digits))}"
 
 
 class PostgresHandoffOutbox:
