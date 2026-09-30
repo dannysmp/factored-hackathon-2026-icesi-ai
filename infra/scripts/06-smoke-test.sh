@@ -70,7 +70,9 @@ check_reachable() {
 
 # Proves the proxy's own 64 KiB request-body limit (infra/Caddyfile) actually rejects an
 # oversized body with 413, before it ever reaches the backend -- not just that the Caddyfile
-# declares one.
+# declares one. Targets /health/live (GET-only) rather than a POST-accepting route on purpose:
+# Caddy's request_body size check runs before the request is routed to a method handler, so any
+# path matched by the Caddyfile's @backend matcher exercises the same limit.
 check_body_size_limit() {
   local url="$1" attempt=1 status oversized_body
   oversized_body="$(head -c 70000 /dev/zero | tr '\0' 'a')"
