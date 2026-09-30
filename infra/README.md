@@ -78,6 +78,23 @@ far. Written the same way, via `infra/scripts/put-secret.sh`, all read by `05-de
   startup and a match raises a configuration error. Give each its own independently generated
   value; never reuse one across the two.
 
+### Turning the demonstration sign-in off
+
+There is no separate toggle; deleting the parameter that turns it on is the switch:
+1. `AWS_PROFILE=transaction-disputes aws ssm delete-parameter --name
+   /transaction-disputes/prod/demo-signin-access-code`.
+2. Trigger `deploy.yml` (`workflow_dispatch` against `main`, **`teardown_after: false`** — this is
+   a deployment meant to persist through step 3, not the default single-shot smoke run) so
+   `05-deploy.sh` re-reads the now-absent parameter: `DEMO_SIGNIN_ACCESS_CODE` resolves empty,
+   `DEMO_SIGNIN_ENABLED` resolves `false`, the same state every smoke run already exercises.
+3. Confirm live: the customer sign-in page refuses the last-known access code.
+
+The trial of this switch, once tried, is recorded here:
+
+| Date | Role | Outcome |
+|---|---|---|
+| | | |
+
 **Additional one-time prerequisites, before the first run with `deploy_metabase` enabled** — each
 written the same way, via `infra/scripts/put-secret.sh`:
 - `metabase-db-password` — Metabase's own application-database password.
