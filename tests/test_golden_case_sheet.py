@@ -169,10 +169,9 @@ def _run_case_sheet_cli(tmp_path: Path, *args: str) -> subprocess.CompletedProce
 
 
 def test_cli_write_logs_are_timestamped_and_leveled(tmp_path: Path) -> None:
-    """Closes #127 (the format string must carry a timestamp and level, matching
-    `pipelines.policy_corpus`'s own `main()`) and backs the read on #114 (the write path does log
-    a line for every file it actually writes) with a real, observed process output rather than a
-    read of the source alone."""
+    """The format string must carry a timestamp and level, matching `pipelines.policy_corpus`'s
+    own `main()`, and the write path must log a line for every file it actually writes — checked
+    against a real, observed process output, not a read of the source alone."""
     result = _run_case_sheet_cli(tmp_path)
     assert result.returncode == 0
     written_lines = [line for line in result.stderr.splitlines() if "case_sheet_written" in line]
@@ -191,9 +190,8 @@ def test_cli_check_logs_are_timestamped_and_leveled(tmp_path: Path) -> None:
 
 
 def test_cli_write_logs_nothing_on_a_second_idempotent_run(tmp_path: Path) -> None:
-    """The empty output #114 was closed against (nothing to write when nothing changed) is
-    genuinely distinct from a logging defect — this pins that zero lines is the correct, observed
-    output for a clean directory, not an artifact of a broken logger."""
+    """Zero lines on a clean directory is the correct, observed output — not a logging defect and
+    not an artifact of a broken logger."""
     _run_case_sheet_cli(tmp_path)
     result = _run_case_sheet_cli(tmp_path)
     assert result.returncode == 0
