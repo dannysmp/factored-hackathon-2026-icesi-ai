@@ -1,4 +1,4 @@
-# infra/
+# Infrastructure and deployment
 
 AWS provisioning for the deployed stack (ADR-13: one EC2 host, ECR, docker compose, GitHub OIDC).
 
@@ -14,9 +14,10 @@ AWS provisioning for the deployed stack (ADR-13: one EC2 host, ECR, docker compo
 | `scripts/06-smoke-test.sh` | Proves the deployed path answers over HTTPS: the health endpoint and the web static page, retrying while Caddy's certificate issuance and the containers' own start-up catch up. Its `--dashboard` flag additionally proves the `dashboard.` subdomain reaches Metabase. |
 | `scripts/07-teardown.sh` | Reverses `04-launch-instance.sh`: terminates the tagged instance, releases its Elastic IP, deletes its security group. Leaves the OIDC role, the instance role and the ECR repositories in place. |
 | `scripts/08-deploy-metabase.sh` | Creates Metabase's own database and role, sets `analytics_reader`'s password, brings up the `metabase` service, completes its first-run admin setup and connects the `analytics` schema — then swaps in the Caddyfile that routes the `dashboard.` subdomain to it, only once all of that has succeeded (ADR-11). Idempotent: re-running it against an already-provisioned deployment reconciles credentials and the Caddy config without repeating setup. Once Metabase is healthy, it also captures and logs a `docker stats --no-stream` reading of all five services sharing the host (ADR-11's own capacity requirement). |
-| `scripts/09-configure-error-alarm.sh` | A CloudWatch metric filter counting error-level lines in the application's log group (`/dispute-intake/app`, created if absent) and an alarm that trips past a threshold in one evaluation window. No notification action is attached yet — no paging channel exists in this project. Authored ahead of log shipping (the CloudWatch agent) landing; running it against the live account is for whichever slice stands that up. |
+| `scripts/09-configure-error-alarm.sh` | A CloudWatch metric filter counting error-level lines in the application's log group (`/dispute-intake/app`, created if absent) and an alarm that trips past a threshold in one evaluation window. No notification action is attached yet — no paging channel exists in this project. Authored ahead of log shipping (the CloudWatch agent), which is what would first make this alarm meaningful in a running account. |
 | `scripts/10-configure-metabase-dashboard.sh` | Creates or updates the operations dashboard's panels, each pairing a chart card (colored from `web/src/styles/tokens.css`'s design tokens) with a text card naming its business question. Every card and the dashboard itself are found by name and updated in place if they already exist, so a redeploy converges instead of duplicating panels. Needs `08-deploy-metabase.sh` already run (the admin account and the `analytics` datasource connection). Full native theming (logo, app name, instance-wide colors) is a paid Metabase feature this deployment has no license for — see `docs/limitations.md`. |
 | `scripts/11-create-seed-bucket.sh` | A private, versioned, default-encrypted S3 bucket (`dispute-intake-ops-seed-<account>`) holding the built operational seed — a curated, already-masked derivative (`pipelines.ops_seed`), never the data provider's own raw data. Block Public Access on all four settings; the repository is public, this bucket must never be. Prints the bucket name on success. Not torn down by `07-teardown.sh`, the same as the OIDC role, the instance role and the ECR repositories. |
+| `scripts/12-hardening-check.sh` | The post-deploy hardening check (ADR-13): probes the live address over the real network and refuses if TLS 1.1 or below is accepted, `Strict-Transport-Security` is missing or its `max-age` is under 15,552,000, the `Content-Security-Policy` is missing or report-only, `Server`/`X-Powered-By` carry a version token on any route, or a session cookie (if one is ever set — this deployment's sessions are bearer tokens, so none is) is missing `Secure`, `HttpOnly` or `SameSite=Strict`/`Lax`. Reads nothing from `infra/Caddyfile`; every check is a real request against the deployed edge. |
 
 Every script is idempotent (safe to re-run; an existing resource with the right name is left as
 is or reconciled, never duplicated) and refuses to run against any profile or region but
@@ -27,16 +28,19 @@ each other, but `04` needs `03`'s instance profile to exist.
 
 `.github/workflows/deploy.yml`, triggered manually (`workflow_dispatch`) against `main`: builds
 both images, scans each with Trivy (fails the run on a fixable HIGH or CRITICAL finding), pushes
-to ECR, runs `05-deploy.sh` (over SSM, no SSH), then `06-smoke-test.sh`. The `teardown_after`
-input (default on) runs `07-teardown.sh` at the end — a run gated only by this input and whether
-the run was manually cancelled, never by whether an earlier step failed, since a failed deploy or
-smoke test is exactly when a host must not be left running unattended; turn it off for a
-deployment meant to persist.
+to ECR, runs `05-deploy.sh` (over SSM, no SSH), then `06-smoke-test.sh`, then
+`12-hardening-check.sh`. The `teardown_after` input (default on) runs `07-teardown.sh` at the end
+— a run gated only by this input and whether the run was manually cancelled, never by whether an
+earlier step failed, since a failed deploy, smoke test or hardening check is exactly when a host
+must not be left running unattended; turn it off for a deployment meant to persist.
 
 The `deploy_metabase` input (default off) adds a job on top of the base deployment: runs
 `08-deploy-metabase.sh`, then `10-configure-metabase-dashboard.sh`, then
-`06-smoke-test.sh --dashboard`. Left off for a base-stack-only smoke exercise; turn it on alongside
-`teardown_after: false` for a deployment meant to persist and carry the dashboard.
+`06-smoke-test.sh --dashboard`, then `12-hardening-check.sh` again — `08-deploy-metabase.sh`
+swaps the deployed Caddy config to add the dashboard subdomain, so the hardening check runs a
+second time against that new config, not only against the one the base job already proved. Left
+off for a base-stack-only smoke exercise; turn it on alongside `teardown_after: false` for a
+deployment meant to persist and carry the dashboard.
 
 **One-time prerequisites, before the first run:**
 - Scripts `01`–`04` already run once against the account.
@@ -45,8 +49,8 @@ The `deploy_metabase` input (default off) adds a job on top of the base deployme
 - The `postgres-password` SSM parameter exists: `openssl rand -hex 32 |
   infra/scripts/put-secret.sh postgres-password`. Mandatory, the same way as the two secrets
   above — `05-deploy.sh` fails before bringing the stack up if it's missing, rather than falling
-  through to the base compose file's own local-development default (issue #149: a deployed
-  Postgres must never run on a hardcoded, publicly-known password).
+  through to the base compose file's own local-development default: a deployed Postgres must
+  never run on a hardcoded, publicly-known password.
 - The seed bucket exists (`infra/scripts/11-create-seed-bucket.sh`) and carries the built
   operational seed: after any rebuild (`make pipeline && make seed`, a developer's own local
   profile, matching the same boundary the data provider's own credentials already observe —
@@ -73,6 +77,23 @@ far. Written the same way, via `infra/scripts/put-secret.sh`, all read by `05-de
   `agent-session-signing-key` must differ from `session-signing-key` — each pair is checked at
   startup and a match raises a configuration error. Give each its own independently generated
   value; never reuse one across the two.
+
+### Turning the demonstration sign-in off
+
+There is no separate toggle; deleting the parameter that turns it on is the switch:
+1. `AWS_PROFILE=transaction-disputes aws ssm delete-parameter --name
+   /transaction-disputes/prod/demo-signin-access-code`.
+2. Trigger `deploy.yml` (`workflow_dispatch` against `main`, **`teardown_after: false`** — this is
+   a deployment meant to persist through step 3, not the default single-shot smoke run) so
+   `05-deploy.sh` re-reads the now-absent parameter: `DEMO_SIGNIN_ACCESS_CODE` resolves empty,
+   `DEMO_SIGNIN_ENABLED` resolves `false`, the same state every smoke run already exercises.
+3. Confirm live: the customer sign-in page refuses the last-known access code.
+
+The trial of this switch, once tried, is recorded here:
+
+| Date | Role | Outcome |
+|---|---|---|
+| | | |
 
 **Additional one-time prerequisites, before the first run with `deploy_metabase` enabled** — each
 written the same way, via `infra/scripts/put-secret.sh`:
@@ -137,9 +158,11 @@ parameter by name, never printing its value — `POSTGRES_PASSWORD` is mandatory
 string when their parameter doesn't exist yet, not an error). Metabase's own `MB_DB_PASS` and
 `MB_SESSION_SECRET_KEY` are read the same way, by `08-deploy-metabase.sh`.
 
-`infra/Caddyfile.with-metabase` is the Caddyfile that also routes the dashboard subdomain; it
-replaces the plain `infra/Caddyfile` on the host only once Metabase's first-run setup has
-succeeded (ADR-11), never before — see `08-deploy-metabase.sh`'s own header for why.
+`infra/Caddyfile.dashboard-block` is the dashboard subdomain's own site block; `08-deploy-
+metabase.sh` deploys it appended onto the real `infra/Caddyfile` (never a second, separately
+maintained copy of the app's own site block, which could drift and silently lose hardening) once
+Metabase's first-run setup has succeeded (ADR-11), never before — see that script's own header
+for why.
 
 ## Capacity
 

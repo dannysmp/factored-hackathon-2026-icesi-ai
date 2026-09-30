@@ -3,13 +3,19 @@
 # =============================================================================
 # Purpose:
 #   Builds both images, scans them, pushes to ECR, brings the compose stack
-#   up on the tagged host over SSM (no SSH), and proves the deployed path
-#   answers over HTTPS. A one-off smoke exercise runs this once against
+#   up on the tagged host over SSM (no SSH), proves the deployed path
+#   answers over HTTPS, and proves the edge carries the hardening baseline
+#   ADR-13 requires (HSTS, an enforcing CSP, no version disclosure, TLS 1.1
+#   and below refused). A one-off smoke exercise runs this once against
 #   whatever is on main today, with no sign-in enabled, and tears down after
 #   — the default input below; a deployment meant to persist disables it.
 #   The Metabase dashboard is a separate, opt-in job on top of the same
 #   deployment: `deploy_metabase` leaves it out of a base-stack-only smoke
 #   exercise, and stands it up alongside a deployment meant to persist.
+#   `08-deploy-metabase.sh` swaps the deployed Caddy config, so the
+#   hardening check runs a second time after that job too — the same
+#   config change that opens the dashboard subdomain must not be the one
+#   place the hardening baseline silently regresses.
 #
 # Security posture:
 #   No static AWS keys: the job assumes infra/scripts/01-create-oidc-role.sh's
@@ -147,6 +153,9 @@ jobs:
       - name: Smoke test the deployed path over HTTPS
         run: infra/scripts/06-smoke-test.sh "${{ steps.deploy.outputs.host_name }}"
 
+      - name: Run the post-deploy hardening check
+        run: infra/scripts/12-hardening-check.sh "${{ steps.deploy.outputs.host_name }}"
+
   deploy-metabase:
     name: deploy-metabase
     needs: deploy-and-smoke-test
@@ -171,6 +180,9 @@ jobs:
 
       - name: Smoke test the dashboard subdomain over HTTPS
         run: infra/scripts/06-smoke-test.sh "${{ needs.deploy-and-smoke-test.outputs.host_name }}" --dashboard
+
+      - name: Re-run the post-deploy hardening check after the Caddy config swap
+        run: infra/scripts/12-hardening-check.sh "${{ needs.deploy-and-smoke-test.outputs.host_name }}"
 
   teardown:
     name: teardown

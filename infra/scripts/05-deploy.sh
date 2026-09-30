@@ -39,6 +39,17 @@
 #   `DEMO_AGENT_SIGNIN_ENABLED` are derived on the host from whether the
 #   corresponding access code resolved to a non-empty value, not from a
 #   separate toggle this script or its caller would need to remember to set.
+#   Resolving one of the three distinguishes the parameter genuinely not
+#   existing yet (`ParameterNotFound` — the smoke-only path, expected, an
+#   empty value) from any other AWS error (access denied, throttling, a
+#   typo'd name) — those still fail the deploy loudly, before ever running
+#   `docker compose up`, the same as the two mandatory secrets above,
+#   instead of silently landing on "sign-in stays disabled" for a reason
+#   that has nothing to do with the parameter not being created. The
+#   resulting `DEMO_SIGNIN_ENABLED`/`DEMO_AGENT_SIGNIN_ENABLED` values are
+#   logged (never the secret values) once computed, so a maintainer reading
+#   this command's own output knows the sign-in state without needing to
+#   separately test it.
 #   After the stack is up, this script also migrates and seeds the database:
 #   the host syncs the already-built operational seed (three Parquet files
 #   and its manifest, never committed — `data/` is git-ignored) from this
@@ -127,16 +138,55 @@ cd /opt/dispute-intake
 export ECR_REGISTRY='${ECR_REGISTRY}'
 export IMAGE_TAG='${IMAGE_TAG}'
 export HOST_NAME='${HOST_NAME}'
-export ANTHROPIC_API_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/anthropic-api-key --with-decryption --query Parameter.Value --output text)"
-export SESSION_SIGNING_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/session-signing-key --with-decryption --query Parameter.Value --output text)"
-export POSTGRES_PASSWORD="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/postgres-password --with-decryption --query Parameter.Value --output text)"
-export DEMO_SIGNIN_ACCESS_CODE="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/demo-signin-access-code --with-decryption --query Parameter.Value --output text 2>/dev/null || echo '')"
-export DEMO_AGENT_ACCESS_CODE="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/demo-agent-access-code --with-decryption --query Parameter.Value --output text 2>/dev/null || echo '')"
-export AGENT_SESSION_SIGNING_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/agent-session-signing-key --with-decryption --query Parameter.Value --output text 2>/dev/null || echo '')"
+# A plain assignment on its own line, then a separate "export VAR", not "export VAR=\"\$(...)\"":
+# combined with export (or local/declare/readonly), the exit status of a failing command
+# substitution is masked by the exit status of export itself, so "set -e" would never see the
+# failure and would carry on with an empty value instead of refusing the deploy.
+ANTHROPIC_API_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/anthropic-api-key --with-decryption --query Parameter.Value --output text)"
+export ANTHROPIC_API_KEY
+SESSION_SIGNING_KEY="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/session-signing-key --with-decryption --query Parameter.Value --output text)"
+export SESSION_SIGNING_KEY
+POSTGRES_PASSWORD="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/postgres-password --with-decryption --query Parameter.Value --output text)"
+export POSTGRES_PASSWORD
+resolve_optional_secret() {
+  # "ParameterNotFound" is a stable error-type token the AWS CLI itself defines, not a
+  # locale-dependent message string -- present in its output the same way regardless of
+  # AWS_DEFAULT_OUTPUT or the locale in use, so matching it directly is safe. A fresh mktemp
+  # per call, rather than a fixed path, means concurrent calls (the three optional secrets, if
+  # this were ever parallelized) never share an error file, so none can overwrite what another
+  # wrote.
+  local name="\$1" value err_file
+  err_file="\$(mktemp)"
+  if value="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/"\${name}" --with-decryption \
+      --query Parameter.Value --output text 2>"\${err_file}")"; then
+    rm -f "\${err_file}"
+    printf '%s' "\${value}"
+    return 0
+  fi
+  if grep -q "ParameterNotFound" "\${err_file}"; then
+    rm -f "\${err_file}"
+    printf ''
+    return 0
+  fi
+  echo "refusing: unexpected error reading optional secret '\${name}':" >&2
+  cat "\${err_file}" >&2
+  rm -f "\${err_file}"
+  exit 1
+}
+# Same split-assignment reason as above: "export VAR=\"\$(resolve_optional_secret ...)\"" would
+# mask the "exit 1" resolve_optional_secret itself returns on a genuine SSM error, hiding it
+# behind the exit status of export.
+DEMO_SIGNIN_ACCESS_CODE="\$(resolve_optional_secret demo-signin-access-code)"
+export DEMO_SIGNIN_ACCESS_CODE
+DEMO_AGENT_ACCESS_CODE="\$(resolve_optional_secret demo-agent-access-code)"
+export DEMO_AGENT_ACCESS_CODE
+AGENT_SESSION_SIGNING_KEY="\$(resolve_optional_secret agent-session-signing-key)"
+export AGENT_SESSION_SIGNING_KEY
 export DEMO_SIGNIN_ENABLED=false
 if [ -n "\${DEMO_SIGNIN_ACCESS_CODE}" ]; then export DEMO_SIGNIN_ENABLED=true; fi
 export DEMO_AGENT_SIGNIN_ENABLED=false
 if [ -n "\${DEMO_AGENT_ACCESS_CODE}" ] && [ -n "\${AGENT_SESSION_SIGNING_KEY}" ]; then export DEMO_AGENT_SIGNIN_ENABLED=true; fi
+echo "demo sign-in state: DEMO_SIGNIN_ENABLED=\${DEMO_SIGNIN_ENABLED} DEMO_AGENT_SIGNIN_ENABLED=\${DEMO_AGENT_SIGNIN_ENABLED}"
 aws ecr get-login-password --region ${INFRA_REGION} | docker login --username AWS --password-stdin "\${ECR_REGISTRY}"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d

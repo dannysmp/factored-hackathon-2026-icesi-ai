@@ -98,7 +98,6 @@ from __future__ import annotations
 import hashlib  # The audit record's tool-result hash
 import json  # Canonical form of a result before hashing
 import logging  # Progress events, never print
-import secrets  # Unguessable suffix of a generated case number
 from collections.abc import Callable  # Type of the injected clock
 from dataclasses import dataclass  # Immutable resolved-reference result
 from datetime import date, datetime  # Domain date and the real instant of an audit record
@@ -121,6 +120,7 @@ from app.domain.policy.models import (  # Vocabulary shared with the policy engi
 from app.domain.policy.models import (
     TransactionStatus as PolicyTransactionStatus,
 )
+from app.llm.masking import safe_hex_suffix  # A suffix that can't look card-shaped once joined
 from app.security.middleware import current_request_id  # Correlates a failure log to its request
 from contracts.service_v1.audit import AuditAction, AuditRecord, AuditSink  # Where every call goes
 from contracts.service_v1.cases import AmountProvenance as ContractAmountProvenance
@@ -199,7 +199,8 @@ def clamp_merchant(value: str | None) -> str | None:
 
 def _new_case_number(domain_date: date) -> str:
     """A short, readable case number: what a customer quotes on the phone (E4-F3)."""
-    return f"CASE-{domain_date:%Y%m%d}-{secrets.token_hex(4).upper()}"
+    date_digits = domain_date.strftime("%Y%m%d")
+    return f"CASE-{date_digits}-{safe_hex_suffix(preceding_digits=len(date_digits))}"
 
 
 def _hash(payload: object) -> str:

@@ -8,7 +8,13 @@
 #   setup and connects the analytics schema, then — only once that succeeds
 #   — swaps in the Caddyfile that can reach it (ADR-11's own hardening: "the
 #   first-run setup... is completed by the provisioning script before the
-#   reverse proxy exposes Metabase"). Also sets analytics_reader's password:
+#   reverse proxy exposes Metabase"), built by concatenating the real
+#   `infra/Caddyfile` (unchanged, the only copy of the app's own site block
+#   and its hardening headers, ADR-13) with `infra/Caddyfile.dashboard-block`
+#   — never a second, separately maintained copy of the app's own site
+#   block, which could silently drift from the real one and lose hardening
+#   the day either file changes without the other. Also sets
+#   analytics_reader's password:
 #   migration 0004 created that role `NOLOGIN`, deferring its password to
 #   whichever consumer first needs to log in as it — Metabase is that
 #   consumer.
@@ -54,7 +60,7 @@ if [[ -z "${instance_id}" ]]; then
   exit 1
 fi
 
-caddyfile_with_metabase_b64="$(base64 <"${REPO_ROOT}/infra/Caddyfile.with-metabase" | tr -d '\n')"
+caddyfile_with_metabase_b64="$(cat "${REPO_ROOT}/infra/Caddyfile" "${REPO_ROOT}/infra/Caddyfile.dashboard-block" | base64 | tr -d '\n')"
 
 # Unquoted heredoc: every `${...}` below is substituted now, baking the Caddyfile content
 # directly into the script text the host receives, the same convention 05-deploy.sh uses. Every
