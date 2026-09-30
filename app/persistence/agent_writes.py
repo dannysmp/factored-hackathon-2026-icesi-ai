@@ -4,8 +4,8 @@ Postgres Agent Writes
 
 Overview
 --------
-CR-16's narrow agent writes (ADR-17): claim or release a handoff ticket, add a note, and set a
-case's status among Open, In Review, Resolved and Rejected. Each write is audited with the
+The console's narrow agent writes (ADR-17): claim or release a handoff ticket, add a note, and
+set a case's status among Open, In Review, Resolved and Rejected. Each write is audited with the
 agent's own identity, the same requirement the console's reads already carry
 (``app.persistence.console_audit``).
 
@@ -19,12 +19,13 @@ module enforces what it actually allows).
 
 Design Principles
 -----------------
-- **The write and its audit record share a failure boundary, not a connection.** Matching
-  ``app.persistence.reads``'s own ``_insert_case``: the mutation and its audit record are both
-  issued inside the same connection's ``with`` block, the mutation first; a raised exception from
-  the audit sink's own, separate connection still rolls the mutation back, since this connection
-  never reaches its commit. Not a single cross-connection transaction — the same narrow
-  crash-window gap ``_insert_case`` already discloses for case creation applies here too.
+- **The mutation and its audit write are two separate store connections, not one atomic
+  transaction** (matching ``app.persistence.reads``'s own ``_insert_case`` and
+  ``app.persistence.audit``'s one-connection-per-call design): the audit sink's ``record`` call
+  opens and commits on its own connection before the mutation's own connection commits, so a
+  process crash in the narrow window between the two could leave an audit record for a write that
+  never actually took effect. The same disclosed limitation ``_insert_case`` already carries for
+  case creation applies here too, for the same reason.
 - **A case status write only ever ``UPDATE``s, never ``INSERT``s** (``plan/docs/architecture.md``):
   this module has no statement that could create a case row.
 - **Resolved and Rejected are terminal.** Once a case reaches either one, a further status-set is
@@ -99,7 +100,7 @@ class _TicketIdentity:
 
 
 class PostgresAgentWrites:
-    """Writes CR-16's four narrow agent actions, each audited with the agent's own identity."""
+    """Writes the four narrow agent actions, each audited with the agent's own identity."""
 
     def __init__(
         self,
@@ -132,7 +133,6 @@ class PostgresAgentWrites:
 
     def _audit(
         self,
-        cur: psycopg.Cursor,
         *,
         agent_id: str,
         session_id: str,
@@ -175,7 +175,6 @@ class PostgresAgentWrites:
                 (claimed_by, claimed_at, ticket_ref),
             )
             self._audit(
-                cur,
                 agent_id=agent_id,
                 session_id=session_id,
                 identity=identity,
@@ -214,6 +213,23 @@ class PostgresAgentWrites:
             action=AuditAction.TICKET_RELEASED,
         )
 
+    def _read_note(self, ticket_ref: str, ord_: int) -> Note:
+        """Read a just-written note back, verified against the store rather than echoed from the
+        call that wrote it (CLAUDE.md's "verify before report")."""
+        with (
+            psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
+            conn.cursor() as cur,
+        ):
+            cur.execute(
+                "SELECT agent_id, note_text, created_at_utc FROM handoff_notes "
+                "WHERE ticket_ref = %s AND ord = %s",
+                (ticket_ref, ord_),
+            )
+            row = cur.fetchone()
+        assert row is not None  # noqa: S101 - the insert above already confirmed the row exists
+        agent_id, note_text, created_at = row
+        return Note(agent_id=agent_id, note_text=note_text, created_at=created_at)
+
     def add_note(
         self, *, agent_id: str, session_id: str, ticket_ref: str, note_text: str
     ) -> Note | None:
@@ -240,14 +256,25 @@ class PostgresAgentWrites:
                 (ticket_ref, ord_, agent_id, note_text, created_at),
             )
             self._audit(
-                cur,
                 agent_id=agent_id,
                 session_id=session_id,
                 identity=identity,
                 action=AuditAction.TICKET_NOTE_ADDED,
                 result={"ticket_ref": ticket_ref, "note_text": note_text},
             )
-        return Note(agent_id=agent_id, note_text=note_text, created_at=created_at)
+        return self._read_note(ticket_ref, ord_)
+
+    def _read_case_status(self, case_number: str) -> CaseStatusResult:
+        """Read a just-written case status back, verified against the store rather than echoed
+        from the call that wrote it (CLAUDE.md's "verify before report")."""
+        with (
+            psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
+            conn.cursor() as cur,
+        ):
+            cur.execute("SELECT status FROM cases WHERE case_number = %s", (case_number,))
+            row = cur.fetchone()
+        assert row is not None  # noqa: S101 - the update above already confirmed the row exists
+        return CaseStatusResult(case_number=case_number, status=CaseStatus(row[0]))
 
     def set_case_status(
         self, *, agent_id: str, session_id: str, ticket_ref: str, status: CaseStatus
@@ -282,11 +309,10 @@ class PostgresAgentWrites:
                 (status.value, case_number),
             )
             self._audit(
-                cur,
                 agent_id=agent_id,
                 session_id=session_id,
                 identity=identity,
                 action=AuditAction.CASE_STATUS_SET,
                 result={"case_number": case_number, "status": status.value},
             )
-        return CaseStatusResult(case_number=case_number, status=status)
+        return self._read_case_status(case_number)

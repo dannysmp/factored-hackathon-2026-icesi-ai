@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 from datetime import UTC, date, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 # Third-party libraries
 import psycopg
@@ -287,6 +288,34 @@ def test_add_note_returns_the_written_note(
 
 
 @pytest.mark.integration
+def test_add_note_reads_the_written_row_back_rather_than_echoing_the_input(
+    outbox: PostgresHandoffOutbox, writes: PostgresAgentWrites
+) -> None:
+    """Verify-before-report: the returned ``Note`` comes from a fresh, independent ``SELECT``
+    issued after the insert's own connection closes, not from the caller's own arguments — proven
+    by counting connections opened: one for the insert, a second the audit sink opens for its own
+    write, a third, independent one for the read-back."""
+    ticket_ref, _ = _ticket(outbox)
+    real_connect = psycopg.connect
+    calls = 0
+
+    def counting_connect(*args: object, **kwargs: object) -> psycopg.Connection:
+        nonlocal calls
+        calls += 1
+        return real_connect(*args, **kwargs)  # type: ignore[arg-type]
+
+    with patch("app.persistence.agent_writes.psycopg.connect", side_effect=counting_connect):
+        writes.add_note(
+            agent_id="AGT-1",
+            session_id=_AGENT_SESSION_ID,
+            ticket_ref=ticket_ref,
+            note_text="Called back.",
+        )
+
+    assert calls == 3
+
+
+@pytest.mark.integration
 def test_add_note_orders_successive_notes(
     dsn: str, outbox: PostgresHandoffOutbox, writes: PostgresAgentWrites
 ) -> None:
@@ -368,6 +397,35 @@ def test_set_case_status_updates_the_case_and_returns_the_result(
         row = cur.fetchone()
     assert row is not None
     assert row[0] == "In Review"
+
+
+@pytest.mark.integration
+def test_set_case_status_reads_the_written_row_back_rather_than_echoing_the_input(
+    dsn: str, outbox: PostgresHandoffOutbox, writes: PostgresAgentWrites
+) -> None:
+    """Verify-before-report: the returned ``CaseStatusResult`` comes from a fresh, independent
+    ``SELECT`` issued after the update's own connection closes, not from the caller's own
+    arguments — proven by counting connections opened: one for the update, a second the audit sink
+    opens for its own write, a third, independent one for the read-back."""
+    _insert_case_row(dsn, case_number="CASE-1", status="Open")
+    ticket_ref, _ = _ticket(outbox, existing_case_number="CASE-1")
+    real_connect = psycopg.connect
+    calls = 0
+
+    def counting_connect(*args: object, **kwargs: object) -> psycopg.Connection:
+        nonlocal calls
+        calls += 1
+        return real_connect(*args, **kwargs)  # type: ignore[arg-type]
+
+    with patch("app.persistence.agent_writes.psycopg.connect", side_effect=counting_connect):
+        writes.set_case_status(
+            agent_id="AGT-1",
+            session_id=_AGENT_SESSION_ID,
+            ticket_ref=ticket_ref,
+            status=CaseStatus.IN_REVIEW,
+        )
+
+    assert calls == 3
 
 
 @pytest.mark.integration
