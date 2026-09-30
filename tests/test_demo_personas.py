@@ -3,15 +3,23 @@ Demo Persona Tests
 ===================
 
 Component: ``app.security.demo_personas``. Hermetic: personas are read from temporary files, and
-the customer lookup is a fake, exactly like the sandbox login's own tests.
+the customer lookup is a fake, exactly like the sandbox login's own tests. One test loads the
+real shipped persona file against a real, seeded Postgres — the same check ``app.main`` runs at
+start-up — and is marked ``integration``, skipped when ``DATABASE_URL`` is not set or the
+operational seed has not been built locally (CI never has it; see that test's own docstring).
 """
 
 from __future__ import annotations
 
+import functools
+import os
 from pathlib import Path
 
 import pytest
 
+from app.persistence.customers import customer_status
+from app.persistence.load_seed import load_seed
+from app.persistence.migrate import apply_migrations
 from app.security.demo_personas import (
     DEFAULT_PERSONAS_PATH,
     PersonaError,
@@ -19,6 +27,9 @@ from app.security.demo_personas import (
     load_personas,
     validate_active_customers,
 )
+from pipelines.ops_seed import MANIFEST_NAME
+
+_OPS_SEED_DIR = Path("data/gold/ops_seed")
 
 _VALID_DOCUMENT = """
 version: 1
@@ -49,11 +60,34 @@ def _write(tmp_path: Path, text: str) -> Path:
 
 
 def test_the_shipped_persona_file_loads_and_validates_structurally() -> None:
-    """The file this repository ships parses; its placeholder customer_ids are a seed question,
-    not a loader question (proven separately by the validate_active_customers tests below)."""
+    """The file this repository ships parses; whether each customer_id actually resolves to a
+    seeded customer is a separate, store-backed question (see the integration test below)."""
     personas = load_personas(DEFAULT_PERSONAS_PATH)
 
     assert len(personas.customers) >= 1
+
+
+@pytest.mark.integration
+def test_every_shipped_persona_resolves_to_an_active_seeded_customer() -> None:
+    """The real regression this file's customer_id values must never reintroduce: a placeholder
+    or a stale identifier fails exactly this check inside ``app.main``'s own start-up path, before
+    ``DEMO_SIGNIN_ENABLED`` can ever serve a request.
+
+    Needs the real, built operational seed on disk, not only ``DATABASE_URL``: ``data/`` is
+    git-ignored and CI never builds or stages it (no S3 credentials there by design — see
+    ``CLAUDE.md``'s Secrets and data invariant), so this test only runs locally, where the seed
+    has actually been built, and skips everywhere else rather than failing on an absent file."""
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL is not set")
+    if not (_OPS_SEED_DIR / MANIFEST_NAME).is_file():
+        pytest.skip("the operational seed has not been built (data/gold/ops_seed is empty)")
+    apply_migrations(dsn)
+    load_seed(dsn, _OPS_SEED_DIR)
+
+    personas = load_personas(DEFAULT_PERSONAS_PATH)
+
+    validate_active_customers(personas, functools.partial(customer_status, dsn))
 
 
 def test_a_valid_persona_file_loads(tmp_path: Path) -> None:

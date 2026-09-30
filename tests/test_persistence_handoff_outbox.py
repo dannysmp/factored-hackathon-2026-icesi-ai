@@ -347,3 +347,20 @@ def test_a_store_failure_logs_before_propagating(caplog: pytest.LogCaptureFixtur
         _record(outbox, _content())
 
     assert any("handoff_outbox_write_failed" in record.message for record in caplog.records)
+
+
+@pytest.mark.integration
+def test_a_row_with_no_stored_fingerprint_is_never_trusted_as_a_replay(
+    outbox: PostgresHandoffOutbox,
+) -> None:
+    """A row written before migration 0009 has no fingerprint to verify against; it is refused
+    the same way a genuine mismatch is, never silently trusted as an ordinary replay."""
+    packet = _record(outbox, _content(), turn_id="legacy-turn")
+    with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE handoff_outbox SET content_fingerprint = NULL WHERE ticket_ref = %s",
+            (packet.ticket_ref,),
+        )
+
+    with pytest.raises(HandoffReplayMismatch):
+        _record(outbox, _content(), turn_id="legacy-turn")
