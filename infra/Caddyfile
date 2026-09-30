@@ -19,12 +19,33 @@
 #   stricter, non-matching cutoff — verified against a real Caddy instance
 #   (a body of exactly 65536 bytes passes; 65537 is refused, identical to
 #   the application's own "exceeds the limit" comparison).
+#   The header block below is the post-deploy hardening baseline (ADR-13): HSTS with a max-age
+#   comfortably over the required 15,552,000 seconds; an enforcing Content-Security-Policy
+#   (never report-only) — `default-src 'self'` alone covers this deployment's real resource
+#   loading, verified against the actual built web app: both `index.html` and `console.html`
+#   reference only same-origin hashed assets, no inline script or style, no third-party origin
+#   anywhere in the source; `frame-ancestors 'none'` and `base-uri 'self'` are standard, zero-risk
+#   companions, not separately required by any route's own behavior. `-Server` strips nginx's
+#   version-carrying `Server: nginx/x.y.z` header (confirmed present by default on a real build);
+#   uvicorn's own `Server: uvicorn` carries no version already, stripped anyway for one consistent
+#   policy at the edge rather than a per-upstream exception. No cookie is ever set anywhere in
+#   this stack (sessions are bearer tokens, confirmed by reading every sign-in response), so
+#   ADR-13's cookie-flag requirement has nothing to attach to — the hardening check
+#   (`12-hardening-check.sh`) confirms this and skips that clause rather than failing it. TLS 1.1
+#   and below are already refused by Caddy's own secure-by-default minimum version — verified
+#   against a real instance, no explicit `tls` directive needed to get that part of the baseline.
 # Usage:
 #   Copied to the host by the deploy pipeline alongside docker-compose.prod.yml; not run
 #   directly from this repository.
 # =============================================================================
 
 {$HOST_NAME} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+		-Server
+	}
+
 	# The backend's own routes: /api/*, its health endpoints and the session/auth routes
 	# (app/main.py and app/api/auth.py register /health/live, /health/ready, /v1/session and
 	# /v1/auth/* at the root, not under /api) all route here.
