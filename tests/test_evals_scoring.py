@@ -94,6 +94,9 @@ def dsn() -> str:
     if not value:
         pytest.skip("DATABASE_URL is not set")
     apply_migrations(value)
+    # TRUNCATE on audit_log is refused at the store (migration 0003), including for this reset:
+    # the session's own replication role is switched off for it, since a trigger created without
+    # ENABLE REPLICA or ENABLE ALWAYS does not fire under 'replica'.
     with psycopg.connect(value) as conn, conn.cursor() as cur:
         cur.execute("SET LOCAL session_replication_role = replica")
         cur.execute(
