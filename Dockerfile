@@ -60,4 +60,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')" || exit 1
 
+# Exactly one worker, deliberately: app.security.sessions's revocation store is in-process memory,
+# shared between requests but not between workers or processes. A second worker here would let a
+# revoked session keep working against whichever worker didn't see the revocation. Add
+# --workers only together with moving revocation to a shared store (the operational database).
 CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
