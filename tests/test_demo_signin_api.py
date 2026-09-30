@@ -24,7 +24,15 @@ from app.domain.calendar import DomainCalendar
 from app.main import AgentConsolePorts, create_app
 from app.security.demo_personas import load_personas
 from app.security.signin_audit import SignInAuditRecord
-from contracts.service_v1.console import QueueFilters, QueueResponse, TicketDetail
+from contracts.service_v1.cases import CaseStatus
+from contracts.service_v1.console import (
+    CaseStatusResult,
+    Note,
+    QueueFilters,
+    QueueItem,
+    QueueResponse,
+    TicketDetail,
+)
 
 START = datetime(2026, 9, 26, 12, 0, 0, tzinfo=UTC)
 ACCESS_CODE = "demo-access-code-0123456789"
@@ -146,6 +154,24 @@ class _UnreachableAgentConsole:
     def timeline_viewed(self, **kwargs: object) -> None:
         raise NotImplementedError
 
+    def claim_ticket(self, *, agent_id: str, session_id: str, ticket_ref: str) -> QueueItem | None:
+        raise NotImplementedError
+
+    def release_ticket(
+        self, *, agent_id: str, session_id: str, ticket_ref: str
+    ) -> QueueItem | None:
+        raise NotImplementedError
+
+    def add_note(
+        self, *, agent_id: str, session_id: str, ticket_ref: str, note_text: str
+    ) -> Note | None:
+        raise NotImplementedError
+
+    def set_case_status(
+        self, *, agent_id: str, session_id: str, ticket_ref: str, status: CaseStatus
+    ) -> CaseStatusResult | None:
+        raise NotImplementedError
+
 
 def _agent_console() -> AgentConsolePorts:
     unreachable = _UnreachableAgentConsole()
@@ -153,6 +179,7 @@ def _agent_console() -> AgentConsolePorts:
         queue=unreachable,
         ticket_detail=unreachable,
         audit=unreachable,
+        writes=unreachable,
     )
 
 

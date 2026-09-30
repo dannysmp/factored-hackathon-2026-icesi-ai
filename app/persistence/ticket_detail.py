@@ -16,7 +16,8 @@ else on the packet — the reason codes, the policy version, the risk evidence, 
 
 Scope
 -----
-In: reading ``handoff_outbox`` and its four child tables by ``ticket_ref``, re-hydrating the
+In: reading ``handoff_outbox`` and its five child tables (including ``handoff_notes``, CR-16's
+narrow agent writes) by ``ticket_ref``, re-hydrating the
 transaction and source titles, assembling ``TicketDetail``.
 Out: the customer-scoped ``ToolPort`` (``app.persistence.reads``) — an agent reading a ticket has
 no customer session to scope a lookup to, and the ticket can belong to any customer, so this module
@@ -83,7 +84,7 @@ from app.persistence.dialogue_turn_log import PostgresDialogueTurnLog
 from app.persistence.handoff_queue import PostgresHandoffQueue
 from app.persistence.reads import clamp_merchant  # Shared fit to TransactionFact.merchant's bound
 from app.retrieval.lexical import LexicalRetriever
-from contracts.service_v1.console import TicketDetail
+from contracts.service_v1.console import Note, TicketDetail
 from contracts.service_v1.envelope import (  # The envelope-flavored shapes HandoffPacket expects
     Money,
     ProductLabel,
@@ -176,6 +177,7 @@ class PostgresTicketDetail:
             open_questions = self._open_questions(cur, ticket_ref)
             reason_codes = self._reason_codes(cur, ticket_ref)
             sources = self._sources(cur, ticket_ref)
+            notes = self._notes(cur, ticket_ref)
         packet = self._packet(
             ticket_ref,
             row,
@@ -185,7 +187,7 @@ class PostgresTicketDetail:
             sources=sources,
         )
         timeline = self._turn_log.timeline_for(row.trace_id)
-        return TicketDetail(item=item, packet=packet, timeline=timeline)
+        return TicketDetail(item=item, packet=packet, timeline=timeline, notes=notes)
 
     def _outbox_row(self, cur: psycopg.Cursor, ticket_ref: str) -> _OutboxRow:
         cur.execute(
@@ -220,6 +222,17 @@ class PostgresTicketDetail:
             (ticket_ref,),
         )
         return tuple(ReasonCode(code) for (code,) in cur.fetchall())
+
+    def _notes(self, cur: psycopg.Cursor, ticket_ref: str) -> tuple[Note, ...]:
+        cur.execute(
+            "SELECT agent_id, note_text, created_at_utc FROM handoff_notes "
+            "WHERE ticket_ref = %s ORDER BY ord",
+            (ticket_ref,),
+        )
+        return tuple(
+            Note(agent_id=agent_id, note_text=note_text, created_at=created_at)
+            for agent_id, note_text, created_at in cur.fetchall()
+        )
 
     def _sources(self, cur: psycopg.Cursor, ticket_ref: str) -> tuple[SourceRef, ...]:
         cur.execute(

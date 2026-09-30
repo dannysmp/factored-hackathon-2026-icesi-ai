@@ -60,6 +60,7 @@ class ErrorCode(StrEnum):
     INTERNAL_ERROR = "internal_error"
     TURN_CONFLICT = "turn_conflict"
     PAYLOAD_TOO_LARGE = "payload_too_large"
+    CASE_STATUS_TERMINAL = "case_status_terminal"
 
 
 class ProblemError(Exception):
