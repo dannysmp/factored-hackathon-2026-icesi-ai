@@ -299,6 +299,26 @@ def test_evaluate_dispute_decides_on_the_session_customers_own_transaction(dsn: 
 
 
 @pytest.mark.integration
+def test_evaluate_dispute_routes_a_seeded_repeat_complainer_to_escalation(dsn: str) -> None:
+    """AC-E4-43: a customer the seed marks as a repeat complainer must actually route to
+    ``escalate_repeat_complainer`` through this port, not just at the seed's own selection step —
+    the same transaction evaluates as eligible for a customer without the flag (the sibling test
+    just above)."""
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE customers SET is_repeat_complainer = TRUE WHERE customer_id = 'CLI-A'")
+    sink = _RecordingSink(dsn)
+    port = _port(dsn, sink, customer_id="CLI-A")
+
+    decision = port.evaluate_dispute(
+        EvaluateDisputeRequest(transaction_ref="TRX-A2", category="unrecognized_charge")
+    )
+
+    assert decision is not None and not isinstance(decision, ToolFailure)
+    assert decision.outcome.value == "escalate"
+    assert decision.reason_code.value == "escalate_repeat_complainer"
+
+
+@pytest.mark.integration
 def test_evaluate_dispute_reads_an_open_case_for_the_transaction_from_the_store(dsn: str) -> None:
     """TRX-A1 already has an open case (CASE-A1): the gate is a real query, not a stub."""
     sink = _RecordingSink(dsn)

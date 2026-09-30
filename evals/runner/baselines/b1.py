@@ -44,6 +44,14 @@ Design Principles
   what other tools, if any, the model called in between — mirroring the one structural signal
   ``evals.scoring``'s ``CONFIRM_FILING`` check already reads from P's own replies, so the same
   scorer reads the same signal from all three systems.
+- **B1's own grounded decision travels with the transcript, since the harness is B1's caller.**
+  P and B0 are a black box to the harness over HTTP, so ``evals.scoring.score_case`` reads
+  ``dialogue_state`` back after the run to check which transaction and category a
+  ``CONFIRM_FILING`` reply actually confirmed. B1 has no such table to read: the harness already
+  holds the tool port's own grounded decision in-process
+  (``B1ToolDispatcher.last_confirmable_decision``), so ``run_case`` carries it through
+  ``RunTranscript.confirmed_target`` instead — the same question, answered from the vantage point
+  this transport actually exposes, never a looser check than P's or B0's own.
 - **One case's failure never silences the rest of the batch**, the same rule
   ``evals.runner.runner.run_cases`` applies: a case that fails to resolve or score with
   ``ValueError`` or ``NotImplementedError`` is recorded as a named ``CaseResult.error``
@@ -304,8 +312,14 @@ def run_case(
             )
         )
         latencies.append(latency_seconds)
+    decision = dispatcher.last_confirmable_decision
+    confirmed_target = (decision.transaction_ref, decision.category) if decision else None
     return RunTranscript(
-        case=case, session_id=session_id, replies=tuple(replies), latencies_seconds=tuple(latencies)
+        case=case,
+        session_id=session_id,
+        replies=tuple(replies),
+        latencies_seconds=tuple(latencies),
+        confirmed_target=confirmed_target,
     )
 
 

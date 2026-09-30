@@ -72,10 +72,31 @@ def run_cases(
 ) -> tuple[CaseResult, ...]:
     """Resolve, run and score every case in ``cases``, in order.
 
-    A case that fails to resolve, run or score with ``ValueError``, ``NotImplementedError`` or
-    ``httpx.HTTPStatusError`` (a malformed ``seed_ref``, an unscored ``expected_intent``, a
-    non-2xx turn response) is recorded as a named ``CaseResult.error`` instead of stopping the
-    batch; any other exception still propagates and stops it.
+    Parameters
+    ----------
+    client : httpx.Client
+        Drives each case's scripted turns against the running system.
+    dsn : str
+        Connection string ``resolve_customer_id`` and ``score_case`` each read fresh, per case.
+    cases : Sequence[Case]
+        The cases to run, in the order the returned results preserve.
+    test_login_key : str
+        Forwarded to the running system for every case's turns.
+
+    Returns
+    -------
+    tuple[CaseResult, ...]
+        One result per case, in the given order — a normal verdict, or a named error result for a
+        case that could not resolve, run or be scored.
+
+    Raises
+    ------
+    Exception
+        Any exception other than ``ValueError``, ``NotImplementedError`` or
+        ``httpx.HTTPStatusError`` propagates unchanged and stops the batch immediately, without
+        attempting the cases still queued behind it; those three are this module's own
+        documented, anticipated failure modes and are recorded as a named ``CaseResult.error``
+        instead (see the module's own Design Principles).
     """
     results = []
     for case in cases:

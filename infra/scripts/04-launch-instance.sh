@@ -40,6 +40,16 @@ readonly AMI_PARAMETER="/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-d
 # it to the given instance if it is not attached already, allocating a new one only if none exists,
 # then prints the derived sslip.io host name. Idempotent: safe to call on every path that ends
 # with a running instance, not only the one that just launched it.
+# Accepted, documented residual risk: the find-or-allocate check above has a benign TOCTOU
+# window if this script is ever invoked concurrently with itself — two simultaneous runs can
+# both observe no tagged Elastic IP before either has allocated one, producing two tagged,
+# unassociated addresses (a small ongoing cost, not a correctness or security issue; the
+# association step below still converges on one IP per instance). Not fixed with a lock here,
+# because nothing in this project's actual invocation model triggers concurrent runs — these
+# scripts are run manually, one at a time, or from a single `workflow_dispatch` job serialized by
+# `deploy.yml`'s own `concurrency: group: deploy` guard, never from multiple simultaneous callers.
+# Add a lock (e.g. a DynamoDB conditional-write lock) before that invocation model changes, not
+# before.
 ensure_elastic_ip() {
   local instance_id="$1"
   local allocation_id public_ip associated_instance

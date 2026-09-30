@@ -27,6 +27,7 @@ from pydantic import SecretStr
 from app.config import AppEnvironment, ConfigError, Settings, load_settings
 from app.domain.calendar import DateOrigin, DomainCalendar
 from app.domain.policy.loader import load_policy
+from app.domain.policy.models import DisputeCategory
 from app.persistence.migrate import apply_migrations
 from app.retrieval.lexical import LexicalRetriever
 from contracts.service_v1.envelope import Intent, Slot
@@ -347,6 +348,7 @@ def test_run_case_tags_next_expected_when_a_turn_reaches_an_eligible_confirmable
         seed_ref="ops_seed:TRX-B1-LOOP",
         user_turns=("No reconozco un cargo en mi tarjeta.",),
         expected_intent=Intent.CONFIRM_FILING,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
     )
 
     transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
@@ -417,6 +419,7 @@ def test_run_case_keeps_next_expected_through_an_unrelated_tool_call_in_a_later_
         seed_ref="ops_seed:TRX-B1-LOOP2",
         user_turns=("No reconozco un cargo en mi tarjeta.",),
         expected_intent=Intent.CONFIRM_FILING,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
     )
 
     transcript = run_case(client, dispatcher, case, session_id=session_id, calendar=calendar)
@@ -708,6 +711,7 @@ def test_run_cases_scopes_each_case_to_its_own_customers_data(
             seed_ref="ops_seed:TRX-B1-CASES-1",
             user_turns=("No reconozco un cargo en mi tarjeta.",),
             expected_intent=Intent.CONFIRM_FILING,
+            expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         ),
         Case(
             case_id="b1-cases-02",
@@ -717,6 +721,7 @@ def test_run_cases_scopes_each_case_to_its_own_customers_data(
             seed_ref="ops_seed:TRX-B1-CASES-2",
             user_turns=("No reconozco un cargo en mi tarjeta.",),
             expected_intent=Intent.CONFIRM_FILING,
+            expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         ),
     )
 
