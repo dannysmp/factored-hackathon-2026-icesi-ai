@@ -53,11 +53,15 @@ Runtime Contract
 ``TOOL_SCHEMAS``: the seven Anthropic tool schemas, in a fixed order.
 ``B1ToolDispatcher(tool_port, retriever, outbox, policy, calendar, clock, *, customer_id, lang)``.
 ``dispatch(call, *, session_id, turn_id, trace_id) -> str``, the tool-result text for the model.
-``start_turn()``: clears the this-turn decision list ``handoff``'s reason-code lookup reads, and
-the last turn's handoff ticket; the caller (the conversation loop) calls this once per customer
-turn, before dispatching that turn's tool-call rounds.
+``start_turn()``: clears the this-turn decision list ``handoff``'s reason-code lookup reads, the
+last turn's handoff ticket, and the last confirmable decision; the caller (the conversation loop)
+calls this once per customer turn, before dispatching that turn's tool-call rounds.
 ``handoff_ticket``: the current turn's handoff ticket reference, or ``None``; the caller reads
 this after a turn to know whether to end the run.
+``last_confirmable_decision``: this turn's last eligible ``evaluate_dispute`` decision, or
+``None`` once a filing attempt follows it or none has happened yet; the caller reads this to build
+``evals.scoring.RunTranscript.confirmed_target``, the same fact ``dialogue_state`` would name for
+a system reached over HTTP.
 
 Limitations
 -----------
@@ -78,7 +82,7 @@ from dataclasses import dataclass, field
 from app.conversation.controller import HandoffOutbox  # The port, same one P's controller takes
 from app.conversation.handoff import HandoffContent
 from app.domain.calendar import DomainCalendar  # The reference date B1 holds, injected like P's
-from app.domain.policy.models import DisputeCategory, Policy, PolicyDecision, ReasonCode
+from app.domain.policy.models import DisputeCategory, Outcome, Policy, PolicyDecision, ReasonCode
 from app.retrieval.lexical import Retriever
 from app.security.sessions import Clock
 from app.tools.dispatcher import dispatch as dispatch_tool_port
@@ -247,16 +251,19 @@ class B1ToolDispatcher:
     customer_id: str
     lang: Lang
     handoff_ticket: str | None = field(default=None, init=False)
+    last_confirmable_decision: PolicyDecision | None = field(default=None, init=False)
     _decisions: dict[tuple[str, DisputeCategory], PolicyDecision] = field(
         default_factory=dict, init=False
     )
     _decisions_this_turn: list[PolicyDecision] = field(default_factory=list, init=False)
 
     def start_turn(self) -> None:
-        """Reset the per-turn decision list ``handoff``'s reason-code lookup reads, and the last
-        turn's handoff ticket, so it does not carry into a later turn's synthetic reply."""
+        """Reset the per-turn decision list ``handoff``'s reason-code lookup reads, the last
+        turn's handoff ticket, and the last confirmable decision, so none of them carries into a
+        later turn's synthetic reply."""
         self._decisions_this_turn = []
         self.handoff_ticket = None
+        self.last_confirmable_decision = None
 
     def dispatch(self, call: ToolCall, *, session_id: str, turn_id: str, trace_id: str) -> str:
         """Execute ``call`` and return the tool-result text the model reads next.
@@ -288,6 +295,12 @@ class B1ToolDispatcher:
             return _to_json(result)
         self._decisions[(result.transaction_ref, category)] = result
         self._decisions_this_turn.append(result)
+        # Mirrors evals.runner.baselines.b1._run_turn's own reached_confirmable signal: this
+        # turn's last eligible decision, cleared the moment a filing actually happens (see
+        # _create_dispute_case) — the same fact evals.scoring.score_case grounds a CONFIRM_FILING
+        # case's own correctness in, for a system the harness drives in-process rather than over
+        # HTTP.
+        self.last_confirmable_decision = result if result.outcome is Outcome.ELIGIBLE else None
         return _to_json(result)
 
     def _create_dispute_case(self, call: ToolCall, *, turn_id: str) -> str:
@@ -302,6 +315,9 @@ class B1ToolDispatcher:
             decision=decision,
         )
         result = self.tool_port.create_dispute_case(request)
+        # Mirrors evals.runner.baselines.b1._run_turn's own reached_confirmable reset: a filing
+        # attempt, successful or not, means the turn is no longer merely awaiting confirmation.
+        self.last_confirmable_decision = None
         return _to_json(result)
 
     def _get_policy(self, call: ToolCall) -> str:

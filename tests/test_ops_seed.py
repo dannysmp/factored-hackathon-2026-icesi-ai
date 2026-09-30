@@ -293,6 +293,34 @@ def test_repeat_complainer_uses_the_latest_complaint_on_or_before_the_reference_
     assert flags["LATE-COMPLAINT"]["is_repeat_complainer"] is False
 
 
+def _customers_output(tmp_path: Path) -> dict[str, bool]:
+    silver = _write_silver(tmp_path / "base")
+    build_seed(silver, tmp_path / "gold", code_version="test")
+    return {
+        row["customer_id"]: row["is_repeat_complainer"]
+        for row in _read_parquet(tmp_path / "gold" / CUSTOMERS_NAME)
+    }
+
+
+def test_a_seeded_repeat_complainer_carries_the_flag_in_the_written_customers_output(
+    tmp_path: Path,
+) -> None:
+    """The flag used to choose which customers the seed carries must also reach the seed's own
+    ``customers.parquet`` output, not be discarded after selection: a policy decision computed
+    from that output is otherwise structurally unable to ever see a real repeat complainer."""
+    output = _customers_output(tmp_path)
+
+    assert output["STRAT-is_repeat_complainer"] is True
+
+
+def test_a_customer_whose_only_flagged_complaint_is_too_late_carries_false(
+    tmp_path: Path,
+) -> None:
+    output = _customers_output(tmp_path)
+
+    assert output["LATE-COMPLAINT"] is False
+
+
 def test_active_only_holds_even_for_a_customer_carrying_several_stratum_flags(
     tmp_path: Path,
 ) -> None:

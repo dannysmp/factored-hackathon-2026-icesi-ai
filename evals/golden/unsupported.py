@@ -6,9 +6,9 @@ Overview
 --------
 The 13 unsupported-request cases of the golden set's category mix (6 Spanish, 5 Portuguese,
 2 English): requests for banking services the dispute-intake system does not handle at all —
-a new transfer, a credit-limit increase, a loan, a new account, investment advice — as opposed
-to a request the system understands but cannot grant. The correct reply is a safe abstention,
-never a guess at what the customer might have meant.
+a new transfer, a credit-limit increase, a loan, a new account, investment advice, insurance —
+as opposed to a request the system understands but cannot grant. The correct reply is a safe
+abstention, never a guess at what the customer might have meant.
 
 Scope
 -----

@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 # Local modules
+from app.domain.policy.models import DisputeCategory
 from contracts.service_v1.envelope import Intent
 from evals.judge_validation import DimensionAgreement
 from evals.metrics import (
@@ -58,9 +59,10 @@ def _case(**overrides: Any) -> Case:
         "category": CaseCategory.NORMAL,
         "lang": "es",
         "provenance": "observed",
-        "seed_ref": "ops_seed:CLI-1",
+        "seed_ref": "ops_seed:TRX-1",
         "user_turns": ("No reconozco un cargo.",),
         "expected_intent": Intent.CONFIRM_FILING,
+        "expected_category": DisputeCategory.UNRECOGNIZED_CHARGE,
     }
     return Case(**{**values, **overrides})
 

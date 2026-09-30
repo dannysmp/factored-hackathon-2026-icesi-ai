@@ -198,6 +198,53 @@ def test_an_unanticipated_exception_still_stops_the_batch(monkeypatch: pytest.Mo
         run_cases(cast(httpx.Client, object()), "unused-dsn", cases, test_login_key=LOGIN_KEY)
 
 
+def test_an_unanticipated_exception_mid_batch_never_reaches_the_cases_behind_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real bug on a middle case propagates immediately; the cases still queued behind it are
+    never even attempted — the one exception this module's own catch list does not swallow gets
+    no chance to hide a case it silently skipped."""
+    calls: list[str] = []
+    cases = (_case(case_id="c1"), _case(case_id="c2"), _case(case_id="c3"))
+
+    def fake_resolve(dsn: str, seed_ref: str) -> str:
+        calls.append(f"resolve:{seed_ref}")
+        return "CUST-A"
+
+    def fake_run_case(client: object, case: Case, *, customer_id: str, test_login_key: str) -> str:
+        calls.append(f"run:{case.case_id}")
+        if case.case_id == "c2":
+            raise RuntimeError("unexpected, not one of the anticipated failure classes")
+        return f"transcript-for-{case.case_id}"
+
+    def fake_score(dsn: str, transcript: str) -> CaseResult:
+        calls.append(f"score:{transcript}")
+        return CaseResult(
+            case_id=transcript,
+            is_adversarial=False,
+            expected_escalation=False,
+            observed_escalation=False,
+            automation_attempted=True,
+            correct_outcome=True,
+        )
+
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", fake_resolve)
+    monkeypatch.setattr("evals.runner.runner.run_case", fake_run_case)
+    monkeypatch.setattr("evals.runner.runner.score_case", fake_score)
+
+    with pytest.raises(RuntimeError, match="unexpected"):
+        run_cases(cast(httpx.Client, object()), "unused-dsn", cases, test_login_key=LOGIN_KEY)
+
+    # c1 ran to completion (resolved, run, scored); c2 blew up mid-run; c3 was never attempted.
+    assert calls == [
+        "resolve:ops_seed:CLI-RUNNER-A",
+        "run:c1",
+        "score:transcript-for-c1",
+        "resolve:ops_seed:CLI-RUNNER-A",
+        "run:c2",
+    ]
+
+
 # -----------------------------------------------------------------------------
 # End to end — a real, migrated, freshly seeded Postgres and the real running app
 # -----------------------------------------------------------------------------

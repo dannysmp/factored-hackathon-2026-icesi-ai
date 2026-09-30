@@ -24,7 +24,13 @@ from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.migrate import apply_migrations
 from app.persistence.reads import PostgresToolPort
 from app.retrieval.lexical import LexicalRetriever
-from evals.runner.baselines.b1_tools import _REQUEST_SUMMARY_OF, TOOL_SCHEMAS, B1ToolDispatcher
+from contracts.service_v1.tools import EvaluateDisputeRequest, Tool, ToolFailure
+from evals.runner.baselines.b1_tools import (
+    _REQUEST_SUMMARY_OF,
+    TOOL_SCHEMAS,
+    B1ToolDispatcher,
+    _to_json,
+)
 from evals.runner.baselines.naive_agent_client import ToolCall
 
 _NOW = datetime(2026, 6, 18, 15, 0, tzinfo=UTC)
@@ -110,6 +116,50 @@ def test_get_policy_returns_an_empty_list_below_the_relevance_floor(
     result = dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
 
     assert result == "[]"
+
+
+class _FailingToolPort:
+    """Stands in for a real `ToolPort` whose store call itself failed."""
+
+    def evaluate_dispute(self, request: EvaluateDisputeRequest) -> ToolFailure:
+        return ToolFailure(tool=Tool.EVALUATE_DISPUTE, cause="error")
+
+
+def test_evaluate_dispute_passes_a_tool_failure_through_without_tracking_a_decision(
+    retriever: LexicalRetriever,
+) -> None:
+    """A failed store call must reach the model as-is, and must never be mistaken for a real
+    decision `create_dispute_case` could later match against."""
+    dispatcher = B1ToolDispatcher(
+        tool_port=_FailingToolPort(),  # type: ignore[arg-type]
+        retriever=retriever,
+        outbox=object(),  # type: ignore[arg-type]
+        policy=load_policy(),
+        calendar=DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING),
+        clock=lambda: _NOW,
+        customer_id="CLI-UNUSED",
+        lang="es",
+    )
+    call = ToolCall(
+        id="t1",
+        name="evaluate_dispute",
+        input={"transaction_ref": "TRX-UNUSED", "category": "unrecognized_charge"},
+    )
+
+    result = dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
+
+    assert '"cause":"error"' in result.replace(" ", "")
+    assert dispatcher._decisions == {}
+
+
+def test_to_json_uses_model_dump_json_for_a_pydantic_value() -> None:
+    value = ToolFailure(tool=Tool.EVALUATE_DISPUTE, cause="error")
+    assert _to_json(value) == value.model_dump_json()
+
+
+def test_to_json_falls_back_to_plain_json_dumps_for_a_non_pydantic_value() -> None:
+    assert _to_json({"a": 1}) == '{"a": 1}'
+    assert _to_json(None) == "null"
 
 
 def test_dispatch_raises_for_an_unknown_tool(retriever: LexicalRetriever) -> None:
