@@ -87,6 +87,32 @@ def test_a_policy_decision_carries_its_reason_code_and_policy_version(dsn: str) 
 
 
 @pytest.mark.integration
+def test_an_agent_action_writes_the_agents_own_identity(dsn: str) -> None:
+    """ADR-17: an agent action's own identity survives to the store, alongside its session."""
+    sink = PostgresAuditSink(dsn)
+
+    sink.record(_record(action=AuditAction.PACKET_VIEWED, agent_id="AGT-1"))
+
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("SELECT agent_id FROM audit_log")
+        rows = cur.fetchall()
+    assert rows == [("AGT-1",)]
+
+
+@pytest.mark.integration
+def test_a_customer_action_writes_no_agent_id(dsn: str) -> None:
+    """A customer-originated action names no agent: the column stays NULL, never a placeholder."""
+    sink = PostgresAuditSink(dsn)
+
+    sink.record(_record())
+
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("SELECT agent_id FROM audit_log")
+        rows = cur.fetchall()
+    assert rows == [(None,)]
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "action", [AuditAction.PACKET_VIEWED, AuditAction.TIMELINE_VIEWED], ids=lambda a: a.value
 )

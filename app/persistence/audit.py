@@ -50,8 +50,8 @@ _CONNECT_TIMEOUT_SECONDS = 5
 _INSERT_SQL = """
 INSERT INTO audit_log (
     trace_id, customer_id, session_id, action, reason_code, policy_version,
-    tool_result_hash, occurred_at_utc, domain_date
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    tool_result_hash, occurred_at_utc, domain_date, agent_id
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 
@@ -85,6 +85,7 @@ class PostgresAuditSink:
                     entry.tool_result_hash,
                     entry.occurred_at,
                     entry.domain_date,
+                    entry.agent_id,
                 ),
             )
             conn.commit()

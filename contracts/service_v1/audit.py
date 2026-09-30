@@ -95,7 +95,10 @@ class AuditRecord(ContractModel):
     exactly for the actions a policy decision produced (``dispute_evaluated``, ``case_created``,
     ``case_creation_refused`` for a decision the tool itself rejected, and
     ``case_creation_replayed`` for the decision the original filing rested on); a plain read of
-    the customer's own data carries neither.
+    the customer's own data carries neither. ``agent_id`` is set exactly when an agent, not a
+    customer, is the one who acted (ADR-17: every agent read or write is audited with the agent's
+    own identity, not only the session that carried it) — ``None`` for every customer-originated
+    action, where ``session_id`` alone already identifies the actor.
     """
 
     trace_id: Annotated[str, Field(pattern=NUMBER_PATTERN)]
@@ -107,6 +110,7 @@ class AuditRecord(ContractModel):
     tool_result_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     occurred_at: UtcDatetime
     domain_date: date
+    agent_id: Annotated[SafeText, Field(min_length=1, max_length=20)] | None = None
 
 
 # -----------------------------------------------------------------------------

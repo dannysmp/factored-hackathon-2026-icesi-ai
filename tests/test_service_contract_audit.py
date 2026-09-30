@@ -105,3 +105,24 @@ def test_an_agent_console_read_carries_no_reason_code_or_policy_version(
 
     assert record.reason_code is None
     assert record.policy_version is None
+
+
+def test_agent_id_defaults_to_none_for_a_customer_originated_action() -> None:
+    """A customer action names no agent: session_id alone already identifies the actor."""
+    record = _record()
+
+    assert record.agent_id is None
+
+
+def test_an_agent_action_names_the_agent_who_acted() -> None:
+    """ADR-17: an agent read or write is audited with the agent's own durable identity, not only
+    the session that carried it."""
+    record = _record(action=AuditAction.PACKET_VIEWED, agent_id="AGT-1")
+
+    assert record.agent_id == "AGT-1"
+
+
+def test_an_agent_id_holding_a_control_character_is_refused() -> None:
+    """The agent identifier is system-held text too, refused the same way as every other."""
+    with pytest.raises(ValidationError, match="control or formatting character"):
+        _record(agent_id="AGT\x00")
