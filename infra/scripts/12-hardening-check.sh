@@ -42,12 +42,26 @@ readonly BASE_URL="https://${HOST_NAME}"
 fail=0
 
 response_header() {
-  # The value of one response header from a real request, or empty if absent. A header simply
-  # not being present is an expected, valid outcome here, not a script error: piping through
-  # grep, which exits non-zero on no match, must not trip "set -o pipefail" into aborting the
-  # whole check over what a caller like check_csp_enforcing needs to see as an empty result.
+  # The value of one response header from a real GET request, or empty if absent. A header
+  # simply not being present is an expected, valid outcome here, not a script error: piping
+  # through grep, which exits non-zero on no match, must not trip "set -o pipefail" into
+  # aborting the whole check over what a caller like check_csp_enforcing needs to see as an
+  # empty result.
   local path="$1" header_name="$2"
   curl --silent --max-time 10 -D - -o /dev/null "${BASE_URL}${path}" 2>/dev/null \
+    | { grep -i "^${header_name}:" || true; } | tr -d '\r' | sed -E "s/^[^:]+:[[:space:]]*//" | head -1
+}
+
+post_response_header() {
+  # The value of one response header from a real POST request with a JSON body and a custom
+  # header, or empty if absent. Used for the two sign-in routes, the only requests in this
+  # deployment that could ever set a session cookie -- a GET against an unrelated route (the
+  # original design here) can never observe a cookie a sign-in handler sets, whatever the
+  # handler does, since it never runs that code path at all.
+  local path="$1" header_name="$2" body="$3" access_code_header="$4"
+  curl --silent --max-time 10 -D - -o /dev/null -X POST \
+    -H "Content-Type: application/json" -H "${access_code_header}" \
+    -d "${body}" "${BASE_URL}${path}" 2>/dev/null \
     | { grep -i "^${header_name}:" || true; } | tr -d '\r' | sed -E "s/^[^:]+:[[:space:]]*//" | head -1
 }
 
@@ -90,15 +104,15 @@ check_hsts() {
 }
 
 check_csp_enforcing() {
+  # A report-only CSP alone never satisfies this: it is read from a header this deployment
+  # never sends at all (the enforcing one, checked below, is the only Content-Security-Policy
+  # this Caddyfile sets), so its presence or absence cannot itself change the verdict here --
+  # what matters is only whether the enforcing header exists.
   log "checking Content-Security-Policy is enforcing, not report-only..."
-  local enforcing report_only
+  local enforcing
   enforcing="$(response_header /health/live content-security-policy)"
-  report_only="$(response_header /health/live content-security-policy-report-only)"
   if [[ -z "${enforcing}" ]]; then
-    log "FAIL: Content-Security-Policy header is missing"
-    fail=1
-  elif [[ -n "${report_only}" && -z "${enforcing}" ]]; then
-    log "FAIL: only a report-only Content-Security-Policy is set"
+    log "FAIL: Content-Security-Policy is missing (a report-only policy alone would not satisfy this either)"
     fail=1
   else
     log "ok: Content-Security-Policy present and enforcing"
@@ -132,20 +146,44 @@ check_no_version_disclosure() {
 }
 
 check_cookie_flags() {
-  log "checking session cookie flags (skipped when no cookie is ever set)..."
-  local set_cookie
-  set_cookie="$(response_header /health/live set-cookie)"
-  if [[ -z "${set_cookie}" ]]; then
+  # Probes the two routes that could ever set a session cookie -- the customer and agent demo
+  # sign-in brokers (ADR-18) -- not an unrelated route. A wrong access code still reaches each
+  # handler's real code (the code is compared before anything else, including the persona
+  # lookup), so this needs no real credentials to be a genuine, non-vacuous test of what a
+  # refused sign-in attempt actually does. Known residual gap: a cookie set only on a
+  # *successful* sign-in (a 201, which this script cannot reach without the real access code)
+  # is outside what this check can observe; it catches a cookie set unconditionally or on
+  # refusal, which is the realistic shape most such a regression would take, not every
+  # conceivable one.
+  log "checking session cookie flags on the sign-in routes (skipped when no cookie is ever set)..."
+  local path persona set_cookie any_cookie=0 own_fail=0
+  # A real, currently-committed persona slug for each route (not a made-up placeholder): an
+  # unknown slug could be refused by validation before the handler's own code ever runs, which
+  # would make this check pass for the wrong reason. A wrong access code still reaches each
+  # handler's real logic either way -- the code is compared first, before the persona lookup.
+  for path_and_persona in "/v1/auth/demo-sessions ana" "/v1/auth/demo-agent-sessions agent-beatriz"; do
+    path="${path_and_persona%% *}"
+    persona="${path_and_persona#* }"
+    set_cookie="$(post_response_header "${path}" set-cookie "{\"persona\":\"${persona}\"}" \
+      "X-Demo-Access-Code: __hardening_check_wrong_code__")"
+    if [[ -z "${set_cookie}" ]]; then
+      continue
+    fi
+    any_cookie=1
+    if grep -qi "secure" <<<"${set_cookie}" \
+      && grep -qi "httponly" <<<"${set_cookie}" \
+      && grep -qiE "samesite=(strict|lax)" <<<"${set_cookie}"; then
+      log "ok: the cookie ${path} sets carries Secure, HttpOnly and SameSite=Strict|Lax"
+    else
+      log "FAIL: the cookie ${path} sets is missing Secure, HttpOnly or SameSite=Strict|Lax: ${set_cookie}"
+      fail=1
+      own_fail=1
+    fi
+  done
+  if [[ "${any_cookie}" -eq 0 ]]; then
     log "skipped: no session cookie is set anywhere in this deployment (bearer-token sessions)"
-    return
-  fi
-  if grep -qi "secure" <<<"${set_cookie}" \
-    && grep -qi "httponly" <<<"${set_cookie}" \
-    && grep -qiE "samesite=(strict|lax)" <<<"${set_cookie}"; then
-    log "ok: session cookie carries Secure, HttpOnly and SameSite=Strict|Lax"
-  else
-    log "FAIL: session cookie is missing Secure, HttpOnly or SameSite=Strict|Lax: ${set_cookie}"
-    fail=1
+  elif [[ "${own_fail}" -eq 0 ]]; then
+    log "ok: every session cookie set by a sign-in route carries Secure, HttpOnly and SameSite=Strict|Lax"
   fi
 }
 
