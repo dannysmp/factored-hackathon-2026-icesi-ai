@@ -328,17 +328,15 @@ def test_the_real_collision_no_longer_survives_through_a_full_reference_number()
     assert not redact_pan(safe).found
 
 
-def test_a_run_entirely_inside_the_suffix_is_also_caught_not_only_a_leading_one(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A longer suffix (``request_id``'s 16 hex characters, joined to nothing before it) can carry
-    a card-length digit run anywhere in it, not only at its own start. ``722263483763217e`` is a
-    real value ``secrets.token_hex(8)`` produced: 15 of its 16 characters are digits, and
-    ``redact_pan`` flags it when embedded in a real request id (``req_722263483763217e``) exactly
-    as this project's structured logs would carry it. A suffix-generator that only checked its
-    *leading* digit run (this function's own first implementation) would miss this, since the run
-    here starts at the suffix's own first character; the next test below covers a run that starts
-    later instead."""
+def test_a_real_request_id_collision_is_regenerated(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``request_id`` had no protection at all before this fix (a raw, unjoined
+    ``secrets.token_hex(8)``, unlike the date-joined ticket/case suffixes the rest of this section
+    covers). ``722263483763217e`` is a real value ``secrets.token_hex(8)`` produced: 15 of its 16
+    characters are digits, and ``redact_pan`` flags it when embedded in a real request id
+    (``req_722263483763217e``) exactly as this project's structured logs would carry it. This run
+    happens to start at the suffix's own first character — the *leading*-only check this function
+    had before this round would also have caught this particular example; the next test isolates
+    a run that starts later, which that earlier check would have missed."""
     collision = "722263483763217e"
     assert redact_pan(f"req_{collision}").found  # the vulnerability, confirmed
 
@@ -352,9 +350,11 @@ def test_a_run_entirely_inside_the_suffix_is_also_caught_not_only_a_leading_one(
 
 
 def test_a_digit_run_starting_after_the_first_character_is_still_caught() -> None:
-    """The length scan behind the generalized check looks at the whole candidate, not just a
-    leading run: a suffix whose first character is a letter but whose remaining characters are all
-    digits reaches the same card-length floor as one that starts with that many digits. (Whether a
+    """This is the case a *leading*-only check misses: a suffix whose first character is a letter
+    but whose remaining characters are all digits reaches the same card-length floor as one that
+    starts with that many digits, yet a check that only measured the run from position 0 would
+    read this candidate as having zero leading digits and wrongly accept it. The length scan
+    behind the generalized check looks at the whole candidate instead, and catches it. (Whether a
     given digit run of this length also happens to be Luhn-valid, and so is actually redacted, is
     a separate question the other tests in this section already cover with a real collision.)"""
     mid_run_suffix = "A234567890123456"  # 1 letter, then a 15-digit run: still card-length.
