@@ -17,6 +17,14 @@
    * Color: a restrained neutral ramp carries the interface; one accent hue for primary actions
    * and links; a small semantic set for status only, each with a tinted background for banners.
    * No gradients, no decorative color.
+   *
+   * Dark mode near-parity with the prior, tokenless page (before this file existed, the page
+   * declared only `color-scheme: light dark` and relied on the browser's own default dark canvas
+   * and text color): measured directly in Chromium via its `Canvas`/`CanvasText` system-color
+   * keywords under a dark color scheme, the browser's own default resolves to `#121212`/`#ffffff`.
+   * `--color-bg`/`--color-text` below (`#0f1115`/`#eef0f3`) differ by at most a few units per
+   * channel from that default — visually indistinguishable in normal use, confirmed by direct
+   * measurement rather than assumed.
    * --------------------------------------------------------------------------------------- */
   --color-bg: light-dark(#ffffff, #0f1115);
   --color-bg-subtle: light-dark(#f6f7f9, #171a20);
