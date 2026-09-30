@@ -28,7 +28,7 @@ from app.config import AppEnvironment, ConfigError, Settings, load_settings
 from app.domain.calendar import DateOrigin, DomainCalendar
 from app.domain.policy.loader import load_policy
 from app.domain.policy.models import DisputeCategory
-from app.llm.client import LlmUnavailable
+from app.llm.client import LlmRequestRejected, LlmUnavailable
 from app.persistence.migrate import apply_migrations
 from app.retrieval.lexical import LexicalRetriever
 from contracts.service_v1.envelope import Intent, Slot
@@ -706,6 +706,58 @@ def test_run_cases_catches_a_transient_provider_failure_and_continues(
     assert succeeded.case_id == "transcript-for-c2"
     assert succeeded.error is None
     assert succeeded.correct_outcome is True
+
+
+def test_run_cases_still_propagates_an_account_level_provider_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LlmRequestRejected's usual causes (bad credentials, no model access) are account-level and
+    recur identically for every case, so this must still stop the batch outright rather than being
+    recorded per case — the deliberate exclusion _CASE_FAILURES documents, pinned so a future
+    change can't silently widen the catch to include it."""
+    settings = _settings(database_url=SecretStr("postgresql://unused"))
+    cases = (_b1_case(case_id="rejected"), _b1_case(case_id="c2"))
+    client = NaiveAgentClient(
+        SecretStr("unused"),
+        model=_MODEL,
+        client=_StubAnthropic([]),  # type: ignore[arg-type]
+    )
+
+    def fake_resolve(dsn: str, seed_ref: str) -> str:
+        return "CUST-A"
+
+    def fake_build_dispatcher(
+        settings: Settings,
+        *,
+        policy: object,
+        retriever: object,
+        calendar: object,
+        clock: object,
+        customer_id: str,
+        lang: str,
+    ) -> tuple[object, str]:
+        return object(), "SESSION-B1-HERMETIC"
+
+    def fake_run_case(
+        client: object, dispatcher: object, case: Case, *, session_id: str, calendar: object
+    ) -> str:
+        raise LlmRequestRejected("Anthropic call failed: status 401")
+
+    monkeypatch.setattr("evals.runner.baselines.b1.resolve_customer_id", fake_resolve)
+    monkeypatch.setattr("evals.runner.baselines.b1._build_dispatcher", fake_build_dispatcher)
+    monkeypatch.setattr("evals.runner.baselines.b1.run_case", fake_run_case)
+
+    with pytest.raises(LlmRequestRejected, match="401"):
+        run_cases(
+            client,
+            settings,
+            "postgresql://unused",
+            cases,
+            policy=load_policy(),
+            retriever=LexicalRetriever.from_corpus(),
+            calendar=DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING),
+            clock=lambda: _NOW,
+        )
 
 
 @pytest.mark.integration

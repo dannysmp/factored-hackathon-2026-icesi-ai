@@ -80,6 +80,15 @@ explicitly — the evaluation plan's "same model" wording does not say which of 
 models (understanding vs. rendering) that means for a single unified agent role, and this module
 does not decide it either; the caller (the CLI wiring, a following increment) names one from the
 allow-list.
+``run_cases`` still propagates, uncaught, a ``LlmRequestRejected`` raised by
+``anthropic.RequestTooLargeError`` — a case whose accumulated conversation grows past the
+provider's own request-byte limit (a pathological tool-call loop, an unusually long scripted case)
+would abort the batch rather than being recorded and skipped, since this failure class is grouped
+with the account-level causes ``_CASE_FAILURES`` deliberately excludes. No golden-set case today
+is anywhere near that limit, so this is a real, open gap rather than a demonstrated one; tracked as
+a follow-up rather than closed here, since distinguishing it cleanly needs a narrower exception (or
+a status-code check) in ``app.llm.client``/``app.llm.anthropic_client``, which is architect-review
+territory this module's own scope does not reach.
 """
 
 from __future__ import annotations
@@ -122,9 +131,14 @@ _TIMEOUT_SECONDS = 30.0
 #: addition to the set the HTTP runner already catches: P and B0 surface the same class of
 #: provider failure as ``httpx.HTTPStatusError`` through the turns endpoint, already anticipated
 #: there; B1 calls the provider directly, so it needs the same failure named in its own terms.
-#: ``LlmRequestRejected`` (bad credentials, no model access) is deliberately not included here —
-#: an account-level problem recurs identically for every case in the batch, so stopping the run
-#: outright surfaces it once, loudly, rather than recording the same failure 135 times over.
+#: ``LlmRequestRejected`` is deliberately not included here for its own usual causes (bad
+#: credentials, no model access) — an account-level problem recurs identically for every case in
+#: the batch, so stopping the run outright surfaces it once, loudly, rather than recording the
+#: same failure 135 times over. It is a narrower exception than that framing alone covers, though:
+#: ``NaiveAgentClient`` raises it for ``anthropic.RequestTooLargeError`` too (a 413, the request
+#: exceeding the provider's byte limit), which is driven by one case's own accumulated
+#: conversation, not the account — this gap is real and open, not closed by this decision; see the
+#: module's own Limitations.
 _CASE_FAILURES: tuple[type[Exception], ...] = (ValueError, NotImplementedError, LlmUnavailable)
 
 _SYSTEM_PROMPT = (
