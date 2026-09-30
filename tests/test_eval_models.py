@@ -45,6 +45,11 @@ def test_case_id_must_not_be_empty() -> None:
         _case(case_id="")
 
 
+def test_case_id_must_not_be_whitespace_only() -> None:
+    with pytest.raises(ValueError, match="case_id"):
+        _case(case_id="   ")
+
+
 def test_user_turns_must_hold_at_least_one_turn() -> None:
     with pytest.raises(ValueError, match="user_turns"):
         _case(user_turns=())

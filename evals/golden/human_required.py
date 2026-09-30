@@ -51,9 +51,9 @@ routing decision, not a policy-engine outcome, so the case never selects a dispu
 from __future__ import annotations
 
 # Local modules
-from app.domain.policy.models import ReasonCode
-from contracts.service_v1.envelope import Intent
-from evals.models import Case, CaseCategory
+from app.domain.policy.models import ReasonCode  # Expected policy-engine reason for each subtype
+from contracts.service_v1.envelope import Intent  # Expected reply intent: HANDOFF throughout
+from evals.models import Case, CaseCategory  # The record shape and its category vocabulary
 
 # -----------------------------------------------------------------------------
 # Fraud claim — always escalates (app.domain.policy.engine's one deliberate exception)
