@@ -180,7 +180,7 @@ class Case:
     description: str = ""
 
     def __post_init__(self) -> None:
-        if not self.case_id:
+        if not self.case_id.strip():
             raise ValueError("case_id must not be empty")
         if not self.user_turns:
             raise ValueError("user_turns must hold at least one turn")
