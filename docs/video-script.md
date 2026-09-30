@@ -2,8 +2,9 @@
 
 Walks the three demonstration paths and names the core architectural decisions behind what the
 viewer sees, each by its record number with a one-sentence explanation, as the release checklist
-requires. This is a first draft of the script; the recording itself is a later, separate
-deliverable, made once the live conversation endpoint (not only recorded fixtures) is running.
+requires. This is a first draft of the script; the live conversation endpoint it plays against
+now runs in the customer chat (`LiveChatClient`, not only recorded fixtures), and the recording
+itself remains a later, separate deliverable.
 
 Every line of dialogue quoted here is taken verbatim from `docs/demo-scripts.md`; this script adds
 only the narration between paths and the closing walk through the decision records.
