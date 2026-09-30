@@ -311,7 +311,23 @@ def _select_customers(
 # Output queries (must match app/persistence/migrations/0001_serving_store.sql exactly)
 # -----------------------------------------------------------------------------
 
-_CUSTOMERS_QUERY = """
+
+def _customers_query(reference_date: str) -> str:
+    """One row per chosen customer, including their point-in-time repeat-complainer flag
+    (ADR-15): the same ``complaints`` lookup ``_flags_query`` uses to select candidates, re-run
+    here since selection and output are independent queries and a candidate's flag is not
+    otherwise carried between them."""
+    ref = quote_literal(reference_date)
+    return f"""
+    WITH complaint_rank AS (
+        SELECT customer_id, is_repeat_complainer,
+               row_number() OVER (PARTITION BY customer_id ORDER BY creation_date DESC) AS rn
+        FROM complaints
+        WHERE CAST(creation_date AS DATE) <= DATE {ref}
+    ),
+    repeat_complainers AS (
+        SELECT customer_id FROM complaint_rank WHERE rn = 1 AND is_repeat_complainer
+    )
     SELECT
         c.customer_id,
         c.first_name,
@@ -319,11 +335,14 @@ _CUSTOMERS_QUERY = """
         mask_email(c.email) AS masked_email,
         mask_phone(coalesce(c.mobile_phone, c.landline_phone)) AS masked_phone,
         c.country,
-        c.customer_status
+        c.customer_status,
+        coalesce(rc.customer_id IS NOT NULL, false) AS is_repeat_complainer
     FROM customers AS c
     JOIN chosen_customers AS s ON s.customer_id = c.customer_id
+    LEFT JOIN repeat_complainers AS rc ON rc.customer_id = c.customer_id
     ORDER BY c.customer_id
-"""
+    """
+
 
 _PRODUCTS_QUERY = """
     SELECT
@@ -540,7 +559,7 @@ def build_seed(silver_dir: Path, gold_dir: Path, *, code_version: str) -> SeedMa
             rows: dict[str, int] = {}
             digests: dict[str, str] = {}
             for name, query in (
-                (CUSTOMERS_NAME, _CUSTOMERS_QUERY),
+                (CUSTOMERS_NAME, _customers_query(reference_date_text)),
                 (PRODUCTS_NAME, _PRODUCTS_QUERY),
                 (TRANSACTIONS_NAME, _transactions_query()),
             ):

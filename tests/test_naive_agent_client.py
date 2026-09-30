@@ -138,6 +138,19 @@ def test_a_tool_call_is_captured_with_its_id_name_and_arguments() -> None:
     assert turn.stop_reason == "tool_use"
 
 
+def test_several_text_blocks_join_with_a_separator_not_glued_together() -> None:
+    """A bare `"".join` would run two blocks together with no boundary at all — "helloworld"
+    instead of two readable spans; a newline keeps them distinguishable."""
+    stub = _StubAnthropic(_response([_text_block("First span."), _text_block("Second span.")]))
+    client = NaiveAgentClient(SecretStr("test-key"), model=_MODEL, client=stub)  # type: ignore[arg-type]
+
+    turn = client.send(
+        _MESSAGES, _TOOLS, system="system prompt", max_tokens=512, timeout_seconds=10.0
+    )
+
+    assert turn.text == "First span.\nSecond span."
+
+
 def test_text_and_several_tool_calls_can_both_appear_in_one_turn() -> None:
     stub = _StubAnthropic(
         _response(

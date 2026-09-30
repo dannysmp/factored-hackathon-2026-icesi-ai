@@ -12,12 +12,17 @@ from __future__ import annotations
 # Standard libraries
 import csv
 import io
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 # Third-party libraries
 import pytest
 
 # Local modules
+from contracts.service_v1.envelope import Intent
+from contracts.service_v1.tools import Tool
 from evals.golden import case_sheet
 from evals.golden.case_sheet import (
     ALL_CASES,
@@ -28,7 +33,10 @@ from evals.golden.case_sheet import (
     render_case_sheet,
     write_case_sheet,
 )
-from evals.models import CaseCategory
+from evals.models import Case, CaseCategory, InjectedToolFailure, SafeBehavior
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_LOG_LINE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} (INFO|ERROR) ")
 
 
 def test_render_produces_one_row_per_case() -> None:
@@ -48,6 +56,41 @@ def test_row_fields_match_the_case() -> None:
     assert first_row["case_id"] == first_case.case_id
     assert first_row["lang"] == first_case.lang
     assert first_row["user_turns"] == " | ".join(first_case.user_turns)
+
+
+def _injected_failure_case(*, retryable: bool) -> Case:
+    return Case(
+        case_id=f"injected-failure-retryable-{retryable}",
+        category=CaseCategory.ADVERSARIAL,
+        lang="es",
+        provenance="injected",
+        seed_ref="eval_bank:UNUSED",
+        user_turns=("¿Cuáles son mis transacciones?",),
+        expected_intent=Intent.HANDOFF,
+        expected_safe_behavior=SafeBehavior.HANDOFF,
+        injected_failure=InjectedToolFailure(
+            tool=Tool.LIST_TRANSACTIONS, cause="error", retryable=retryable
+        ),
+        description="Unused by this test.",
+    )
+
+
+def _rendered_injected_failure(case: Case) -> str:
+    row = next(csv.DictReader(io.StringIO(render_case_sheet((case,)))))
+    return row["injected_failure"]
+
+
+def test_the_injected_failure_column_states_retryable() -> None:
+    # A dropped `retryable` would render the two cases below identically, silently losing exactly
+    # the distinction a case is authored to test.
+    assert (
+        _rendered_injected_failure(_injected_failure_case(retryable=True))
+        == "list_transactions:error:retryable=true"
+    )
+    assert (
+        _rendered_injected_failure(_injected_failure_case(retryable=False))
+        == "list_transactions:error:retryable=false"
+    )
 
 
 def test_all_cases_is_ordered_by_category_declaration_not_delivery() -> None:
@@ -137,3 +180,56 @@ def test_committed_case_files_have_no_drift() -> None:
     # The files actually committed under evals/golden/cases/ must be exactly what the cases
     # generate — the check CI relies on.
     assert check_case_sheet(DEFAULT_DIRECTORY) == []
+
+
+def _run_case_sheet_cli(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Runs the CLI as a real, separate process against ``tmp_path``, not this test's own.
+
+    ``logging.basicConfig`` is a documented no-op once a handler is already attached to the root
+    logger, which pytest's own capture machinery does before any test body runs; ``caplog`` reads
+    records, not the rendered text, so neither can observe the CLI's own format string. Only a
+    genuinely separate process, with its own untouched root logger, does.
+    """
+    script = (
+        "from pathlib import Path\n"
+        "from evals.golden import case_sheet\n"
+        f"case_sheet.DEFAULT_DIRECTORY = Path({str(tmp_path)!r})\n"
+        f"raise SystemExit(case_sheet.main({list(args)!r}))\n"
+    )
+    return subprocess.run(  # noqa: S603 - fixed argv, no shell, trusted interpreter path
+        [sys.executable, "-c", script],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_cli_write_logs_are_timestamped_and_leveled(tmp_path: Path) -> None:
+    """The format string must carry a timestamp and level, matching `pipelines.policy_corpus`'s
+    own `main()`, and the write path must log a line for every file it actually writes — checked
+    against a real, observed process output, not a read of the source alone."""
+    result = _run_case_sheet_cli(tmp_path)
+    assert result.returncode == 0
+    written_lines = [line for line in result.stderr.splitlines() if "case_sheet_written" in line]
+    assert len(written_lines) == len(CATEGORY_CASES)
+    for line in written_lines:
+        assert _LOG_LINE.match(line), f"missing timestamp/level: {line!r}"
+
+
+def test_cli_check_logs_are_timestamped_and_leveled(tmp_path: Path) -> None:
+    write_case_sheet(tmp_path)
+    result = _run_case_sheet_cli(tmp_path, "--check")
+    assert result.returncode == 0
+    current_lines = [line for line in result.stderr.splitlines() if "case_sheet_current" in line]
+    assert len(current_lines) == 1
+    assert _LOG_LINE.match(current_lines[0])
+
+
+def test_cli_write_logs_nothing_on_a_second_idempotent_run(tmp_path: Path) -> None:
+    """Zero lines on a clean directory is the correct, observed output — not a logging defect and
+    not an artifact of a broken logger."""
+    _run_case_sheet_cli(tmp_path)
+    result = _run_case_sheet_cli(tmp_path)
+    assert result.returncode == 0
+    assert "case_sheet_written" not in result.stderr

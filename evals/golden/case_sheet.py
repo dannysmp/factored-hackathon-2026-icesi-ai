@@ -54,12 +54,12 @@ from __future__ import annotations
 
 # Standard libraries
 import argparse  # Command line
-import csv
-import io
+import csv  # Renders each category's cases as a CSV file
+import io  # In-memory buffer csv.DictWriter writes into before comparing or saving
 import logging  # Progress events
 import os  # Atomic file replacement
-from collections.abc import Sequence
-from pathlib import Path
+from collections.abc import Sequence  # Type of a case list
+from pathlib import Path  # Locations of the rendered files
 
 # Local modules
 from evals.golden.adversarial import CASES as ADVERSARIAL_CASES  # Category group
@@ -124,6 +124,7 @@ def _row(case: Case) -> dict[str, str]:
         ),
         "injected_failure": (
             f"{case.injected_failure.tool.value}:{case.injected_failure.cause}"
+            f":retryable={str(case.injected_failure.retryable).lower()}"
             if case.injected_failure
             else ""
         ),
@@ -191,7 +192,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--check", action="store_true", help="fail instead of writing when a file is stale"
     )
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     if args.check:
         drift = check_case_sheet(DEFAULT_DIRECTORY)

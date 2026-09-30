@@ -182,7 +182,7 @@ class NaiveAgentClient:
         # latency computation for why an unrounded duration risks a spurious PAN redaction in logs.
         latency_ms = round((time.monotonic() - started) * 1000, 3)
 
-        text = "".join(
+        text = "\n".join(
             block.text for block in response.content if isinstance(block, anthropic.types.TextBlock)
         )
         tool_calls = tuple(
