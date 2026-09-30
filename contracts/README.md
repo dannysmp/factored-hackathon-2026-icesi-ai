@@ -1,4 +1,4 @@
-# contracts/
+# Data contracts
 
 Versioned data contracts. Structure (columns, types, nullability, keys) comes from the table
 registry in `pipelines/sources.py`; each contract module adds what the registry cannot express:

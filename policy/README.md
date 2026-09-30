@@ -1,12 +1,13 @@
-# policy/
+# Dispute policy
 
 The versioned dispute policy and the multilingual policy corpus generated from it.
 
-## `dispute_policy_v1.yaml`
+## Policy parameters
 
-The parameters the policy engine (`app/domain/policy`) applies. They are data; the rules that use
-them are code, so changing a window or a threshold never needs a code change, and a change to
-the rules never hides in a parameter. A parameter change is a new policy version.
+`dispute_policy_v1.yaml` holds the parameters the policy engine (`app/domain/policy`) applies.
+They are data; the rules that use them are code, so changing a window or a threshold never needs
+a code change, and a change to the rules never hides in a parameter. A parameter change is a new
+policy version.
 
 | Section | What it sets |
 |---|---|
@@ -18,10 +19,10 @@ the rules never hides in a parameter. A parameter change is a new policy version
 The values are synthetic planning values written for this project, inspired by common chargeback
 and complaint-handling practice. They are not those of any bank or regulator, and the file says so.
 
-## `corpus/`
+## Multilingual policy corpus
 
-The policy explained to customers in Spanish, Portuguese and English (`es/`, `pt/`, `en/`, one
-`dispute-policy.md` each). The documents are **generated** from the YAML by
+`corpus/` holds the policy explained to customers in Spanish, Portuguese and English (`es/`,
+`pt/`, `en/`, one `dispute-policy.md` each). The documents are **generated** from the YAML by
 `app/domain/policy/corpus.py`; every number in them (windows, amount, confidence floor, risk
 threshold) is read from the policy, never typed. The sections carry the same stable identifiers
 in every language (`overview`, `who-can-dispute`, `filing-windows`, `confirmation`,
