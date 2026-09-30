@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 0011 — the risk routing threshold, alongside the score it was compared to
+-- Migration 0012 — the risk routing threshold, alongside the score it was compared to
 -- =============================================================================
 -- RiskEvidence now carries the policy's own routing threshold next to the score, interval and
 -- base rate: a reader could otherwise see a risk score with no way to tell whether it was close
