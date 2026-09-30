@@ -48,6 +48,21 @@ customers:
     customer_id: CUST-2
     language: pt
     scenario: repeat_complainer
+  - slug: emma
+    display_name: Emma
+    customer_id: CUST-3
+    language: en
+    scenario: eligible
+  - slug: carlos
+    display_name: Carlos
+    customer_id: CUST-4
+    language: es
+    scenario: eligible
+  - slug: mariana
+    display_name: Mariana
+    customer_id: CUST-5
+    language: pt
+    scenario: eligible
 agents:
   - slug: agent-beatriz
     display_name: Beatriz
@@ -314,6 +329,46 @@ def test_a_different_persona_is_unaffected_by_another_personas_slot_cap(
     )
 
     assert other.status_code == 201
+
+
+def test_a_visitor_can_sign_into_every_customer_persona_in_one_sitting(
+    client: TestClient,
+) -> None:
+    """The address cap must not refuse a real evaluation session stepping through the roster."""
+    for slug in ("ana", "joao", "emma", "carlos", "mariana"):
+        response = client.post(
+            DEMO_LOGIN, json={"persona": slug}, headers={"X-Demo-Access-Code": ACCESS_CODE}
+        )
+        assert response.status_code == 201, f"{slug} was refused: {response.json()}"
+
+
+def test_the_address_cap_trusts_only_the_last_forwarded_hop(
+    client: TestClient, audit: _RecordingAuditSink
+) -> None:
+    """A caller-supplied earlier hop in the chain must not let one visitor pose as another."""
+    client.post(
+        DEMO_LOGIN,
+        json={"persona": "ana"},
+        headers={
+            "X-Demo-Access-Code": ACCESS_CODE,
+            "X-Forwarded-For": "198.51.100.1, 203.0.113.30",
+        },
+    )
+
+    other = client.post(
+        DEMO_LOGIN,
+        json={"persona": "joao"},
+        headers={
+            "X-Demo-Access-Code": ACCESS_CODE,
+            # A spoofed earlier hop claiming the first visitor's own trusted address; only the
+            # last, proxy-appended entry may ever be trusted.
+            "X-Forwarded-For": "203.0.113.30, 203.0.113.40",
+        },
+    )
+
+    assert other.status_code == 201
+    hashes = {record.client_address_hash for record in audit.records}
+    assert len(hashes) == 2, "the two visitors' addresses collapsed onto the same audit key"
 
 
 def test_a_filing_that_cannot_be_audited_fails_closed(clock: Clock) -> None:
@@ -655,7 +710,7 @@ def test_the_persona_directory_lists_customer_personas_when_the_customer_broker_
 
     assert response.status_code == 200
     slugs = [persona["slug"] for persona in response.json()["personas"]]
-    assert slugs == ["ana", "joao"]
+    assert slugs == ["ana", "joao", "emma", "carlos", "mariana"]
 
 
 def test_the_persona_directory_omits_agent_personas_when_only_the_customer_broker_is_on(
@@ -678,7 +733,7 @@ def test_the_persona_directory_lists_both_audiences_when_both_brokers_are_on(
         for audience in ("customer", "agent")
     }
     assert slugs_by_audience == {
-        "customer": ["ana", "joao"],
+        "customer": ["ana", "carlos", "emma", "joao", "mariana"],
         "agent": ["agent-beatriz", "agent-diego"],
     }
 
@@ -720,6 +775,9 @@ def test_the_persona_directory_never_reveals_a_customer_or_agent_identifier(
     for leaked in (
         "CUST-1",
         "CUST-2",
+        "CUST-3",
+        "CUST-4",
+        "CUST-5",
         "AGENT-1",
         "AGENT-2",
         "customer_id",
