@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Migration 0013 — who currently holds a ticket
 -- =============================================================================
--- claimed_by/claimed_at track a ticket's current claim, CR-16's first narrow agent write. This
+-- claimed_by/claimed_at track a ticket's current claim, the first of the narrow agent writes. This
 -- pairs with, and is orthogonal to, handoff_outbox.status (0008): status is the ticket's own
 -- lifecycle stage (open/in_review/resolved/rejected, still seed-advanced until the case-status
 -- write below), while a claim is only "which agent is currently working this ticket," released or

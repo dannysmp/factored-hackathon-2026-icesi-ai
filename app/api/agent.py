@@ -5,7 +5,7 @@ Agent Routes
 Overview
 --------
 The routes the human-agent console needs (ADR-17): the queue of open tickets, one ticket's whole
-detail (its packet and its conversation's timeline), and CR-16's four narrow writes — claim or
+detail (its packet and its conversation's timeline), and the four narrow writes — claim or
 release a ticket, add a note, and set a filed case's status. All are reachable only with an agent
 session (ADR-18).
 
@@ -148,7 +148,7 @@ class ConsoleAuditSink(Protocol):
 
 
 class AgentWritesPort(Protocol):
-    """Where CR-16's four narrow agent writes go;
+    """Where the four narrow agent writes go;
     ``app.persistence.agent_writes.PostgresAgentWrites`` implements this today.
 
     Each call audits itself with the acting agent's own identity (ADR-17): a route here never
@@ -240,7 +240,7 @@ def build_agent_router(
         Where every packet or timeline read is recorded; see the protocol's own docstring for why
         this is injected rather than called directly.
     writes : AgentWritesPort
-        Where CR-16's four narrow writes go; each call audits itself.
+        Where the four narrow writes go; each call audits itself.
     """
     router = APIRouter()
 

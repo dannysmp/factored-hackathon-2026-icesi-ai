@@ -5,7 +5,7 @@ Human-Agent Console Contract, Service Version 1
 Overview
 --------
 What the console shows an agent: the queue of open handoff tickets, one ticket with its whole
-packet, and the audit timeline of the conversation behind it. Also CR-16's narrow agent writes
+packet, and the audit timeline of the conversation behind it. Also the narrow agent writes
 (ADR-17): claiming or releasing a ticket, adding a note, and setting a case's status.
 
 Scope

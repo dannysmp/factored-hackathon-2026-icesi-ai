@@ -1,8 +1,8 @@
 -- =============================================================================
--- Migration 0012 — CR-16's narrow agent writes join the audit trail
+-- Migration 0012 — the narrow agent writes join the audit trail
 -- =============================================================================
--- ticket_claimed, ticket_released, ticket_note_added and case_status_set are CR-16's own four
--- narrow, audited agent writes (ADR-17): claim or release a ticket, add a note, set a case's
+-- ticket_claimed, ticket_released, ticket_note_added and case_status_set are the four narrow,
+-- audited agent writes (ADR-17): claim or release a ticket, add a note, set a case's
 -- status. Each is a brand-new action with zero pre-existing rows, unlike packet_viewed/
 -- timeline_viewed (0011), so — unlike those two — agent_id can be a hard requirement for these
 -- four from day one, without risking a constraint no existing row could satisfy.

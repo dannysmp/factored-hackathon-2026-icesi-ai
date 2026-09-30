@@ -72,7 +72,7 @@ class AuditAction(StrEnum):
     (ADR-17), so it is audited under the same fail-closed rule — ``customer_id`` names the
     customer whose packet or timeline was opened, and ``session_id`` the agent's own session,
     never a customer one. ``TICKET_CLAIMED``, ``TICKET_RELEASED``, ``TICKET_NOTE_ADDED`` and
-    ``CASE_STATUS_SET`` are CR-16's narrow agent writes (ADR-17): each carries ``agent_id`` the
+    ``CASE_STATUS_SET`` are the narrow agent writes (ADR-17): each carries ``agent_id`` the
     same way the two read actions above do, since a session alone cannot answer who made the
     write once it expires.
     """

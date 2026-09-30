@@ -16,8 +16,8 @@ else on the packet — the reason codes, the policy version, the risk evidence, 
 
 Scope
 -----
-In: reading ``handoff_outbox`` and its five child tables (including ``handoff_notes``, CR-16's
-narrow agent writes) by ``ticket_ref``, re-hydrating the
+In: reading ``handoff_outbox`` and its five child tables (including ``handoff_notes``, the narrow
+agent writes' own table) by ``ticket_ref``, re-hydrating the
 transaction and source titles, assembling ``TicketDetail``.
 Out: the customer-scoped ``ToolPort`` (``app.persistence.reads``) — an agent reading a ticket has
 no customer session to scope a lookup to, and the ticket can belong to any customer, so this module
