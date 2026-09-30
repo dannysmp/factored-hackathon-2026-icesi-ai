@@ -20,6 +20,7 @@ import psycopg
 import pytest
 
 # Local modules
+from app.domain.policy.models import DisputeCategory
 from app.persistence.migrate import apply_migrations
 from contracts.service_v1.api import TurnResponse
 from contracts.service_v1.envelope import Intent
@@ -48,9 +49,10 @@ def _case(**overrides: Any) -> Case:
         "category": CaseCategory.NORMAL,
         "lang": "es",
         "provenance": "observed",
-        "seed_ref": "ops_seed:CLI-TEST",
+        "seed_ref": "ops_seed:TRX-TEST",
         "user_turns": ("No reconozco un cargo en mi tarjeta.",),
         "expected_intent": Intent.CONFIRM_FILING,
+        "expected_category": DisputeCategory.UNRECOGNIZED_CHARGE,
     }
     return Case(**{**values, **overrides})
 
@@ -87,6 +89,7 @@ def test_a_policy_answer_case_is_grounded_in_its_declared_section(dsn: str) -> N
     transcript = _transcript(
         expected_intent=Intent.POLICY_ANSWER,
         expected_policy_section_id="filing-windows",
+        expected_category=None,
         user_turns=("¿Cuántos días tengo?",),
     )
 
@@ -169,6 +172,7 @@ def test_a_policy_answer_case_that_also_filed_includes_both(dsn: str) -> None:
         _transcript(
             expected_intent=Intent.POLICY_ANSWER,
             expected_policy_section_id="evidence",
+            expected_category=None,
             user_turns=("¿Qué necesito tener listo?",),
         ),
     )

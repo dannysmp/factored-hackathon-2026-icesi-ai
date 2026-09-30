@@ -52,7 +52,10 @@ stop the whole category over one subtype.
 
 from __future__ import annotations
 
-from app.domain.policy.models import ReasonCode  # Expected policy-engine reason for a filed case
+from app.domain.policy.models import (  # Expected policy-engine reason and dispute category
+    DisputeCategory,
+    ReasonCode,
+)
 from contracts.service_v1.envelope import Intent  # Expected reply intent
 from evals.models import Case, CaseCategory  # The record shape and its category vocabulary
 
@@ -73,6 +76,7 @@ _UNRECOGNIZED_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         description=(
             "Unrecognized-charge filing, no routing rule fires; well inside the 120-day window."
         ),
@@ -89,6 +93,7 @@ _UNRECOGNIZED_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         description="Unrecognized-charge filing on a withdrawal, well under the amount threshold.",
     ),
     Case(
@@ -103,6 +108,7 @@ _UNRECOGNIZED_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         description=(
             "Unrecognized-charge filing on a COP transfer, converted amount still well under"
             " threshold."
@@ -120,6 +126,7 @@ _UNRECOGNIZED_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         description=(
             "Unrecognized-charge filing, oldest transaction in this module still inside the window."
         ),
@@ -136,6 +143,7 @@ _UNRECOGNIZED_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         description="Unrecognized-charge filing on an ARS payment.",
     ),
     Case(
@@ -150,6 +158,7 @@ _UNRECOGNIZED_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         description=(
             "Unrecognized-charge filing, second-oldest transaction, still inside the window."
         ),
@@ -166,6 +175,7 @@ _UNRECOGNIZED_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         description="English unrecognized-charge filing on a withdrawal.",
     ),
     Case(
@@ -180,6 +190,7 @@ _UNRECOGNIZED_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         description="English unrecognized-charge filing on a COP-denominated withdrawal.",
     ),
     Case(
@@ -194,6 +205,7 @@ _UNRECOGNIZED_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         description="English unrecognized-charge filing naming the real seeded merchant.",
     ),
     Case(
@@ -208,6 +220,7 @@ _UNRECOGNIZED_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
         description="English unrecognized-charge filing on an ARS-denominated withdrawal.",
     ),
 )
@@ -229,6 +242,7 @@ _WRONG_AMOUNT_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.WRONG_AMOUNT,
         description="Wrong-amount filing on an ARS withdrawal, within the 90-day window.",
     ),
     Case(
@@ -243,6 +257,7 @@ _WRONG_AMOUNT_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.WRONG_AMOUNT,
         description="Wrong-amount filing, recent transaction.",
     ),
     Case(
@@ -257,6 +272,7 @@ _WRONG_AMOUNT_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.WRONG_AMOUNT,
         description="Wrong-amount filing on a small purchase naming the real seeded merchant.",
     ),
     Case(
@@ -271,6 +287,7 @@ _WRONG_AMOUNT_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.WRONG_AMOUNT,
         description="Wrong-amount filing on a COP withdrawal, very recent transaction.",
     ),
     Case(
@@ -285,6 +302,7 @@ _WRONG_AMOUNT_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.WRONG_AMOUNT,
         description="Wrong-amount filing, smallest transaction in this module.",
     ),
     Case(
@@ -299,6 +317,7 @@ _WRONG_AMOUNT_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.WRONG_AMOUNT,
         description="Wrong-amount filing, transaction close to the reference date.",
     ),
     Case(
@@ -313,6 +332,7 @@ _WRONG_AMOUNT_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.WRONG_AMOUNT,
         description="Wrong-amount filing, last of the Spanish subset.",
     ),
 )
@@ -334,6 +354,7 @@ _DUPLICATE_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.DUPLICATE_CHARGE,
         description=(
             "Duplicate-charge filing on a very recent transfer, well inside the 60-day window."
         ),
@@ -350,6 +371,7 @@ _DUPLICATE_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.DUPLICATE_CHARGE,
         description="Duplicate-charge filing on a payment.",
     ),
     Case(
@@ -364,6 +386,7 @@ _DUPLICATE_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.DUPLICATE_CHARGE,
         description="Duplicate-charge filing, the most recent transaction in this module.",
     ),
     Case(
@@ -378,6 +401,7 @@ _DUPLICATE_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.DUPLICATE_CHARGE,
         description="Duplicate-charge filing on a payment closer to the edge of the 60-day window.",
     ),
     Case(
@@ -392,6 +416,7 @@ _DUPLICATE_CHARGE_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.DUPLICATE_CHARGE,
         description="Duplicate-charge filing on an ARS withdrawal.",
     ),
 )
@@ -414,6 +439,7 @@ _SERVICE_NOT_RECEIVED_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.SERVICE_NOT_RECEIVED,
         description=(
             "Service-not-received filing naming the real seeded merchant, oldest in this group."
         ),
@@ -431,6 +457,7 @@ _SERVICE_NOT_RECEIVED_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.SERVICE_NOT_RECEIVED,
         description="Service-not-received filing, event never took place.",
     ),
     Case(
@@ -445,6 +472,7 @@ _SERVICE_NOT_RECEIVED_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.SERVICE_NOT_RECEIVED,
         description="Service-not-received filing on a payment with no merchant on the seeded row.",
     ),
     Case(
@@ -459,6 +487,7 @@ _SERVICE_NOT_RECEIVED_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.SERVICE_NOT_RECEIVED,
         description=(
             "Service-not-received filing naming a merchant reused from a different customer's row."
         ),
@@ -475,6 +504,7 @@ _SERVICE_NOT_RECEIVED_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.SERVICE_NOT_RECEIVED,
         description=(
             "Service-not-received filing on an ARS purchase, near the edge of the 120-day window."
         ),
@@ -491,6 +521,7 @@ _SERVICE_NOT_RECEIVED_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.SERVICE_NOT_RECEIVED,
         description="Service-not-received filing, most recent transaction in this group.",
     ),
     Case(
@@ -506,6 +537,7 @@ _SERVICE_NOT_RECEIVED_CASES = (
         ),
         expected_intent=Intent.CONFIRM_FILING,
         expected_reason_code=ReasonCode.ELIGIBLE,
+        expected_category=DisputeCategory.SERVICE_NOT_RECEIVED,
         description=(
             "Service-not-received filing for a paid service whose result was never delivered."
         ),

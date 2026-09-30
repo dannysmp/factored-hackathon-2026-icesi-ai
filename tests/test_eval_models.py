@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 # Local modules
+from app.domain.policy.models import DisputeCategory
 from contracts.service_v1.envelope import Intent
 from contracts.service_v1.tools import Tool
 from evals.models import Case, CaseCategory, InjectedToolFailure, SafeBehavior
@@ -28,9 +29,10 @@ def _case(**overrides: Any) -> Case:
         "category": CaseCategory.NORMAL,
         "lang": "es",
         "provenance": "observed",
-        "seed_ref": "eval_bank:ES-NORMAL-001",
+        "seed_ref": "ops_seed:TRX-NORMAL-001",
         "user_turns": ("No reconozco un cargo en mi tarjeta.",),
         "expected_intent": Intent.CONFIRM_FILING,
+        "expected_category": DisputeCategory.UNRECOGNIZED_CHARGE,
     }
     return Case(**{**defaults, **overrides})
 
@@ -80,6 +82,7 @@ def test_an_adversarial_case_with_a_safe_behavior_is_valid() -> None:
         category=CaseCategory.ADVERSARIAL,
         expected_intent=Intent.REFUSE,
         expected_safe_behavior=SafeBehavior.REFUSE,
+        expected_category=None,
     )
     assert case.is_adversarial
     assert case.expected_safe_behavior is SafeBehavior.REFUSE
@@ -107,8 +110,40 @@ def test_a_non_policy_answer_case_forbids_a_section() -> None:
 
 
 def test_a_policy_answer_case_with_a_section_is_valid() -> None:
-    case = _case(expected_intent=Intent.POLICY_ANSWER, expected_policy_section_id="filing-windows")
+    case = _case(
+        expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
+        expected_category=None,
+    )
     assert case.expected_policy_section_id == "filing-windows"
+
+
+# -----------------------------------------------------------------------------
+# The confirm-filing / category-and-transaction pairing rule
+# -----------------------------------------------------------------------------
+
+
+def test_a_confirm_filing_case_requires_a_category() -> None:
+    with pytest.raises(ValueError, match="confirm-filing case must declare"):
+        _case(expected_category=None)
+
+
+def test_a_non_confirm_filing_case_forbids_a_category() -> None:
+    with pytest.raises(ValueError, match="confirm-filing-only"):
+        _case(
+            expected_intent=Intent.HANDOFF,
+            category=CaseCategory.HUMAN_REQUIRED,
+        )
+
+
+def test_a_confirm_filing_case_with_a_category_and_transaction_is_valid() -> None:
+    case = _case()
+    assert case.expected_category is DisputeCategory.UNRECOGNIZED_CHARGE
+
+
+def test_a_confirm_filing_case_needs_a_single_transaction_seed_ref() -> None:
+    with pytest.raises(ValueError, match="exactly one ops_seed transaction"):
+        _case(seed_ref="ops_seed:CLI-NORMAL-001")
 
 
 # -----------------------------------------------------------------------------
@@ -117,7 +152,11 @@ def test_a_policy_answer_case_with_a_section_is_valid() -> None:
 
 
 def test_expected_reason_code_defaults_to_none_for_a_non_decision_case() -> None:
-    case = _case(expected_intent=Intent.POLICY_ANSWER, expected_policy_section_id="filing-windows")
+    case = _case(
+        expected_intent=Intent.POLICY_ANSWER,
+        expected_policy_section_id="filing-windows",
+        expected_category=None,
+    )
     assert case.expected_reason_code is None
 
 
