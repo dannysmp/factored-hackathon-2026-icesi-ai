@@ -156,9 +156,10 @@ class DisclosedAmount(ContractModel):
 class CaseStatus(StrEnum):
     """Status of a filed case.
 
-    The seed advances a case from Open through In Review to Resolved; Rejected is reachable only
-    by a narrow, audited agent write (the console's planned evolution), never by the seed or by
-    any customer tool.
+    The seed advances a case from Open through In Review to Resolved. Rejected, and any change to
+    a case once it reaches Resolved or Rejected, is reachable only by a narrow, audited agent
+    write (``contracts.service_v1.console.SetCaseStatusRequest``) — Open and In Review are the
+    only statuses a further status-set may still change, never the seed or a customer tool.
     """
 
     OPEN = "Open"

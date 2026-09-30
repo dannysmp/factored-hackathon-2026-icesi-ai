@@ -22,12 +22,21 @@ from fastapi import FastAPI, Request, Response
 from fastapi.testclient import TestClient
 
 # Local modules
-from app.api.agent import AuditNotYetImplemented, ConsoleAuditSink, build_agent_router
+from app.api.agent import (
+    AgentWritesPort,
+    AuditNotYetImplemented,
+    ConsoleAuditSink,
+    build_agent_router,
+)
 from app.domain.calendar import DateOrigin, DomainCalendar
+from app.persistence.agent_writes import CaseStatusTerminal
 from app.security.errors import ProblemError, problem_response
 from app.security.sessions import AgentPrincipal, Principal
 from contracts.service_v1.api import ReferenceDateOrigin
+from contracts.service_v1.cases import CaseStatus
 from contracts.service_v1.console import (
+    CaseStatusResult,
+    Note,
     QueueFilters,
     QueueItem,
     QueueResponse,
@@ -118,12 +127,53 @@ class _FakeAudit:
         self.timeline_calls.append((agent_id, session_id, ticket_ref))
 
 
+@dataclass
+class _FakeAgentWrites:
+    item: QueueItem | None = _ITEM
+    note: Note | None = None
+    case_status_result: CaseStatusResult | None = None
+    raise_terminal: bool = False
+    claim_calls: list[tuple[str, str, str]] = field(default_factory=list)
+    release_calls: list[tuple[str, str, str]] = field(default_factory=list)
+    note_calls: list[tuple[str, str, str, str]] = field(default_factory=list)
+    status_calls: list[tuple[str, str, str, CaseStatus]] = field(default_factory=list)
+
+    def claim_ticket(self, *, agent_id: str, session_id: str, ticket_ref: str) -> QueueItem | None:
+        self.claim_calls.append((agent_id, session_id, ticket_ref))
+        return self.item
+
+    def release_ticket(
+        self, *, agent_id: str, session_id: str, ticket_ref: str
+    ) -> QueueItem | None:
+        self.release_calls.append((agent_id, session_id, ticket_ref))
+        return self.item
+
+    def add_note(
+        self, *, agent_id: str, session_id: str, ticket_ref: str, note_text: str
+    ) -> Note | None:
+        self.note_calls.append((agent_id, session_id, ticket_ref, note_text))
+        if self.item is None:
+            return None
+        return self.note or Note(agent_id=agent_id, note_text=note_text, created_at=_NOW)
+
+    def set_case_status(
+        self, *, agent_id: str, session_id: str, ticket_ref: str, status: CaseStatus
+    ) -> CaseStatusResult | None:
+        self.status_calls.append((agent_id, session_id, ticket_ref, status))
+        if self.raise_terminal:
+            raise CaseStatusTerminal(ticket_ref)
+        if self.item is None:
+            return None
+        return self.case_status_result or CaseStatusResult(case_number="CASE-1", status=status)
+
+
 def _client(
     *,
     principal: Principal | AgentPrincipal,
     queue: _FakeQueue,
     ticket_detail: _FakeTicketDetail,
     audit: ConsoleAuditSink,
+    writes: AgentWritesPort | None = None,
 ) -> TestClient:
     app = FastAPI()
 
@@ -140,7 +190,11 @@ def _client(
 
     app.include_router(
         build_agent_router(
-            queue=queue, ticket_detail=ticket_detail, calendar=_CALENDAR, audit=audit
+            queue=queue,
+            ticket_detail=ticket_detail,
+            calendar=_CALENDAR,
+            audit=audit,
+            writes=writes if writes is not None else _FakeAgentWrites(),
         )
     )
     return TestClient(app)
@@ -282,6 +336,239 @@ def test_a_failing_audit_write_propagates_instead_of_serving_the_ticket() -> Non
 
     with pytest.raises(RuntimeError, match="audit store is down"):
         client.get(f"/v1/agent/tickets/{_ITEM.ticket_ref}")
+
+
+# -----------------------------------------------------------------------------
+# The claim and release routes
+# -----------------------------------------------------------------------------
+
+
+def test_the_claim_route_answers_an_agent_session() -> None:
+    writes = _FakeAgentWrites()
+    client = _client(
+        principal=_AGENT,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+        writes=writes,
+    )
+
+    response = client.post(f"/v1/agent/tickets/{_ITEM.ticket_ref}/claim")
+
+    assert response.status_code == 200
+    assert response.json()["item"]["ticket_ref"] == _ITEM.ticket_ref
+    assert writes.claim_calls == [(_AGENT.agent_id, _AGENT.session_id, _ITEM.ticket_ref)]
+
+
+def test_the_claim_route_answers_404_for_an_unknown_ticket() -> None:
+    client = _client(
+        principal=_AGENT,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+        writes=_FakeAgentWrites(item=None),
+    )
+
+    response = client.post(f"/v1/agent/tickets/{_ITEM.ticket_ref}/claim")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "not_found"
+
+
+def test_the_claim_route_refuses_a_customer_session() -> None:
+    client = _client(
+        principal=_CUSTOMER,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+    )
+
+    response = client.post(f"/v1/agent/tickets/{_ITEM.ticket_ref}/claim")
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "session_missing"
+
+
+def test_the_release_route_answers_an_agent_session() -> None:
+    writes = _FakeAgentWrites()
+    client = _client(
+        principal=_AGENT,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+        writes=writes,
+    )
+
+    response = client.post(f"/v1/agent/tickets/{_ITEM.ticket_ref}/release")
+
+    assert response.status_code == 200
+    assert response.json()["item"]["ticket_ref"] == _ITEM.ticket_ref
+    assert writes.release_calls == [(_AGENT.agent_id, _AGENT.session_id, _ITEM.ticket_ref)]
+
+
+def test_the_release_route_answers_404_for_an_unknown_ticket() -> None:
+    client = _client(
+        principal=_AGENT,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+        writes=_FakeAgentWrites(item=None),
+    )
+
+    response = client.post(f"/v1/agent/tickets/{_ITEM.ticket_ref}/release")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "not_found"
+
+
+def test_the_release_route_refuses_a_customer_session() -> None:
+    client = _client(
+        principal=_CUSTOMER,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+    )
+
+    response = client.post(f"/v1/agent/tickets/{_ITEM.ticket_ref}/release")
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "session_missing"
+
+
+# -----------------------------------------------------------------------------
+# The notes route
+# -----------------------------------------------------------------------------
+
+
+def test_the_notes_route_answers_an_agent_session() -> None:
+    writes = _FakeAgentWrites()
+    client = _client(
+        principal=_AGENT,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+        writes=writes,
+    )
+
+    response = client.post(
+        f"/v1/agent/tickets/{_ITEM.ticket_ref}/notes", json={"note_text": "Called back."}
+    )
+
+    assert response.status_code == 201
+    assert response.json()["note_text"] == "Called back."
+    assert response.json()["agent_id"] == _AGENT.agent_id
+    assert writes.note_calls == [
+        (_AGENT.agent_id, _AGENT.session_id, _ITEM.ticket_ref, "Called back.")
+    ]
+
+
+def test_the_notes_route_answers_404_for_an_unknown_ticket() -> None:
+    client = _client(
+        principal=_AGENT,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+        writes=_FakeAgentWrites(item=None),
+    )
+
+    response = client.post(
+        f"/v1/agent/tickets/{_ITEM.ticket_ref}/notes", json={"note_text": "Called back."}
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "not_found"
+
+
+def test_the_notes_route_refuses_a_customer_session() -> None:
+    client = _client(
+        principal=_CUSTOMER,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+    )
+
+    response = client.post(
+        f"/v1/agent/tickets/{_ITEM.ticket_ref}/notes", json={"note_text": "Called back."}
+    )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "session_missing"
+
+
+# -----------------------------------------------------------------------------
+# The case-status route
+# -----------------------------------------------------------------------------
+
+
+def test_the_status_route_answers_an_agent_session() -> None:
+    writes = _FakeAgentWrites()
+    client = _client(
+        principal=_AGENT,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+        writes=writes,
+    )
+
+    response = client.post(
+        f"/v1/agent/tickets/{_ITEM.ticket_ref}/status", json={"status": "Resolved"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "Resolved"
+    assert writes.status_calls == [
+        (_AGENT.agent_id, _AGENT.session_id, _ITEM.ticket_ref, CaseStatus.RESOLVED)
+    ]
+
+
+def test_the_status_route_answers_404_for_an_unknown_ticket_or_case() -> None:
+    client = _client(
+        principal=_AGENT,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+        writes=_FakeAgentWrites(item=None),
+    )
+
+    response = client.post(
+        f"/v1/agent/tickets/{_ITEM.ticket_ref}/status", json={"status": "Resolved"}
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "not_found"
+
+
+def test_the_status_route_answers_409_for_a_terminal_case() -> None:
+    client = _client(
+        principal=_AGENT,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+        writes=_FakeAgentWrites(raise_terminal=True),
+    )
+
+    response = client.post(
+        f"/v1/agent/tickets/{_ITEM.ticket_ref}/status", json={"status": "Rejected"}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "case_status_terminal"
+
+
+def test_the_status_route_refuses_a_customer_session() -> None:
+    client = _client(
+        principal=_CUSTOMER,
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeAudit(),
+    )
+
+    response = client.post(
+        f"/v1/agent/tickets/{_ITEM.ticket_ref}/status", json={"status": "Resolved"}
+    )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "session_missing"
 
 
 # -----------------------------------------------------------------------------

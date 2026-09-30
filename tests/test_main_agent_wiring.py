@@ -40,7 +40,10 @@ from app.persistence.migrate import apply_migrations
 from app.security.demo_personas import load_personas
 from app.security.signin_audit import SignInAuditRecord
 from contracts.service_v1.api import ReferenceDateOrigin
+from contracts.service_v1.cases import CaseStatus
 from contracts.service_v1.console import (
+    CaseStatusResult,
+    Note,
     QueueFilters,
     QueueItem,
     QueueResponse,
@@ -122,6 +125,30 @@ class _FakeConsoleAudit:
         pass
 
 
+class _FakeAgentWrites:
+    def claim_ticket(self, *, agent_id: str, session_id: str, ticket_ref: str) -> QueueItem | None:
+        return _ITEM if ticket_ref == _ITEM.ticket_ref else None
+
+    def release_ticket(
+        self, *, agent_id: str, session_id: str, ticket_ref: str
+    ) -> QueueItem | None:
+        return _ITEM if ticket_ref == _ITEM.ticket_ref else None
+
+    def add_note(
+        self, *, agent_id: str, session_id: str, ticket_ref: str, note_text: str
+    ) -> Note | None:
+        if ticket_ref != _ITEM.ticket_ref:
+            return None
+        return Note(agent_id=agent_id, note_text=note_text, created_at=_NOW)
+
+    def set_case_status(
+        self, *, agent_id: str, session_id: str, ticket_ref: str, status: CaseStatus
+    ) -> CaseStatusResult | None:
+        if ticket_ref != _ITEM.ticket_ref:
+            return None
+        return CaseStatusResult(case_number="CASE-1", status=status)
+
+
 class _NoOpSignInAudit:
     def record(self, entry: SignInAuditRecord) -> None:
         pass
@@ -129,7 +156,10 @@ class _NoOpSignInAudit:
 
 def _agent_console() -> AgentConsolePorts:
     return AgentConsolePorts(
-        queue=_FakeQueue(), ticket_detail=_FakeTicketDetail(), audit=_FakeConsoleAudit()
+        queue=_FakeQueue(),
+        ticket_detail=_FakeTicketDetail(),
+        audit=_FakeConsoleAudit(),
+        writes=_FakeAgentWrites(),
     )
 
 
@@ -248,6 +278,101 @@ def test_an_agent_token_is_refused_on_the_customer_turns_route(client: TestClien
 
 def test_no_session_at_all_is_refused_on_the_queue_route(client: TestClient) -> None:
     response = client.get("/v1/agent/queue")
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "session_missing"
+
+
+def test_an_agent_token_reaches_the_claim_route(client: TestClient) -> None:
+    token = _agent_token(client)
+
+    response = client.post(f"/v1/agent/tickets/{_ITEM.ticket_ref}/claim", headers=_bearer(token))
+
+    assert response.status_code == 200
+    assert response.json()["item"]["ticket_ref"] == _ITEM.ticket_ref
+
+
+def test_an_agent_token_reaches_the_release_route(client: TestClient) -> None:
+    token = _agent_token(client)
+
+    response = client.post(f"/v1/agent/tickets/{_ITEM.ticket_ref}/release", headers=_bearer(token))
+
+    assert response.status_code == 200
+    assert response.json()["item"]["ticket_ref"] == _ITEM.ticket_ref
+
+
+def test_an_agent_token_reaches_the_notes_route(client: TestClient) -> None:
+    token = _agent_token(client)
+
+    response = client.post(
+        f"/v1/agent/tickets/{_ITEM.ticket_ref}/notes",
+        json={"note_text": "Called the customer back."},
+        headers=_bearer(token),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["note_text"] == "Called the customer back."
+
+
+def test_an_agent_token_reaches_the_status_route(client: TestClient) -> None:
+    token = _agent_token(client)
+
+    response = client.post(
+        f"/v1/agent/tickets/{_ITEM.ticket_ref}/status",
+        json={"status": "Resolved"},
+        headers=_bearer(token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "Resolved"
+
+
+def test_a_customer_token_is_refused_on_the_claim_route(client: TestClient) -> None:
+    token = _customer_token(client)
+
+    response = client.post(f"/v1/agent/tickets/{_ITEM.ticket_ref}/claim", headers=_bearer(token))
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "session_invalid"
+
+
+def test_a_customer_token_is_refused_on_the_release_route(client: TestClient) -> None:
+    token = _customer_token(client)
+
+    response = client.post(f"/v1/agent/tickets/{_ITEM.ticket_ref}/release", headers=_bearer(token))
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "session_invalid"
+
+
+def test_a_customer_token_is_refused_on_the_notes_route(client: TestClient) -> None:
+    token = _customer_token(client)
+
+    response = client.post(
+        f"/v1/agent/tickets/{_ITEM.ticket_ref}/notes",
+        json={"note_text": "Should never be written."},
+        headers=_bearer(token),
+    )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "session_invalid"
+
+
+def test_a_customer_token_is_refused_on_the_status_route(client: TestClient) -> None:
+    token = _customer_token(client)
+
+    response = client.post(
+        f"/v1/agent/tickets/{_ITEM.ticket_ref}/status",
+        json={"status": "Resolved"},
+        headers=_bearer(token),
+    )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "session_invalid"
+
+
+def test_no_session_at_all_is_refused_on_the_claim_route(client: TestClient) -> None:
+    response = client.post(f"/v1/agent/tickets/{_ITEM.ticket_ref}/claim")
 
     assert response.status_code == 401
     assert response.json()["code"] == "session_missing"
