@@ -216,7 +216,7 @@ def test_get_transaction_returns_the_session_customers_own_row(dsn: str) -> None
 def test_get_transaction_audits_a_foreign_reference_distinguishably_from_a_genuine_miss(
     dsn: str,
 ) -> None:
-    """Issue #73: the customer-visible result is identical either way; the trail is not."""
+    """The customer sees the same result either way; the audit trail tells the two apart."""
     sink = _RecordingSink(dsn)
     port = _port(dsn, sink, customer_id="CLI-A")
 
