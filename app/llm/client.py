@@ -108,7 +108,10 @@ class CompletionRequest:
     max_tokens : int
         Output token budget.
     temperature : float
-        Sampling temperature; structured extraction and routing run at ``0.0``.
+        Sampling temperature; structured extraction and routing run at ``0.0``. An adapter may
+        omit this from the wire call for a model whose API does not accept it explicitly, in
+        which case that model's own default sampling applies — this field documents caller
+        intent, not a wire guarantee.
     timeout_seconds : float
         Per-call timeout the adapter enforces.
     """

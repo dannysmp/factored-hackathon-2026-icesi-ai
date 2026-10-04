@@ -467,6 +467,7 @@ def test_regenerate_report_patches_the_file_logs_agreement_and_calls_the_judge_p
     )
     assert report.read_text(encoding="utf-8") == expected
     language_quality = {row.dimension: row for row in agreement}["language_quality"]
+    # Judge scores 2, 1, 2; rater 1 scored 2, 2, 2 (agreement 2/3); rater 2 scored 2, 1, 2 (1.0).
     assert language_quality.rater1_to_judge == pytest.approx(2 / 3)
     assert language_quality.rater2_to_judge == pytest.approx(1.0)
     assert len(llm.requests) == 3
@@ -474,6 +475,7 @@ def test_regenerate_report_patches_the_file_logs_agreement_and_calls_the_judge_p
     assert "judge_validation_report_updated" in caplog.text
     assert "dimension=language_quality" in caplog.text
     assert "demoted=True" in caplog.text
+    assert "rater1_to_judge=0.6666666666666666 rater2_to_judge=1.0" in caplog.text
     assert "CASE-001" not in caplog.text  # no sheet text in the logs
     assert "No reconozco" not in caplog.text
 
