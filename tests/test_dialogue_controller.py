@@ -52,7 +52,13 @@ from contracts.service_v1.api import TurnRequest, TurnResponse
 from contracts.service_v1.cases import AmountProvenance, CaseRecord, CaseStatus, DisclosedAmount
 from contracts.service_v1.cases import Money as CaseMoney
 from contracts.service_v1.console import TimelineEntry
-from contracts.service_v1.envelope import CUSTOMER_REASON_OF, CustomerReason, Intent, Slot
+from contracts.service_v1.envelope import (
+    CUSTOMER_REASON_OF,
+    CustomerReason,
+    DateSource,
+    Intent,
+    Slot,
+)
 from contracts.service_v1.handoff import HandoffPacket, HandoffTrigger
 from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult, TransactionHint
 from contracts.service_v1.tools import (
@@ -831,15 +837,47 @@ def test_the_turn_decision_log_never_carries_the_customers_description(
     policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
 ) -> None:
     dialogue = _Dialogue(policy, retriever)
+    described = TransactionHint(
+        merchant="Nobody",
+        amount=Decimal("1914215.00"),
+        currency="COP",
+        date_on=date(2026, 6, 3),
+        date_source=DateSource.ABSOLUTE,
+        product_last4="4417",
+    )
 
     with caplog.at_level(logging.INFO, logger="app.conversation.controller"):
-        dialogue.say(_file_dispute(transaction=_NOBODY))
+        dialogue.say(_file_dispute(transaction=described))
 
-    decided = " ".join(
-        r.getMessage() for r in caplog.records if r.getMessage().startswith("turn_decided")
-    )
-    assert decided
-    assert "Nobody" not in decided
+    assert any(r.getMessage().startswith("turn_decided") for r in caplog.records)
+    everything = " ".join(r.getMessage() for r in caplog.records)
+    for detail in ("Nobody", "1914215", "2026-06-03", "4417"):
+        assert detail not in everything
+
+
+def test_a_replayed_turn_does_not_log_a_second_decision(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute(), turn_id="turn-once")
+
+    with caplog.at_level(logging.INFO, logger="app.conversation.controller"):
+        dialogue.say(_file_dispute(), turn_id="turn-once")
+
+    assert not [r for r in caplog.records if r.getMessage().startswith("turn_decided")]
+
+
+def test_a_described_transaction_that_finds_none_counts_toward_the_budget(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, port=FakeToolPort(transactions=()))
+
+    assert not dialogue.say(_file_dispute(transaction=_NOBODY)).end_session
+    assert not dialogue.say(_file_dispute(transaction=_NOBODY)).end_session
+    assert dialogue.outbox.packets == []
+
+    assert dialogue.say(_file_dispute(transaction=_NOBODY)).end_session
+    assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
 
 
 def test_after_a_description_that_matches_nothing_the_transaction_stays_the_open_question(

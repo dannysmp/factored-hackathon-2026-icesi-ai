@@ -99,8 +99,9 @@ carried by such a message does not replace one already set, the same rule as abo
 that matches no transaction, or more than one, is an unsettled answer to the question, the same
 as any other reply that leaves it open: a person is involved once the clarification budget of
 such answers has followed the question. When the opening message already described the
-transaction, that message is itself the question, so the hand-off follows the third unmatched
-description. An empty transaction list never counts.
+transaction, that message is itself the question, so with the shipped budget of two the hand-off
+follows the third unmatched description. A request to list transactions that finds none never
+counts; a described transaction that finds none does, like any other unmatched description.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
@@ -537,19 +538,19 @@ class DialogueController:
         result: NluResult,
         envelope: RenderEnvelope,
     ) -> None:
-        """One log line per real turn saying how it was understood and where the dialogue went, so
-        a surprising hand-off can be traced to its cause without the customer's words.
+        """One log line per turn that reaches the decision step, saying how it was understood and
+        where the dialogue went, so a surprising hand-off can be traced to its cause without the
+        customer's words.
+
+        A replayed turn is silent, and so are the hand-offs that never reach the decision step
+        (the turn cap, understanding unavailable), which log their own warnings. The line is
+        emitted before the save, so a turn that then loses a concurrent save still logs one.
 
         It carries only closed-vocabulary values and counters: the intent the understanding
         reported and its confidence, whether it carried a transaction hint (a flag, never the
         hint), the pending slot and clarification count before and after, the reply's intent and
         template, and the hand-off's first reason code (``None`` when the turn did not hand off).
         """
-        hint = result.transaction
-        has_hint = any(
-            value is not None
-            for value in (hint.merchant, hint.amount, hint.date_on, hint.product_last4)
-        )
         logger.info(
             "turn_decided session_id=%s understood=%s confidence=%.2f has_hint=%s "
             "slot_before=%s attempts_before=%d slot_after=%s attempts_after=%d "
@@ -557,7 +558,7 @@ class DialogueController:
             state_after.session_id,
             result.intent.value,
             result.confidence,
-            has_hint,
+            not result.transaction.is_empty,
             state_before.pending_slot.value if state_before.pending_slot else None,
             state_before.clarification_attempts,
             state_after.pending_slot.value if state_after.pending_slot else None,
