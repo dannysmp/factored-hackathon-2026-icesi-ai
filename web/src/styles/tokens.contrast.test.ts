@@ -1,4 +1,4 @@
-/** Unit test: every text and surface pair the design tokens define meets WCAG AA (AC-E10-17). */
+/** Unit test: every text and surface pair the design tokens define meets WCAG AA. */
 import { describe, expect, it } from 'vitest'
 import TOKENS_CSS from './tokens.css?raw'
 

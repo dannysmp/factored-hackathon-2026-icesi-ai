@@ -1,4 +1,4 @@
-/** Component test: the whole conversation can be driven from the keyboard alone (AC-E10-17). */
+/** Component test: the whole conversation can be driven from the keyboard alone. */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
