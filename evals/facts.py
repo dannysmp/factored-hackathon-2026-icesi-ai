@@ -77,7 +77,8 @@ from evals.metrics import CaseResult
 from evals.models import Case
 from evals.scoring import RunTranscript
 
-_NO_KNOWN_FACTS = (
+#: The grounding text of a conversation with no filed transaction and no declared policy section.
+NO_KNOWN_FACTS = (
     "No case-specific facts are on record for this conversation: a grounded reply here invents "
     "nothing rather than citing something."
 )
@@ -138,7 +139,7 @@ def _render_policy_section(case: Case) -> str:
     ------
     CorpusIndexError
         The corpus file for ``case.lang`` cannot be read (a real assembly failure, never
-        swallowed into ``_NO_KNOWN_FACTS`` — the golden set's own tests already prove every
+        swallowed into ``NO_KNOWN_FACTS`` — the golden set's own tests already prove every
         declared section id resolves, so a failure here means the corpus itself changed).
     KeyError
         ``case.expected_policy_section_id`` does not resolve in ``case.lang``'s corpus (the same
@@ -166,7 +167,7 @@ def assemble_facts_and_sources(dsn: str, transcript: RunTranscript) -> str:
     if transaction is not None:
         parts.append(_render_transaction_facts(transaction))
     if not parts:
-        return _NO_KNOWN_FACTS
+        return NO_KNOWN_FACTS
     return "\n\n".join(parts)
 
 

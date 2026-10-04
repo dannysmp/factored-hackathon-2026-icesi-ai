@@ -2,10 +2,10 @@
 Model Card / Policy Consistency Test
 ======================================
 
-Component: the boundary between `models/model_card.json` (AC-E6-09, AC-E6-16) and the shipped
-policy's own `risk_routing_enabled` and `risk_score_threshold`. Not hermetic by construction: the
-whole point of AC-E6-16 is that the two committed files agree as they ship, so this test reads
-both of them directly rather than a handmade fixture of either.
+Component: the boundary between `models/model_card.json` and the shipped policy's own
+`risk_routing_enabled` and `risk_score_threshold`. Not hermetic by construction: the whole point is
+that the two committed files agree as they ship, so these tests read both of them directly rather
+than a handmade fixture of either.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def test_routing_enabled_matches_between_the_card_and_the_policy() -> None:
 
 
 def test_a_card_with_no_threshold_means_the_policy_switch_is_off() -> None:
-    """AC-E6-05: no threshold cleared the floor, so routing stays off in the policy too."""
+    """No threshold cleared the floor, so routing stays off in the policy too."""
     card = _shipped_card()
     if card["threshold"] is None:
         policy = load_policy(DEFAULT_POLICY_PATH)
@@ -50,7 +50,7 @@ def test_a_card_with_no_threshold_means_the_policy_switch_is_off() -> None:
 
 
 def test_a_card_with_a_threshold_means_the_policy_threshold_equals_it() -> None:
-    """AC-E6-16: with a threshold chosen, the policy's own value must equal the card's."""
+    """With a threshold chosen, the policy's own value must equal the card's."""
     card = _shipped_card()
     threshold = card["threshold"]
     if threshold is not None:

@@ -100,7 +100,7 @@
     }
   ],
   "code_version": "c1472f2",
-  "data_provenance": "The transaction and fraud labels are synthetic, generated for this project; they are not drawn from any real bank, customer or regulator (see plan/docs/data-plan.md).",
+  "data_provenance": "The transaction and fraud labels are synthetic, generated for this project; they are not drawn from any real bank, customer or regulator.",
   "intended_use": "Routing only: the score can send an otherwise eligible dispute to a person for review. It never decides a dispute's outcome, and a missing or absent score is treated exactly like a routing rule that does not apply.",
   "leakage_review": "Every feature uses only information available at or before the transaction; the source's own fraud score, authorisation code and status are excluded; the full review is in reports/risk-features.md.",
   "limitations": [

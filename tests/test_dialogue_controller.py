@@ -397,12 +397,33 @@ def test_matches_hint_falls_back_to_description_when_merchant_is_absent() -> Non
     assert _matches_hint(fact, TransactionHint(merchant="amzn"))
 
 
-def test_matches_hint_is_accent_and_case_insensitive() -> None:
-    """Spanish and Portuguese merchant names carry accents the customer may not retype."""
+def test_matches_hint_ignores_case_in_an_accented_name_typed_with_its_accent() -> None:
     fact = _transaction(merchant="Café Colombia")
     assert _matches_hint(fact, TransactionHint(merchant="café"))
     assert _matches_hint(fact, TransactionHint(merchant="CAFÉ"))
     assert _matches_hint(fact, TransactionHint(merchant="colombia"))
+
+
+@pytest.mark.parametrize(
+    ("stored", "typed"),
+    [
+        ("Café Sol", "cafe"),
+        ("Café Sol", "Cafe Sol"),
+        ("Cafe Sol", "Café"),
+        ("São Paulo", "SAO PAULO"),
+        ("SAO PAULO", "são paulo"),
+        ("Pão de Açúcar", "pao de acucar"),
+    ],
+)
+def test_matches_hint_ignores_accents_whichever_side_carries_them(stored: str, typed: str) -> None:
+    """A customer may drop an accent the stored name has, or add one it lacks."""
+    assert _matches_hint(_transaction(merchant=stored), TransactionHint(merchant=typed))
+
+
+def test_matches_hint_still_rejects_a_different_merchant_after_accent_folding() -> None:
+    assert not _matches_hint(
+        _transaction(merchant="Café Sol"), TransactionHint(merchant="Sol Luna")
+    )
 
 
 def test_matches_hint_never_matches_an_unknown_amount_against_a_stated_one() -> None:
@@ -1126,20 +1147,35 @@ def test_an_unclear_answer_to_the_presented_transaction_asks_again_then_escalate
     assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
 
 
+@pytest.mark.parametrize(
+    "unrelated",
+    [
+        _plain(NluIntent.SMALL_TALK),
+        _plain(NluIntent.POLICY_QUESTION, policy_query="que es esta politica"),
+        _plain(NluIntent.LIST_TRANSACTIONS),
+    ],
+    ids=["small-talk", "policy-question", "list-request"],
+)
 def test_the_presented_transaction_question_stays_pending_across_an_unrelated_reply(
-    policy: Policy, retriever: LexicalRetriever
+    policy: Policy, retriever: LexicalRetriever, unrelated: NluResult
 ) -> None:
     dialogue = _Dialogue(policy, retriever)
     dialogue.present_amazon()
+    before = dialogue.store.get(_SESSION_ID)
+    assert before is not None
 
-    dialogue.say(_plain(NluIntent.SMALL_TALK))
+    reply = dialogue.say(unrelated)
+    assert reply.next_expected is Slot.TRANSACTION_CHOICE
     state = dialogue.store.get(_SESSION_ID)
     assert state is not None
     assert state.pending_slot is Slot.TRANSACTION_CHOICE
+    assert state.selected_ref == before.selected_ref
+    assert state.clarification_attempts == before.clarification_attempts
 
     answered = dialogue.say(_confirmation(ConfirmationAnswer.YES))
     assert answered.next_expected is Slot.REASON
     assert dialogue.port.create_calls == 0
+    assert dialogue.outbox.packets == []
 
 
 def test_a_repeated_turn_id_replays_the_presented_transaction(

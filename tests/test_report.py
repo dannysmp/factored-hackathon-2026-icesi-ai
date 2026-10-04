@@ -19,8 +19,9 @@ from app.domain.policy.models import DisputeCategory
 from contracts.service_v1.envelope import Intent
 from evals.fairness import CaseProfile
 from evals.judge import JudgeVerdict
-from evals.judge_validation import DimensionAgreement
+from evals.judge_validation import DimensionAgreement, DimensionDetail, PairDetail
 from evals.metrics import (
+    NOT_DEFINED,
     CaseResult,
     CostMetrics,
     HeadlineMetrics,
@@ -31,7 +32,13 @@ from evals.metrics import (
 )
 from evals.models import Case, CaseCategory, SafeBehavior
 from evals.repeated_runs import CaseFlip, UnsafeOccurrence, compute_variability
-from evals.report import EvaluationReport, SystemResult, Versions, render_markdown
+from evals.report import (
+    EvaluationReport,
+    SystemResult,
+    Versions,
+    judge_validation_section,
+    render_markdown,
+)
 
 _MODEL = "claude-sonnet-5"
 
@@ -515,7 +522,145 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
     )
     section = text.split("## 9.")[1].split("## 10.")[0]
 
-    assert "human-only" in section
+    assert "judge score not validated" in section
+
+
+def _detail(first_higher: int = 0, second_higher: int = 3) -> tuple[DimensionDetail, ...]:
+    pair = PairDetail(
+        compared=50, weighted_kappa=0.069, first_higher=first_higher, second_higher=second_higher
+    )
+    return (
+        DimensionDetail(
+            dimension="grounding", rater_to_rater=pair, rater1_to_judge=pair, rater2_to_judge=pair
+        ),
+    )
+
+
+def _agreement_at(rater_to_rater: float, to_judge: float, demoted: bool) -> DimensionAgreement:
+    return DimensionAgreement(
+        dimension="grounding",
+        rater_to_rater=rater_to_rater,
+        rater1_to_judge=to_judge,
+        rater2_to_judge=to_judge,
+        demoted=demoted,
+    )
+
+
+def test_detail_adds_the_pair_count_and_kappa_to_every_agreement_cell() -> None:
+    section = judge_validation_section(_agreement(), "human", _detail())
+
+    assert "1.000 (n=50, kappa 0.07)" in section
+
+
+def test_detail_renders_the_direction_table_with_the_judge_side_first() -> None:
+    # first_higher is the rater scoring above the judge, so the judge is "lower" that often.
+    section = judge_validation_section(
+        _agreement(), "human", _detail(first_higher=7, second_higher=2)
+    )
+
+    assert "| grounding | 7 / 2 | 2 / 7 | 2 / 7 |" in section
+
+
+def test_a_kappa_that_is_not_defined_is_stated_not_hidden() -> None:
+    pair = PairDetail(compared=4, weighted_kappa="not defined", first_higher=0, second_higher=0)
+    detail = (
+        DimensionDetail(
+            dimension="grounding", rater_to_rater=pair, rater1_to_judge=pair, rater2_to_judge=pair
+        ),
+    )
+
+    assert "kappa not defined" in judge_validation_section(_agreement(), "human", detail)
+
+
+def test_a_demoted_dimension_is_stated_not_validated_and_a_kept_one_judge_scored() -> None:
+    demoted = judge_validation_section((_agreement_at(0.9, 0.5, True),), "human", _detail())
+    kept = judge_validation_section((_agreement_at(0.9, 0.9, False),), "human", _detail())
+
+    assert "grounding: not validated" in demoted
+    assert "grounding: judge-scored" not in demoted
+    assert "grounding: judge-scored" in kept
+    assert "not validated.**" not in kept
+
+
+def test_raters_who_disagree_with_each_other_are_called_out_below_the_threshold() -> None:
+    low = judge_validation_section((_agreement_at(0.38, 0.5, True),), "human", _detail())
+    high = judge_validation_section((_agreement_at(0.94, 0.5, True),), "human", _detail())
+
+    assert "38% of cases" in low and "not settled" in low
+    assert "not settled" not in high
+
+
+def _lean_detail(first_higher: int, second_higher: int) -> tuple[DimensionDetail, ...]:
+    pair = PairDetail(
+        compared=50, weighted_kappa=0.1, first_higher=first_higher, second_higher=second_higher
+    )
+    return (
+        DimensionDetail(
+            dimension="grounding", rater_to_rater=pair, rater1_to_judge=pair, rater2_to_judge=pair
+        ),
+    )
+
+
+def test_a_judge_that_scores_lower_in_nearly_every_difference_is_called_an_offset() -> None:
+    section = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=19, second_higher=0)
+    )
+
+    assert "the judge scores lower than Rater 1 in 19 of the 19 cases where they differ" in section
+    assert "the judge scores lower than Rater 2 in 19 of the 19" in section
+
+
+def test_a_judge_that_scores_higher_in_nearly_every_difference_is_called_an_offset() -> None:
+    section = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=1, second_higher=9)
+    )
+
+    assert "the judge scores higher than Rater 1 in 9 of the 10 cases where they differ" in section
+
+
+def test_a_mixed_or_small_set_of_differences_is_not_called_an_offset() -> None:
+    mixed = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=10, second_higher=8)
+    )
+    few = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=4, second_higher=0)
+    )
+
+    assert "systematic offset" not in mixed
+    assert "systematic offset" not in few
+
+
+def test_the_lean_threshold_is_inclusive_at_five_differences_and_eighty_percent() -> None:
+    at_bar = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=4, second_higher=1)
+    )
+    below_bar = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=7, second_higher=2)
+    )
+
+    higher_at_bar = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=1, second_higher=4)
+    )
+
+    assert "4 of the 5 cases" in at_bar
+    assert "scores higher than Rater 1 in 4 of the 5" in higher_at_bar
+    assert "systematic offset" not in below_bar  # 7 of 9 is 78%
+
+
+def test_the_facts_limitation_states_how_many_rows_had_no_facts() -> None:
+    section = judge_validation_section(_agreement(), "human", _detail(), facts_coverage=(46, 50))
+
+    assert "46 of the 50 sheet rows" in section
+    assert "46 of" not in judge_validation_section(_agreement(), "human", _detail())
+
+
+def test_the_detail_and_the_facts_limitation_never_reach_a_synthetic_sample() -> None:
+    section = judge_validation_section(
+        _agreement(), "team_generated_synthetic", _detail(), facts_coverage=(46, 50)
+    )
+
+    assert "Pending H4" in section
+    assert "kappa" not in section and "46" not in section
 
 
 # -----------------------------------------------------------------------------
@@ -840,3 +985,45 @@ def test_the_fairness_section_without_a_proposed_system_has_nothing_to_slice() -
     section = _fairness_text(_report(systems=(_system("B0"),)))
 
     assert "System P was not run" in section
+
+
+def test_a_dimension_with_no_comparable_pair_is_not_said_to_be_below_the_bar() -> None:
+    undefined = DimensionAgreement(
+        dimension="clarification",
+        rater_to_rater=NOT_DEFINED,
+        rater1_to_judge=NOT_DEFINED,
+        rater2_to_judge=NOT_DEFINED,
+        demoted=True,
+    )
+
+    empty = PairDetail(compared=0, weighted_kappa=NOT_DEFINED, first_higher=0, second_higher=0)
+    detail = (
+        DimensionDetail(
+            dimension="clarification",
+            rater_to_rater=empty,
+            rater1_to_judge=empty,
+            rater2_to_judge=empty,
+        ),
+    )
+
+    section = judge_validation_section((undefined,), "human", detail)
+    line = next(row for row in section.splitlines() if "clarification: not validated" in row)
+
+    assert "below 80%" not in line
+    assert "agreement is not defined" in line
+    assert "Rater 1 and Rater 2" in line
+
+
+def test_no_facts_note_is_rendered_when_every_sheet_row_carried_facts() -> None:
+    assert "facts column" not in judge_validation_section(
+        _agreement(), "human", _detail(), facts_coverage=(0, 50)
+    )
+    assert "facts column" in judge_validation_section(
+        _agreement(), "human", _detail(), facts_coverage=(1, 50)
+    )
+
+
+def test_clarification_pair_count_wording_makes_no_size_claim() -> None:
+    section = judge_validation_section((_agreement_at(0.9, 0.9, False),), "human", _detail())
+
+    assert "far smaller" not in section

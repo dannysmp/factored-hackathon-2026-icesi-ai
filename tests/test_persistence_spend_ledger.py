@@ -27,6 +27,7 @@ _DAY = date(2026, 6, 18)
 
 @pytest.fixture
 def ledger() -> PostgresSpendLedger:
+    """A ledger over a migrated, empty ``llm_spend_daily`` table; skipped without a database."""
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
         pytest.skip("DATABASE_URL is not set")
@@ -38,11 +39,13 @@ def ledger() -> PostgresSpendLedger:
 
 @pytest.mark.integration
 def test_a_day_with_no_charge_reads_zero(ledger: PostgresSpendLedger) -> None:
+    """A day that was never charged reads as zero rather than failing."""
     assert ledger.spent(_DAY) == Decimal(0)
 
 
 @pytest.mark.integration
 def test_charges_accumulate_per_day(ledger: PostgresSpendLedger) -> None:
+    """Charges to one day add up, and a charge to another day is kept separate."""
     ledger.add(_DAY, Decimal("1.25"))
     ledger.add(_DAY, Decimal("0.5"))
     ledger.add(date(2026, 6, 19), Decimal("3"))
@@ -53,6 +56,7 @@ def test_charges_accumulate_per_day(ledger: PostgresSpendLedger) -> None:
 
 @pytest.mark.integration
 def test_concurrent_charges_all_land(ledger: PostgresSpendLedger) -> None:
+    """Twenty simultaneous charges to one day all count; none is lost to an overwrite."""
     threads = [threading.Thread(target=ledger.add, args=(_DAY, Decimal("0.1"))) for _ in range(20)]
     for thread in threads:
         thread.start()

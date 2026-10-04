@@ -147,7 +147,7 @@ def test_packet_viewed_writes_the_tickets_real_customer_id_and_the_agents_own_se
 def test_packet_viewed_writes_the_agents_own_identity_too(
     dsn: str, outbox: PostgresHandoffOutbox, sink: PostgresConsoleAuditSink
 ) -> None:
-    """ADR-17: an agent read is audited with the agent's own identity, not only the session that
+    """An agent read is audited with the agent's own identity, not only the session that
     carried it — a session is ephemeral, but the identity must survive it."""
     ticket_ref, _ = _ticket(outbox, customer_id="CLI-9999")
 
