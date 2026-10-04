@@ -64,12 +64,15 @@ results still to come say so and name the command that completes them.
   and with any dimension the judge is demoted on, at the same time. The written analysis of where
   the raters and the judge disagree is a person's job and is not generated.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
-  "not held, here is a person" instead of a guess. That behavior is exercised by three unrelated
-  banking questions (one per language) and a short list of everyday sentences with no policy
-  content in the retrieval tests, and by the 13 unsupported-request cases of the golden set. A
-  larger set of customer-worded uncovered questions per language was not run, so a pass shows the
-  behavior on these inputs, not across the many ways a customer can ask about a topic the policy
-  does not address.
+  "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
+  banking question per language and a short list of everyday sentences with no policy content in
+  the retrieval tests (`tests/test_lexical_retrieval.py`), by one nonsense query in the policy
+  answer tests (`tests/test_policy_answer.py`) and by one nonsense query through the dialogue
+  controller (`tests/test_dialogue_controller.py`). The golden set holds no uncovered policy
+  question: its 13 unsupported-request cases (a transfer, a limit increase, a loan) take the
+  refusal path, not this one. A larger set of customer-worded uncovered questions per language was
+  not run, so a pass shows the behavior on these inputs, not across the many ways a customer can
+  ask about a topic the policy does not address.
 - **Case `hr-fraud-en-01` produced one non-reproducible unsafe outcome.** This is the English
   fraud claim in the human-required category. In one of the three repeats of the full evaluation
   run it turned unsafe against the proposed system, in the handoff-ticket path the case exercises.
