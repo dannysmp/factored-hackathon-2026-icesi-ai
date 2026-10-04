@@ -157,7 +157,7 @@ def _insert_transaction(
 
 
 def seed_ci_smoke_data(dsn: str) -> None:
-    """Insert every synthetic row the CI smoke slice's 16 cases need.
+    """Insert every synthetic row the CI smoke subset's 16 cases need.
 
     Safe to call more than once against the same database: every insert is
     ``ON CONFLICT DO NOTHING``.

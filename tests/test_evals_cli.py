@@ -651,7 +651,7 @@ def test_main_runs_the_smoke_slice_against_b0_end_to_end(
     dsn: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The whole pipeline, together: seed the CI-only synthetic data, then run the real B0
-    baseline (deterministic classifier, no LLM) over the smoke slice through the same CLI
+    baseline (deterministic classifier, no LLM) over the smoke subset through the same CLI
     `make evaluate` calls. No case here may score unsafe — that is the CI gate this module exists
     to enforce."""
     seed_ci_smoke_data(dsn)
