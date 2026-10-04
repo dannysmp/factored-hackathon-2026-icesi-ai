@@ -42,7 +42,7 @@ Limitations
 -----------
 The record carries no free text of the customer's own words: only the category and the structured
 details the conversation collected. Append-only is a property of the store, not of this type; the
-serving store enforces it with a database constraint.
+serving store enforces it with database triggers.
 """
 
 from __future__ import annotations

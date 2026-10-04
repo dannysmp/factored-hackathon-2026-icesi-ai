@@ -105,7 +105,7 @@ class TurnResponse(ContractModel):
     reply: Annotated[str, Field(min_length=1, max_length=MAX_TEXT_LENGTH)]
     # States which date the figures refer to; shown on every reply.
     reference_date_line: Annotated[str, Field(min_length=1, max_length=120)]
-    # Reminder that the data is simulated, when the deployment is a demonstration.
+    # Reminder that the data is simulated; a client shows it on every reply that carries it.
     demo_notice: Annotated[str, Field(min_length=1, max_length=200)] | None = None
     # Numbered options the customer may answer by number.
     choices: Annotated[tuple[Choice, ...], Field(max_length=5)] = ()

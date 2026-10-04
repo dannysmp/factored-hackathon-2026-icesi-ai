@@ -12,7 +12,7 @@ to answer, for one action, who did it, on what basis, and when.
 Scope
 -----
 In: the audit record, its closed set of actions, and the sink port a tool call writes it to.
-Out: the store that makes a record append-only (a database constraint in the serving store), and
+Out: the store that makes a record append-only (database triggers in the serving store), and
 reading a timeline back (the case service and the console).
 
 Design Principles

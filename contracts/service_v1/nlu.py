@@ -124,7 +124,7 @@ class NluResult(ContractModel):
     """The understanding of one message."""
 
     intent: NluIntent
-    # The model's own estimate, from 0 to 1.
+    # How sure the understanding step is, from 0 to 1; zero when no usable reading was produced.
     confidence: Rate
     # The language the message was written in, when it could be told.
     language: Lang | None = None

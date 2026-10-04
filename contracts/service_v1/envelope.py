@@ -340,7 +340,8 @@ class DisputeFacts(ContractModel):
     # The transactions the reply may list (at most five), and how many matched in all.
     transactions: Annotated[tuple[TransactionFact, ...], Field(max_length=5)] = ()
     candidate_count: Annotated[int, Field(ge=0)] = 0
-    # The reference of the transaction chosen for the dispute; it is one of those listed.
+    # The reference of the transaction chosen for the dispute. A confirm-filing reply must pick
+    # one of the transactions listed; other replies may carry a reference that is not listed.
     selected_ref: Annotated[str, Field(pattern=REF_PATTERN)] | None = None
     category: DisputeCategory | None = None
     # Cases on file that the reply may state (at most three).
@@ -350,12 +351,13 @@ class DisputeFacts(ContractModel):
     policy_values: Annotated[tuple[PolicyValue, ...], Field(max_length=16)] = ()
     # When the first response to a newly filed case is expected.
     expected_response_on: date | None = None
-    # Terms the customer searched the transactions by (at most six).
+    # Search terms a reply may echo back (at most six); empty when none are set.
     search_terms: Annotated[
         tuple[Annotated[SafeText, Field(min_length=1, max_length=80)], ...], Field(max_length=6)
     ] = ()
     date_to_confirm: DateToConfirm | None = None
-    # How many further disputes are pending after the current one (at most five).
+    # How many further disputes the customer has mentioned beyond the current one (at most five);
+    # zero when none are set.
     pending_disputes: Annotated[int, Field(ge=0, le=5)] = 0
     # The contact promise made in a handoff, in hours, and the handoff ticket's number.
     contact_within_hours: Annotated[int, Field(ge=1)] | None = None
