@@ -1039,7 +1039,8 @@ def test_the_presented_transaction_question_stays_pending_across_an_unrelated_re
     before = dialogue.store.get(_SESSION_ID)
     assert before is not None
 
-    dialogue.say(unrelated)
+    reply = dialogue.say(unrelated)
+    assert reply.next_expected is Slot.TRANSACTION_CHOICE
     state = dialogue.store.get(_SESSION_ID)
     assert state is not None
     assert state.pending_slot is Slot.TRANSACTION_CHOICE
