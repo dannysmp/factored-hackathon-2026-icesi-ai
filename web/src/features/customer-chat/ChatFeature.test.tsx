@@ -169,9 +169,7 @@ describe('ChatFeature', () => {
       sendTurn: () => Promise.reject(new Error('unused')),
     }
     render(<ChatFeature client={failing} lang="en" />)
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'The conversation could not start. Please try again.',
-    )
+    expect(await screen.findByRole('alert')).toHaveTextContent('The conversation could not start.')
     expect(screen.queryByText('network is down')).not.toBeInTheDocument()
   })
 
@@ -187,7 +185,7 @@ describe('ChatFeature', () => {
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Your last message could not be sent. Please try again.',
+      'Your last message could not be sent.',
     )
     expect(
       await findMessage('Hi! Which transaction would you like to dispute?'),

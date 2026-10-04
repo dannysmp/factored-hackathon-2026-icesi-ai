@@ -8,9 +8,11 @@ import { TurnForm } from './components/TurnForm'
 import type { ChatClient } from './client'
 import { useConversation } from './useConversation'
 import { Button } from '../../components/ui/Button'
+import { ErrorState } from '../../components/ui/ErrorState'
 import { LiveAnnouncer } from '../../components/ui/LiveAnnouncer'
 import { useT } from '../../i18n/useT'
 import type { Lang } from '../../i18n/lang'
+import { failureReason } from '../../i18n/failureReason'
 import styles from './ChatFeature.module.css'
 
 /**
@@ -39,10 +41,12 @@ export function ChatFeature({
   client,
   lang,
   onLanguageChange,
+  onSessionExpired,
 }: {
   client: ChatClient
   lang: Lang
   onLanguageChange?: (lang: Lang) => void
+  onSessionExpired?: () => void
 }): JSX.Element {
   const conversation = useConversation(client)
   const activeLang = conversation.latest?.lang ?? lang
@@ -55,6 +59,11 @@ export function ChatFeature({
     onLanguageChange?.(activeLang)
   }, [activeLang, onLanguageChange])
 
+  const expired = conversation.failure === 'unauthorized'
+  useEffect(() => {
+    if (expired) onSessionExpired?.()
+  }, [expired, onSessionExpired])
+
   useEffect(() => {
     const before = repliesSeen.current
     repliesSeen.current = replyCount
@@ -66,9 +75,16 @@ export function ChatFeature({
 
   if (conversation.status === 'error' && conversation.latest === null) {
     return (
-      <div role="alert" className={styles.error}>
-        <p>{t('chat.couldNotStart')}</p>
-      </div>
+      <section aria-label={t('chat.regionLabel')} className={styles.chat}>
+        <div className={styles.failure}>
+          <ErrorState
+            title={t('chat.couldNotStart')}
+            reason={failureReason(conversation.failure, t)}
+          >
+            {!expired && <Button onClick={conversation.retry}>{t('common.retry')}</Button>}
+          </ErrorState>
+        </div>
+      </section>
     )
   }
 
@@ -99,9 +115,13 @@ export function ChatFeature({
         <MessageList messages={conversation.messages} lang={activeLang} pending={busy} />
       )}
       {conversation.status === 'error' && (
-        <div role="alert" className={styles.error}>
-          <p>{t('chat.couldNotSend')}</p>
-          <Button onClick={conversation.retry}>{t('common.retry')}</Button>
+        <div className={styles.failure}>
+          <ErrorState
+            title={t('chat.couldNotSend')}
+            reason={failureReason(conversation.failure, t)}
+          >
+            {!expired && <Button onClick={conversation.retry}>{t('common.retry')}</Button>}
+          </ErrorState>
         </div>
       )}
       {latest !== null && !ended && (

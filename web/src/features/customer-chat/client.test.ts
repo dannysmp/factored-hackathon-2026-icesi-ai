@@ -156,4 +156,29 @@ describe('LiveChatClient', () => {
     expect((error as TurnRequestError).status).toBe(409)
     expect((error as TurnRequestError).message).toBe('The conversation moved on')
   })
+
+  it('bounds every request with a timeout signal so a stalled connection ends in a failure', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(200, turnResponse())))
+    vi.stubGlobal('fetch', fetchMock)
+    const client: ChatClient = new LiveChatClient({ token: 'tok', lang: 'en' })
+
+    await client.start()
+    await client.sendTurn('hello')
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    for (const call of fetchMock.mock.calls as [string, RequestInit][]) {
+      expect(call[1].signal).toBeInstanceOf(AbortSignal)
+    }
+  })
+
+  it('lets a request that never reached the service reject as it is, for the caller to classify', async () => {
+    const failure = new TypeError('Failed to fetch')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(failure))
+    const client: ChatClient = new LiveChatClient({ token: 'tok', lang: 'en' })
+
+    await expect(client.sendTurn('hello')).rejects.toBe(failure)
+  })
 })

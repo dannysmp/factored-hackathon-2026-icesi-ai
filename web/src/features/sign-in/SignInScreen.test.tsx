@@ -1,5 +1,5 @@
 /** Component test: the sign-in screen's four states and its accessibility. */
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -24,8 +24,8 @@ describe('SignInScreen', () => {
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
     expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Ana' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Emma' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Ana — Español' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Emma — English' })).toBeInTheDocument()
   })
 
   it('shows a retryable error when the directory cannot be fetched, in the default language', async () => {
@@ -44,7 +44,8 @@ describe('SignInScreen', () => {
       vi.spyOn(api, fetcher).mockRejectedValue(new SignInError(401, 'Sign in required'))
       const { container } = render(<SignInScreen audience={audience} onSignedIn={vi.fn()} />)
 
-      expect(await screen.findByRole('status')).toHaveTextContent(es['signin.unavailable'])
+      await screen.findByText(es['signin.unavailable'])
+      expect(screen.getByRole('status')).toHaveTextContent(es['signin.unavailable'])
       expect(screen.queryByLabelText(es['signin.accessCodeLabel'])).not.toBeInTheDocument()
       expect(screen.queryByRole('button')).not.toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -56,7 +57,8 @@ describe('SignInScreen', () => {
     vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue([])
     render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
 
-    expect(await screen.findByRole('status')).toHaveTextContent(es['signin.unavailable'])
+    await screen.findByText(es['signin.unavailable'])
+    expect(screen.getByRole('status')).toHaveTextContent(es['signin.unavailable'])
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
@@ -81,8 +83,9 @@ describe('SignInScreen', () => {
     await user.click(screen.getByRole('button', { name: en['signin.submit'] }))
 
     expect(signInMock).toHaveBeenCalledWith('emma', 'the-code', 'customer')
-    await screen.findByRole('button', { name: en['signin.submit'] })
-    expect(onSignedIn).toHaveBeenCalledWith('token-abc', 'en')
+    await waitFor(() => {
+      expect(onSignedIn).toHaveBeenCalledWith('token-abc', 'en')
+    })
   })
 
   it('follows the selected customer persona’s own language, switching live as the selection changes', async () => {
@@ -100,7 +103,7 @@ describe('SignInScreen', () => {
 
   it('shows a refusal message and lets the customer retry, without calling onSignedIn', async () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
-    vi.spyOn(api, 'signIn').mockRejectedValue(new Error('refused'))
+    vi.spyOn(api, 'signIn').mockRejectedValue(new SignInError(401, 'Sign-in refused'))
     const onSignedIn = vi.fn()
     const user = userEvent.setup()
     render(<SignInScreen onSignedIn={onSignedIn} />)
@@ -134,7 +137,7 @@ describe('SignInScreen', () => {
     const user = userEvent.setup()
     render(<SignInScreen audience="agent" onSignedIn={onSignedIn} />)
 
-    expect(await screen.findByRole('option', { name: 'Diego' })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: 'Diego — Português' })).toBeInTheDocument()
     expect(fetchCustomerSpy).not.toHaveBeenCalled()
 
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')

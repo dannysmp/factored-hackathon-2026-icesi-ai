@@ -1,12 +1,17 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { JSX, SyntheticEvent } from 'react'
 import type { DemoPersonaSummary } from './contracts'
 import type { Lang } from '../customer-chat/contracts'
 import type { SignInAudience } from './api'
 import { Button } from '../../components/ui/Button'
-import { SignInError, fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
+import { ErrorState } from '../../components/ui/ErrorState'
+import { Notice } from '../../components/ui/Notice'
+import { fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
 import { useT } from '../../i18n/useT'
-import { LANGUAGES } from '../../i18n/lang'
+import { failureReason } from '../../i18n/failureReason'
+import { LANGUAGES, LANGUAGE_NAMES } from '../../i18n/lang'
+import { classifyFailure } from '../../lib/failure'
+import type { FailureKind } from '../../lib/failure'
 import styles from './SignInScreen.module.css'
 
 type DirectoryStatus = 'loading' | 'ready' | 'unavailable' | 'error'
@@ -24,42 +29,53 @@ function toLang(value: string): Lang {
   return (LANGUAGES as readonly string[]).includes(value) ? (value as Lang) : DEFAULT_LANG
 }
 
+/** A persona's name followed by the language it speaks, so the choice says who the conversation will be with and in what language. */
+function personaLabel(persona: DemoPersonaSummary): string {
+  const lang = toLang(persona.language)
+  return (LANGUAGES as readonly string[]).includes(persona.language)
+    ? `${persona.display_name} — ${LANGUAGE_NAMES[lang]}`
+    : persona.display_name
+}
+
 /**
- * The demo sign-in screen (ADR-18): a persona picker built from the real, live persona directory
- * (never a hardcoded copy — `GET /v1/auth/demo-personas`) plus the access code, distributed
- * out-of-band to whoever runs the demonstration, never baked into this bundle.
+ * The demonstration sign-in: a card with a persona picker built from the live persona directory
+ * (never a hardcoded copy) and the access code, which is handed to whoever runs the demonstration
+ * out of band and never baked into this bundle.
  *
- * `audience` (AC-E10-14: "the screen asks for the access code of its own audience") selects the
- * persona list and the broker this screen signs into — `'customer'`, the only caller before the
- * console existed, is the default so every earlier call site is unchanged.
+ * `audience` selects the persona list and the access code this screen asks for: `'customer'` (the
+ * default) or `'agent'`.
  *
- * When the sign-in is switched off (AC-E10-15: the kill switch) the backend either answers the
- * persona directory with 401 `session_missing` (both brokers off, so the route is not public) or
- * lists no persona for this audience (only the other broker on); either way the screen says
- * plainly that the demonstration is not available and offers no form. A directory that fails for
- * any other reason (a network error, a rate limit, a server error) stays the retryable
- * "unreachable" state. No persona is selected in the unavailable state, so its text is always the
- * default language's; the Portuguese and English catalog entries exist for catalog parity only.
+ * When the sign-in is switched off, the service either refuses the persona directory outright or
+ * lists no persona for this audience; either way the screen says plainly that the demonstration
+ * is not available and offers no form. A directory that fails for any other reason (no
+ * connection, a slow answer, a limit reached, a server error) says which, and offers Retry.
+ *
+ * A refused sign-in says what was refused: a wrong access code or persona, a limit reached, or
+ * a connection or server problem, each in its own words. The keyboard returns to the access code
+ * field so it can be corrected at once.
+ *
+ * `focusForm` moves the keyboard to the persona picker as soon as the form appears, for a person
+ * who has just been sent back here and would otherwise have lost their place.
  *
  * `onLanguageChange` reports the language this screen is currently speaking, as the selection
  * changes, so the page around it can follow.
  *
  * `onSignedIn` receives the session token and the chosen persona's language, so the caller can
- * hand both to `LiveChatClient` — the token is this component's own state, held only for the
- * moment it takes to pass it up; nothing here ever writes it to storage (ADR-18: "the token held
- * in memory only").
+ * hand both to the chat client. The token is held only for the moment it takes to pass it up;
+ * nothing here ever writes it to storage.
  *
- * This screen's own copy follows the selected persona's language for the customer audience
- * (D91); the agent audience stays fixed-Spanish regardless of persona, matching the rest of the
- * console (`ConsoleApp.tsx`). Before a persona is selected, `DEFAULT_LANG` covers the loading
- * and directory-error states, which occur before any language signal exists.
+ * The customer path follows the selected persona's language; the agent path stays in Spanish, like
+ * the rest of the console. Before a persona is selected (loading, the directory error) the screen
+ * speaks `DEFAULT_LANG`, because no language signal exists yet.
  */
 export function SignInScreen({
   audience = 'customer',
+  focusForm = false,
   onSignedIn,
   onLanguageChange,
 }: {
   audience?: SignInAudience
+  focusForm?: boolean
   onSignedIn: (token: string, lang: Lang) => void
   onLanguageChange?: (lang: Lang) => void
 }): JSX.Element {
@@ -69,8 +85,15 @@ export function SignInScreen({
   const [accessCode, setAccessCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [signInError, setSignInError] = useState<string | null>(null)
+  const [directoryFailure, setDirectoryFailure] = useState<FailureKind | null>(null)
+  const [directoryAttempt, setDirectoryAttempt] = useState(0)
+  const headingId = useId()
   const personaFieldId = useId()
   const accessCodeFieldId = useId()
+  const hintId = useId()
+  const errorId = useId()
+  const personaRef = useRef<HTMLSelectElement>(null)
+  const accessCodeRef = useRef<HTMLInputElement>(null)
   const selectedPersona = personas.find((candidate) => candidate.slug === selectedSlug)
   // The console stays fixed-Spanish regardless of which agent persona is selected (D91); only
   // the customer path follows the selected persona's own language.
@@ -96,14 +119,29 @@ export function SignInScreen({
       },
       (error: unknown) => {
         if (cancelled) return
-        const switchedOff = error instanceof SignInError && error.status === 401
-        setDirectoryStatus(switchedOff ? 'unavailable' : 'error')
+        const failure = classifyFailure(error)
+        setDirectoryFailure(failure)
+        setDirectoryStatus(failure === 'unauthorized' ? 'unavailable' : 'error')
       },
     )
     return () => {
       cancelled = true
     }
-  }, [audience])
+  }, [audience, directoryAttempt])
+
+  useEffect(() => {
+    if (focusForm && directoryStatus === 'ready') personaRef.current?.focus()
+  }, [focusForm, directoryStatus])
+
+  useEffect(() => {
+    if (signInError !== null) accessCodeRef.current?.focus()
+  }, [signInError])
+
+  function reloadDirectory(): void {
+    setDirectoryStatus('loading')
+    setDirectoryFailure(null)
+    setDirectoryAttempt((attempt) => attempt + 1)
+  }
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault()
@@ -116,16 +154,21 @@ export function SignInScreen({
       (token) => {
         onSignedIn(token, toLang(selectedPersona.language))
       },
-      () => {
+      (error: unknown) => {
+        const failure = classifyFailure(error)
         setSubmitting(false)
-        setSignInError(t('signin.refused'))
+        setSignInError(
+          failure === 'unauthorized'
+            ? t('signin.refused')
+            : (failureReason(failure, t) ?? t('common.error.generic')),
+        )
       },
     )
   }
 
   if (directoryStatus === 'loading') {
     return (
-      <p className={styles.status} aria-live="polite" role="status">
+      <p className={styles.status} role="status">
         {t('signin.loading')}
       </p>
     )
@@ -133,22 +176,34 @@ export function SignInScreen({
 
   if (directoryStatus === 'unavailable') {
     return (
-      <p className={styles.status} role="status">
-        {t('signin.unavailable')}
-      </p>
+      <div className={styles.slot}>
+        <Notice tone="info" role="status">
+          {t('signin.unavailable')}
+        </Notice>
+      </div>
     )
   }
 
   if (directoryStatus === 'error') {
     return (
-      <div role="alert" className={styles.error}>
-        <p>{t('signin.unreachable')}</p>
+      <div className={styles.slot}>
+        <ErrorState title={t('signin.unreachable')} reason={failureReason(directoryFailure, t)}>
+          <Button onClick={reloadDirectory}>{t('common.retry')}</Button>
+        </ErrorState>
       </div>
     )
   }
 
+  const refused = signInError !== null
+  const describedBy = [accessCode.trim() === '' ? hintId : null, refused ? errorId : null]
+    .filter((id) => id !== null)
+    .join(' ')
+
   return (
-    <section aria-label={t('signin.regionLabel')} className={styles.screen}>
+    <section aria-labelledby={headingId} className={styles.card}>
+      <h2 id={headingId} className={styles.heading}>
+        {t('signin.regionLabel')}
+      </h2>
       <p className={styles.intro}>{t('signin.intro')}</p>
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.field}>
@@ -157,6 +212,7 @@ export function SignInScreen({
           </label>
           <select
             id={personaFieldId}
+            ref={personaRef}
             className={styles.select}
             value={selectedSlug}
             disabled={submitting}
@@ -166,7 +222,7 @@ export function SignInScreen({
           >
             {personas.map((persona) => (
               <option key={persona.slug} value={persona.slug}>
-                {persona.display_name}
+                {personaLabel(persona)}
               </option>
             ))}
           </select>
@@ -178,29 +234,42 @@ export function SignInScreen({
           </label>
           <input
             id={accessCodeFieldId}
+            ref={accessCodeRef}
+            name="access-code"
             type="password"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
             className={styles.accessCode}
             value={accessCode}
             disabled={submitting}
+            aria-invalid={refused ? true : undefined}
+            aria-describedby={describedBy === '' ? undefined : describedBy}
             onChange={(event) => {
               setAccessCode(event.target.value)
             }}
           />
+          {accessCode.trim() === '' && (
+            <p id={hintId} className={styles.hint}>
+              {t('signin.accessCodeHint')}
+            </p>
+          )}
         </div>
 
-        {signInError !== null && (
-          <p role="alert" className={styles.formError}>
-            {signInError}
-          </p>
+        {refused && (
+          <div id={errorId}>
+            <ErrorState title={signInError} />
+          </div>
         )}
 
         <Button
           type="submit"
           variant="primary"
           large
-          disabled={submitting || selectedSlug === '' || accessCode === ''}
+          fullWidth
+          disabled={submitting || selectedSlug === '' || accessCode.trim() === ''}
         >
-          {t('signin.submit')}
+          {submitting ? t('signin.submitting') : t('signin.submit')}
         </Button>
       </form>
     </section>

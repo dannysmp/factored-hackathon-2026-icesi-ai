@@ -7,6 +7,7 @@
  */
 import type { Lang, TurnRequest, TurnResponse } from './contracts'
 import { TurnResponseSchema } from './contracts'
+import { requestSignal } from '../../lib/failure'
 
 const TURNS_PATH = '/v1/turns'
 
@@ -119,6 +120,7 @@ export class LiveChatClient implements ChatClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
       body: JSON.stringify(body),
+      signal: requestSignal(),
     })
     if (!response.ok) {
       throw await this.toError(response)
