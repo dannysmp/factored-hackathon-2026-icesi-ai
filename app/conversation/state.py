@@ -34,8 +34,8 @@ Design Principles
 Runtime Contract
 ----------------
 ``DialogueState`` with ``with_clarification(slot)``, ``with_slot_filled()``, ``with_case_filed(
-case_number)`` and ``with_handed_off(ticket_ref)``. ``ConversationPhase`` names where the
-conversation stands.
+case_number)`` and ``with_handed_off(ticket_ref)``, plus ``is_opening``, which is true while no
+dispute step has been taken yet. ``ConversationPhase`` names where the conversation stands.
 
 Limitations
 -----------
@@ -91,9 +91,10 @@ class DialogueState(BaseModel):
 
     @property
     def is_opening(self) -> bool:
-        """True while the conversation has only greeted or offered a language: no dispute content
-        is committed yet, so the first message in a recognisable language may still set the
-        language the conversation continues in."""
+        """True while no dispute step has been taken: the conversation has had at least one turn
+        but is still in its first phase with no slot being asked, no category and no transaction
+        chosen. Informational turns (a greeting, a policy answer, a transaction list) leave it
+        true, so the language the conversation continues in may still be set by a later message."""
         return (
             self.last_turn_id is not None
             and self.phase is ConversationPhase.STARTED

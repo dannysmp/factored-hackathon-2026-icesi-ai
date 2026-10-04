@@ -479,6 +479,7 @@ def _english_dispute_opening() -> list[NluResult]:
 
 
 def test_the_language_offer_names_english_too(policy: Policy, retriever: LexicalRetriever) -> None:
+    """The opener's offer tells an English customer that English is available."""
     controller = _sequenced_controller(
         _english_dispute_opening(),
         store=InMemoryDialogueStore(),
@@ -488,12 +489,14 @@ def test_the_language_offer_names_english_too(policy: Policy, retriever: Lexical
 
     offer = controller.handle_turn(_turn("turn-0001", "Hello"), principal=_principal())
 
-    assert "English" in offer.reply
+    assert "let me know if you prefer English" in offer.reply
 
 
 def test_an_opener_without_a_language_signal_does_not_fix_the_language(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
+    """A "Hello" the model cannot place in a language leaves the language open, so the first
+    English message is answered in English."""
     controller = _sequenced_controller(
         _english_dispute_opening(),
         store=InMemoryDialogueStore(),
@@ -508,12 +511,13 @@ def test_an_opener_without_a_language_signal_does_not_fix_the_language(
     )
 
     assert first_message.lang == "en"
-    assert "¿" not in first_message.reply
+    assert first_message.reply.startswith("Could you tell me the merchant")
 
 
 def test_once_the_dispute_is_under_way_one_message_in_another_language_does_not_switch(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
+    """After a dispute step has been taken the language is fixed for the conversation."""
     controller = _sequenced_controller(
         _english_dispute_opening(),
         store=InMemoryDialogueStore(),
@@ -528,6 +532,79 @@ def test_once_the_dispute_is_under_way_one_message_in_another_language_does_not_
     stray = controller.handle_turn(_turn("turn-0003", "no sé"), principal=_principal())
 
     assert stray.lang == "en"
+
+
+def _opened_state(**changes: object) -> DialogueState:
+    values: dict[str, object] = {
+        "session_id": _SESSION_ID,
+        "lang": "es",
+        "last_turn_id": "turn-0001",
+        "updated_at": _NOW,
+    }
+    return DialogueState(**{**values, **changes})
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected"),
+    [
+        ({"last_turn_id": None}, False),
+        ({}, True),
+        ({"pending_slot": Slot.REASON}, False),
+        ({"category": DisputeCategory.UNRECOGNIZED_CHARGE}, False),
+        ({"selected_ref": "TRX-1"}, False),
+        ({"phase": ConversationPhase.CLARIFYING}, False),
+        ({"phase": ConversationPhase.CONFIRMING}, False),
+        ({"phase": ConversationPhase.CLOSED}, False),
+        ({"phase": ConversationPhase.HANDED_OFF}, False),
+        ({"phase": ConversationPhase.ABANDONED}, False),
+    ],
+)
+def test_a_conversation_is_opening_only_before_any_dispute_step(
+    changes: dict[str, object], expected: bool
+) -> None:
+    """Each condition is the only thing that keeps its case from reading as an opening."""
+    assert _opened_state(**changes).is_opening is expected
+
+
+def test_a_handed_off_conversation_keeps_its_language(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A fraud report hands off with no category, slot or reference set: only the phase keeps
+    the conversation from reading as an opening."""
+    controller = _sequenced_controller(
+        [
+            _plain(NluIntent.REPORT_FRAUD, language="es"),
+            _plain(NluIntent.SMALL_TALK, language="en"),
+        ],
+        store=InMemoryDialogueStore(),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    handed_off = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+    after = controller.handle_turn(_turn("turn-0002", "thanks"), principal=_principal())
+
+    assert handed_off.handoff_ticket is not None
+    assert after.lang == "es"
+
+
+@pytest.mark.parametrize("intent", [NluIntent.UNCLEAR, NluIntent.SWITCH_LANGUAGE])
+def test_a_message_that_says_nothing_reliable_about_the_language_does_not_switch_it(
+    policy: Policy, retriever: LexicalRetriever, intent: NluIntent
+) -> None:
+    """An unclear message or an explicit language request is no evidence of the language."""
+    extra = {"requested_language": "es"} if intent is NluIntent.SWITCH_LANGUAGE else {}
+    controller = _sequenced_controller(
+        [_plain(NluIntent.UNCLEAR, language=None), _plain(intent, language="en", **extra)],
+        store=InMemoryDialogueStore(),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    controller.handle_turn(_turn("turn-0001", "Hello"), principal=_principal())
+    second = controller.handle_turn(_turn("turn-0002", "Netflix 15.99"), principal=_principal())
+
+    assert second.lang == "es"
 
 
 def test_the_controller_passes_its_own_domain_date_as_the_understanding_reference_date() -> None:

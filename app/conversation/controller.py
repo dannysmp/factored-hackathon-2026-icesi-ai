@@ -168,6 +168,8 @@ _ROUTED_HANDOFFS = frozenset({TemplateId.HANDOFF_REVIEW, TemplateId.HANDOFF_FRAU
 
 _EMPTY_FACTS = DisputeFacts()
 
+_LANGUAGE_NEUTRAL_INTENTS = frozenset({NluIntent.UNCLEAR, NluIntent.SWITCH_LANGUAGE})
+
 _ASK_TEMPLATE_OF: dict[Slot, TemplateId] = {
     Slot.TRANSACTION: TemplateId.CLARIFY_TRANSACTION,
     Slot.REASON: TemplateId.CLARIFY_REASON,
@@ -416,7 +418,10 @@ class DialogueController:
         or Spanish when the message is too ambiguous to tell (AC: es and pt are both required).
         While the conversation has not left its opening (``DialogueState.is_opening``) the next
         message read in another language moves it there, so a customer whose opener carried no
-        language signal is answered in their own language from their first real message.
+        language signal is answered in their own language from their first real message. A message
+        the understanding could not make sense of, or one that asks for a language outright, never
+        triggers that move: the first says nothing reliable about the language and the second
+        already names it.
         """
         if current is not None:
             result, accounting = self._understanding.understand(
@@ -424,6 +429,7 @@ class DialogueController:
             )
             if (
                 current.is_opening
+                and result.intent not in _LANGUAGE_NEUTRAL_INTENTS
                 and result.language is not None
                 and result.language != current.lang
             ):
