@@ -58,7 +58,6 @@ export function ConsoleApp(): JSX.Element {
         <SignInScreen
           audience="agent"
           onSignedIn={(token) => {
-            setExpired(false)
             setSession({ token })
           }}
         />

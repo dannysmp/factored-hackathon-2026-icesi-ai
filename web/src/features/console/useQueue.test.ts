@@ -1,6 +1,7 @@
 /** Unit tests: the parts of `useQueue`'s race guard a rendered UI can't reach directly. */
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { AgentRequestError } from './client'
 import type { QueueClient } from './client'
 import type { QueueResponse } from './contracts'
 import { useQueue } from './useQueue'
@@ -121,5 +122,93 @@ describe('useQueue', () => {
     })
     expect(result.current.referenceDate).toBe('2026-06-20')
     expect(calls).toBe(2)
+  })
+
+  describe('when the backend answers 401', () => {
+    const expired = (): Promise<QueueResponse> =>
+      Promise.reject(new AgentRequestError(401, 'Session expired'))
+
+    it('calls onSessionExpired once and does not enter the error state', async () => {
+      const onSessionExpired = vi.fn()
+      const client: QueueClient = { fetchQueue: expired }
+      const { result } = renderHook(() => useQueue(client, onSessionExpired))
+
+      await waitFor(() => {
+        expect(onSessionExpired).toHaveBeenCalledTimes(1)
+      })
+      expect(result.current.status).toBe('loading')
+    })
+
+    it('stays a retryable error when no handler is given', async () => {
+      const client: QueueClient = { fetchQueue: expired }
+      const { result } = renderHook(() => useQueue(client))
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('error')
+      })
+    })
+
+    it('does not call it for another status', async () => {
+      const onSessionExpired = vi.fn()
+      const client: QueueClient = {
+        fetchQueue: () => Promise.reject(new AgentRequestError(500, 'Internal error')),
+      }
+      const { result } = renderHook(() => useQueue(client, onSessionExpired))
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('error')
+      })
+      expect(onSessionExpired).not.toHaveBeenCalled()
+    })
+
+    it('does not call it after unmount', async () => {
+      const onSessionExpired = vi.fn()
+      let rejectRequest: (reason: Error) => void = () => undefined
+      const client: QueueClient = {
+        fetchQueue: () =>
+          new Promise<QueueResponse>((_resolve, reject) => {
+            rejectRequest = reject
+          }),
+      }
+      const { unmount } = renderHook(() => useQueue(client, onSessionExpired))
+      unmount()
+
+      await act(async () => {
+        rejectRequest(new AgentRequestError(401, 'Session expired'))
+        await Promise.resolve()
+      })
+
+      expect(onSessionExpired).not.toHaveBeenCalled()
+    })
+
+    it('ignores a superseded request and honours the current one', async () => {
+      const onSessionExpired = vi.fn()
+      const rejections: ((reason: Error) => void)[] = []
+      const client: QueueClient = {
+        fetchQueue: () =>
+          new Promise<QueueResponse>((_resolve, reject) => {
+            rejections.push(reject)
+          }),
+      }
+      const { result } = renderHook(() => useQueue(client, onSessionExpired))
+      act(() => {
+        result.current.setLanguage('es')
+      })
+      await waitFor(() => {
+        expect(rejections).toHaveLength(2)
+      })
+
+      await act(async () => {
+        rejections[0]?.(new AgentRequestError(401, 'Session expired'))
+        await Promise.resolve()
+      })
+      expect(onSessionExpired).not.toHaveBeenCalled()
+
+      await act(async () => {
+        rejections[1]?.(new AgentRequestError(401, 'Session expired'))
+        await Promise.resolve()
+      })
+      expect(onSessionExpired).toHaveBeenCalledTimes(1)
+    })
   })
 })
