@@ -11,6 +11,9 @@ from __future__ import annotations
 # Standard libraries
 from typing import Any
 
+# Third-party libraries
+import pytest
+
 # Local modules
 from app.domain.policy.models import DisputeCategory
 from contracts.service_v1.envelope import Intent
@@ -213,3 +216,137 @@ def test_an_accent_gap_beyond_noise_is_flagged() -> None:
     flagged = [d for d in analysis.disparities if d.dimension == ACCENT]
     assert len(flagged) == 1
     assert flagged[0].failing_categories == (("multilingual", len(ids)),)
+
+
+def _mixed_population(
+    lang: str, prefix: str, mix: dict[CaseCategory, tuple[int, int]]
+) -> tuple[list[Case], list[CaseResult]]:
+    """A slice with ``(size, failing)`` per category."""
+    cases: list[Case] = []
+    results: list[CaseResult] = []
+    for category, (size, failing) in mix.items():
+        for i in range(size):
+            case_id = f"{prefix}-{category.value}-{i}"
+            cases.append(_case(case_id, lang, category))
+            results.append(_result(case_id, correct=i >= failing))
+    return cases, results
+
+
+def _flagged(analysis: Any, dimension: str, label: str) -> Any:
+    return next(d for d in analysis.disparities if (d.dimension, d.label) == (dimension, label))
+
+
+def test_a_slice_above_the_rest_is_flagged_in_its_own_direction() -> None:
+    es_cases, es_results = _population("es", 60, 0, "e")
+    pt_cases, pt_results = _population("pt", 60, 30, "p")
+
+    analysis = slice_results(es_results + pt_results, es_cases + pt_cases, {})
+
+    assert _flagged(analysis, LANGUAGE, "es").below_comparison is False
+    assert _flagged(analysis, LANGUAGE, "pt").below_comparison is True
+
+
+def test_a_slice_above_the_rest_names_no_category_as_the_cause() -> None:
+    es_cases, es_results = _mixed_population(
+        "es", "e", {CaseCategory.NORMAL: (90, 0), CaseCategory.AMBIGUOUS: (10, 10)}
+    )
+    pt_cases, pt_results = _population("pt", 100, 50, "p")
+
+    analysis = slice_results(es_results + pt_results, es_cases + pt_cases, {})
+
+    spanish = _flagged(analysis, LANGUAGE, "es")
+    assert spanish.below_comparison is False
+    assert spanish.failure_count == 10
+    assert spanish.concentrated_category() is None
+
+
+def test_failures_held_by_one_category_out_of_proportion_name_that_category() -> None:
+    es_cases, es_results = _population("es", 60, 0, "e")
+    pt_cases, pt_results = _mixed_population(
+        "pt", "p", {CaseCategory.NORMAL: (40, 0), CaseCategory.AMBIGUOUS: (20, 15)}
+    )
+
+    analysis = slice_results(es_results + pt_results, es_cases + pt_cases, {})
+
+    portuguese = _flagged(analysis, LANGUAGE, "pt")
+    assert portuguese.concentrated_category() == "ambiguous"
+    assert portuguese.slice_categories == (("ambiguous", 20), ("normal", 40))
+
+
+def test_failures_in_proportion_to_the_slice_mix_name_no_category() -> None:
+    es_cases, es_results = _population("es", 60, 0, "e")
+    pt_cases, pt_results = _mixed_population(
+        "pt", "p", {CaseCategory.NORMAL: (30, 15), CaseCategory.AMBIGUOUS: (30, 15)}
+    )
+
+    analysis = slice_results(es_results + pt_results, es_cases + pt_cases, {})
+
+    assert _flagged(analysis, LANGUAGE, "pt").concentrated_category() is None
+
+
+def test_too_few_failures_name_no_category_however_lopsided_they_look() -> None:
+    es_cases, es_results = _population("es", 1000, 0, "e")
+    pt_cases, pt_results = _mixed_population(
+        "pt", "p", {CaseCategory.NORMAL: (50, 0), CaseCategory.AMBIGUOUS: (10, 2)}
+    )
+
+    analysis = slice_results(es_results + pt_results, es_cases + pt_cases, {})
+
+    portuguese = _flagged(analysis, LANGUAGE, "pt")
+    assert portuguese.failure_count == 2
+    assert portuguese.concentrated_category() is None
+
+
+def test_errored_cases_are_listed_apart_from_wrong_outcomes() -> None:
+    es_cases, es_results = _population("es", 60, 0, "e")
+    pt_cases = [_case(f"p-{i}", "pt") for i in range(60)]
+    pt_results = [
+        _result(f"p-{i}", correct=i >= 30, **({"error": "timeout"} if i < 5 else {}))
+        for i in range(60)
+    ]
+
+    analysis = slice_results(es_results + pt_results, es_cases + pt_cases, {})
+
+    portuguese = _flagged(analysis, LANGUAGE, "pt")
+    assert portuguese.errored_case_ids == tuple(sorted(f"p-{i}" for i in range(5)))
+    assert len(portuguese.failing_case_ids) == 25
+    assert portuguese.failure_count == 30
+
+
+def test_the_flag_uses_a_95_percent_interval() -> None:
+    """90 of 100 against 100 of 100 is beyond noise at 95 % and inside it at 99 %."""
+    es_cases, es_results = _population("es", 100, 0, "e")
+    pt_cases, pt_results = _population("pt", 100, 10, "p")
+    analysis = slice_results(es_results + pt_results, es_cases + pt_cases, {})
+
+    assert {(d.dimension, d.label) for d in analysis.disparities} == {
+        (LANGUAGE, "es"),
+        (LANGUAGE, "pt"),
+    }
+
+
+def test_a_gap_inside_the_95_percent_interval_is_not_flagged() -> None:
+    """93 of 100 against 100 of 100 has overlapping 95 % intervals."""
+    es_cases, es_results = _population("es", 100, 0, "e")
+    pt_cases, pt_results = _population("pt", 100, 7, "p")
+
+    assert slice_results(es_results + pt_results, es_cases + pt_cases, {}).disparities == ()
+
+
+def test_each_label_of_a_three_label_dimension_is_compared_with_all_the_others() -> None:
+    cases: list[Case] = []
+    results: list[CaseResult] = []
+    profiles: dict[str, CaseProfile] = {}
+    for country, failing in (("MX", 0), ("CO", 0), ("AR", 30)):
+        population_cases, population_results = _population("es", 60, failing, country)
+        cases += population_cases
+        results += population_results
+        profiles.update({c.case_id: CaseProfile(country=country) for c in population_cases})
+
+    analysis = slice_results(results, cases, profiles)
+
+    flagged = {d.label: d for d in analysis.disparities if d.dimension == COUNTRY}
+    assert set(flagged) == {"AR", "MX", "CO"}
+    assert flagged["AR"].comparison_in_scope == 120
+    assert flagged["AR"].below_comparison is True
+    assert flagged["MX"].comparison_rate == pytest.approx(90 / 120)

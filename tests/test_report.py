@@ -706,12 +706,122 @@ def test_the_fairness_section_names_a_flagged_slice_with_its_failing_cases() -> 
         _report(golden_cases=golden, systems=(_system(case_results=results),), case_profiles={})
     )
 
-    assert "Disparities beyond sampling noise" in section
     assert "**language: pt.**" in section
-    assert "p-0" in section
-    assert "category-matched cases" in section
+    assert "below the rest" in section
+    assert "Wrong outcome: p-0, p-1," in section
+    assert "Failing by category: normal 30" in section
+    assert "the slice's in-scope cases by category: normal 60" in section
     assert "**language: es.**" in section
-    assert "has no failing case" in section
+    assert "above the rest" in section
+
+
+def _flagged_language_pair(
+    pt_mix: dict[CaseCategory, tuple[int, int]],
+    es_size: int = 60,
+    **pt_overrides: Any,
+) -> str:
+    golden = [_case(case_id=f"e-{i}", lang="es") for i in range(es_size)]
+    results = [_case_result(case_id=f"e-{i}") for i in range(es_size)]
+    for category, (size, failing) in pt_mix.items():
+        for i in range(size):
+            case_id = f"p-{category.value}-{i}"
+            golden.append(_case(case_id=case_id, lang="pt", category=category))
+            overrides = pt_overrides if i < failing else {}
+            results.append(_case_result(case_id=case_id, correct_outcome=i >= failing, **overrides))
+    return _fairness_text(
+        _report(
+            golden_cases=tuple(golden),
+            systems=(_system(case_results=tuple(results)),),
+            case_profiles={},
+        )
+    )
+
+
+def test_a_slice_above_the_rest_is_not_given_a_failure_hypothesis() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (60, 30)})
+
+    above = section.split("**language: es.**")[1].split("\n- ")[0]
+    assert "above the rest" in above
+    assert "Hypothesis" not in above
+    assert "concentrated" not in above
+    assert "Wrong outcome" not in above
+
+
+def test_a_hypothesis_of_case_mix_is_only_stated_when_failures_concentrate() -> None:
+    spread = _flagged_language_pair(
+        {CaseCategory.NORMAL: (30, 15), CaseCategory.AMBIGUOUS: (30, 15)}
+    )
+    concentrated = _flagged_language_pair(
+        {CaseCategory.NORMAL: (40, 0), CaseCategory.AMBIGUOUS: (20, 15)}
+    )
+
+    assert "may follow the case mix" not in spread
+    assert "failures follow the slice's own category mix" in spread
+    assert "concentrated in ambiguous cases" in concentrated
+    assert "may follow the case mix" in concentrated
+
+
+def test_a_slice_with_too_few_failures_says_so_instead_of_naming_a_category() -> None:
+    section = _flagged_language_pair(
+        {CaseCategory.NORMAL: (58, 0), CaseCategory.AMBIGUOUS: (2, 2)}, es_size=1000
+    )
+
+    assert "Fewer than 3 failing cases are too few" in section
+    assert "may follow the case mix" not in section
+
+
+def test_a_flagged_small_slice_is_marked_as_a_small_sample() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (20, 20)}, es_size=1000)
+
+    assert "Small sample (fewer than 30 in-scope cases)." in section
+
+
+def test_a_flagged_large_slice_carries_no_small_sample_marker_in_its_note() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (60, 30)})
+
+    assert "Small sample (fewer than 30 in-scope cases)." not in section
+
+
+def test_the_flagged_verdict_says_how_many_flags_chance_alone_would_give() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (60, 30)})
+
+    assert "about one flag in twenty is expected from chance alone" in section
+
+
+def test_errored_cases_are_listed_apart_from_wrong_outcomes_in_a_flagged_note() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (60, 30)}, error="timeout")
+
+    assert "Could not run or be scored: p-normal-0," in section
+    assert "Wrong outcome" not in section
+
+
+@pytest.mark.parametrize(
+    ("profiles", "named"),
+    [
+        (None, "Country and segment could not be looked up"),
+        ({}, "Country and Segment could not be looked up"),
+        ({"norm-es-001": CaseProfile(country="MX")}, "Segment could not be looked up"),
+        ({"norm-es-001": CaseProfile(segment="Plus")}, "Country could not be looked up"),
+    ],
+)
+def test_the_fairness_section_names_every_profile_dimension_it_could_not_compare(
+    profiles: dict[str, CaseProfile] | None, named: str
+) -> None:
+    section = _fairness_text(
+        _report(systems=(_system(case_results=(_case_result(),)),), case_profiles=profiles)
+    )
+
+    assert named in section
+    assert "that dimension was not compared" in section
+
+
+def test_the_fairness_section_has_no_unavailable_notice_when_both_dimensions_were_found() -> None:
+    profiles = {"norm-es-001": CaseProfile(country="MX", segment="Plus")}
+    section = _fairness_text(
+        _report(systems=(_system(case_results=(_case_result(),)),), case_profiles=profiles)
+    )
+
+    assert "could not be looked up" not in section
 
 
 def test_the_fairness_section_without_a_proposed_system_has_nothing_to_slice() -> None:

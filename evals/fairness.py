@@ -28,7 +28,11 @@ Design Principles
   with more human-required cases would look worse for reasons that have nothing to do with the
   slice. Both rates are shown; only the correct-outcome rate drives a flag.
 - **A flag carries evidence, not a verdict.** It lists the slice's failing cases and their
-  categories, so a reader can see whether the gap follows the slice or the case mix.
+  categories next to the slice's own category mix, and says the gap may follow the case mix only
+  when the failures are clearly over-represented in one category; otherwise the gap is left
+  unexplained rather than attributed.
+- **A flag has a direction.** The interval test is symmetric, so a slice that does better than the
+  rest is flagged too; it is described as above the rest and given no failure hypothesis.
 
 Runtime Contract
 ----------------
@@ -61,6 +65,12 @@ SMALL_SAMPLE_THRESHOLD = 30
 
 #: The label of a slice holding cases whose profile value could not be found.
 UNKNOWN = "unknown"
+
+#: A category is said to hold the slice's failures only with at least this many failing cases, and
+#: only when its share of the failures exceeds its share of the slice's in-scope cases by at least
+#: ``CASE_MIX_EXCESS``.
+CASE_MIX_MIN_FAILURES = 3
+CASE_MIX_EXCESS = 0.20
 
 _WILSON_Z = 1.96
 
@@ -109,7 +119,45 @@ class Disparity:
     in_scope: int
     comparison_in_scope: int
     failing_case_ids: tuple[str, ...]
+    """Cases that ran and produced a wrong outcome."""
+    errored_case_ids: tuple[str, ...]
+    """Cases that could not run or be scored; they count as incorrect."""
     failing_categories: tuple[tuple[str, int], ...]
+    """Failing and errored cases by category."""
+    slice_categories: tuple[tuple[str, int], ...]
+    """The slice's own in-scope cases by category."""
+
+    @property
+    def below_comparison(self) -> bool:
+        """Whether the slice does worse than the rest of its dimension."""
+        return self.rate < self.comparison_rate
+
+    @property
+    def small_sample(self) -> bool:
+        """Whether the slice has fewer in-scope cases than the small-sample threshold."""
+        return self.in_scope < SMALL_SAMPLE_THRESHOLD
+
+    @property
+    def failure_count(self) -> int:
+        """Failing and errored cases together."""
+        return sum(count for _, count in self.failing_categories)
+
+    def concentrated_category(self) -> str | None:
+        """The category holding the failures out of proportion to its share of the slice.
+
+        ``None`` when the slice does better than the rest, has too few failures to tell, or its
+        failures follow the slice's own category mix.
+        """
+        if not self.below_comparison or self.failure_count < CASE_MIX_MIN_FAILURES:
+            return None
+        slice_total = sum(count for _, count in self.slice_categories)
+        slice_share = dict(self.slice_categories)
+        excess = {
+            category: count / self.failure_count - slice_share.get(category, 0) / slice_total
+            for category, count in self.failing_categories
+        }
+        category = max(excess, key=lambda name: excess[name])
+        return category if excess[category] >= CASE_MIX_EXCESS else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +227,7 @@ def _disparity(
         return None
     failing = [t for t in in_scope if not t.result.correct_outcome]
     categories = Counter(t.case.category.value if t.case else UNKNOWN for t in failing)
+    slice_categories = Counter(t.case.category.value if t.case else UNKNOWN for t in in_scope)
     return Disparity(
         dimension=dimension,
         label=label,
@@ -186,8 +235,12 @@ def _disparity(
         comparison_rate=comparison_correct / len(comparison_in_scope),
         in_scope=len(in_scope),
         comparison_in_scope=len(comparison_in_scope),
-        failing_case_ids=tuple(sorted(t.result.case_id for t in failing)),
+        failing_case_ids=tuple(sorted(t.result.case_id for t in failing if t.result.error is None)),
+        errored_case_ids=tuple(
+            sorted(t.result.case_id for t in failing if t.result.error is not None)
+        ),
         failing_categories=tuple(sorted(categories.items())),
+        slice_categories=tuple(sorted(slice_categories.items())),
     )
 
 

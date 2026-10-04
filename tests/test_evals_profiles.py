@@ -10,6 +10,7 @@ skipped when ``DATABASE_URL`` is not set.
 from __future__ import annotations
 
 # Standard libraries
+import logging
 import os
 from pathlib import Path
 
@@ -58,8 +59,25 @@ def test_read_segments_skips_a_customer_with_no_segment(tmp_path: Path) -> None:
     assert read_segments(tmp_path, ["CLI-B", "CLI-C"]) == {"CLI-B": "Basic"}
 
 
-def test_read_segments_without_the_cleaned_table_returns_nothing(tmp_path: Path) -> None:
-    assert read_segments(tmp_path, ["CLI-A"]) == {}
+def test_read_segments_without_the_cleaned_table_returns_nothing_and_says_so(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="evals.profiles"):
+        assert read_segments(tmp_path, ["CLI-A"]) == {}
+
+    assert "case_segments_unavailable" in caplog.text
+    assert str(tmp_path) in caplog.text
+
+
+def test_read_segments_with_the_cleaned_table_logs_nothing(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _write_customers(tmp_path)
+
+    with caplog.at_level(logging.WARNING, logger="evals.profiles"):
+        read_segments(tmp_path, ["CLI-A"])
+
+    assert "case_segments_unavailable" not in caplog.text
 
 
 def test_read_segments_for_no_customers_returns_nothing(tmp_path: Path) -> None:

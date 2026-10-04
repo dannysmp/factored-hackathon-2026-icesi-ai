@@ -19,6 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import duckdb
 import psycopg
 import pytest
 from pydantic import SecretStr
@@ -381,14 +382,26 @@ def test_full_gives_the_report_each_cases_customer_profile(
 
     text = report_path.read_text(encoding="utf-8")
     assert seen["dsn"] == "postgresql://unused"
-    assert seen["silver_dir"] == Path("data/silver")
+    silver_dir = seen["silver_dir"]
+    assert isinstance(silver_dir, Path)
+    assert silver_dir.is_absolute()
+    assert silver_dir == Path(evals.cli.__file__).resolve().parents[1] / "data" / "silver"
     assert "| country | MX | 1 |" in text
     assert "| segment | Plus | 1 |" in text
     assert "could not be looked up" not in text
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        psycopg.OperationalError("store unreachable"),
+        duckdb.IOException("cleaned table unreadable"),
+        ConfigError("DATABASE_URL is not set"),
+    ],
+    ids=["store", "cleaned-table", "settings"],
+)
 def test_full_still_writes_the_report_when_the_profile_lookup_fails(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: Exception
 ) -> None:
     _patch_full_report_dependencies(
         monkeypatch,
@@ -400,7 +413,7 @@ def test_full_still_writes_the_report_when_the_profile_lookup_fails(
     def _unreachable(
         dsn: str, cases: Sequence[Case], *, silver_dir: Path
     ) -> dict[str, CaseProfile]:
-        raise psycopg.OperationalError("store unreachable")
+        raise failure
 
     monkeypatch.setattr(evals.cli, "load_case_profiles", _unreachable)
     report_path = tmp_path / "evaluation.md"

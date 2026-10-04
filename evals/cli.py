@@ -145,7 +145,7 @@ logger = logging.getLogger(__name__)
 _SYSTEMS = ("P", "B0", "B1")
 
 #: Where the data pipeline writes its cleaned tables; the customer segment is read from there.
-_SILVER_DIR = Path("data/silver")
+_SILVER_DIR = Path(__file__).resolve().parents[1] / "data" / "silver"
 
 # The bank's operating zone (app.domain.calendar.BANK_ZONE): a fixed UTC-5 offset, stated here as
 # the descriptive label the report's own text carries, since Bogotá has had no daylight-saving

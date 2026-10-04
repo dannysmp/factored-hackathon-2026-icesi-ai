@@ -38,6 +38,7 @@ held during the run.
 from __future__ import annotations
 
 # Standard libraries
+import logging  # The unavailable-table warning
 from collections.abc import Collection, Sequence  # Parameter types
 from pathlib import Path  # The pipeline's output location
 
@@ -49,6 +50,8 @@ import psycopg  # Reads the serving store
 from evals.fairness import CaseProfile  # The profile record
 from evals.models import Case  # The golden case: seed_ref
 from evals.runner.seed_resolution import resolve_customer_id  # seed_ref -> customer id
+
+logger = logging.getLogger(__name__)
 
 _COUNTRY_CODES = {"México": "MX", "Colombia": "CO", "Argentina": "AR"}
 
@@ -64,7 +67,10 @@ def read_segments(silver_dir: Path, customer_ids: Collection[str]) -> dict[str, 
     An absent table, or a customer absent from it, yields no entry.
     """
     path = silver_dir / "silver" / "customers.parquet"
-    if not path.is_file() or not customer_ids:
+    if not customer_ids:
+        return {}
+    if not path.is_file():
+        logger.warning("case_segments_unavailable path=%s", path)
         return {}
     connection = duckdb.connect()
     try:

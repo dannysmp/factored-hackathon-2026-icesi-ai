@@ -80,6 +80,7 @@ from typing import Literal
 
 # Local modules
 from evals.fairness import (
+    CASE_MIX_MIN_FAILURES,
     SMALL_SAMPLE_THRESHOLD,
     CaseProfile,
     Disparity,
@@ -493,25 +494,83 @@ def _fmt_slice_metric(metric: Metric) -> str:
     return f"{metric.value:.3f} (n={metric.denominator})"
 
 
+def _category_counts(counts: Sequence[tuple[str, int]]) -> str:
+    return ", ".join(f"{category} {count}" for category, count in counts)
+
+
 def _disparity_note(disparity: Disparity) -> str:
+    small = (
+        f" Small sample (fewer than {SMALL_SAMPLE_THRESHOLD} in-scope cases)."
+        if disparity.small_sample
+        else ""
+    )
+    if not disparity.below_comparison:
+        return (
+            f"- **{disparity.dimension}: {disparity.label}.** Correct-outcome rate "
+            f"{disparity.rate:.3f} (n={disparity.in_scope}) against "
+            f"{disparity.comparison_rate:.3f} (n={disparity.comparison_in_scope}) for the rest of "
+            "the dimension: above the rest, with non-overlapping 95 % intervals. The difference "
+            f"is the rest of the dimension's shortfall, not a failure of this slice.{small}"
+        )
     head = (
         f"- **{disparity.dimension}: {disparity.label}.** Correct-outcome rate "
         f"{disparity.rate:.3f} (n={disparity.in_scope}) against {disparity.comparison_rate:.3f} "
-        f"(n={disparity.comparison_in_scope}) for the rest of the dimension; the 95 % intervals "
-        "do not overlap."
+        f"(n={disparity.comparison_in_scope}) for the rest of the dimension: below the rest, "
+        f"with non-overlapping 95 % intervals.{small}"
     )
-    if not disparity.failing_categories:
-        return (
-            f"{head} This slice has no failing case; the gap is the shortfall of the rest of "
-            "the dimension, which its own flags list."
+    failing = (
+        f" Wrong outcome: {', '.join(disparity.failing_case_ids)}."
+        if disparity.failing_case_ids
+        else ""
+    )
+    errored = (
+        f" Could not run or be scored: {', '.join(disparity.errored_case_ids)}."
+        if disparity.errored_case_ids
+        else ""
+    )
+    by_category = (
+        f" Failing by category: {_category_counts(disparity.failing_categories)}; the slice's "
+        f"in-scope cases by category: {_category_counts(disparity.slice_categories)}."
+    )
+    concentrated = disparity.concentrated_category()
+    if concentrated is not None:
+        explanation = (
+            f" The failures are concentrated in {concentrated} cases out of proportion to their "
+            "share of the slice, so the gap may follow the case mix; re-run the slice with "
+            "category-matched cases before attributing it to the slice."
         )
-    mix = ", ".join(f"{category} {count}" for category, count in disparity.failing_categories)
-    dominant = max(disparity.failing_categories, key=lambda item: item[1])[0]
+    elif disparity.failure_count < CASE_MIX_MIN_FAILURES:
+        explanation = (
+            f" Fewer than {CASE_MIX_MIN_FAILURES} failing cases are too few to tell whether they "
+            "cluster in a category; the gap is an open investigation."
+        )
+    else:
+        explanation = (
+            " The failures follow the slice's own category mix, so the case mix does not explain "
+            "the gap; it is an open investigation, not a conclusion."
+        )
+    return f"{head}{failing}{errored}{by_category}{explanation}"
+
+
+def _unavailable_notice(profiles: Mapping[str, CaseProfile] | None) -> str:
+    """The sentence naming a profile dimension no case could be given, or ``""``."""
+    if profiles is None:
+        missing = "Country and segment"
+    else:
+        absent = [
+            name
+            for name, found in (
+                ("Country", any(p.country for p in profiles.values())),
+                ("Segment", any(p.segment for p in profiles.values())),
+            )
+            if not found
+        ]
+        if not absent:
+            return ""
+        missing = " and ".join(absent)
     return (
-        f"{head} Failing cases: {', '.join(disparity.failing_case_ids)} ({mix}). Hypothesis: the "
-        f"gap follows the case mix (failures concentrate in {dominant} cases) rather than the "
-        f"{disparity.dimension} itself. Follow-up: re-run the slice with category-matched cases "
-        "before attributing the gap to the slice."
+        f"\n\n{missing} could not be looked up for this run; those cases are in the unknown "
+        "slice, so that dimension was not compared."
     )
 
 
@@ -559,16 +618,14 @@ def _fairness_section(report: EvaluationReport) -> str:
         "when a slice holds more cases that should go to a person. Only correct outcome drives "
         "the disparity check."
     )
-    unavailable = (
-        ""
-        if report.case_profiles is not None
-        else "\n\nCountry and segment could not be looked up for this run; those cases are "
-        "in the unknown slice."
-    )
+    unavailable = _unavailable_notice(report.case_profiles)
     if analysis.disparities:
         notes = "\n".join(_disparity_note(d) for d in analysis.disparities)
         verdict = (
-            "**Disparities beyond sampling noise, each with an investigation note:**\n\n" + notes
+            "**Slices whose 95 % interval does not overlap the rest of their dimension, each with "
+            "an investigation note.** About a dozen comparisons are made, so about one flag in "
+            "twenty is expected from chance alone even when every group is treated the same.\n\n"
+            + notes
         )
     else:
         verdict = (
