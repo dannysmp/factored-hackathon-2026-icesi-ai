@@ -10,8 +10,8 @@ This checklist states each obligation of a release and names the evidence a revi
 | The full history has no secret or private record | The history scan report from the release commit, and the last diff read by a person | [ ] |
 | No credential, key or environment file is tracked | The scan report; a listing of tracked files | [ ] |
 | The README leads from the problem to a running demonstration without a question | A person who did not write it follows it from a clean checkout | [ ] |
-| Every model card, the limitations and remaining-work report and the demonstration scripts are present | [The model card](../models/model_card.json), [the limitations and remaining-work report](limitations.md) and [the demonstration scripts](demo-scripts.md), each at the release commit | [ ] |
-| Inputs are labeled real, de-identified, synthetic or team-generated | [The data-use section of the README](../README.md#where-each-input-comes-from) | [ ] |
+| Every model card, the limitations and remaining-work report and the demonstration scripts are present | [The model card](../models/model_card.json), [the limitations and remaining-work report](limitations.md) and [the demonstration scripts](demo-scripts.md), each at the release commit | [x] |
+| Inputs are labeled real, de-identified, synthetic or team-generated | [The data-use section of the README](../README.md#where-each-input-comes-from) | [x] |
 | No card number appears in any request to an external model; a document number typed into free text is not detected, and that exception is disclosed | [The request-capture test](../tests/test_request_capture_pii.py) for the understanding step's request, and [the security posture section of the limitations report](limitations.md#security-posture) for the exception | [ ] |
 
 ## Deployed system
@@ -53,7 +53,7 @@ Every requirement is checked with a link to its evidence.
 |---|---|---|
 | Working system for a banking environment | The deployed link and the demonstration paths | [ ] |
 | Focused workflow, end to end | The scope statement; the demonstration paths | [ ] |
-| Data-backed problem selection | [The workflow analysis report](../reports/workflow-analysis.md) and `make analyze`, the command that regenerates it | [ ] |
+| Data-backed problem selection | [The workflow analysis report](../reports/workflow-analysis.md) and `make analyze`, the command that regenerates it | [x] |
 | Baseline and improvement on the same workload | The evaluation report, proposed system against both baselines | [ ] |
 | Privacy, explainability, fairness, reliability, scalability by design | The security and privacy, reliability and capacity sections; [the ASVS Level 1 checklist](asvs-level1-checklist.md); the disparity analysis in the evaluation report | [ ] |
 | Explicit trade-offs | The decision records; the evaluation report | [ ] |

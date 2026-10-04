@@ -42,6 +42,9 @@ export type TicketStatus = z.infer<typeof TicketStatusSchema>
 /** `ReferenceDateOrigin` (contracts/service_v1/api.py). */
 export const ReferenceDateOriginSchema = z.enum(['setting', 'seed', 'system'])
 
+/** The id an agent signs in with (`_AGENT_ID_PATTERN`, contracts/service_v1/console.py). */
+const AgentIdPattern = /^[A-Za-z0-9_-]{1,20}$/
+
 export const QueueItemSchema = z
   .object({
     ticket_ref: z.string().regex(TicketRefPattern),
@@ -58,6 +61,8 @@ export const QueueItemSchema = z
     promised_contact_by: z.iso.date(),
     age_days: z.number().int().min(0),
     priority: z.boolean(),
+    // Always present on the wire (null while unclaimed).
+    claimed_by: z.string().regex(AgentIdPattern).nullable().default(null),
   })
   .strict()
 export type QueueItem = z.infer<typeof QueueItemSchema>
@@ -288,12 +293,23 @@ export const TimelineEntrySchema = z
   .strict()
 export type TimelineEntry = z.infer<typeof TimelineEntrySchema>
 
+/** `Note` (contracts/service_v1/console.py) — one agent's note on a ticket, never edited. */
+export const NoteSchema = z
+  .object({
+    agent_id: z.string().regex(AgentIdPattern),
+    note_text: z.string().min(1).max(500),
+    created_at: z.iso.datetime(),
+  })
+  .strict()
+export type Note = z.infer<typeof NoteSchema>
+
 /** `TicketDetail` (contracts/service_v1/console.py). */
 export const TicketDetailSchema = z
   .object({
     item: QueueItemSchema,
     packet: HandoffPacketSchema,
     timeline: z.array(TimelineEntrySchema),
+    notes: z.array(NoteSchema).default([]),
   })
   .strict()
   // `_row_describes_the_packet` (contracts/service_v1/console.py): the queue row and the packet
