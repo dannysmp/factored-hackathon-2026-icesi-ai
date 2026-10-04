@@ -393,7 +393,7 @@ def test_no_timeline_entries_yields_an_empty_tuple(
 def test_a_ticket_that_has_left_the_open_queue_still_answers(
     outbox: PostgresHandoffOutbox, reader: PostgresTicketDetail, dsn: str
 ) -> None:
-    """AC-E10-08: an already-selected ticket must still resolve even after it leaves the open
+    """An already-selected ticket must still resolve even after it leaves the open
     queue (resolved, rejected) — this reader must not silently mirror ``list_tickets``' own
     exclusion of closed statuses."""
     ticket_ref = _record(outbox, _content(), turn_id="t-1")

@@ -1,26 +1,27 @@
 """
 Sign-In Audit Store
-====================
+===================
 
 Overview
 --------
 Writes one ``SignInAuditRecord`` (``app.security.signin_audit``) as one row of ``signin_audit``.
-The table refuses ``UPDATE``, ``DELETE`` and ``TRUNCATE`` at the database (migration 0006, reusing
-0003's ``audit_log_forbid_mutation`` trigger function): this module only appends.
+The table refuses ``UPDATE``, ``DELETE`` and ``TRUNCATE`` at the database (it reuses the
+``audit_log_forbid_mutation`` trigger function that protects ``audit_log``): this module only
+appends.
 
 Scope
 -----
-In: the one write, ``SignInAuditSink.record``.
-Out: creating the table (``app.persistence.migrate``), reading attempts back (not needed yet).
+In: the one write, ``PostgresSignInAuditSink.record``.
+Out: creating the table (``app.persistence.migrate``), reading attempts back.
 
 Design Principles
-------------------
+-----------------
 - Fails closed: a write that cannot complete raises; nothing here swallows a ``psycopg.Error``
   into a dropped entry.
-- One connection per call, matching this codebase's other persistence modules; no pooling yet.
+- One connection per call, matching the other persistence modules; there is no pooling.
 
 Runtime Contract
------------------
+----------------
 ``PostgresSignInAuditSink(dsn).record(entry) -> None``
 """
 
@@ -46,10 +47,11 @@ class PostgresSignInAuditSink:
     """Writes every ``SignInAuditRecord`` as one append-only row."""
 
     def __init__(self, dsn: str) -> None:
+        """Keep the DSN; a connection is opened per ``record`` call."""
         self._dsn = dsn
 
     def record(self, entry: SignInAuditRecord) -> None:
-        """Append ``entry``.
+        """Append ``entry`` as one ``signin_audit`` row and commit it before returning.
 
         Raises
         ------
