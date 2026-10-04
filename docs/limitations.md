@@ -97,13 +97,18 @@ results still to come say so and name the command that completes them.
 
 ## Deployment
 
-- **A full deployment from an empty account is recorded only once its run records are filled.**
-  The procedure is written in [`infra/deployment-runbook.md`](../infra/deployment-runbook.md), and
-  each run is recorded in the run table at its end. Until both clean-account runs are recorded, the
-  complete stack with both sign-ins has not been shown to reproduce from nothing.
-  So far one persisting deployment onto an already-provisioned account is recorded; it reproduces
-  the stack and the dashboard, but not the account provisioning, so no clean-account reproduction
-  has been shown.
+- **A deployment from a new account has not been shown to reproduce.** The provisioning scripts
+  are idempotent and the procedure is written in
+  [`infra/deployment-runbook.md`](../infra/deployment-runbook.md), but no run starting from an
+  empty account is recorded. One persisting deployment onto an already-provisioned account is
+  recorded in the runbook's run table; it reproduces the stack and the dashboard, not the account
+  provisioning.
+- **The deployed data has no backup and no restore.** The data on the host is synthetic and can be
+  rebuilt with one command, `python -m app.persistence.load_seed`, which every run of
+  `infra/scripts/05-deploy.sh` also performs. That load truncates and reloads the operational
+  tables, so any case filed on the host is lost by it, and nothing preserves a case otherwise: there
+  is no scheduled dump of the database and no restore procedure. The deployed system makes no
+  claim of data durability.
 - **Both demonstration sign-ins are gated by an access code kept out of the repository.** Hiding
   the code is not, by itself, a security boundary; it is a demonstration convenience layered on
   top of real authentication and authorization, which are enforced regardless of whether the code
