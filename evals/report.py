@@ -310,6 +310,7 @@ def judge_validation_section(
     agreement: tuple[DimensionAgreement, ...],
     provenance: Literal["team_generated_synthetic", "human"],
 ) -> str:
+    """The text of the report's judge-validation section for the given sample provenance."""
     if provenance != "human":
         return (
             "**Pending H4.** The judge-validation sample used to produce this section is "

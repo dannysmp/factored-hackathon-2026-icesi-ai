@@ -10,7 +10,10 @@ never the real, private returned sheets.
 from __future__ import annotations
 
 # Standard libraries
+import logging
+import shutil
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 # Third-party libraries
@@ -19,12 +22,16 @@ import pytest
 # Local modules
 from app.llm.client import FakeLlm
 from contracts.service_v1.envelope import Intent
+from evals import h4_judge_validation
 from evals.h4_judge_validation import (
     RaterCaseRow,
     _as_rater_scores,
+    _check_roles,
     _check_same_prepared_packet,
     apply_real_judge_validation,
     load_rater_sheet,
+    main,
+    regenerate_report,
     score_with_judge,
 )
 from evals.judge import LlmJudge
@@ -116,7 +123,7 @@ def test_check_same_prepared_packet_passes_for_the_real_fixture_pair() -> None:
 def test_check_same_prepared_packet_raises_on_mismatched_facts() -> None:
     rater1 = (_row(case_id="J-01", facts_and_sources="Case CASE-001 filed."),)
     rater2 = (_row(case_id="J-01", facts_and_sources="Case CASE-999 filed instead."),)
-    with pytest.raises(ValueError, match="disagree on system_replies/facts_and_sources"):
+    with pytest.raises(ValueError, match="disagree on"):
         _check_same_prepared_packet(rater1, rater2)
 
 
@@ -294,3 +301,245 @@ def test_apply_real_judge_validation_replaces_section_7_and_drops_the_stale_bull
 def test_apply_real_judge_validation_raises_on_an_unrecognized_report_shape() -> None:
     with pytest.raises(ValueError, match="cannot recognize"):
         apply_real_judge_validation("not a real report at all", agreement=())
+
+
+def test_apply_real_judge_validation_refuses_section_8_missing_or_out_of_order() -> None:
+    text = render_markdown(_minimal_report())
+    without_8 = text.replace("## 8. Learned components", "## Learned components")
+    with pytest.raises(ValueError, match="cannot recognize"):
+        apply_real_judge_validation(without_8, agreement=())
+
+    moved = text.replace("\n\n## 8. Learned components", "\n\n## 8b. Learned components")
+    out_of_order = moved.replace(
+        "## 7. Judge validation", "## 8. Learned components\n\nx\n\n## 7. Judge validation"
+    )
+    with pytest.raises(ValueError, match="cannot recognize"):
+        apply_real_judge_validation(out_of_order, agreement=())
+
+
+def test_apply_real_judge_validation_drops_the_bullet_without_a_trailing_newline() -> None:
+    text = render_markdown(_minimal_report())
+    assert text.endswith("\n")
+    bullet = "- The judge-validation section is pending the real H4 human sample; see that "
+    assert bullet in text
+    # The bullet is the last line of the report, with no newline after it.
+    head = text.split(bullet)[0]
+    trimmed = head + bullet + "section for detail."
+    assert "pending the real H4 human sample" not in apply_real_judge_validation(trimmed, ())
+
+
+# -----------------------------------------------------------------------------
+# Sheet parsing and integrity
+# -----------------------------------------------------------------------------
+
+_HEADER = (
+    "case_id,language,category,user_turns,system_replies,facts_and_sources,role,"
+    "grounding,language_quality,clarification,comment\n"
+)
+
+
+def _write_sheet(tmp_path: Path, body: str, *, header: str = _HEADER, name: str = "s.csv") -> Path:
+    path = tmp_path / name
+    path.write_text(header + body, encoding="utf-8")
+    return path
+
+
+def test_load_rater_sheet_rejects_a_non_integer_score(tmp_path: Path) -> None:
+    sheet = _write_sheet(tmp_path, "J-1,es,normal,x,y,z,Rater 1,two,2,NA,\n")
+    with pytest.raises(ValueError, match="grounding must be 0, 1 or 2"):
+        load_rater_sheet(sheet)
+
+
+@pytest.mark.parametrize("marker", ["NA", "na", "Na", "", "  "])
+def test_clarification_not_applicable_is_none_never_zero(tmp_path: Path, marker: str) -> None:
+    sheet = _write_sheet(tmp_path, f"J-1,es,normal,x,y,z,Rater 1,2,2,{marker},\n")
+    assert load_rater_sheet(sheet)[0].clarification is None
+
+
+def test_clarification_zero_is_a_score(tmp_path: Path) -> None:
+    sheet = _write_sheet(tmp_path, "J-1,es,normal,x,y,z,Rater 1,2,2,0,\n")
+    assert load_rater_sheet(sheet)[0].clarification == 0
+
+
+def test_clarification_out_of_range_is_rejected(tmp_path: Path) -> None:
+    sheet = _write_sheet(tmp_path, "J-1,es,normal,x,y,z,Rater 1,2,2,3,\n")
+    with pytest.raises(ValueError, match="clarification must be 0, 1 or 2"):
+        load_rater_sheet(sheet)
+
+
+def test_load_rater_sheet_accepts_a_byte_order_mark(tmp_path: Path) -> None:
+    sheet = tmp_path / "bom.csv"
+    sheet.write_bytes(
+        b"\xef\xbb\xbf" + (_HEADER + "J-1,es,normal,x,y,z,Rater 1,2,2,NA,\n").encode("utf-8")
+    )
+    assert load_rater_sheet(sheet)[0].case_id == "J-1"
+
+
+def test_load_rater_sheet_rejects_a_semicolon_delimited_file(tmp_path: Path) -> None:
+    sheet = _write_sheet(
+        tmp_path, "J-1;es;normal;x;y;z;Rater 1;2;2;NA;\n", header=_HEADER.replace(",", ";")
+    )
+    with pytest.raises(ValueError, match="missing column"):
+        load_rater_sheet(sheet)
+
+
+def test_load_rater_sheet_rejects_a_short_row(tmp_path: Path) -> None:
+    sheet = _write_sheet(tmp_path, "J-1,es,normal,x,y,z,Rater 1,2\n")
+    with pytest.raises(ValueError, match="does not have 11 columns"):
+        load_rater_sheet(sheet)
+
+
+def test_load_rater_sheet_rejects_an_unknown_role(tmp_path: Path) -> None:
+    sheet = _write_sheet(tmp_path, "J-1,es,normal,x,y,z,Rater 3,2,2,NA,\n")
+    with pytest.raises(ValueError, match="role must be one of"):
+        load_rater_sheet(sheet)
+
+
+def test_load_rater_sheet_rejects_duplicate_case_ids(tmp_path: Path) -> None:
+    sheet = _write_sheet(
+        tmp_path, "J-1,es,normal,x,y,z,Rater 1,2,2,NA,\nJ-1,es,normal,x,y,z,Rater 1,1,1,NA,\n"
+    )
+    with pytest.raises(ValueError, match="appears more than once"):
+        load_rater_sheet(sheet)
+
+
+def test_load_rater_sheet_rejects_a_sheet_with_no_rows(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="no rows"):
+        load_rater_sheet(_write_sheet(tmp_path, ""))
+
+
+def test_a_bare_pipe_inside_a_turn_is_not_a_turn_boundary(tmp_path: Path) -> None:
+    sheet = _write_sheet(tmp_path, 'J-1,es,normal,"a|b | c",y,z,Rater 1,2,2,NA,\n')
+    assert load_rater_sheet(sheet)[0].user_turns == ("a|b", "c")
+
+
+@pytest.mark.parametrize(
+    "column", ["language", "category", "user_turns", "system_replies", "facts_and_sources"]
+)
+def test_packet_check_compares_every_shared_column(column: str) -> None:
+    value: Any = ("different",) if column in ("user_turns", "system_replies") else "different"
+    with pytest.raises(ValueError, match="disagree on"):
+        _check_same_prepared_packet((_row(),), (_row(**{column: value}),))
+
+
+def test_roles_check_refuses_the_same_sheet_passed_twice() -> None:
+    rows = load_rater_sheet(_RATER_1_CSV)
+    with pytest.raises(ValueError, match="Rater 2 sheet carries rows with role"):
+        _check_roles(rows, rows)
+
+
+def test_roles_check_passes_for_the_fixture_pair() -> None:
+    _check_roles(load_rater_sheet(_RATER_1_CSV), load_rater_sheet(_RATER_2_CSV))
+
+
+# -----------------------------------------------------------------------------
+# regenerate_report and main
+# -----------------------------------------------------------------------------
+
+_JUDGE_RESPONSES: list[dict[str, Any]] = [
+    {"grounding": 2, "language_quality": 2, "rationale": "ok"},
+    {"grounding": 1, "language_quality": 1, "rationale": "ok"},
+    {"grounding": 2, "language_quality": 2, "clarification": 2, "rationale": "ok"},
+]
+
+
+def _stage(tmp_path: Path) -> tuple[Path, Path, Path]:
+    rater1 = tmp_path / "r1.csv"
+    rater2 = tmp_path / "r2.csv"
+    shutil.copy(_RATER_1_CSV, rater1)
+    shutil.copy(_RATER_2_CSV, rater2)
+    report = tmp_path / "evaluation.md"
+    report.write_text(render_markdown(_minimal_report()), encoding="utf-8")
+    return rater1, rater2, report
+
+
+def test_regenerate_report_patches_the_file_logs_agreement_and_calls_the_judge_per_case(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    rater1, rater2, report = _stage(tmp_path)
+    llm = FakeLlm(responses=_JUDGE_RESPONSES)
+
+    with caplog.at_level(logging.INFO, logger="evals.h4_judge_validation"):
+        agreement = regenerate_report(rater1, rater2, report, LlmJudge(llm, model=_MODEL))
+
+    expected = render_markdown(
+        _minimal_report(judge_validation=agreement, judge_validation_provenance="human")
+    )
+    assert report.read_text(encoding="utf-8") == expected
+    assert len(llm.requests) == 3
+    assert not list(tmp_path.glob(".evaluation.md.*"))  # no temporary file left behind
+    assert "judge_validation_report_updated" in caplog.text
+    assert "dimension=language_quality" in caplog.text
+    assert "demoted=True" in caplog.text
+    assert "CASE-001" not in caplog.text  # no sheet text in the logs
+    assert "No reconozco" not in caplog.text
+
+
+def test_regenerate_report_leaves_an_unrecognized_report_untouched_before_any_judge_call(
+    tmp_path: Path,
+) -> None:
+    rater1, rater2, report = _stage(tmp_path)
+    report.write_text("not a real report", encoding="utf-8")
+    llm = FakeLlm(responses=_JUDGE_RESPONSES)
+
+    with pytest.raises(ValueError, match="cannot recognize"):
+        regenerate_report(rater1, rater2, report, LlmJudge(llm, model=_MODEL))
+
+    assert report.read_text(encoding="utf-8") == "not a real report"
+    assert llm.requests == []
+
+
+def test_regenerate_report_refuses_the_same_sheet_twice_before_any_judge_call(
+    tmp_path: Path,
+) -> None:
+    rater1, _, report = _stage(tmp_path)
+    before = report.read_text(encoding="utf-8")
+    llm = FakeLlm(responses=_JUDGE_RESPONSES)
+
+    with pytest.raises(ValueError, match="Rater 2 sheet"):
+        regenerate_report(rater1, rater1, report, LlmJudge(llm, model=_MODEL))
+
+    assert llm.requests == []
+    assert report.read_text(encoding="utf-8") == before
+
+
+def test_main_wires_the_settings_judge_and_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rater1, rater2, report = _stage(tmp_path)
+    llm = FakeLlm(responses=_JUDGE_RESPONSES)
+    monkeypatch.setattr(
+        h4_judge_validation,
+        "load_settings",
+        lambda: SimpleNamespace(require_anthropic_key=lambda: "test-key", judge_model=_MODEL),
+    )
+    monkeypatch.setattr(h4_judge_validation, "AnthropicLlmClient", lambda key: llm)
+
+    status = main(["--rater1", str(rater1), "--rater2", str(rater2), "--report", str(report)])
+
+    assert status == 0
+    assert len(llm.requests) == 3
+    assert "Judge-validation sample provenance: `human`." in report.read_text(encoding="utf-8")
+
+
+def test_main_requires_both_rater_paths() -> None:
+    with pytest.raises(SystemExit):
+        main(["--report", "x.md"])
+
+
+def test_a_failed_replace_leaves_the_report_and_the_directory_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "evaluation.md"
+    target.write_text("original", encoding="utf-8")
+
+    def refuse(self: Path, destination: Path) -> Path:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "replace", refuse)
+    with pytest.raises(OSError, match="disk full"):
+        h4_judge_validation._write_atomically(target, "new")
+
+    monkeypatch.undo()
+    assert target.read_text(encoding="utf-8") == "original"
+    assert [p.name for p in tmp_path.iterdir()] == ["evaluation.md"]

@@ -13,24 +13,25 @@ the synthetic placeholder.
 
 Scope
 -----
-In: parsing the returned sheet's own columns (``plan/product/human-tasks/H4-judge-rubric.md``'s
-schema), calling the real judge once per case over the sheet's own ``system_replies``/
-``facts_and_sources`` (already captured when the sheet was prepared — this module never re-runs a
-system to get them), and patching the report.
+In: parsing the returned sheets' columns, checking the two sheets describe the same prepared
+packet, calling the real judge once per case over the sheet's own ``system_replies``/
+``facts_and_sources`` (already captured when the sheets were prepared — this module never re-runs
+a system to get them), and patching the report.
 Out: computing agreement itself (``evals.judge_validation``, unchanged); the judge's own scoring
-call (``evals.judge.LlmJudge``, unchanged); the disagreement-analysis writeup
-(``H4-disagreement-analysis.md``, a person's own job per the rubric's own "After both files are
-returned" section); running the systems that produced ``system_replies``/``facts_and_sources`` in
-the first place.
+call (``evals.judge.LlmJudge``, unchanged); the written analysis of where raters and judge
+disagree, which stays a person's job; running the systems that produced
+``system_replies``/``facts_and_sources`` in the first place.
 
 Design Principles
 -----------------
-- **The two rater sheets are the only source of ``system_replies``/``facts_and_sources``.** The
-  rubric's own "Status" note is explicit: those two columns are filled once, when the sheet is
-  prepared, from a real run's captured output — not re-derived here, and not assumed identical
-  across every row without checking (a mismatch between the two returned sheets on those columns
-  means the sheets were not built from the same prepared packet, and this module refuses rather
-  than silently trusting one file over the other).
+- **The two rater sheets are the only source of ``system_replies``/``facts_and_sources``.** Those
+  columns are filled once, when the sheets are prepared, from a real run's captured output — not
+  re-derived here, and not assumed identical across every row without checking (a mismatch
+  between the two returned sheets on any shared column means the sheets were not built from the
+  same prepared packet, and this module refuses rather than silently trusting one file over the
+  other).
+- **Every refusal happens before the first paid judge call.** Sheet integrity, rater roles and
+  the report's shape are all checked up front.
 - **One judge call per case, never a batch call.** ``evals.judge.LlmJudge.score`` is already built
   for exactly one transcript at a time; this module does not add a second call shape for a sample
   this small (50 cases).
@@ -55,14 +56,14 @@ grounding, language_quality, clarification, comment)``.
 ``LlmJudge``.
 ``apply_real_judge_validation(report_markdown, agreement) -> str``: the report text with section 7
 and the stale limitations bullet replaced for a ``human``-provenance ``agreement``.
+``regenerate_report(rater1_path, rater2_path, report_path, judge)``: the whole orchestration with
+the judge injected, so it is testable without a model; the report file is replaced atomically.
 ``main(argv) -> int``: ``python -m evals.h4_judge_validation --rater1 PATH --rater2 PATH [--report
-PATH] [--model MODEL]``; PATH defaults match the real returned-file locations
-(``plan/product/human-tasks/returned/H4-case-sheet-Rater{1,2}.csv``) and the committed report
-(``reports/evaluation.md``).
+PATH]``; ``--report`` defaults to the committed ``reports/evaluation.md``.
 
 Limitations
 -----------
-Assumes both sheets already carry the same ``system_replies``/``facts_and_sources`` per case
+Assumes both sheets already carry the same language, category, turns, replies and facts per case
 (checked, not trusted); a genuinely different pair of prepared sheets is a data problem this
 module reports rather than silently resolves by picking one side.
 """
@@ -73,27 +74,54 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
+import os
+import re
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import get_args
 
 # Local modules
 from app.config import load_settings
 from app.llm.anthropic_client import AnthropicLlmClient
 from evals.judge import JudgeVerdict, LlmJudge
-from evals.judge_validation import DimensionAgreement, RaterScore, compute_agreement
+from evals.judge_validation import DimensionAgreement, RaterScore, Role, compute_agreement
 from evals.report import judge_validation_section
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_RATER_1 = Path("plan/product/human-tasks/returned/H4-case-sheet-Rater1.csv")
-_DEFAULT_RATER_2 = Path("plan/product/human-tasks/returned/H4-case-sheet-Rater2.csv")
 _DEFAULT_REPORT = Path("reports/evaluation.md")
 
-_PENDING_LIMITATIONS_BULLET = (
-    "- The judge-validation section is pending the real H4 human sample; see that "
-    "section for detail.\n"
+_PENDING_LIMITATIONS_BULLET = re.compile(
+    r"^- The judge-validation section is pending the real H4 human sample; see that "
+    r"section for detail\.\n?",
+    re.MULTILINE,
 )
+
+_SECTION_7_START = "## 7. Judge validation\n\n"
+_SECTION_8_BOUNDARY = "\n\n## 8."
+
+_TURN_SEPARATOR = " | "
+
+_COLUMNS = (
+    "case_id",
+    "language",
+    "category",
+    "user_turns",
+    "system_replies",
+    "facts_and_sources",
+    "role",
+    "grounding",
+    "language_quality",
+    "clarification",
+    "comment",
+)
+
+# The columns both sheets must carry identically: everything the raters were shown.
+_SHARED_COLUMNS = ("language", "category", "user_turns", "system_replies", "facts_and_sources")
+
+_ROLES: tuple[str, ...] = get_args(Role)
 
 # The rubric's closed 0-2 scale (evals.judge's own _MIN_SCORE/_MAX_SCORE, restated here since a
 # CSV column is parsed from plain text, not validated by a pydantic field like the judge's own
@@ -112,7 +140,7 @@ class RaterCaseRow:
     user_turns: tuple[str, ...]
     system_replies: tuple[str, ...]
     facts_and_sources: str
-    role: str
+    role: Role
     grounding: int
     language_quality: int
     clarification: int | None
@@ -121,7 +149,7 @@ class RaterCaseRow:
 
 def _split_turns(text: str) -> tuple[str, ...]:
     """``evals.golden.case_sheet``'s own ``" | "`` join, undone."""
-    return tuple(part.strip() for part in text.split("|")) if text.strip() else ()
+    return tuple(part.strip() for part in text.split(_TURN_SEPARATOR)) if text.strip() else ()
 
 
 def _parse_score(value: str, *, column: str, case_id: str) -> int:
@@ -147,13 +175,29 @@ def load_rater_sheet(path: Path) -> tuple[RaterCaseRow, ...]:
     Raises
     ------
     ValueError
-        A row's ``grounding``/``language_quality`` is not filled with 0, 1 or 2, or
-        ``clarification`` is filled with something other than 0, 1, 2 or ``NA``/empty.
+        The sheet lacks a column, has no rows, repeats a case id, has a short or over-long row,
+        carries a role other than ``Rater 1``/``Rater 2``, or has a ``grounding``/
+        ``language_quality`` that is not 0, 1 or 2, or a ``clarification`` that is anything but
+        0, 1, 2 or ``NA``/empty.
     """
-    rows = []
-    with path.open(encoding="utf-8", newline="") as handle:
-        for record in csv.DictReader(handle):
+    rows: list[RaterCaseRow] = []
+    seen: set[str] = set()
+    # utf-8-sig: a spreadsheet export often prefixes the file with a byte-order mark.
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        missing = [column for column in _COLUMNS if column not in (reader.fieldnames or ())]
+        if missing:
+            raise ValueError(f"{path.name}: missing column(s) {missing}")
+        for line, record in enumerate(reader, start=2):
+            if None in record or any(record[column] is None for column in _COLUMNS):
+                raise ValueError(f"{path.name}: row at line {line} does not have 11 columns")
             case_id = record["case_id"]
+            if case_id in seen:
+                raise ValueError(f"{path.name}: case id {case_id!r} appears more than once")
+            seen.add(case_id)
+            role = record["role"]
+            if role not in _ROLES:
+                raise ValueError(f"{case_id}: role must be one of {_ROLES}, got {role!r}")
             rows.append(
                 RaterCaseRow(
                     case_id=case_id,
@@ -162,7 +206,7 @@ def load_rater_sheet(path: Path) -> tuple[RaterCaseRow, ...]:
                     user_turns=_split_turns(record["user_turns"]),
                     system_replies=_split_turns(record["system_replies"]),
                     facts_and_sources=record["facts_and_sources"],
-                    role=record["role"],
+                    role=role,  # type: ignore[arg-type]  # narrowed to Role by the check above
                     grounding=_parse_score(
                         record["grounding"], column="grounding", case_id=case_id
                     ),
@@ -173,6 +217,8 @@ def load_rater_sheet(path: Path) -> tuple[RaterCaseRow, ...]:
                     comment=record["comment"],
                 )
             )
+    if not rows:
+        raise ValueError(f"{path.name}: the sheet has no rows")
     return tuple(rows)
 
 
@@ -180,7 +226,7 @@ def _as_rater_scores(rows: Sequence[RaterCaseRow]) -> tuple[RaterScore, ...]:
     return tuple(
         RaterScore(
             case_id=row.case_id,
-            role=row.role,  # type: ignore[arg-type]
+            role=row.role,
             grounding=row.grounding,
             language_quality=row.language_quality,
             clarification=row.clarification,
@@ -189,17 +235,32 @@ def _as_rater_scores(rows: Sequence[RaterCaseRow]) -> tuple[RaterScore, ...]:
     )
 
 
-def _check_same_prepared_packet(
-    rater1: Sequence[RaterCaseRow], rater2: Sequence[RaterCaseRow]
-) -> None:
-    """Both sheets must carry identical ``system_replies``/``facts_and_sources`` per case — they
-    were prepared once, together, before either rater saw a copy.
+def _check_roles(rater1: Sequence[RaterCaseRow], rater2: Sequence[RaterCaseRow]) -> None:
+    """The first sheet must be Rater 1's and the second Rater 2's, throughout.
 
     Raises
     ------
     ValueError
-        The two sheets disagree on ``system_replies`` or ``facts_and_sources`` for some case, or
-        do not cover the same set of case ids.
+        A row's role is not the one its sheet's position implies — notably the same file passed
+        twice, which would otherwise report perfect rater-to-rater agreement.
+    """
+    for expected, rows in (("Rater 1", rater1), ("Rater 2", rater2)):
+        wrong = sorted({row.role for row in rows if row.role != expected})
+        if wrong:
+            raise ValueError(f"the {expected} sheet carries rows with role(s) {wrong}")
+
+
+def _check_same_prepared_packet(
+    rater1: Sequence[RaterCaseRow], rater2: Sequence[RaterCaseRow]
+) -> None:
+    """Both sheets must carry identical language, category, turns, replies and facts per case —
+    they were prepared once, together, before either rater saw a copy.
+
+    Raises
+    ------
+    ValueError
+        The two sheets do not cover the same case ids, or disagree on a shared column for some
+        case.
     """
     by_id_1 = {row.case_id: row for row in rater1}
     by_id_2 = {row.case_id: row for row in rater2}
@@ -212,12 +273,13 @@ def _check_same_prepared_packet(
     mismatched = [
         case_id
         for case_id, row1 in by_id_1.items()
-        if (row1.system_replies, row1.facts_and_sources)
-        != (by_id_2[case_id].system_replies, by_id_2[case_id].facts_and_sources)
+        if any(
+            getattr(row1, column) != getattr(by_id_2[case_id], column) for column in _SHARED_COLUMNS
+        )
     ]
     if mismatched:
         raise ValueError(
-            "the two rater sheets disagree on system_replies/facts_and_sources for case(s) "
+            f"the two rater sheets disagree on {'/'.join(_SHARED_COLUMNS)} for case(s) "
             f"{sorted(mismatched)} — they were not prepared from the same packet"
         )
 
@@ -237,6 +299,24 @@ def score_with_judge(rows: Sequence[RaterCaseRow], judge: LlmJudge) -> tuple[Jud
     )
 
 
+def _section_7_bounds(report_markdown: str) -> tuple[int, int]:
+    """Start and end offsets of section 7's body, or ``ValueError`` if the shape is unexpected."""
+    start = report_markdown.find(_SECTION_7_START)
+    if start == -1:
+        raise ValueError(_UNRECOGNIZED_REPORT)
+    body_start = start + len(_SECTION_7_START)
+    end = report_markdown.find(_SECTION_8_BOUNDARY, body_start)
+    if end == -1:
+        raise ValueError(_UNRECOGNIZED_REPORT)
+    return body_start, end
+
+
+_UNRECOGNIZED_REPORT = (
+    "report_markdown does not carry a '## 7. Judge validation' section immediately "
+    "followed by '## 8.' — refusing to patch a report this module cannot recognize"
+)
+
+
 def apply_real_judge_validation(
     report_markdown: str, agreement: tuple[DimensionAgreement, ...]
 ) -> str:
@@ -246,44 +326,49 @@ def apply_real_judge_validation(
     Raises
     ------
     ValueError
-        ``report_markdown`` does not carry a ``## 7. Judge validation`` section immediately
-        followed by ``## 8.`` — the report this module was given does not match the shape
+        ``report_markdown`` does not carry a ``## 7. Judge validation`` section followed by
+        ``## 8.`` — the report this module was given does not match the shape
         ``evals.report.render_markdown`` produces, so patching it would corrupt rather than update.
     """
-    start_marker = "## 7. Judge validation\n\n"
-    end_marker = "\n\n## 8."
-    start = report_markdown.find(start_marker)
-    end = report_markdown.find(end_marker)
-    if start == -1 or end == -1 or end < start:
-        raise ValueError(
-            "report_markdown does not carry a '## 7. Judge validation' section immediately "
-            "followed by '## 8.' — refusing to patch a report this module cannot recognize"
-        )
-    section_start = start + len(start_marker)
+    body_start, end = _section_7_bounds(report_markdown)
     new_section = judge_validation_section(agreement, "human")
-    patched = report_markdown[:section_start] + new_section + report_markdown[end:]
-    return patched.replace(_PENDING_LIMITATIONS_BULLET, "")
+    patched = report_markdown[:body_start] + new_section + report_markdown[end:]
+    return _PENDING_LIMITATIONS_BULLET.sub("", patched)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m evals.h4_judge_validation --rater1 PATH --rater2 PATH [--report PATH]``."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--rater1", type=Path, default=_DEFAULT_RATER_1)
-    parser.add_argument("--rater2", type=Path, default=_DEFAULT_RATER_2)
-    parser.add_argument("--report", type=Path, default=_DEFAULT_REPORT)
-    args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+def _write_atomically(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` so an interruption never leaves a truncated report."""
+    handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(text)
+        Path(temporary).replace(path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
-    rater1_rows = load_rater_sheet(args.rater1)
-    rater2_rows = load_rater_sheet(args.rater2)
+
+def regenerate_report(
+    rater1_path: Path, rater2_path: Path, report_path: Path, judge: LlmJudge
+) -> tuple[DimensionAgreement, ...]:
+    """Score the returned sheets' cases with ``judge`` and patch ``report_path`` in place.
+
+    Every check that can refuse (sheet integrity, roles, packet consistency, report shape) runs
+    before the first judge call, so a refusal never follows paid work.
+
+    Raises
+    ------
+    ValueError
+        Any refusal named above; the report file is left untouched.
+    """
+    rater1_rows = load_rater_sheet(rater1_path)
+    rater2_rows = load_rater_sheet(rater2_path)
+    _check_roles(rater1_rows, rater2_rows)
     _check_same_prepared_packet(rater1_rows, rater2_rows)
+    current = report_path.read_text(encoding="utf-8")
+    _section_7_bounds(current)
 
-    settings = load_settings()
-    judge = LlmJudge(
-        AnthropicLlmClient(settings.require_anthropic_key()), model=settings.judge_model
-    )
     judge_verdicts = score_with_judge(rater1_rows, judge)
-
     agreement = compute_agreement(
         _as_rater_scores(rater1_rows), _as_rater_scores(rater2_rows), judge_verdicts
     )
@@ -297,10 +382,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             entry.rater2_to_judge,
             entry.demoted,
         )
+    _write_atomically(report_path, apply_real_judge_validation(current, agreement))
+    logger.info("judge_validation_report_updated path=%s", report_path)
+    return agreement
 
-    current = args.report.read_text(encoding="utf-8")
-    args.report.write_text(apply_real_judge_validation(current, agreement), encoding="utf-8")
-    logger.info("judge_validation_report_updated path=%s", args.report)
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``python -m evals.h4_judge_validation --rater1 PATH --rater2 PATH [--report PATH]``."""
+    parser = argparse.ArgumentParser(
+        description="Score the returned judge-validation sheets with the real judge and patch "
+        "the evaluation report's judge-validation section."
+    )
+    parser.add_argument("--rater1", type=Path, required=True)
+    parser.add_argument("--rater2", type=Path, required=True)
+    parser.add_argument("--report", type=Path, default=_DEFAULT_REPORT)
+    args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    settings = load_settings()
+    judge = LlmJudge(
+        AnthropicLlmClient(settings.require_anthropic_key()), model=settings.judge_model
+    )
+    regenerate_report(args.rater1, args.rater2, args.report, judge)
     return 0
 
 
