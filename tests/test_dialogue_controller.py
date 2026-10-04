@@ -46,7 +46,7 @@ from app.domain.policy.models import Fact as PolicyFact
 from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError
 from app.security.sessions import Principal
-from contracts.service_v1.api import TurnRequest
+from contracts.service_v1.api import TurnRequest, TurnResponse
 from contracts.service_v1.cases import AmountProvenance, CaseRecord, CaseStatus, DisclosedAmount
 from contracts.service_v1.cases import Money as CaseMoney
 from contracts.service_v1.console import TimelineEntry
@@ -644,6 +644,221 @@ def test_confirmation_no_cancels_the_filing(policy: Policy, retriever: LexicalRe
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert response.next_expected is None
     assert not response.end_session
+
+
+class _Dialogue:
+    """Drives a session turn by turn through the real controller, one scripted result each."""
+
+    def __init__(
+        self, policy: Policy, retriever: LexicalRetriever, port: FakeToolPort | None = None
+    ) -> None:
+        self.policy = policy
+        self.retriever = retriever
+        self.store = InMemoryDialogueStore()
+        self.outbox = FakeHandoffOutbox()
+        self.port = port or FakeToolPort(transactions=(_transaction(),))
+        self.turns = 0
+
+    def say(self, result: NluResult, *, turn_id: str | None = None) -> TurnResponse:
+        self.turns += 1
+        controller, _ = _controller(
+            result,
+            store=self.store,
+            tool_port=self.port,
+            policy=self.policy,
+            outbox=self.outbox,
+            retriever=self.retriever,
+        )
+        return controller.handle_turn(
+            _turn(turn_id or f"turn-{self.turns:04d}"), principal=_principal()
+        )
+
+    def present_amazon(self) -> TurnResponse:
+        return self.say(_file_dispute(transaction=TransactionHint(merchant="Amazon")))
+
+
+def test_yes_to_the_presented_transaction_moves_on_to_the_reason(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    presented = dialogue.present_amazon()
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+
+    answered = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    assert answered.next_expected is Slot.REASON
+    assert not answered.end_session
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-1"
+
+
+def test_the_whole_filing_runs_through_the_customers_yes_to_the_presented_transaction(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        cases=(_case(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+
+    assert dialogue.say(_file_dispute()).next_expected is Slot.TRANSACTION
+    assert dialogue.present_amazon().next_expected is Slot.TRANSACTION_CHOICE
+    assert dialogue.say(_confirmation(ConfirmationAnswer.YES)).next_expected is Slot.REASON
+    confirm = dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    assert confirm.next_expected is Slot.CONFIRMATION
+    filed = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert "D-1" in filed.reply
+    assert port.create_calls == 1
+
+
+def test_yes_to_the_presented_transaction_evaluates_when_the_reason_is_already_known(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+
+    confirm = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    assert confirm.next_expected is Slot.CONFIRMATION
+
+
+def test_a_reason_given_instead_of_a_yes_proceeds_without_the_stale_question(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.present_amazon()
+
+    confirm = dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    assert confirm.next_expected is Slot.CONFIRMATION
+
+
+def test_no_to_the_presented_transaction_asks_for_the_right_one(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.present_amazon()
+
+    response = dialogue.say(_confirmation(ConfirmationAnswer.NO))
+    assert response.next_expected is Slot.TRANSACTION
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref is None
+
+
+def test_an_unclear_answer_to_the_presented_transaction_asks_again_then_escalates(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.present_amazon()
+
+    again = dialogue.say(_confirmation(ConfirmationAnswer.AMBIGUOUS))
+    assert again.next_expected is Slot.TRANSACTION_CHOICE
+    assert "Amazon" in again.reply
+
+    escalated = dialogue.say(_confirmation(ConfirmationAnswer.AMBIGUOUS))
+    assert escalated.end_session
+    assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
+
+
+def test_a_repeated_turn_id_replays_the_presented_transaction(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    first = dialogue.present_amazon()
+    stored = dialogue.store.get(_SESSION_ID)
+
+    replay = dialogue.say(
+        _file_dispute(transaction=TransactionHint(merchant="Amazon")), turn_id="turn-0001"
+    )
+    assert replay.reply == first.reply
+    assert replay.next_expected is Slot.TRANSACTION_CHOICE
+    assert dialogue.store.get(_SESSION_ID) == stored
+    assert dialogue.port.create_calls == 0
+    assert dialogue.outbox.packets == []
+
+
+def test_a_reason_instead_of_a_yes_files_directly_and_leaves_no_slot_pending(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        cases=(_case(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=False
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.present_amazon()
+
+    filed = dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    assert port.create_calls == 1
+    assert filed.next_expected is None
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.pending_slot is None
+
+
+def test_presenting_after_a_narrowing_prompt_starts_the_clarification_budget_over(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    assert dialogue.say(_file_dispute()).next_expected is Slot.TRANSACTION
+    assert dialogue.present_amazon().next_expected is Slot.TRANSACTION_CHOICE
+
+    again = dialogue.say(_confirmation(ConfirmationAnswer.AMBIGUOUS))
+    assert again.next_expected is Slot.TRANSACTION_CHOICE
+    assert dialogue.outbox.packets == []
+
+
+def test_an_unclear_answer_hands_off_when_the_transaction_cannot_be_read(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    for unreadable in (None, ToolFailure(tool=ToolName.GET_TRANSACTION, cause="error")):
+        dialogue = _Dialogue(policy, retriever)
+        dialogue.present_amazon()
+        dialogue.port.get_transaction_result = unreadable
+
+        response = dialogue.say(_confirmation(ConfirmationAnswer.AMBIGUOUS))
+        assert response.end_session
+        assert len(dialogue.outbox.packets) == 1
+
+
+def test_replaying_an_unreadable_presentation_hands_off_without_changing_state(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.present_amazon()
+    stored = dialogue.store.get(_SESSION_ID)
+    dialogue.port.get_transaction_result = None
+
+    replay = dialogue.say(
+        _file_dispute(transaction=TransactionHint(merchant="Amazon")), turn_id="turn-0001"
+    )
+    assert replay.end_session
+    assert dialogue.store.get(_SESSION_ID) == stored
+    assert dialogue.outbox.packets == []
 
 
 def test_ineligible_decision_states_the_reason(policy: Policy, retriever: LexicalRetriever) -> None:
