@@ -4,17 +4,16 @@ Anthropic Adapter
 
 Overview
 --------
-The ``LlmClient`` implementation behind the Anthropic API: one structured-output call,
-with a forced tool, a per-call timeout and the accounting the port promises.
+The ``LlmClient`` implementation behind the Anthropic API: one structured-output call, with a forced
+tool, a per-call timeout and the accounting the port promises.
 
 Scope
 -----
 In: translating one ``CompletionRequest`` into an Anthropic API call and its response into a
 ``CompletionResult``.
-Out: bounded retries and circuit breaking are a later addition — this adapter makes exactly one
-attempt per call and raises on failure, so a caller's own fallback path (unusable understanding,
-then a person) is what absorbs a single failed call until that addition lands. Building the
-request's system and user text is the caller's job, through ``app.llm.prompts`` and
+Out: bounded retries and circuit breaking, which ``app.reliability.retry.RetriedLlmClient`` adds
+around this adapter — the adapter itself makes exactly one attempt per call and raises on failure.
+Building the request's system and user text is the caller's job, through ``app.llm.prompts`` and
 ``app.llm.masking``; this module never sees raw customer text.
 
 Design Principles
@@ -24,12 +23,12 @@ Design Principles
 - The timeout is per-call, from the request, never the SDK's default.
 - ``temperature`` reaches the wire only for a model whose API accepts it; for a model that rejects
   an explicit value, the parameter is omitted rather than sent and refused.
-- Every failure the provider itself can raise splits three ways, because a future caller adding
-  retries needs to tell them apart: a reason that has nothing to do with the request — a timeout, a
-  connection error, a rate limit, a server error — becomes ``LlmUnavailable`` (safe to retry); the
-  provider rejecting the request itself — bad credentials, a malformed request, no access to the
-  model — becomes ``LlmRequestRejected`` (retrying the identical request fails the same way again,
-  no matter how many times); a response that completed without calling the forced tool becomes
+- Every failure the provider itself can raise splits three ways, because the retry layer needs to
+  tell them apart: a reason that has nothing to do with the request — a timeout, a connection error,
+  a rate limit, a server error — becomes ``LlmUnavailable`` (safe to retry); the provider rejecting
+  the request itself — bad credentials, a malformed request, no access to the model — becomes
+  ``LlmRequestRejected`` (retrying the identical request fails the same way again, no matter how
+  many times); a response that completed without calling the forced tool becomes
   ``LlmOutputInvalid``. No vendor exception type crosses this module's boundary.
 - The API key is a value this module is handed, already resolved by the composition root through
   ``app.config``; this module never reads the environment or a secrets store itself.

@@ -14,10 +14,10 @@ In: the digit-run detector and the redaction it applies; ``safe_hex_suffix``, ge
 reference-number suffix guaranteed never to combine with the digits before it into something this
 detector would itself flag — the one other place in this project that needs to reason about the
 same digit-run rule, not a second implementation of it.
-Out: what a caller does with masked text (the LLM port), and masking of any other field kind
-(none exists yet: the only outbound free text is the customer's message to the NLU
-adapter; a future caller that sends another masked field, for example a name or a contact detail,
-extends this module rather than duplicating the pattern elsewhere).
+Out: what a caller does with masked text (the LLM port), and masking of any other field kind (none
+exists yet: the only outbound free text is the customer's message to the NLU adapter; a future
+caller that sends another masked field, for example a name or a contact detail, extends this module
+rather than duplicating the pattern elsewhere).
 
 Design Principles
 -----------------

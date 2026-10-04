@@ -15,9 +15,8 @@ Out: where the cost is logged (the caller's job) or summarized (``app.observabil
 Design Principles
 -----------------
 - Money is never a float: the conversion is done in ``Decimal`` throughout.
-- The two prices are the pinned Anthropic prices for the supported models, verified by the
-  maintainer and repeated here as the one place a cost is computed from them rather than
-  re-derived at each call site.
+- The two prices are the pinned Anthropic prices for the supported models, repeated here as the one
+  place a cost is computed from them rather than re-derived at each call site.
 - The price table's keys are exactly ``app.config.ALLOWED_MODELS``; a model reaching this
   function that is not priced here is a configuration drift between the two, not a normal
   runtime case, so it raises rather than silently costing nothing.

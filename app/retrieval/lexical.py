@@ -42,8 +42,8 @@ builds the citation a reply attaches, with a title in every language.
 Limitations
 -----------
 The relevance floor is the mathematical minimum (some shared term at all): the exact value a
-richer floor should use is a measured question the recall and abstention sets this ADR requires
-are meant to answer, and that measurement is not part of this module.
+richer floor should use is a measured question that recall and abstention sets are meant to
+answer, and that measurement is not part of this module.
 """
 
 from __future__ import annotations

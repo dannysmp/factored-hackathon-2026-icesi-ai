@@ -5,9 +5,9 @@ Case Creation Dispatch
 Overview
 --------
 The one place in this codebase allowed to call ``ToolPort.create_dispute_case``
-(``Permission.CONTROLLER_ONLY``). The dialogue controller is the only caller: it has
-already evaluated policy, decided the request is eligible and requires confirmation, and
-collected the customer's explicit confirmation, before it ever reaches here.
+(``Permission.CONTROLLER_ONLY``). The dialogue controller is the only caller: it has already
+evaluated policy, decided the request is eligible and requires confirmation, and collected the
+customer's explicit confirmation, before it ever reaches here.
 
 Scope
 -----
@@ -18,10 +18,9 @@ dialogue controller), and the permission invariants the tool itself enforces
 
 Design Principles
 ------------------
-- **A single reachable path:** every other module in ``app/`` is checked by a
-  structural test to never reference ``create_dispute_case`` as an attribute; a second caller
-  (a route, the console, a script) reopens the placement decision rather than quietly working
-  around it.
+- **A single reachable path:** every other module in ``app/`` is checked by a structural test to
+  never reference ``create_dispute_case`` as an attribute; a second caller (a route, the console, a
+  script) reopens the placement decision rather than quietly working around it.
 - **No decision-making.** This function does not evaluate, retry or interpret the result; it
   passes the request through and returns exactly what the port returns.
 

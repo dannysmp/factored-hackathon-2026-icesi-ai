@@ -29,8 +29,8 @@ Runtime Contract
 Limitations
 -----------
 ``create_dispute_case`` is deliberately not dispatched here: it carries permission invariants
-(``Permission.CONTROLLER_ONLY``) a future, separate dispatch path for it should not casually
-share with these five.
+(``Permission.CONTROLLER_ONLY``), so it has its own dispatch path, ``app.tools.create_dispatch``,
+which should not casually share with these five.
 """
 
 from __future__ import annotations
