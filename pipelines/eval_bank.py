@@ -199,7 +199,7 @@ _TRANSACTIONS: tuple[dict[str, Any], ...] = (
     },
     {
         # No exchange rate was available for this transaction's currency and day: the disclosed
-        # amount is genuinely unknown, never a guess (escalate_amount_unknown, AC-E3 corpus rule).
+        # amount is genuinely unknown, never a guess (escalate_amount_unknown).
         "transaction_id": "TRX-EVALBANK-UNKNOWN-AMOUNT",
         "customer_id": "CLI-EVALBANK-01",
         "product_id": "PRD-EVALBANK-01",
