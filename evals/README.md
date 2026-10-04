@@ -18,9 +18,9 @@ The outcome class of a case is derived from its other columns: reason code `elig
 | Agreement on outcome class and reason code, counting a correction that restates the declared label as agreement | 135 of 135 (100%) |
 | Labels changed | 0 |
 
-All 18 `correct` entries name the same outcome class (`ESCALATE`) and the same reason code the case already declares, and give a one-line rationale. They are recorded as confirmations of the declared label and were not re-confirmed by the rater, and none disagrees with it, so applying every one of them leaves every case file unchanged. The strict figure (117 of 135) counts them as disagreements; the lenient figure (135 of 135) counts them as agreement. Neither is a chance-corrected statistic: there is one rater, and the labels under review were derived from the case columns rather than assigned independently.
+All 18 `correct` entries name the same outcome class (`ESCALATE`) and the same reason code the case already declares, and give a one-line rationale. The team reads them as confirmations of the declared label, because each restates it and none proposes a different one; the rater has not been asked to confirm that reading. Applying every one of them therefore leaves every case file unchanged. The strict figure (117 of 135) counts them as disagreements; the lenient figure (135 of 135) counts them as agreement. Neither is a chance-corrected statistic: there is one rater, and the labels under review were derived from the case columns rather than assigned independently.
 
-| Reason code | Cases confirmed | Case identifiers |
+| Reason code | Cases marked `correct` | Case identifiers |
 |---|---|---|
 | `escalate_fraud_claim` | 6 | `hr-fraud-es-01`, `hr-fraud-es-02`, `hr-fraud-es-03`, `hr-fraud-pt-01`, `hr-fraud-pt-02`, `hr-fraud-en-01` |
 | `escalate_amount_above_threshold` | 6 | `hr-amt-es-01`, `hr-amt-es-02`, `hr-amt-es-03`, `hr-amt-pt-01`, `hr-amt-pt-02`, `hr-amt-en-01` |
