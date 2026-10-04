@@ -57,6 +57,7 @@ from fastapi import APIRouter, Depends, Header, Request, Response  # Routing and
 from pydantic import BaseModel, ConfigDict, Field, SecretStr  # Validated models
 
 # Local modules
+from app.security.client_address import client_address  # The real connecting address
 from app.security.errors import ErrorCode, ProblemError  # Failure format
 from app.security.limits import AttemptLimiter  # Failed-attempt limit
 from app.security.middleware import current_request_id  # Request identifier for logs
@@ -204,8 +205,7 @@ def build_auth_router(
             supplied = (x_test_login_key or "").encode("utf-8")
             if hmac.compare_digest(supplied, expected):
                 return
-            client = request.client.host if request.client else "unknown"
-            wait = limiter.begin_attempt(client)
+            wait = limiter.begin_attempt(client_address(request))
             if wait:
                 logger.warning("test_login_limited request_id=%s", current_request_id())
                 raise ProblemError(

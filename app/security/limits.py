@@ -31,11 +31,10 @@ one step, so concurrent attempts cannot all pass the check before any is counted
 Limitations
 -----------
 In memory and per process: with several processes the effective limit is multiplied, and a
-restart clears it. The key is what the caller passes (the route uses the connection's client
-address, which behind a proxy is the proxy's address unless the server trusts forwarded
-headers). When the table is full the oldest key is dropped first, so a flood of distinct
-clients can evict a blocked one. A shared store replaces it when the service runs as more than
-one process.
+restart clears it. The key is what the caller passes (the sign-in routes use ``client_address``:
+the reverse proxy's last X-Forwarded-For entry, else the connecting address). When the table is
+full the oldest key is dropped first, so a flood of distinct clients can evict a blocked one. A
+shared store replaces it when the service runs as more than one process.
 """
 
 from __future__ import annotations
