@@ -31,9 +31,10 @@ Design Principles
   never receives data, or an outcome, whose access or filing was not recorded. A call that itself
   fails at the store is not audited: there was no completed action to record, only an
   infrastructure failure the caller already sees as a ``ToolFailure``.
-- **No customer parameter anywhere:** every SQL statement here is written to be incapable of
-  returning or changing another customer's row by construction, not merely by a value a caller
-  happens to pass correctly.
+- **No customer parameter anywhere:** no tool method accepts a customer id. The signed-in
+  customer is fixed when the port is built, listings filter by that customer in SQL, and the
+  transaction and case resolvers check that a referenced row belongs to that customer before
+  anything is returned or changed.
 - **``evaluate_dispute`` has no not-found return in its failure type.** Its contract offers
   ``PolicyDecision | ToolFailure | None``; a transaction reference that does not exist or belongs
   to another customer answers ``None``, the same response either way, distinguished only in the
@@ -72,7 +73,7 @@ language, case_create_session_cap)`` implements ``contracts.service_v1.tools.Too
 session-scoped fact this class holds: ``CreateDisputeCaseRequest`` (``contracts.service_v1.tools``)
 has no field for either, since a case's language is a fact of the session filing it, not of one
 call, and the cap is a permission invariant this tool enforces itself, not caller-supplied data.
-``clamp_merchant(value)`` and ``MERCHANT_MAX_LENGTH`` are shared with
+``clamp_merchant(value)``, which fits a merchant to ``MERCHANT_MAX_LENGTH``, is shared with
 ``app.persistence.ticket_detail``.
 
 Limitations
@@ -799,10 +800,10 @@ class PostgresToolPort:
         Checks run in order: the request's own permission invariants (decision present, confirmed,
         matching), a replay by idempotency key, the freshly re-resolved owned transaction, the
         duplicate-open-case and session-cap limits, then the insert. A ``ToolFailure`` covers
-        what neither party to the decision controls: the store cannot be reached, or the audit
-        record for the filing cannot be written. Either fails the filing closed (no case is
-        created uncounted, and the customer is told it could not be completed, never that it
-        succeeded).
+        a store error (the store cannot be reached, or a statement fails) and fails the filing
+        closed: no case is created uncounted, and the customer is told it could not be
+        completed, never that it succeeded. A failure raised by the audit sink that is not a
+        store error is not converted: it propagates, and the uncommitted insert is rolled back.
         """
         validated = self._validate_permission(request)
         if isinstance(validated, CreateDisputeCaseResult):

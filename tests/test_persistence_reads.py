@@ -84,7 +84,7 @@ def dsn() -> str:
     if not value:
         pytest.skip("DATABASE_URL is not set")
     apply_migrations(value)
-    # TRUNCATE on audit_log is refused at the store (migration 0003), including for this reset:
+    # TRUNCATE on audit_log is refused at the store, including for this reset:
     # the session's own replication role is switched off for it, since a trigger created without
     # ENABLE REPLICA or ENABLE ALWAYS does not fire under 'replica'.
     with psycopg.connect(value) as conn, conn.cursor() as cur:
@@ -377,8 +377,8 @@ def _insert_transaction_with_merchant(dsn: str, transaction_id: str, merchant_na
 
 @pytest.mark.integration
 def test_a_merchant_name_over_the_contracts_bound_is_truncated_not_a_crash(dsn: str) -> None:
-    """A real transaction can carry a merchant_name up to 150 characters (migration 0001's own
-    column width), wider than the contract's 80-character bound; reading it back must not raise."""
+    """A real transaction can carry a merchant_name up to 150 characters (the column's own
+    width), wider than the contract's 80-character bound; reading it back must not raise."""
     overlong = "A" * 150
     _insert_transaction_with_merchant(dsn, "TRX-A-LONG", overlong)
     port = _port(dsn, _RecordingSink(dsn), customer_id="CLI-A")

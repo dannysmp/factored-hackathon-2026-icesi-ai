@@ -77,9 +77,9 @@ def _record(outbox: PostgresHandoffOutbox, content: HandoffContent, *, turn_id: 
 
 
 def _set_status(dsn: str, ticket_ref: str, status: str) -> None:
-    """Set a ticket's status directly at the store — no write path exists in this module (the seed
-    is the source of the ticket lifecycle here), so a test reaching for a non-default
-    status has no other way to produce one."""
+    """Set a ticket's status directly at the store. Nothing in the application writes a ticket's
+    status, which starts as open, so a test needing any other status has no other way to produce
+    one."""
     with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(
             "UPDATE handoff_outbox SET status = %s WHERE ticket_ref = %s", (status, ticket_ref)

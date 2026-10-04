@@ -3,8 +3,8 @@ Case Creation Tests
 ====================
 
 Component: ``app.persistence.reads.PostgresToolPort.create_dispute_case``. Needs a real, migrated
-Postgres — the constraints under test (migration 0004's reason-code check and the partial unique
-index), the race-losing paths and the genuine two-thread races only exist at the store; marked
+Postgres — the constraints under test (the reason-code check and the partial unique index on open
+cases), the race-losing paths and the genuine two-thread races only exist at the store; marked
 ``integration``, skipped when ``DATABASE_URL`` is not set. Mirrors
 ``tests/test_persistence_reads.py``'s fixture style: a self-contained seed, not shared through a
 ``conftest.py``.
@@ -174,7 +174,7 @@ def dsn() -> str:
     if not value:
         pytest.skip("DATABASE_URL is not set")
     apply_migrations(value)
-    # TRUNCATE on audit_log is refused at the store (migration 0003), including for this reset:
+    # TRUNCATE on audit_log is refused at the store, including for this reset:
     # the session's own replication role is switched off for it, since a trigger created without
     # ENABLE REPLICA or ENABLE ALWAYS does not fire under 'replica'.
     with psycopg.connect(value) as conn, conn.cursor() as cur:
@@ -375,8 +375,8 @@ def test_a_genuine_concurrent_race_on_the_same_idempotency_key_is_resolved_by_th
     dsn: str,
 ) -> None:
     """Two real threads, synchronized so both pass the proactive idempotency pre-check before
-    either inserts: the store's own unique constraint (``cases_customer_idempotency_key_unique``,
-    migration 0001) is what actually resolves the race, exercised through
+    either inserts: the store's own unique constraint (``cases_customer_idempotency_key_unique``)
+    is what actually resolves the race, exercised through
     ``PostgresToolPort``'s own ``UniqueViolation``-handling branch in ``_insert_case``, not
     simulated by inserting a row out of band."""
     barrier = threading.Barrier(2)
@@ -529,7 +529,7 @@ def test_a_genuine_concurrent_race_for_the_same_transaction_is_resolved_by_the_s
 ) -> None:
     """Two real threads targeting a transaction with no open case yet, synchronized so both pass
     the proactive open-case pre-check before either inserts: the partial unique index
-    (``cases_transaction_id_open_unique``, migration 0004) is what actually resolves the race,
+    (``cases_transaction_id_open_unique``) is what actually resolves the race,
     exercised through ``_insert_case``'s ``UniqueViolation`` handler for that constraint."""
     barrier = threading.Barrier(2)
     waited = threading.local()
@@ -641,7 +641,7 @@ def test_a_filing_that_cannot_be_audited_creates_no_case(dsn: str) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Migration 0004: the store-level constraints directly
+# The store-level constraints directly
 # -----------------------------------------------------------------------------
 
 

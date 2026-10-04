@@ -3,8 +3,8 @@ Audit Sink Tests
 ================
 
 Component: ``app.persistence.audit``. Needs a real, migrated Postgres: append-only is a store
-guarantee (migration 0003's trigger), not something a fake could prove. Marked ``integration``,
-skipped when ``DATABASE_URL`` is not set.
+guarantee (the trigger on the audit table), not something a fake could prove. Marked
+``integration``, skipped when ``DATABASE_URL`` is not set.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def dsn() -> str:
     if not value:
         pytest.skip("DATABASE_URL is not set")
     apply_migrations(value)
-    # TRUNCATE is refused at the store (migration 0003), including for this reset: the session's
+    # TRUNCATE is refused at the store, including for this reset: the session's
     # own replication role is switched off for it, since a trigger created without ENABLE REPLICA
     # or ENABLE ALWAYS does not fire under 'replica'.
     with psycopg.connect(value) as conn, conn.cursor() as cur:
@@ -119,8 +119,8 @@ def test_a_customer_action_writes_no_agent_id(dsn: str) -> None:
 def test_an_agent_console_read_is_accepted_by_the_stores_own_check_constraint(
     dsn: str, action: AuditAction
 ) -> None:
-    """Migration 0008 widened the CHECK constraint, not just the Python enum: a value the store
-    itself refused before now writes cleanly."""
+    """The store's CHECK constraint on the audit action accepts every value the Python enum names,
+    not just the enum: a value the store once refused now writes cleanly."""
     sink = PostgresAuditSink(dsn)
 
     sink.record(_record(action=action))
