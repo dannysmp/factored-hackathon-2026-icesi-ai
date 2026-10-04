@@ -5,9 +5,10 @@ Demo Personas
 Overview
 --------
 Reads the demo sign-in broker's persona file into a validated ``PersonaList``, and checks each
-customer persona against the seed at start-up. The demo broker route accepts a persona slug, never a customer identifier or a document number; this module is what
-turns a slug into a customer_id, and only after start-up has already proven that customer_id
-resolves to a real, active, seeded customer.
+customer persona against the seed at start-up. The demo broker route accepts a persona slug,
+never a customer identifier or a document number; this module is what turns a slug into a
+customer_id, and only after start-up has already proven that customer_id resolves to a real,
+active, seeded customer.
 
 Scope
 -----
@@ -39,7 +40,8 @@ Limitations
 -----------
 Duplicate slugs in the file are rejected by ``PersonaList``'s own validator, but a duplicate YAML
 *key* within one persona entry is not specially detected (unlike the policy loader's unique-key
-YAML loader) — a persona file is small and edited by hand and reviewed, so the check is judged unnecessary.
+YAML loader) — a persona file is small and reviewed by hand, so the check is judged
+unnecessary.
 """
 
 from __future__ import annotations
