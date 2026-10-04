@@ -1,5 +1,5 @@
 /** Component test: the whole scripted conversation, its four async states, and accessibility. */
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { describe, expect, it, vi } from 'vitest'
@@ -159,8 +159,10 @@ describe('ChatFeature', () => {
     )
     await screen.findByRole('button', { name: 'Enviar' })
 
+    await waitFor(() => {
+      expect(onLanguageChange).toHaveBeenLastCalledWith('es')
+    })
     expect(onLanguageChange).toHaveBeenCalledWith('en')
-    expect(onLanguageChange).toHaveBeenLastCalledWith('es')
   })
 
   it('shows a retryable error, not a stack trace, when the client rejects', async () => {
