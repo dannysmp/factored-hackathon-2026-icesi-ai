@@ -370,10 +370,12 @@ def run_cases(
     the tool dispatcher and session id are rebuilt per case: B1ToolDispatcher is scoped to one
     customer and language, and a case's own seed_ref and lang may each differ from the last case's.
 
-    A case that fails to resolve, run or score with ``ValueError``, ``NotImplementedError`` or
-    ``LlmUnavailable`` (a malformed ``seed_ref``, an unscored ``expected_intent``, a transient
-    failure from the real Anthropic API) is recorded as a named ``CaseResult.error`` instead of
-    stopping the batch; any other exception still propagates.
+    A case that fails to resolve, run or score with ``ValueError``, ``NotImplementedError``,
+    ``LlmUnavailable`` or ``NaiveAgentRequestTooLarge`` (a malformed ``seed_ref``, an unscored
+    ``expected_intent``, a transient failure from the real Anthropic API, a conversation too large
+    for one request) is recorded as a named ``CaseResult.error`` instead of stopping the batch;
+    any other exception still propagates, including an account-level ``LlmRequestRejected`` such
+    as bad credentials.
 
     Raises
     ------
