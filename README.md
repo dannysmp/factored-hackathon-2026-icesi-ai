@@ -41,7 +41,7 @@ flowchart LR
 
     tools --> db[("Postgres<br/>operational state, audit trail")]
     handoff --> db
-    db --> risk["Risk score<br/>(routes to review only)"]
+    db --> risk["Risk score<br/>(routes to review only;<br/>routing off in the shipped policy)"]
     risk --> policy
     db -- "handoff queue" --> console
     render --> reply["Reply in the customer's language"]
