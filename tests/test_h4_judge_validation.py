@@ -466,6 +466,9 @@ def test_regenerate_report_patches_the_file_logs_agreement_and_calls_the_judge_p
         _minimal_report(judge_validation=agreement, judge_validation_provenance="human")
     )
     assert report.read_text(encoding="utf-8") == expected
+    language_quality = {row.dimension: row for row in agreement}["language_quality"]
+    assert language_quality.rater1_to_judge == pytest.approx(2 / 3)
+    assert language_quality.rater2_to_judge == pytest.approx(1.0)
     assert len(llm.requests) == 3
     assert not list(tmp_path.glob(".evaluation.md.*"))  # no temporary file left behind
     assert "judge_validation_report_updated" in caplog.text
