@@ -2120,6 +2120,7 @@ def test_repeating_the_capped_turn_replays_the_handoff_not_a_filing_result(
     assert replay.handoff_ticket == first.handoff_ticket
     assert "D-1" not in replay.reply
     assert len(outbox.packets) == 1
+    assert outbox.packets[0].existing_case_number == "D-1"
 
 
 def test_a_duplicate_of_a_served_turn_is_replayed_even_at_the_cap(
@@ -2136,3 +2137,110 @@ def test_a_duplicate_of_a_served_turn_is_replayed_even_at_the_cap(
     assert replay.reply == last.reply
     assert replay.handoff_ticket is None
     assert outbox.packets == []
+
+
+@dataclass
+class _CappedRaceStore:
+    """Serves a session at the cap and makes the cap turn's save lose to another request."""
+
+    inner: InMemoryDialogueStore
+    outcome: Exception
+
+    def get(self, session_id: str) -> DialogueState | None:
+        return self.inner.get(session_id)
+
+    def save(self, state, *, expected_version, turn_id, now):  # type: ignore[no-untyped-def]
+        raise self.outcome
+
+
+def test_a_capped_turn_that_loses_the_save_race_replays_the_winners_handoff(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The packet this request recorded stays in the queue unreferenced by the session; the
+    reply is the winner's ticket, so the customer sees one."""
+    inner = InMemoryDialogueStore()
+    _seed_session(inner, turns=3)
+    winner = DialogueState(
+        session_id=_SESSION_ID,
+        version=4,
+        lang="es",
+        phase=ConversationPhase.HANDED_OFF,
+        last_turn_id="turn-0004",
+        last_ticket_ref="T-9999",
+        updated_at=_NOW,
+    )
+    outbox = FakeHandoffOutbox()
+    controller, nlu = _capped_controller(
+        policy,
+        retriever,
+        _CappedRaceStore(inner, DuplicateTurn(winner)),  # type: ignore[arg-type]
+        outbox,
+    )
+
+    response = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert response.handoff_ticket == "T-9999"
+    assert "T-9999" in response.reply
+    assert len(outbox.packets) == 1
+    assert nlu.calls == []
+
+
+def test_a_capped_turn_on_a_stale_version_is_a_turn_conflict(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    inner = InMemoryDialogueStore()
+    _seed_session(inner, turns=3)
+    controller, nlu = _capped_controller(
+        policy,
+        retriever,
+        _CappedRaceStore(inner, Conflict("moved on")),  # type: ignore[arg-type]
+        FakeHandoffOutbox(),
+    )
+
+    with pytest.raises(ProblemError) as excinfo:
+        controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert excinfo.value.code is ErrorCode.TURN_CONFLICT
+    assert nlu.calls == []
+
+
+def test_an_unavailable_outbox_at_the_cap_says_nothing_was_registered_and_the_next_message_retries(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    _seed_session(store, turns=3)
+    outbox = FakeHandoffOutbox(fail=True)
+    controller, nlu = _capped_controller(policy, retriever, store, outbox)
+
+    failed = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert failed.handoff_ticket is None
+    assert failed.end_session
+    assert outbox.packets == []
+
+    outbox.fail = False
+    retried = controller.handle_turn(_turn("turn-0005"), principal=_principal())
+
+    assert retried.handoff_ticket == "T-0001"
+    assert len(outbox.packets) == 1
+    assert nlu.calls == []
+
+
+def test_reaching_the_cap_is_logged_with_the_counts_and_no_message_text(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = InMemoryDialogueStore()
+    _seed_session(store, turns=3)
+    controller, _ = _capped_controller(policy, retriever, store, FakeHandoffOutbox())
+
+    with caplog.at_level(logging.WARNING):
+        controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    logged = [
+        r.getMessage() for r in caplog.records if "dialogue_turn_cap_reached" in r.getMessage()
+    ]
+    assert len(logged) == 1
+    assert f"session_id={_SESSION_ID}" in logged[0]
+    assert "turns_applied=3" in logged[0]
+    assert "max_turns=3" in logged[0]
+    assert _turn("turn-0004").text not in logged[0]

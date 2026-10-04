@@ -368,8 +368,14 @@ class DialogueController:
 
         A session that already has a handoff ticket gets that same ticket again and nothing is
         written, so a customer who keeps typing neither mints tickets nor advances the state. A
-        session without one is handed to a person once, through the same idempotent save as any
-        other handoff turn.
+        session without one is handed to a person through the same idempotent save as any other
+        handoff turn, carrying the case number it had already filed, if any. Its summary line is
+        the generic low-understanding one; the ``turn_cap`` action record is what identifies it.
+
+        Two concurrent requests at the cap on a session with no ticket can each record a packet
+        before the save decides the winner (the outbox is idempotent per turn id, not per
+        session), so the loser's packet stays in the queue unreferenced by the session. This is
+        the same ordering every handoff turn has.
         """
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
@@ -388,6 +394,7 @@ class DialogueController:
             reason_codes=(),
             template=TemplateId.HANDOFF_REVIEW,
             actions=(ActionRecord(action="turn_cap", result="reached"),),
+            existing_case_number=current.last_case_number,
         )
         try:
             saved = self._store.save(
@@ -1027,6 +1034,9 @@ class DialogueController:
 
         A filed case is read back fresh (its status may have moved on since); a handoff is
         rendered directly from its stored ticket; a pending clarification is a pure re-render.
+        The ticket takes precedence over a case when the session is handed off or filed no case,
+        so a session holding both replays its handoff, which is the latest outcome but not
+        necessarily the one the replayed turn id originally produced.
         ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
         cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
         clears the pending slot and leaves no case or ticket behind, so it can never be confused

@@ -184,7 +184,7 @@ A base deployment that later disables `deploy_metabase` still carries the dashbo
 
 ## Per-session turn cap
 
-`DIALOGUE_MAX_TURNS` (default `30`, between 5 and 200) is the most customer turns one session may apply. The longest normal flow is about six messages, so the default only reaches a session that keeps talking. The next message after the cap is answered with the standard handoff to a person, with no model call, and a session that already holds a handoff ticket is shown the same ticket again rather than a new one. Change it by setting the variable in the backend's environment and restarting the stack.
+`DIALOGUE_MAX_TURNS` (default `30`, between 5 and 200) is the most customer turns one session may apply. The longest normal flow is about six messages, so the default only reaches a session that keeps talking. The next message after the cap is answered with the standard handoff to a person, with no model call, and a session that already holds a handoff ticket is shown the same ticket again rather than a new one. Change it by adding `DIALOGUE_MAX_TURNS=<turns>` to the `.env` file in `/opt/dispute-intake` on the host (the compose file passes it to the backend) and running `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` from that directory; a deploy rewrites the compose files but not `.env`, so the value persists. The cap bounds the turns a session applies and the model calls after it; it is not a rate limit, so concurrent requests on one session can each reach the model before the first is saved.
 
 A capped session shows up as a handoff whose action record is `turn_cap` with result `reached`, and as a `dialogue_turn_cap_reached` line in the backend log carrying the session, the turns applied and the cap.
 

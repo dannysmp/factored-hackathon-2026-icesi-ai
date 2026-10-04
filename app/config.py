@@ -165,8 +165,9 @@ class Settings(BaseSettings):
         distinct disputes a customer legitimately has. Between 1 and 50.
     dialogue_max_turns : int
         The most customer turns one session may apply before the next is answered with a handoff
-        to a person and no model call. A cost control, not a policy value: it bounds what one
-        session can spend. Between 5 and 200; the default sits well above the longest normal flow.
+        to a person and no model call. A cost control, not a policy value: it bounds the turns one
+        session applies, and so the model calls it can cause after that point. Between 5 and 200;
+        the default sits well above the longest normal flow.
     llm_retry_max_attempts, llm_retry_base_delay_ms, llm_retry_max_delay_ms : int
         Bounded retry (E9) for a transient LLM failure (``LlmUnavailable``): full-jitter
         exponential backoff between attempts, capped at ``llm_retry_max_delay_ms``. A permanent
