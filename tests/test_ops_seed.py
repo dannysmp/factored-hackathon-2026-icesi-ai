@@ -273,7 +273,7 @@ def test_every_stratum_customer_is_selected_and_counted_in_coverage(tmp_path: Pa
 def test_repeat_complainer_uses_the_latest_complaint_on_or_before_the_reference_date(
     tmp_path: Path,
 ) -> None:
-    """The point-in-time rule : a later complaint's flag is never consulted."""
+    """The point-in-time rule: a later complaint's flag is never consulted."""
     silver = _write_silver(tmp_path / "base")
     con = duckdb.connect()
     try:
