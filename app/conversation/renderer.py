@@ -234,7 +234,7 @@ INELIGIBLE_TEXT: dict[Lang, dict[CustomerReason, str]] = {
         CustomerReason.REVERSED: "Essa transação já foi estornada.",
         CustomerReason.DUPLICATE_CASE: "Já existe uma contestação em aberto para esta transação.",
         CustomerReason.NOT_DISPUTABLE: "Esse produto ou tipo de transação não pode ser "
-        "contestado segundo esta política.",
+        "contestado de acordo com esta política.",
     },
     "en": {
         CustomerReason.WINDOW_EXPIRED: "The deadline to file this dispute has already passed.",
@@ -415,8 +415,8 @@ def _confirm_filing(e: RenderEnvelope) -> str:
         "pt": (
             f"Vou apresentar uma contestação por {category} sobre a cobrança de "
             f"{amount} do dia "
-            f"{format_date(transaction.occurred_on, e.lang)}. Um atendente vai analisá-la; isso "
-            "não garante um resultado. Você confirma que quer apresentá-la?"
+            f"{format_date(transaction.occurred_on, e.lang)}. Um atendente vai analisar o pedido; "
+            "isso não garante um resultado. Você confirma que quer apresentá-la?"
         ),
         "en": (
             f"I'll file {_english_article(category)} {category} dispute for the charge of "
@@ -581,7 +581,7 @@ def _handoff_fraud(e: RenderEnvelope) -> str:
     return {
         "es": f"Esto lo atiende un asesor de inmediato por ser un posible fraude. No "
         f"prometo un resultado.{contact} Su referencia es {ticket}.",
-        "pt": f"Um atendente cuida disto de imediato, porque pode se tratar de fraude. "
+        "pt": f"Como pode se tratar de fraude, um atendente cuida disso de imediato. "
         f"Não posso prometer um resultado.{contact} Sua referência é {ticket}.",
         "en": f"A person handles this right away since it may be fraud. I can't promise an "
         f"outcome.{contact} Your reference is {ticket}.",

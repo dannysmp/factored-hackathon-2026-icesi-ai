@@ -397,7 +397,7 @@ def test_a_transaction_without_an_amount_states_it_plainly_in_every_language(
     ("lang", "expected_phrase"),
     [
         ("es", "en Tienda Sol"),
-        ("pt", "em Tienda Sol"),
+        ("pt", "em Tienda Sol no dia 12 de junho de 2026"),
         ("en", "at Tienda Sol"),
     ],
 )

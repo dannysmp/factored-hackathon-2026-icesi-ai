@@ -62,7 +62,7 @@ first-response date computed from policy, not invented by the model.
 | 3 | Customer | Sim, é essa. |
 | 3 | System (`clarify` / `clarify_reason`) | Qual é o motivo? Pode ser uma cobrança não reconhecida, uma cobrança em duplicidade, um valor incorreto, um serviço não recebido ou uma fraude. |
 | 4 | Customer | Não reconheço essa cobrança, nunca comprei lá. |
-| 4 | System (`confirm_filing` / `confirm_filing`) | Vou apresentar uma contestação por cobrança não reconhecida sobre a cobrança de 250,00 MXN do dia 12 de junho de 2026. Um atendente vai analisá-la; isso não garante um resultado. Você confirma que quer apresentá-la? |
+| 4 | System (`confirm_filing` / `confirm_filing`) | Vou apresentar uma contestação por cobrança não reconhecida sobre a cobrança de 250,00 MXN do dia 12 de junho de 2026. Um atendente vai analisar o pedido; isso não garante um resultado. Você confirma que quer apresentá-la? |
 | 5 | Customer | Sim, confirmo. |
 | 5 | System (`filing_result` / `filing_result`) | Sua contestação foi registrada com o número do caso D-2001. Você deve receber uma primeira resposta até 25 de junho de 2026. |
 | 6 | Customer | Obrigado, é só isso. |
@@ -140,7 +140,7 @@ filing decision was made by the system here.
 | Turn | Speaker | Line |
 |---|---|---|
 | 1 | Customer | Tem uma cobrança que eu não reconheço e acho que é uma fraude, alguém está usando meu cartão. |
-| 1 | System (`handoff` / `handoff_fraud`) | Um atendente cuida disto de imediato, porque pode se tratar de fraude. Não posso prometer um resultado. Um atendente entrará em contato com você em até 24 horas. Sua referência é T-100. |
+| 1 | System (`handoff` / `handoff_fraud`) | Como pode se tratar de fraude, um atendente cuida disso de imediato. Não posso prometer um resultado. Um atendente entrará em contato com você em até 24 horas. Sua referência é T-100. |
 
 **What this demonstrates:** the same escalation path, correctly worded in Portuguese.
 
