@@ -1049,6 +1049,81 @@ class _Dialogue:
         return self.say(_file_dispute(transaction=TransactionHint(merchant="Amazon")))
 
 
+def _filed_dialogue(policy: Policy, retriever: LexicalRetriever) -> _Dialogue:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        cases=(_case(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    filed = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    assert "D-1" in filed.reply
+    assert port.create_calls == 1
+    return dialogue
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        _confirmation(ConfirmationAnswer.YES),
+        _confirmation(ConfirmationAnswer.NO),
+        _confirmation(ConfirmationAnswer.AMBIGUOUS),
+        _plain(NluIntent.UNCLEAR),
+        _plain(NluIntent.SMALL_TALK),
+        _plain(NluIntent.CORRECTION),
+    ],
+    ids=["yes", "no", "ambiguous", "unclear", "small-talk", "correction"],
+)
+def test_a_message_after_a_case_is_filed_never_reopens_the_filing_question(
+    policy: Policy, retriever: LexicalRetriever, message: NluResult
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+
+    reply = dialogue.say(message)
+
+    assert reply.next_expected is None
+    assert "Confirma" not in reply.reply
+    assert dialogue.port.create_calls == 1
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.phase is ConversationPhase.CLOSED
+    assert state.pending_slot is None
+    assert dialogue.outbox.packets == []
+
+
+def test_a_new_dispute_after_a_case_is_filed_starts_from_its_own_transaction(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+
+    reply = dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+
+    assert reply.next_expected is Slot.TRANSACTION
+    assert "Confirma" not in reply.reply
+    assert dialogue.port.create_calls == 1
+
+
+def test_the_status_of_a_filed_case_can_still_be_asked_for(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+
+    reply = dialogue.say(_plain(NluIntent.DISPUTE_STATUS))
+
+    assert "D-1" in reply.reply
+    assert dialogue.port.create_calls == 1
+
+
 def test_yes_to_the_presented_transaction_moves_on_to_the_reason(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:

@@ -142,9 +142,22 @@ class DialogueState(BaseModel):
         return self.model_copy(update={"phase": phase})
 
     def with_case_filed(self, case_number: str) -> DialogueState:
-        """A case was filed this turn: closed, with the case number a replay re-reads from."""
+        """A case was filed this turn: closed, with the case number a replay re-reads from.
+
+        Nothing about the filed dispute stays open: the filing question, the clarification count,
+        the selected transaction and the reason are cleared, so a later message neither answers
+        the old question nor re-presents the dispute that was just filed, and a new dispute starts
+        from its own transaction.
+        """
         return self.model_copy(
-            update={"phase": ConversationPhase.CLOSED, "last_case_number": case_number}
+            update={
+                "phase": ConversationPhase.CLOSED,
+                "last_case_number": case_number,
+                "pending_slot": None,
+                "clarification_attempts": 0,
+                "selected_ref": None,
+                "category": None,
+            }
         )
 
     def with_handed_off(self, ticket_ref: str) -> DialogueState:
