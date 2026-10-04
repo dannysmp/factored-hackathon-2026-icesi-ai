@@ -9,7 +9,7 @@ index), the race-losing paths and the genuine two-thread races only exist at the
 ``tests/test_persistence_reads.py``'s fixture style: a self-contained seed, not shared through a
 ``conftest.py``.
 
-The create tool never evaluates policy (ADR-3): every test hands it an already-decided
+The create tool never evaluates policy: every test hands it an already-decided
 ``PolicyDecision`` built by ``_decision`` below, exactly as the controller would after evaluating
 one itself, and checks only the permission invariants the tool enforces on top of it.
 
@@ -69,7 +69,7 @@ class _RecordingSink:
 
 
 class _FailingSink:
-    """An ``AuditSink`` that always refuses to write, for the fail-closed test (AC-E4-19)."""
+    """An ``AuditSink`` that always refuses to write, for the fail-closed test."""
 
     def record(self, entry: AuditRecord) -> None:
         raise RuntimeError("audit store is down")
@@ -127,7 +127,7 @@ def _request(
     idempotency_key: str = "IDEMP-1",
     decision: PolicyDecision | None = _DEFAULT_DECISION,  # type: ignore[assignment]
 ) -> CreateDisputeCaseRequest:
-    """``decision`` defaults to a matching, eligible one; pass ``None`` explicitly for AC-E4-13's
+    """``decision`` defaults to a matching, eligible one; pass ``None`` explicitly for the
     ``decision_missing`` case, distinct from simply not overriding the default."""
     if decision is _DEFAULT_DECISION:
         decision = _decision(transaction_ref=transaction_ref, category=category)
@@ -215,7 +215,7 @@ def dsn() -> str:
 
 
 # -----------------------------------------------------------------------------
-# Happy path (AC-E4-17)
+# Happy path
 # -----------------------------------------------------------------------------
 
 
@@ -250,7 +250,7 @@ def test_a_confirmed_eligible_filing_creates_a_case_and_reads_back_correctly(dsn
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-12 / AC-E4-13: confirmation and decision
+# Confirmation and decision
 # -----------------------------------------------------------------------------
 
 
@@ -285,7 +285,7 @@ def test_a_filing_with_no_decision_is_refused_decision_missing(dsn: str) -> None
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-14: the case filed is always the one the customer saw
+# The case filed is always the one the customer saw
 # -----------------------------------------------------------------------------
 
 
@@ -321,7 +321,7 @@ def test_a_filing_that_does_not_match_the_decision_is_refused_confirmation_misma
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-15: idempotency replay — sequential, out-of-band, and a genuine race
+# Idempotency replay — sequential, out-of-band, and a genuine race
 # -----------------------------------------------------------------------------
 
 
@@ -475,7 +475,7 @@ def test_the_open_case_lookup_failing_during_the_race_handler_fails_closed(dsn: 
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-16: a reused key with a different payload, and a duplicate open case
+# A reused key with a different payload, and a duplicate open case
 # -----------------------------------------------------------------------------
 
 
@@ -625,7 +625,7 @@ def test_a_session_that_reaches_its_filing_cap_is_refused(dsn: str) -> None:
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-19: fail closed on the audit write
+# Fail closed on the audit write
 # -----------------------------------------------------------------------------
 
 

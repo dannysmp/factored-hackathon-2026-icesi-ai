@@ -5,31 +5,30 @@ Audit Sink
 Overview
 --------
 Writes one ``AuditRecord`` (``contracts.service_v1.audit``) as one row of ``audit_log``. The
-table itself refuses ``UPDATE`` and ``DELETE`` at the database (migration 0003): this module only
-appends, and never tries to do anything the store would refuse anyway.
+table itself refuses ``UPDATE`` and ``DELETE`` at the database: this module only appends, and
+never tries to do anything the store would refuse anyway.
 
 Scope
 -----
-In: the one write, ``AuditSink.record``.
-Out: creating the table (``app.persistence.migrate``), reading a timeline back (a later slice),
-deciding what a tool call must audit (``app.persistence.reads``).
+In: the one write, ``PostgresAuditSink.record``.
+Out: creating the table (``app.persistence.migrate``), reading records back, deciding what a
+tool call must audit (``app.persistence.reads``).
 
 Design Principles
-------------------
-- Fails closed (``AuditSink``'s own contract): a write that cannot complete raises; nothing here
+-----------------
+- Fails closed (the ``AuditSink`` contract): a write that cannot complete raises; nothing here
   swallows a ``psycopg.Error`` into a dropped entry.
-- One connection per call. There is no connection pool yet in this codebase; a call that opens,
-  writes and closes is simple and correct, at the cost of a new TCP handshake per audited action
-  (see Limitations).
+- One connection per call. There is no connection pool; a call that opens, writes and closes is
+  simple and correct, at the cost of a new TCP handshake per audited action (see Limitations).
 
 Runtime Contract
------------------
+----------------
 ``PostgresAuditSink(dsn).record(entry) -> None``
 
 Limitations
 -----------
-No connection pooling: acceptable at this codebase's current traffic, not at scale. Pooling is a
-later, purely internal change — ``AuditSink``'s interface does not need to change for it.
+No connection pooling: acceptable at the current traffic, not at scale. Pooling is a purely
+internal change; the ``AuditSink`` interface does not need to change for it.
 """
 
 from __future__ import annotations
@@ -59,10 +58,11 @@ class PostgresAuditSink:
     """Writes every ``AuditRecord`` as one append-only row."""
 
     def __init__(self, dsn: str) -> None:
+        """Keep the DSN; a connection is opened per ``record`` call."""
         self._dsn = dsn
 
     def record(self, entry: AuditRecord) -> None:
-        """Append ``entry``.
+        """Append ``entry`` as one ``audit_log`` row and commit it before returning.
 
         Raises
         ------

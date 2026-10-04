@@ -88,7 +88,7 @@ def test_a_policy_decision_carries_its_reason_code_and_policy_version(dsn: str) 
 
 @pytest.mark.integration
 def test_an_agent_action_writes_the_agents_own_identity(dsn: str) -> None:
-    """ADR-17: an agent action's own identity survives to the store, alongside its session."""
+    """An agent action's own identity survives to the store, alongside its session."""
     sink = PostgresAuditSink(dsn)
 
     sink.record(_record(action=AuditAction.PACKET_VIEWED, agent_id="AGT-1"))
@@ -133,7 +133,7 @@ def test_an_agent_console_read_is_accepted_by_the_stores_own_check_constraint(
 
 @pytest.mark.integration
 def test_the_audit_log_refuses_an_update_at_the_store(dsn: str) -> None:
-    """AC-E4-21: fails at the store, not only in code."""
+    """Fails at the store, not only in code."""
     PostgresAuditSink(dsn).record(_record())
 
     with (
@@ -146,7 +146,7 @@ def test_the_audit_log_refuses_an_update_at_the_store(dsn: str) -> None:
 
 @pytest.mark.integration
 def test_the_audit_log_refuses_a_delete_at_the_store(dsn: str) -> None:
-    """AC-E4-21: fails at the store, not only in code."""
+    """Fails at the store, not only in code."""
     PostgresAuditSink(dsn).record(_record())
 
     with (
@@ -159,7 +159,7 @@ def test_the_audit_log_refuses_a_delete_at_the_store(dsn: str) -> None:
 
 @pytest.mark.integration
 def test_the_audit_log_refuses_a_truncate_at_the_store_even_for_the_table_owner(dsn: str) -> None:
-    """AC-E4-21: TRUNCATE fires no row-level trigger, so it needs (and has) its own; this
+    """TRUNCATE fires no row-level trigger, so it needs (and has) its own; this
     project has no role separation, so the connecting role is also the table's owner, and
     Postgres normally lets an owner TRUNCATE regardless of any row-level rule."""
     PostgresAuditSink(dsn).record(_record())
