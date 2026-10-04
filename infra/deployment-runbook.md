@@ -23,6 +23,7 @@ Every command below is written so that a secret value appears only on the mainta
 - The GitHub Actions repository secret `AWS_ACCOUNT_ID` holds the target account's numeric ID.
 - The operational seed is built on this machine from the raw data already in `data/raw` (`make pipeline && make seed`, which need no AWS profile), so `data/gold/ops_seed/` exists. It is never built in CI or on the host.
 - The repository is on `main`, up to date, and CI is green on the commit that will be deployed.
+- The monthly cost alert and the model provider's spend limit are set. Neither is created by any script or visible in the repository; see [Cost controls outside the repository](#cost-controls-outside-the-repository).
 
 ## 1. Provision the account
 
@@ -143,10 +144,30 @@ Repeat for `demo-agent-access-code`. Send each code only in the release message 
 
 Turn the sign-in off by following [Turning the demonstration sign-in off](README.md#turning-the-demonstration-sign-in-off), or remove the whole host with `infra/scripts/07-teardown.sh` (the roles, repositories and seed bucket remain).
 
+## Cost controls outside the repository
+
+Two limits protect the monthly spend. No script creates them and the repository cannot show that they exist, so each is set by the maintainer in a console and checked by the command or the screen named here.
+
+**Monthly cost alert on the AWS account.** In the AWS console, open *Billing and Cost Management*, then *Budgets*, then *Create budget*, choose *Customize (advanced)* and *Cost budget*, set the period to *Monthly* and the budget type to *Recurring budget* with a *Fixed* amount, and add email alerts on the actual spend and on the forecast spend. The intended values are a budget of US$50 with alerts at 50 %, 80 % and 100 % of actual spend and at 100 % of forecast spend. Check without changing anything:
+
+```sh
+account="$(aws sts get-caller-identity --query Account --output text)"
+aws budgets describe-budgets --account-id "$account" --query 'Budgets[].[BudgetName,BudgetLimit.Amount,TimeUnit]' --output text
+aws budgets describe-notifications-for-budget --account-id "$account" --budget-name "<name from the first command>" \
+  --query 'Notifications[].[NotificationType,ComparisonOperator,Threshold]' --output text
+```
+
+**Spend limit on the model provider.** In the Claude Console, open *Settings*, then *Limits*, and set the monthly spend limit of the workspace that owns the production key, with a notification below it. The intended values are a limit of US$20 and a notification at US$17. This limit lives in the provider's organization, so nothing the repository or the AWS account holds can read it back: the screen is the only check.
+
+| Control | Last checked | Role | What was seen |
+|---|---|---|---|
+| AWS monthly cost alert | 2026-10-04 | Programmer, read-only commands above | One monthly cost budget of US$50 with notifications at 50 %, 80 % and 100 % of actual spend and at 100 % of forecast spend |
+| Model provider spend limit | | | |
+
 ## Run record
 
-One row per clean-account reproduction or persisting deployment, filled in by the maintainer after step 5.
+One row per clean-account reproduction or persisting deployment, filled in by the maintainer after step 5. A row states only what its run did: a deployment onto an account that already holds the roles, repositories and seed bucket is not a clean-account reproduction and is not recorded as one.
 
 | Date | Role | Mode | Outcome |
 |---|---|---|---|
-| | | | |
+| 2026-10-04 | Programmer, dispatched at the maintainer's request | Persisting deployment from `main` at `2cad12d` (`teardown_after=false`, `deploy_metabase=true`) onto an account already provisioned; not a clean-account reproduction. Run `37227276409` | All jobs green: build and scan, deploy and smoke test, Metabase. Host `184-195-142-149.sslip.io`, dashboard on its `dashboard.` subdomain. The smoke test and both hardening checks passed. Checked by hand afterwards: a wrong access code is refused (401), a second sign-in of the same persona is refused (429), and the dashboard answers over a valid certificate with HSTS and a content security policy |

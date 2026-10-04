@@ -101,6 +101,9 @@ results still to come say so and name the command that completes them.
   The procedure is written in [`infra/deployment-runbook.md`](../infra/deployment-runbook.md), and
   each run is recorded in the run table at its end. Until both clean-account runs are recorded, the
   complete stack with both sign-ins has not been shown to reproduce from nothing.
+  So far one persisting deployment onto an already-provisioned account is recorded; it reproduces
+  the stack and the dashboard, but not the account provisioning, so no clean-account reproduction
+  has been shown.
 - **Both demonstration sign-ins are gated by an access code kept out of the repository.** Hiding
   the code is not, by itself, a security boundary; it is a demonstration convenience layered on
   top of real authentication and authorization, which are enforced regardless of whether the code
