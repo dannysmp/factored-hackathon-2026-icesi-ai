@@ -167,6 +167,62 @@
       }
     ]
   },
+  "TicketDetailSparse": {
+    "item": {
+      "age_days": 0,
+      "category": null,
+      "claimed_by": null,
+      "created_at": "2026-06-18T14:05:00Z",
+      "language": "pt",
+      "priority": false,
+      "promised_contact_by": "2026-06-19",
+      "reference_date": "2026-06-18",
+      "status": "open",
+      "ticket_ref": "T-20260618-CCCCCCCC",
+      "trigger": "low_understanding"
+    },
+    "notes": [],
+    "packet": {
+      "actions": [],
+      "attempted_action": null,
+      "category": null,
+      "created_at": "2026-06-18T14:05:00Z",
+      "customer": {
+        "first_name": "Ana",
+        "masked_id": "****34"
+      },
+      "evidence": {
+        "policy_version": "2",
+        "reason_codes": [
+          "escalate_low_nlu_confidence"
+        ],
+        "risk": null,
+        "sources": []
+      },
+      "existing_case_number": null,
+      "language": "pt",
+      "needs_language_routing": true,
+      "open_questions": [],
+      "reference_date": "2026-06-18",
+      "request_summary": "The customer asked for help.",
+      "ticket_ref": "T-20260618-CCCCCCCC",
+      "trigger": "low_understanding",
+      "verified_facts": [
+        {
+          "amount": null,
+          "merchant": null,
+          "occurred_on": "2026-06-18",
+          "product": {
+            "last4": "1234",
+            "name": "Visa Gold"
+          },
+          "ref": "TX-2",
+          "status": "Approved"
+        }
+      ]
+    },
+    "timeline": []
+  },
   "TurnResponse": {
     "choices": [
       {

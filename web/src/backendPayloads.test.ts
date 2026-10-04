@@ -22,6 +22,25 @@ describe('backend payloads', () => {
     expect(detail.notes).toHaveLength(1)
   })
 
+  it('TicketDetail parses with every optional element absent', () => {
+    const detail = TicketDetailSchema.parse(payloads.TicketDetailSparse)
+    expect(detail.item.claimed_by).toBeNull()
+    expect(detail.item.category).toBeNull()
+    expect(detail.notes).toEqual([])
+    expect(detail.timeline).toEqual([])
+    expect(detail.packet.verified_facts[0]?.merchant).toBeNull()
+  })
+
+  it('a payload missing claimed_by or notes is refused', () => {
+    const withoutClaim = structuredClone(payloads.TicketDetail) as Record<string, unknown>
+    delete (withoutClaim.item as Record<string, unknown>).claimed_by
+    expect(() => TicketDetailSchema.parse(withoutClaim)).toThrow()
+
+    const withoutNotes = structuredClone(payloads.TicketDetail) as Record<string, unknown>
+    delete withoutNotes.notes
+    expect(() => TicketDetailSchema.parse(withoutNotes)).toThrow()
+  })
+
   it('TurnResponse parses', () => {
     expect(TurnResponseSchema.parse(payloads.TurnResponse).next_expected).toBe('transaction_choice')
   })

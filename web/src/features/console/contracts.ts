@@ -62,7 +62,7 @@ export const QueueItemSchema = z
     age_days: z.number().int().min(0),
     priority: z.boolean(),
     // Always present on the wire (null while unclaimed).
-    claimed_by: z.string().regex(AgentIdPattern).nullable().default(null),
+    claimed_by: z.string().regex(AgentIdPattern).nullable(),
   })
   .strict()
 export type QueueItem = z.infer<typeof QueueItemSchema>
@@ -309,7 +309,7 @@ export const TicketDetailSchema = z
     item: QueueItemSchema,
     packet: HandoffPacketSchema,
     timeline: z.array(TimelineEntrySchema),
-    notes: z.array(NoteSchema).default([]),
+    notes: z.array(NoteSchema),
   })
   .strict()
   // `_row_describes_the_packet` (contracts/service_v1/console.py): the queue row and the packet

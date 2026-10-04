@@ -22,6 +22,7 @@ const BASE_ITEM = {
   promised_contact_by: '2026-06-19',
   age_days: 0,
   priority: true,
+  claimed_by: null,
 }
 
 describe('QueueItemSchema', () => {
