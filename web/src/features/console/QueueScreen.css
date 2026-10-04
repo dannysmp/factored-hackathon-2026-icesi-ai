@@ -135,11 +135,12 @@ tbody th[scope='row'] {
 }
 
 /* Rows answer the pointer, so the eye can follow a row across a wide table. */
-tbody tr:hover {
+/* Scoped to the queue table: the packet and timeline tables hold no row that can be opened. */
+.queue-table-scroll tbody tr:hover {
   background-color: var(--color-bg-subtle);
 }
 
-thead th {
+.queue-table-scroll thead th {
   background-color: var(--color-bg-subtle);
   border-bottom-color: var(--color-border-control);
 }
