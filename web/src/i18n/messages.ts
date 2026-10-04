@@ -5,9 +5,13 @@
  * the type checker can't express.
  */
 export interface Messages {
+  'app.title': string
+  'app.signOut': string
   'common.loading': string
   'common.retry': string
   'common.error.generic': string
+  'chat.regionLabel': string
+  'chat.messagesLabel': string
   'chat.placeholder': string
   'chat.messageLabel': string
   'chat.starting': string
@@ -21,6 +25,7 @@ export interface Messages {
   'chat.ended': string
   /** `{ticket}` is replaced with the handoff ticket at render time — the one templated key. */
   'chat.caseReference': string
+  'signin.regionLabel': string
   'signin.loading': string
   'signin.unreachable': string
   'signin.unavailable': string

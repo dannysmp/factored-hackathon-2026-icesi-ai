@@ -153,6 +153,28 @@ describe('ConsoleApp', () => {
     ).toBeInTheDocument()
   })
 
+  it('names the document in Spanish and signs the agent out to the sign-in step', async () => {
+    stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<ConsoleApp />)
+
+    await screen.findByLabelText(es['signin.personaLabel'])
+    expect(document.documentElement.lang).toBe('es')
+    expect(document.title).toBe('Consola del agente')
+    expect(screen.queryByRole('button', { name: 'Cerrar sesión' })).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    await screen.findByRole('region', { name: 'Cola de casos escalados' })
+
+    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }))
+
+    expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
+    expect(
+      screen.queryByRole('region', { name: 'Cola de casos escalados' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('frames every step with a banner holding the console title and one main landmark', async () => {
     stubTheWholeFlow()
     render(<ConsoleApp />)

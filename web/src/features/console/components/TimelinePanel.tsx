@@ -1,3 +1,4 @@
+import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { JSX } from 'react'
 import type { TimelineEntry } from '../contracts'
 import { INTENT_LABELS, REASON_CODE_LABELS } from '../labels'
@@ -21,7 +22,7 @@ export function TimelinePanel({ entries }: { entries: readonly TimelineEntry[] }
   const sorted = [...entries].sort(byTraceId)
 
   return (
-    <div className="queue-table-scroll">
+    <ScrollRegion className="queue-table-scroll" label="Cronología de auditoría">
       <table>
         <caption className="sr-only">Cronología de auditoría</caption>
         <thead>
@@ -49,6 +50,6 @@ export function TimelinePanel({ entries }: { entries: readonly TimelineEntry[] }
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   )
 }

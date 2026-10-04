@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { ChatFeature } from './ChatFeature'
 import { FixtureChatClient } from './client'
 import { FILE_DISPUTE_EN } from './fixtures'
+import { findMessage } from './findMessage'
 
 function renderChat(): ReturnType<typeof render> {
   return render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN)} lang="en" />)
@@ -14,7 +15,7 @@ describe('ChatFeature keyboard traversal', () => {
   it('reaches the message field first, then Send once there is text to send', async () => {
     const user = userEvent.setup()
     renderChat()
-    await screen.findByText('Hi! Which transaction would you like to dispute?')
+    await findMessage('Hi! Which transaction would you like to dispute?')
 
     await user.tab()
     expect(screen.getByLabelText('Your message')).toHaveFocus()
@@ -35,7 +36,7 @@ describe('ChatFeature keyboard traversal', () => {
   it('walks the whole conversation with Tab, Enter and Space alone', async () => {
     const user = userEvent.setup()
     renderChat()
-    await screen.findByText('Hi! Which transaction would you like to dispute?')
+    await findMessage('Hi! Which transaction would you like to dispute?')
 
     await user.tab()
     await user.keyboard('the Tienda Sol one')
@@ -50,7 +51,7 @@ describe('ChatFeature keyboard traversal', () => {
     expect(choice).toHaveFocus()
     await user.keyboard(' ')
 
-    await screen.findByText(/what is the reason for the dispute/i)
+    await findMessage(/what is the reason for the dispute/i)
     await user.tab()
     expect(screen.getByLabelText('Your message')).toHaveFocus()
     await user.keyboard('unrecognized charge')
@@ -64,6 +65,6 @@ describe('ChatFeature keyboard traversal', () => {
     expect(confirm).toHaveFocus()
     await user.keyboard('{Enter}')
 
-    expect(await screen.findByText(/case DEMO-1234/)).toBeInTheDocument()
+    expect(await findMessage(/case DEMO-1234/)).toBeInTheDocument()
   })
 })

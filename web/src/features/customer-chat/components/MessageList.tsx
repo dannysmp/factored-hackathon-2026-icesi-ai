@@ -7,12 +7,11 @@ import styles from './MessageList.module.css'
 /**
  * The conversation so far.
  *
- * `aria-live="polite"` announces each new assistant reply to a screen reader without moving
- * focus (frontend standard, section 7: "dynamic content that updates without navigation uses a
- * polite live region"); the customer's own messages need no announcement, since typing them was
- * already the customer's own action. Renders a purpose-built empty state (not a bare, silent
- * list) when nothing has arrived yet, so this component reads correctly on its own regardless of
- * whatever loading text a caller shows alongside it.
+ * The list itself is not a live region: new replies are announced by the chat's own hidden
+ * announcement, so the history is never re-read when a message is added. Renders a
+ * purpose-built empty state (not a bare, silent list) when nothing has arrived yet, so this
+ * component reads correctly on its own regardless of whatever loading text a caller shows
+ * alongside it.
  */
 export function MessageList({
   messages,
@@ -24,14 +23,10 @@ export function MessageList({
   const t = useT(lang)
 
   if (messages.length === 0) {
-    return (
-      <p className={styles.empty} aria-live="polite">
-        {t('chat.noMessagesYet')}
-      </p>
-    )
+    return <p className={styles.empty}>{t('chat.noMessagesYet')}</p>
   }
   return (
-    <ol className={styles.list} aria-live="polite" aria-label="Conversation">
+    <ol className={styles.list} aria-label={t('chat.messagesLabel')}>
       {messages.map((message) => (
         <li key={message.id} className={styles.message}>
           <span className={styles.from}>
