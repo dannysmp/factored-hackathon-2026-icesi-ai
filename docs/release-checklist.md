@@ -22,7 +22,7 @@ This checklist states each obligation of a release and names the evidence a revi
 | The three demonstration paths run in the browser, in Spanish and Portuguese, and the normal path in English | The rehearsal checklist, second run, all passing | [ ] |
 | The demonstration notice and the data reference date are visible on every screen | The rehearsal checklist | [ ] |
 | The console is shown as a read-only viewer | The rehearsal checklist | [ ] |
-| A push to the main branch deploys and passes the smoke test | The pipeline run | [ ] |
+| The deployment, dispatched manually from the main branch, passes the smoke test | [The deploy workflow](../.github/workflows/deploy.yml) and the run of that workflow that passed | [ ] |
 | The stack is reproduced from a clean account with the written commands, then torn down | The two clean-account run records | [ ] |
 | No long-lived cloud key exists in the repository or the pipeline | The pipeline configuration; the scan report | [ ] |
 | The demonstration sign-in can be switched off, and the switch has been tried | [The runbook entry](../infra/README.md#turning-the-demonstration-sign-in-off), with the date of the trial | [ ] |
