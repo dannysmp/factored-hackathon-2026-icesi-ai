@@ -9,7 +9,7 @@ generated_from: "policy/dispute_policy_v1.yaml"
 
 ## O que é esta política {#overview}
 
-Esta política explica como se decide um pedido de contestação de uma transação feita com uma conta ou um cartão. É uma política sintética escrita para este projeto: não é a de nenhum banco nem regulador, e não constitui orientação jurídica. Cada decisão é tomada com regras fixas e fica registrada com um motivo.
+Esta política explica como se decide um pedido de contestação de uma transação feita com uma conta ou um cartão. É uma política sintética escrita para este projeto: não é a política de nenhum banco nem de nenhum órgão regulador e não é orientação jurídica. Cada decisão segue regras fixas e fica registrada com um motivo.
 
 ## Quais transações podem ser contestadas {#who-can-dispute}
 
@@ -17,7 +17,7 @@ Podem ser contestadas transações destes produtos: Conta poupança, Conta corre
 
 Os demais produtos (Empréstimo pessoal, Financiamento imobiliário, Investimentos e Seguros) têm canais de atendimento próprios e não são tratados por esta política.
 
-Para apresentar uma contestação, a transação deve ser uma cobrança ao cliente (uma compra, um saque, uma transferência ou um pagamento), estar aprovada, não estar datada no futuro, estar dentro do prazo da sua categoria (veja abaixo) e não ter outra contestação em aberto.
+Para apresentar uma contestação, a transação deve ser uma cobrança feita ao cliente (uma compra, um saque, uma transferência ou um pagamento), estar aprovada, não ter data futura, estar dentro do prazo da sua categoria (veja abaixo) e não ter outra contestação em aberto.
 
 Não podem ser contestados depósitos nem ajustes.
 
@@ -35,7 +35,7 @@ A contestação deve ser apresentada dentro de um prazo, contado em dias corrido
 
 ## Quando chega a primeira resposta {#response-time}
 
-Depois de apresentar uma contestação, o banco dá uma primeira resposta dentro deste prazo, contado em dias corridos a partir da data de apresentação:
+Depois que a contestação é apresentada, o banco dá a primeira resposta dentro do prazo abaixo, contado em dias corridos a partir da data de apresentação:
 
 - Cobrança não reconhecida: 3 dias.
 - Cobrança em duplicidade: 3 dias.
@@ -45,48 +45,48 @@ Depois de apresentar uma contestação, o banco dá uma primeira resposta dentro
 
 ## O que ter em mãos {#evidence}
 
-Para cada tipo de contestação, tenha isto pronto:
+Para cada tipo de contestação, tenha em mãos o seguinte:
 
-- Cobrança não reconhecida: confirmar que ainda está com o cartão e dizer qual parte da cobrança não reconhece (comerciante, data ou valor).
+- Cobrança não reconhecida: a confirmação de que o cartão continua com você e a indicação de qual parte da cobrança você não reconhece (estabelecimento, data ou valor).
 - Cobrança em duplicidade: as datas e os valores das duas cobranças.
 - Valor incorreto: um comprovante do valor combinado, como um recibo ou uma confirmação de pedido.
-- Serviço não recebido: um comprovante do pedido ou do pagamento e qualquer tentativa de contato com o comerciante.
-- Contestação por fraude: se o cartão está perdido, roubado ou ainda em seu poder e quando você mesmo o usou pela última vez.
+- Serviço não recebido: um comprovante do pedido ou do pagamento e o registro de qualquer tentativa de contato com o estabelecimento.
+- Contestação por fraude: a situação do cartão (perdido, roubado ou ainda com você) e a data em que você mesmo usou o cartão pela última vez.
 
 ## Confirmação antes de apresentar {#confirmation}
 
 Antes de apresentar uma contestação, o cliente confirma exatamente o que será apresentado: a transação, o motivo e os dados do pedido.
 
-## Quando um atendente analisa {#human-review}
+## Quando um atendente analisa o pedido {#human-review}
 
-Mesmo que o pedido cumpra as regras, ele é encaminhado para análise de um atendente nestes casos:
+Mesmo que o pedido cumpra as regras, um atendente o analisa nestes casos:
 
 - É uma contestação por fraude.
-- O sistema não entendeu o pedido com segurança suficiente.
-- Aplicam-se outros critérios de revisão do banco.
+- O sistema não conseguiu interpretar o pedido com segurança suficiente.
+- Outros critérios de análise do banco se aplicam.
 
 ## Contestações por fraude {#fraud-claims}
 
-Toda contestação por fraude é analisada por um atendente. Ela nunca é descartada automaticamente, mesmo que a transação tenha sido recusada, esteja fora do prazo ou seja de um produto fora do escopo desta política; nesses casos, o atendente recebe também o motivo pelo qual o pedido não seria elegível.
+Toda contestação por fraude é analisada por um atendente. Ela nunca é rejeitada automaticamente, mesmo que a transação tenha sido recusada, esteja fora do prazo ou pertença a um produto que esta política não abrange. Nesses casos, o atendente também recebe o motivo pelo qual o pedido não seria elegível.
 
 ## Motivos de cada decisão {#decision-codes}
 
-Cada decisão traz um destes motivos.
+Cada decisão vem acompanhada de um destes motivos.
 
 | Motivo | Significado |
 |---|---|
-| `eligible` | A contestação pode ser apresentada, mediante confirmação. |
+| `eligible` | A contestação pode ser apresentada depois da sua confirmação. |
 | `product_out_of_scope` | O produto não faz parte do escopo desta política. |
 | `transaction_type_not_disputable` | O tipo de transação não é uma cobrança que possa ser contestada. |
 | `transaction_declined` | A transação foi recusada: não houve cobrança. |
 | `transaction_pending` | A transação ainda está pendente. |
 | `transaction_reversed` | A transação já foi estornada. |
-| `transaction_date_in_future` | A data da transação está no futuro. |
+| `transaction_date_in_future` | A transação tem data futura. |
 | `filing_window_expired` | O prazo para apresentar esta contestação expirou. |
 | `duplicate_open_case` | Já existe uma contestação aberta para esta transação. |
-| `escalate_fraud_claim` | O caso é encaminhado para análise de um atendente. |
-| `escalate_low_nlu_confidence` | O caso é encaminhado para análise de um atendente. |
-| `escalate_repeat_complainer` | O caso é encaminhado para análise de um atendente. |
-| `escalate_amount_above_threshold` | O caso é encaminhado para análise de um atendente. |
-| `escalate_amount_unknown` | O caso é encaminhado para análise de um atendente. |
-| `escalate_risk_score` | O caso é encaminhado para análise de um atendente. |
+| `escalate_fraud_claim` | Um atendente analisa este pedido. |
+| `escalate_low_nlu_confidence` | Um atendente analisa este pedido. |
+| `escalate_repeat_complainer` | Um atendente analisa este pedido. |
+| `escalate_amount_above_threshold` | Um atendente analisa este pedido. |
+| `escalate_amount_unknown` | Um atendente analisa este pedido. |
+| `escalate_risk_score` | Um atendente analisa este pedido. |

@@ -234,7 +234,7 @@ INELIGIBLE_TEXT: dict[Lang, dict[CustomerReason, str]] = {
         CustomerReason.REVERSED: "Essa transação já foi estornada.",
         CustomerReason.DUPLICATE_CASE: "Já existe uma contestação em aberto para esta transação.",
         CustomerReason.NOT_DISPUTABLE: "Esse produto ou tipo de transação não pode ser "
-        "contestado por esta política.",
+        "contestado segundo esta política.",
     },
     "en": {
         CustomerReason.WINDOW_EXPIRED: "The deadline to file this dispute has already passed.",
@@ -276,7 +276,7 @@ def _greeting(e: RenderEnvelope) -> str:
         "es": "Hola, puedo ayudarle a disputar un cargo, consultar una disputa o explicarle la "
         "política. Cuénteme qué transacción quiere revisar.",
         "pt": "Olá, posso ajudar a contestar uma cobrança, consultar uma contestação ou "
-        "explicar a política. Conte-me qual transação você quer revisar.",
+        "explicar a política. Diga qual transação você quer revisar.",
         "en": "Hello, I can help you dispute a charge, check a dispute, or explain the policy. "
         "Tell me which transaction you'd like to look at.",
     }[e.lang]
@@ -285,7 +285,7 @@ def _greeting(e: RenderEnvelope) -> str:
 def _clarify_transaction(e: RenderEnvelope) -> str:
     return {
         "es": "¿Podría decirme el comercio, el monto o la fecha del cargo que quiere disputar?",
-        "pt": "Você poderia me dizer o comerciante, o valor ou a data da cobrança que quer "
+        "pt": "Você poderia me dizer o estabelecimento, o valor ou a data da cobrança que quer "
         "contestar?",
         "en": "Could you tell me the merchant, the amount or the date of the charge you want "
         "to dispute?",
@@ -323,12 +323,12 @@ def _language_offer(e: RenderEnvelope) -> str:
     return {
         "es": "Hola, puedo ayudarle con su disputa. No estoy segura de si prefiere continuar "
         "en español o portugués; continuaré en español, avíseme si prefiere otro idioma. / "
-        "Olá, posso ajudar com sua contestação. Vou continuar em espanhol; avise-me se "
+        "Olá, posso ajudar com sua contestação. Vou continuar em espanhol; me avise se "
         "preferir português.",
         "pt": "Olá, posso ajudar com sua contestação. Não tenho certeza se você prefere "
-        "continuar em português ou espanhol; vou continuar em espanhol, avise-me se preferir "
-        "outro idioma. / Hola, puedo ayudarle con su disputa. Continuaré en español; avíseme "
-        "si prefiere portugués.",
+        "continuar em português ou em espanhol; vou continuar em espanhol, mas me avise se "
+        "preferir outro idioma. / Hola, puedo ayudarle con su disputa. Continuaré en español; "
+        "avíseme si prefiere portugués.",
         "en": "Hello, I can help with your dispute.",
     }[e.lang]
 
@@ -350,7 +350,7 @@ def _present_one(e: RenderEnvelope) -> str:
         ),
         "pt": (
             f"Encontrei uma transação de {amount}{merchant} "
-            f"em {format_date(transaction.occurred_on, e.lang)}. É esta que você quer "
+            f"no dia {format_date(transaction.occurred_on, e.lang)}. É esta que você quer "
             "contestar?"
         ),
         "en": (
@@ -378,7 +378,7 @@ def _present_narrow(e: RenderEnvelope) -> str:
         "es": "Encontré demasiadas coincidencias para mostrarlas. ¿Podría darme más detalles, "
         "como el comercio o la fecha exacta?",
         "pt": "Encontrei correspondências demais para mostrar. Você poderia me dar mais "
-        "detalhes, como o comerciante ou a data exata?",
+        "detalhes, como o estabelecimento ou a data exata?",
         "en": "I found too many matches to list. Could you give me more detail, like the "
         "merchant or the exact date?",
     }[e.lang]
@@ -389,7 +389,7 @@ def _not_found(e: RenderEnvelope) -> str:
         "es": "No encontré ninguna transacción con esos datos. Puedo ampliar el rango de "
         "fechas o pasarla con un asesor.",
         "pt": "Não encontrei nenhuma transação com esses dados. Posso ampliar o período ou "
-        "encaminhar você a um atendente.",
+        "encaminhar você para um atendente.",
         "en": "I couldn't find a transaction matching that. I can widen the date range or "
         "connect you with a person.",
     }[e.lang]
@@ -414,8 +414,8 @@ def _confirm_filing(e: RenderEnvelope) -> str:
         ),
         "pt": (
             f"Vou apresentar uma contestação por {category} sobre a cobrança de "
-            f"{amount} de "
-            f"{format_date(transaction.occurred_on, e.lang)}. Um atendente vai analisar; isso "
+            f"{amount} do dia "
+            f"{format_date(transaction.occurred_on, e.lang)}. Um atendente vai analisá-la; isso "
             "não garante um resultado. Você confirma que quer apresentá-la?"
         ),
         "en": (
@@ -434,7 +434,7 @@ def _filing_result(e: RenderEnvelope) -> str:
     when = (
         {
             "es": f" Espere una primera respuesta antes del {format_date(expected, e.lang)}.",
-            "pt": f" Aguarde uma primeira resposta até {format_date(expected, e.lang)}.",
+            "pt": f" Você deve receber uma primeira resposta até {format_date(expected, e.lang)}.",
             "en": f" Expect a first response by {format_date(expected, e.lang)}.",
         }[e.lang]
         if expected is not None
@@ -442,7 +442,7 @@ def _filing_result(e: RenderEnvelope) -> str:
     )
     parts = {
         "es": f"Su disputa quedó registrada con el número de caso {case.case_number}.{when}",
-        "pt": f"Sua contestação foi registrada com o número de caso {case.case_number}.{when}",
+        "pt": f"Sua contestação foi registrada com o número do caso {case.case_number}.{when}",
         "en": f"Your dispute was filed with case number {case.case_number}.{when}",
     }
     return parts[e.lang]
@@ -453,7 +453,7 @@ def _filing_unverified(e: RenderEnvelope) -> str:
         "es": "No pude confirmar que la disputa quedó registrada correctamente. La estoy "
         "pasando a un asesor para que lo verifique.",
         "pt": "Não consegui confirmar que a contestação foi registrada corretamente. Estou "
-        "encaminhando a um atendente para verificar.",
+        "encaminhando o caso para um atendente verificar.",
         "en": "I couldn't confirm the dispute was filed correctly. I'm passing this to a "
         "person to verify it.",
     }[e.lang]
@@ -462,7 +462,7 @@ def _filing_unverified(e: RenderEnvelope) -> str:
 def _filing_cancelled(e: RenderEnvelope) -> str:
     return {
         "es": "De acuerdo, no presenté la disputa.",
-        "pt": "Combinado, não apresentei a contestação.",
+        "pt": "Tudo bem, não apresentei a contestação.",
         "en": "Understood, I didn't file the dispute.",
     }[e.lang]
 
@@ -495,7 +495,7 @@ def _dispute_status(e: RenderEnvelope) -> str:
 def _no_case_found(e: RenderEnvelope) -> str:
     return {
         "es": "No encontré ningún caso con esos datos en su cuenta.",
-        "pt": "Não encontrei nenhum caso com esses dados em sua conta.",
+        "pt": "Não encontrei nenhum caso com esses dados na sua conta.",
         "en": "I couldn't find a case matching that on your account.",
     }[e.lang]
 
@@ -515,8 +515,8 @@ def _abstain_policy(e: RenderEnvelope) -> str:
     return {
         "es": "No tengo esa información y no puedo darle una cifra al respecto. Puedo "
         "pasarla con un asesor.",
-        "pt": "Não tenho essa informação e não posso dar um número sobre isso. Posso "
-        "encaminhar você a um atendente.",
+        "pt": "Não tenho essa informação e não posso informar um valor sobre isso. Posso "
+        "encaminhar você para um atendente.",
         "en": "I don't have that information and can't give you a figure on it. I can connect "
         "you with a person.",
     }[e.lang]
@@ -528,9 +528,9 @@ def _refuse_unsupported(e: RenderEnvelope) -> str:
         "es": f"Eso no lo puedo hacer aquí. Puedo ayudarle a disputar una transacción, "
         f"consultar un caso o explicarle la política; para eso use {channel}, o la paso "
         "con un asesor.",
-        "pt": f"Isso eu não posso fazer aqui. Posso ajudar a contestar uma transação, "
-        f"consultar um caso ou explicar a política; para isso use {channel}, ou encaminho "
-        "você a um atendente.",
+        "pt": f"Isso eu não posso fazer por aqui. Posso ajudar a contestar uma transação, "
+        f"consultar um caso ou explicar a política. Para isso, use {channel}, ou posso "
+        "encaminhar você para um atendente.",
         "en": f"I can't do that here. I can help you dispute a transaction, check a case, or "
         f"explain the policy; for that, use {channel}, or I can connect you with a person.",
     }[e.lang]
@@ -541,7 +541,7 @@ def _refuse_reversal(e: RenderEnvelope) -> str:
         "es": "Yo presento la disputa y el banco decide; no puedo garantizar un reembolso ni "
         "una fecha. ¿Quiere que la presente si es elegible?",
         "pt": "Eu apresento a contestação e o banco decide; não posso garantir um reembolso "
-        "nem uma data. Quer que eu a apresente se for elegível?",
+        "nem uma data. Quer que eu apresente a contestação, se for elegível?",
         "en": "I file the dispute and the bank decides; I can't promise a refund or a date. "
         "Would you like me to file it if it's eligible?",
     }[e.lang]
@@ -553,7 +553,7 @@ def _handoff_review(e: RenderEnvelope) -> str:
     contact = (
         {
             "es": f" Le contactarán en un plazo de {hours} horas.",
-            "pt": f" Vão entrar em contato em até {hours} horas.",
+            "pt": f" Um atendente entrará em contato com você em até {hours} horas.",
             "en": f" You'll be contacted within {hours} hours.",
         }[e.lang]
         if hours is not None
@@ -572,7 +572,7 @@ def _handoff_fraud(e: RenderEnvelope) -> str:
     contact = (
         {
             "es": f" Le contactarán en un plazo de {hours} horas.",
-            "pt": f" Vão entrar em contato em até {hours} horas.",
+            "pt": f" Um atendente entrará em contato com você em até {hours} horas.",
             "en": f" You'll be contacted within {hours} hours.",
         }[e.lang]
         if hours is not None
@@ -581,8 +581,8 @@ def _handoff_fraud(e: RenderEnvelope) -> str:
     return {
         "es": f"Esto lo atiende un asesor de inmediato por ser un posible fraude. No "
         f"prometo un resultado.{contact} Su referencia es {ticket}.",
-        "pt": f"Isso é atendido por um atendente imediatamente por ser uma possível fraude. "
-        f"Não prometo um resultado.{contact} Sua referência é {ticket}.",
+        "pt": f"Um atendente cuida disto de imediato, porque pode se tratar de fraude. "
+        f"Não posso prometer um resultado.{contact} Sua referência é {ticket}.",
         "en": f"A person handles this right away since it may be fraud. I can't promise an "
         f"outcome.{contact} Your reference is {ticket}.",
     }[e.lang]
@@ -593,8 +593,8 @@ def _handoff_card_loss(e: RenderEnvelope) -> str:
     return {
         "es": f"No puedo bloquear una tarjeta desde aquí. Hágalo de inmediato en {channel}. "
         "También estoy pasando esto a un asesor.",
-        "pt": f"Não posso bloquear um cartão por aqui. Faça isso imediatamente em {channel}. "
-        "Também estou encaminhando isso a um atendente.",
+        "pt": f"Não posso bloquear um cartão por aqui. Faça isso imediatamente, ligando para "
+        f"{channel}. Também estou encaminhando isso para um atendente.",
         "en": f"I can't block a card here. Please do that right away through {channel}. I'm "
         "also passing this to a person.",
     }[e.lang]
@@ -603,7 +603,8 @@ def _handoff_card_loss(e: RenderEnvelope) -> str:
 def _handoff_requested(e: RenderEnvelope) -> str:
     return {
         "es": "Le paso con un asesor ahora mismo. No hace falta que repita los detalles.",
-        "pt": "Vou encaminhar você a um atendente agora. Não é preciso repetir os detalhes.",
+        "pt": "Vou encaminhar você para um atendente agora mesmo. Você não precisa repetir os "
+        "detalhes.",
         "en": "I'm connecting you with a person right now. You won't need to repeat the details.",
     }[e.lang]
 
@@ -613,8 +614,7 @@ def _handoff_not_registered(e: RenderEnvelope) -> str:
     return {
         "es": f"No pude registrar su solicitud en este momento. Por favor contacte al banco "
         f"por {channel}.",
-        "pt": f"Não consegui registrar sua solicitação agora. Por favor, contate o banco por "
-        f"{channel}.",
+        "pt": f"Não consegui registrar sua solicitação agora. Por favor, ligue para {channel}.",
         "en": f"I couldn't register your request right now. Please contact the bank through "
         f"{channel}.",
     }[e.lang]
@@ -624,8 +624,8 @@ def _restart_after_pending(e: RenderEnvelope) -> str:
     return {
         "es": "Su sesión anterior expiró y no se presentó nada. Empecemos de nuevo: ¿qué "
         "transacción quiere revisar?",
-        "pt": "Sua sessão anterior expirou e nada foi apresentado. Vamos começar de novo: "
-        "qual transação você quer revisar?",
+        "pt": "Sua sessão anterior expirou e nenhuma contestação foi apresentada. Vamos "
+        "começar de novo: qual transação você quer revisar?",
         "en": "Your previous session expired and nothing was filed. Let's start again: which "
         "transaction would you like to look at?",
     }[e.lang]
@@ -634,7 +634,7 @@ def _restart_after_pending(e: RenderEnvelope) -> str:
 def _farewell(e: RenderEnvelope) -> str:
     return {
         "es": "Gracias por escribir. Que tenga un buen día.",
-        "pt": "Obrigado por escrever. Tenha um bom dia.",
+        "pt": "Agradeço o contato. Tenha um bom dia.",
         "en": "Thank you for writing in. Have a good day.",
     }[e.lang]
 
