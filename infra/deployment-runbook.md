@@ -4,7 +4,7 @@ The maintainer's procedure for standing the system up in an empty AWS account, s
 
 ## Handling secrets
 
-Every command below is written so that a secret value appears only in the maintainer's own terminal, and only where a step says so.
+Every command below is written so that a secret value appears only on the maintainer's own machine (terminal, clipboard or the sign-in form), and only where a step says so.
 
 - A value is always piped into `infra/scripts/put-secret.sh` on standard input, never typed as an argument: arguments end up in shell history and in process listings.
 - Never paste a value, or the output of a command that prints one, into a chat, a pull request, an issue, a log, a screenshot or a recording. Examples in this document show the shape of a value, never a real one.
@@ -127,7 +127,7 @@ Which checks apply depends on the mode. With `teardown_after` left on, the host 
 
 ## 6. Read the codes for the release message
 
-A code leaves AWS only by this method (check 4 uses it too). Copy it straight to the clipboard so it is never printed, paste it into the message, then clear the clipboard. The subshell fails loudly if the read fails, instead of leaving an empty clipboard. On macOS:
+This is the only way to get a code in a form that can be pasted (check 4 uses it too); check 3 reads the codes into a shell variable that is never displayed. Copy it straight to the clipboard so it is never printed, paste it into the message, then clear the clipboard. The subshell fails loudly if the read fails, instead of leaving an empty clipboard. On macOS:
 
 ```sh
 ( set -o pipefail; aws ssm get-parameter --name /transaction-disputes/prod/demo-signin-access-code --with-decryption --query Parameter.Value --output text | tr -d '\n' | pbcopy ) || echo "read failed: nothing was copied"
