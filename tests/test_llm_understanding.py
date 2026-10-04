@@ -257,7 +257,7 @@ def test_a_successful_calls_accounting_matches_the_completions_own_fields() -> N
 
 
 def test_a_reported_date_expression_resolves_against_the_reference_date() -> None:
-    """AC-E5-16, end to end through the adapter: the model reports only the customer's own
+    """End to end through the adapter: the model reports only the customer's own
     words; the resolved date and how it was expressed are what the contract actually carries."""
     llm = FakeLlm(
         responses=[

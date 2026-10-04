@@ -89,8 +89,8 @@ def test_a_day_of_month_phrase_resolves_to_its_most_recent_occurrence(
 @pytest.mark.parametrize(
     ("expression", "expected_date"),
     [
-        # Day first, in every language, per AC-E5-16 — including English, overriding its usual
-        # month-first convention.
+        # Day first, in every language — including English, overriding its usual month-first
+        # convention.
         ("03/04", date(2026, 4, 3)),
         ("3/4", date(2026, 4, 3)),
         ("15/01", date(2026, 1, 15)),

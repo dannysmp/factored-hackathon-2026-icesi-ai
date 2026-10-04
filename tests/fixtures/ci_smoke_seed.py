@@ -5,18 +5,17 @@ CI Smoke Seed
 Overview
 --------
 Wholly synthetic customer, product and transaction rows for the CI smoke job's 16 cases
-(``evals.runner.smoke.SMOKE_CASE_IDS``) — never the provider's real data (git-ignored, never
-staged, per this project's own invariant), and never the real ``pipelines.eval_bank`` module
-either, which this fixture deliberately does not import: reusing a frozen, reviewed production
-fixture as a disposable CI-only substitute would conflate the two.
+(``evals.runner.smoke.SMOKE_CASE_IDS``) — never the provider's real data (git-ignored and never
+staged), and never the real ``pipelines.eval_bank`` module either, which this fixture
+deliberately does not import: reusing a frozen production fixture as a disposable CI-only
+substitute would conflate the two.
 
 Scope
 -----
 In: ``seed_ci_smoke_data(dsn)``, deriving exactly the rows the smoke set's own cases need and
 inserting them.
 Out: anything the smoke set does not reference; a real ``data/gold/eval_bank`` load into a
-non-CI store (a later slice); the smoke job's own case selection (``evals.runner.smoke``, already
-built).
+non-CI store; the smoke job's own case selection (``evals.runner.smoke``).
 
 Design Principles
 -----------------

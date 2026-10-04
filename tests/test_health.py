@@ -37,7 +37,7 @@ def test_liveness_reports_live_without_dependencies(client: TestClient) -> None:
 
 
 def test_readiness_reports_version_and_environment(client: TestClient) -> None:
-    """Readiness exposes the build identifier, environment and the domain date (ADR-15)."""
+    """Readiness exposes the build identifier, environment and the domain date."""
     response = client.get("/health/ready")
 
     assert response.status_code == 200

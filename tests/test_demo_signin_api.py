@@ -227,7 +227,7 @@ def client(app: FastAPI) -> TestClient:
 
 @pytest.fixture
 def agent_app(clock: Clock, audit: _RecordingAuditSink) -> FastAPI:
-    """Both brokers enabled together, matching the deployed configuration (ADR-18)."""
+    """Both brokers enabled together, matching the deployed configuration."""
     return create_app(
         _agent_settings(),
         clock=clock,
@@ -477,7 +477,7 @@ def test_the_access_code_never_appears_in_the_audit_trail(
 
 
 # ---------------------------------------------------------------------------
-# Agent broker (ADR-17, ADR-18) — mirrors the customer broker above, audience by audience.
+# Agent broker — mirrors the customer broker above, audience by audience.
 # ---------------------------------------------------------------------------
 
 
@@ -521,7 +521,7 @@ def test_an_agent_document_number_or_customer_identifier_is_never_accepted(
 def test_an_agent_token_is_refused_by_the_customer_only_session_endpoint(
     agent_client: TestClient,
 ) -> None:
-    """A valid token of the wrong audience is refused exactly like no session at all (ADR-18)."""
+    """A valid token of the wrong audience is refused exactly like no session at all."""
     issued = agent_client.post(
         AGENT_LOGIN,
         json={"persona": "agent-beatriz"},

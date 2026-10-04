@@ -74,9 +74,10 @@ def test_every_shipped_persona_resolves_to_an_active_seeded_customer() -> None:
     ``DEMO_SIGNIN_ENABLED`` can ever serve a request.
 
     Needs the real, built operational seed on disk, not only ``DATABASE_URL``: ``data/`` is
-    git-ignored and CI never builds or stages it (no S3 credentials there by design — see
-    ``CLAUDE.md``'s Secrets and data invariant), so this test only runs locally, where the seed
-    has actually been built, and skips everywhere else rather than failing on an absent file."""
+    git-ignored and CI never builds or stages it (no S3 credentials there by design: the data
+    provider's credentials exist only in local AWS profiles), so this test only runs locally,
+    where the seed has actually been built, and skips everywhere else rather than failing on an
+    absent file."""
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
         pytest.skip("DATABASE_URL is not set")
