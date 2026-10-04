@@ -21,7 +21,7 @@ export const es: Messages = {
   'chat.confirm': 'Confirmar',
   'chat.send': 'Enviar',
   'chat.assistantTyping': 'El asistente está escribiendo…',
-  'chat.notSent': 'No enviado',
+  'chat.notSent': 'Mensaje no enviado',
   'chat.charactersLeft': 'Caracteres restantes: {count}',
   'chat.ended': 'Esta conversación ha finalizado.',
   'chat.caseReference': 'Número de caso: {ticket}.',

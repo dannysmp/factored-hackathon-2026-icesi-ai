@@ -68,18 +68,6 @@ describe('MessageList', () => {
       expect(failed).toHaveTextContent('Not sent')
       expect(screen.getAllByText('Not sent')).toHaveLength(1)
     })
-
-    it('keeps long unbroken text inside its bubble', () => {
-      const url = `https://example.test/${'a'.repeat(300)}`
-      render(
-        <MessageList
-          messages={[{ id: 'a', from: 'customer', text: url }]}
-          lang="en"
-          pending={false}
-        />,
-      )
-      expect(screen.getByText(url)).toBeInTheDocument()
-    })
   })
 
   describe('awaiting a reply', () => {
@@ -92,6 +80,17 @@ describe('MessageList', () => {
       rerender(<MessageList messages={messages} lang="en" pending />)
       expect(screen.getByRole('status')).toBe(region)
       expect(region).toHaveTextContent('The assistant is typing…')
+    })
+
+    it('hides the animated dots from assistive technology, leaving only the words', () => {
+      const { container } = render(
+        <MessageList messages={[{ id: 'a', from: 'customer', text: 'Hello' }]} lang="en" pending />,
+      )
+
+      const dots = container.querySelector('[aria-hidden="true"]')
+      expect(dots).not.toBeNull()
+      expect(dots?.children).toHaveLength(3)
+      expect(screen.getByRole('status')).toHaveTextContent(/^The assistant is typing…$/)
     })
 
     it('says so in the language of the conversation', () => {

@@ -27,7 +27,8 @@ import styles from './ChatFeature.module.css'
  *
  * Focus stays with the person: sending returns it to the message field, and when a reply
  * arrives while nothing holds focus (a clicked option disappeared, or a retry button went away),
- * it goes back to the field. A message that could not be sent stays in the conversation, marked
+ * it goes back to the field. When a resend fails again and nothing holds focus, it goes to the
+ * new Retry button. A message that could not be sent stays in the conversation, marked
  * as not sent, with a single Retry that resends it under its original id.
  *
  * A screen reader is told about a new assistant reply through one hidden announcement region,
@@ -48,6 +49,7 @@ export function ChatFeature({
   const activeLang = conversation.latest?.lang ?? lang
   const t = useT(activeLang)
   const inputRef = useRef<HTMLInputElement>(null)
+  const retryRef = useRef<HTMLButtonElement>(null)
   const repliesSeen = useRef(0)
   const replyCount = conversation.messages.filter((m) => m.from === 'assistant').length
 
@@ -63,6 +65,14 @@ export function ChatFeature({
       inputRef.current?.focus()
     }
   }, [replyCount])
+
+  // A resend that fails again removes the focused Retry button and puts a new one in its place;
+  // focus follows it, so a keyboard or screen-reader user is not sent back to the top of the page.
+  useEffect(() => {
+    if (conversation.status === 'error' && document.activeElement === document.body) {
+      retryRef.current?.focus()
+    }
+  }, [conversation.status])
 
   if (conversation.status === 'error' && conversation.latest === null) {
     return (
@@ -101,7 +111,9 @@ export function ChatFeature({
       {conversation.status === 'error' && (
         <div role="alert" className={styles.error}>
           <p>{t('chat.couldNotSend')}</p>
-          <Button onClick={conversation.retry}>{t('common.retry')}</Button>
+          <Button ref={retryRef} onClick={conversation.retry}>
+            {t('common.retry')}
+          </Button>
         </div>
       )}
       {latest !== null && !ended && (
