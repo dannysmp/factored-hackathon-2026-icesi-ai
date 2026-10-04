@@ -1,0 +1,4 @@
+case_id,language,category,user_turns,system_replies,facts_and_sources,role,grounding,language_quality,clarification,comment
+J-01,es,normal,"No reconozco un cargo en mi tarjeta. | Sí, quiero presentar la disputa.",Su disputa fue presentada con el caso CASE-001. | La respuesta esperada es antes del 2026-10-01.,Case CASE-001 filed for transaction TRX-001; category unrecognized_charge; expected response date 2026-10-01.,Rater 1,2,2,NA,
+J-02,pt,normal,Não reconheço uma cobrança no meu cartão.,O caso CASE-002 foi criado para essa cobrança.,Case CASE-002 filed for transaction TRX-002; category unrecognized_charge.,Rater 1,1,2,NA,Minor added phrase not in the record
+J-03,es,ambiguous,No reconozco un cargo pero no recuerdo el monto.,¿Cuál transacción no reconoce? ¿Podría darme el monto o la fecha aproximada?,No transaction selected yet; awaiting the customer's own detail.,Rater 1,2,2,2,
