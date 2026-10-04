@@ -91,7 +91,7 @@ _DISPUTE_STATUS_OUTCOME_STATEMENT: dict[str, str] = {
 }
 _NO_CASE_FOUND_OUTCOME_STATEMENT: dict[str, str] = {
     "es": "No encontré ningún caso con esos datos en su cuenta.",
-    "pt": "Não encontrei nenhum caso com esses dados em sua conta.",
+    "pt": "Não encontrei nenhum caso com esses dados na sua conta.",
     "en": "I couldn't find a case matching that on your account.",
 }
 

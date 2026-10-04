@@ -82,7 +82,10 @@ _MIN_TOKEN_LENGTH = 3
 # form the corpus itself uses for its past tense ("Vencio el plazo...").
 _SYNONYM_GROUPS: dict[Lang, tuple[tuple[str, ...], ...]] = {
     "es": (("plazo", "tiempo", "limite", "vence", "vencen", "vencio", "vencido"),),
-    "pt": (("prazo", "tempo", "limite", "vence", "vencem", "venceu", "vencido"),),
+    "pt": (
+        ("prazo", "tempo", "limite", "vence", "vencem", "venceu", "vencido"),
+        ("estabelecimento", "comerciante", "lojista"),
+    ),
     "en": (("deadline", "how long", "time limit"),),
 }
 

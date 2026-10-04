@@ -285,15 +285,15 @@ _PT = Messages(
         "response-time": "Quando chega a primeira resposta",
         "evidence": "O que ter em mãos",
         "confirmation": "Confirmação antes de apresentar",
-        "human-review": "Quando um atendente analisa",
+        "human-review": "Quando um atendente analisa o pedido",
         "fraud-claims": "Contestações por fraude",
         "decision-codes": "Motivos de cada decisão",
     },
     overview=(
         "Esta política explica como se decide um pedido de contestação de uma transação feita "
         "com uma conta ou um cartão. É uma política sintética escrita para este projeto: não é "
-        "a de nenhum banco nem regulador, e não constitui orientação jurídica. Cada decisão é "
-        "tomada com regras fixas e fica registrada com um motivo."
+        "a política de nenhum banco nem de nenhum órgão regulador e não é orientação jurídica. "
+        "Cada decisão segue regras fixas e fica registrada com um motivo."
     ),
     products="Podem ser contestadas transações destes produtos: {products}.",
     products_out_of_scope=(
@@ -301,9 +301,9 @@ _PT = Messages(
         "tratados por esta política."
     ),
     transactions=(
-        "Para apresentar uma contestação, a transação deve ser uma cobrança ao cliente "
-        "({types}), estar {approved}, não estar datada no futuro, estar dentro do prazo da "
-        "sua categoria (veja abaixo) e não ter outra contestação em aberto."
+        "Para apresentar uma contestação, a transação deve ser uma cobrança feita ao cliente "
+        "({types}), estar {approved}, não ter data futura, estar dentro do prazo da sua "
+        "categoria (veja abaixo) e não ter outra contestação em aberto."
     ),
     types_excluded="Não podem ser contestados {types}.",
     statuses_excluded=(
@@ -317,24 +317,27 @@ _PT = Messages(
     ),
     window_line="- {category}: {days}.",
     response_time_intro=(
-        "Depois de apresentar uma contestação, o banco dá uma primeira resposta dentro deste "
-        "prazo, contado em dias corridos a partir da data de apresentação:"
+        "Depois que a contestação é apresentada, o banco dá a primeira resposta dentro do prazo "
+        "abaixo, contado em dias corridos a partir da data de apresentação:"
     ),
-    evidence_intro="Para cada tipo de contestação, tenha isto pronto:",
+    evidence_intro="Para cada tipo de contestação, tenha em mãos o seguinte:",
     evidence_line="- {category}: {items}.",
     evidence_items={
-        "card_in_possession": "confirmar que ainda está com o cartão",
+        "card_in_possession": "a confirmação de que o cartão continua com você",
         "merchant_not_recognized": (
-            "dizer qual parte da cobrança não reconhece (comerciante, data ou valor)"
+            "a indicação de qual parte da cobrança você não reconhece (estabelecimento, data ou "
+            "valor)"
         ),
         "both_charge_dates_amounts": "as datas e os valores das duas cobranças",
         "agreed_amount_proof": (
             "um comprovante do valor combinado, como um recibo ou uma confirmação de pedido"
         ),
         "order_proof": "um comprovante do pedido ou do pagamento",
-        "merchant_contact_attempt": "qualquer tentativa de contato com o comerciante",
-        "card_status": "se o cartão está perdido, roubado ou ainda em seu poder",
-        "last_genuine_use": "quando você mesmo o usou pela última vez",
+        "merchant_contact_attempt": (
+            "o registro de qualquer tentativa de contato com o estabelecimento"
+        ),
+        "card_status": "a situação do cartão (perdido, roubado ou ainda com você)",
+        "last_genuine_use": "a data em que você mesmo usou o cartão pela última vez",
     },
     confirmation_all=(
         "Antes de apresentar uma contestação, o cliente confirma exatamente o que será "
@@ -345,20 +348,17 @@ _PT = Messages(
         "exatamente o que será apresentado: a transação, o motivo e os dados do pedido."
     ),
     confirmation_none="A política não exige confirmação antes da apresentação.",
-    human_intro=(
-        "Mesmo que o pedido cumpra as regras, ele é encaminhado para análise de um atendente "
-        "nestes casos:"
-    ),
+    human_intro=("Mesmo que o pedido cumpra as regras, um atendente o analisa nestes casos:"),
     human_fraud="- É uma contestação por fraude.",
-    human_confidence="- O sistema não entendeu o pedido com segurança suficiente.",
-    human_criteria="- Aplicam-se outros critérios de revisão do banco.",
+    human_confidence="- O sistema não conseguiu interpretar o pedido com segurança suficiente.",
+    human_criteria="- Outros critérios de análise do banco se aplicam.",
     fraud=(
-        "Toda contestação por fraude é analisada por um atendente. Ela nunca é descartada "
+        "Toda contestação por fraude é analisada por um atendente. Ela nunca é rejeitada "
         "automaticamente, mesmo que a transação tenha sido recusada, esteja fora do prazo ou "
-        "seja de um produto fora do escopo desta política; nesses casos, o atendente recebe "
-        "também o motivo pelo qual o pedido não seria elegível."
+        "pertença a um produto que esta política não abrange. Nesses casos, o atendente "
+        "também recebe o motivo pelo qual o pedido não seria elegível."
     ),
-    codes_intro="Cada decisão traz um destes motivos.",
+    codes_intro="Cada decisão vem acompanhada de um destes motivos.",
     codes_header=("Motivo", "Significado"),
     categories={
         DisputeCategory.UNRECOGNIZED_CHARGE: "cobrança não reconhecida",
@@ -406,7 +406,7 @@ _PT = Messages(
         TransactionStatus.REVERSED: "estornadas",
     },
     reason_codes={
-        ReasonCode.ELIGIBLE: "A contestação pode ser apresentada, mediante confirmação.",
+        ReasonCode.ELIGIBLE: "A contestação pode ser apresentada depois da sua confirmação.",
         ReasonCode.PRODUCT_OUT_OF_SCOPE: "O produto não faz parte do escopo desta política.",
         ReasonCode.TRANSACTION_TYPE_NOT_DISPUTABLE: (
             "O tipo de transação não é uma cobrança que possa ser contestada."
@@ -414,21 +414,15 @@ _PT = Messages(
         ReasonCode.TRANSACTION_DECLINED: "A transação foi recusada: não houve cobrança.",
         ReasonCode.TRANSACTION_PENDING: "A transação ainda está pendente.",
         ReasonCode.TRANSACTION_REVERSED: "A transação já foi estornada.",
-        ReasonCode.TRANSACTION_DATE_IN_FUTURE: "A data da transação está no futuro.",
+        ReasonCode.TRANSACTION_DATE_IN_FUTURE: "A transação tem data futura.",
         ReasonCode.FILING_WINDOW_EXPIRED: "O prazo para apresentar esta contestação expirou.",
         ReasonCode.DUPLICATE_OPEN_CASE: "Já existe uma contestação aberta para esta transação.",
-        ReasonCode.ESCALATE_FRAUD_CLAIM: ("O caso é encaminhado para análise de um atendente."),
-        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: (
-            "O caso é encaminhado para análise de um atendente."
-        ),
-        ReasonCode.ESCALATE_REPEAT_COMPLAINER: (
-            "O caso é encaminhado para análise de um atendente."
-        ),
-        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: (
-            "O caso é encaminhado para análise de um atendente."
-        ),
-        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: ("O caso é encaminhado para análise de um atendente."),
-        ReasonCode.ESCALATE_RISK_SCORE: ("O caso é encaminhado para análise de um atendente."),
+        ReasonCode.ESCALATE_FRAUD_CLAIM: "Um atendente analisa este pedido.",
+        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: "Um atendente analisa este pedido.",
+        ReasonCode.ESCALATE_REPEAT_COMPLAINER: "Um atendente analisa este pedido.",
+        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: "Um atendente analisa este pedido.",
+        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: "Um atendente analisa este pedido.",
+        ReasonCode.ESCALATE_RISK_SCORE: "Um atendente analisa este pedido.",
     },
     and_word="e",
     or_word="ou",

@@ -5,12 +5,15 @@ Evaluation Report Generator
 Overview
 --------
 Turns one full harness run's already-computed results — P's three repeated runs, B0's and B1's
-single runs, the judge's verdicts, and the H4 judge-validation sample's agreement — into
-``reports/evaluation.md``, the single generated artifact ``plan/docs/evaluation-plan.md``'s Report
-section names. The first full ``make evaluate`` this slice enables is exactly this: every piece
-this module reads was built by an earlier slice (the runner, the metrics engine, the judge, the
-judge-validation agreement computation); this module only assembles and renders what they already
-produced.
+single runs, the live judge's own verdicts over P's last run, and the H4 judge-validation sample's
+agreement — into ``reports/evaluation.md``, the single generated artifact
+``plan/docs/evaluation-plan.md``'s Report section names. The full ``make evaluate`` run this
+module renders is exactly that: every piece it reads was already built elsewhere (the runner, the
+metrics engine, the judge, the judge-validation agreement computation); this module only
+assembles and renders what they already produced. The judge-scored-quality section (a
+system's own live-judge verdicts) and the judge-validation section (the judge's agreement with
+human raters) answer two different questions from two different data sources and are never
+conflated.
 
 Scope
 -----
@@ -47,7 +50,7 @@ Runtime Contract
 ``Versions``, ``SystemResult``, ``EvaluationReport``.
 ``render_markdown(report) -> str``.
 ``judge_validation_section(agreement, provenance) -> str``: the exact text ``render_markdown``
-puts under "## 7. Judge validation" — exported so a later, cheaper regeneration of just that
+puts under "## 8. Judge validation" — exported so a later, cheaper regeneration of just that
 section (once the real H4 sample lands) renders identically to a full report, never a
 hand-maintained second copy of the same wording (``evals.h4_judge_validation``).
 
@@ -68,6 +71,7 @@ single run and show no range, by construction, not because their own results are
 from __future__ import annotations
 
 # Standard libraries
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -240,6 +244,55 @@ def _headline_table(systems: tuple[SystemResult, ...]) -> str:
     return _table(headers, rows)
 
 
+def _judge_dimension_mean(values: Sequence[int]) -> str:
+    if not values:
+        return NOT_DEFINED
+    return f"{sum(values) / len(values):.3f}"
+
+
+def _judge_scored_quality_section(systems: tuple[SystemResult, ...]) -> str:
+    """Aggregate scores the live judge gave a system's own last run — not the judge-vs-human
+    agreement of the Judge validation section below, a different question entirely."""
+    judged = [result for result in systems if result.judge_verdicts]
+    not_judged = [result.system for result in systems if not result.judge_verdicts]
+    if not judged:
+        return "No system in this report was scored by the live judge."
+    rows = []
+    for result in judged:
+        grounding = [v.grounding for v in result.judge_verdicts]
+        language_quality = [v.language_quality for v in result.judge_verdicts]
+        clarification = [
+            v.clarification for v in result.judge_verdicts if v.clarification is not None
+        ]
+        rows.append(
+            [
+                result.system,
+                _judge_dimension_mean(grounding),
+                _judge_dimension_mean(language_quality),
+                _judge_dimension_mean(clarification),
+                _count(len(result.judge_verdicts)),
+            ]
+        )
+    table = _table(
+        [
+            "System",
+            "Grounding (mean, 0-2)",
+            "Language quality (mean, 0-2)",
+            "Clarification (mean, 0-2)",
+            "Cases judged",
+        ],
+        rows,
+    )
+    note = (
+        f"\n\n{', '.join(not_judged)} carried no judge verdicts in this report: a system's own "
+        "run is judge-scored only when it is in scope for judge-sourced report metrics (today, "
+        "the proposed system alone — the same scope H4's own human validation uses)."
+        if not_judged
+        else ""
+    )
+    return f"{table}{note}"
+
+
 def _repeated_run_section(systems: tuple[SystemResult, ...]) -> str:
     repeated = [result for result in systems if result.run_count > 1]
     if not repeated:
@@ -385,12 +438,13 @@ def render_markdown(report: EvaluationReport) -> str:
         "## 1. Workload\n\n" + _workload_section(report.golden_cases),
         "## 2. Versions\n\n" + _versions_section(report.versions),
         "## 3. Headline metrics\n\n" + _headline_table(report.systems),
-        "## 4. Repeated-run variability\n\n" + _repeated_run_section(report.systems),
-        "## 5. Failure gallery\n\n" + _failure_gallery(report.systems),
-        "## 6. Unsafe outcomes\n\n" + _unsafe_outcomes_section(report.systems),
-        "## 7. Judge validation\n\n"
+        "## 4. Judge-scored quality\n\n" + _judge_scored_quality_section(report.systems),
+        "## 5. Repeated-run variability\n\n" + _repeated_run_section(report.systems),
+        "## 6. Failure gallery\n\n" + _failure_gallery(report.systems),
+        "## 7. Unsafe outcomes\n\n" + _unsafe_outcomes_section(report.systems),
+        "## 8. Judge validation\n\n"
         + judge_validation_section(report.judge_validation, report.judge_validation_provenance),
-        "## 8. Learned components\n\n" + _LEARNED_COMPONENT_SECTION,
-        "## 9. Limitations\n\n" + _limitations_section(report),
+        "## 9. Learned components\n\n" + _LEARNED_COMPONENT_SECTION,
+        "## 10. Limitations\n\n" + _limitations_section(report),
     ]
     return "\n\n".join(sections) + "\n"
