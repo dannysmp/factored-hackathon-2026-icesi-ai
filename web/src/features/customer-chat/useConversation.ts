@@ -13,6 +13,12 @@ export interface Message {
   id: string
   from: 'assistant' | 'customer'
   text: string
+  /** What was sent to the endpoint when that differs from the words shown, such as a list number. */
+  sent?: string
+  /** The customer's message never reached the assistant; `retry` sends it again. */
+  failed?: boolean
+  /** The id the turn endpoint treats as the identity of this message, so a resend cannot advance the conversation twice. */
+  turnId?: string
 }
 
 export type ConversationStatus = 'loading' | 'ready' | 'error'
@@ -25,8 +31,15 @@ interface ConversationState {
 }
 
 export interface Conversation extends ConversationState {
-  /** Send the customer's text; a no-op once the conversation has ended or is already loading. */
-  send: (text: string) => void
+  /**
+   * Send the customer's text; a no-op once the conversation has ended or is already loading.
+   * `shown` is what the transcript displays when that differs from what is sent, such as the
+   * full description of a listed option that is sent as its number. A message that failed earlier is dropped from the transcript: the customer chose to say
+   * something else, and it never reached the assistant.
+   */
+  send: (text: string, shown?: string) => void
+  /** Send the message that failed again under its original id; a no-op when none failed. */
+  retry: () => void
 }
 
 function assistantMessage(turn: TurnResponse): Message {
@@ -87,20 +100,11 @@ export function useConversation(client: ChatClient): Conversation {
     }
   }, [client, commit])
 
-  const send = useCallback(
-    (text: string) => {
-      const current = latestState.current
-      if (current.status === 'loading' || current.latest?.end_session === true) {
-        return
-      }
-      const customerMessage: Message = {
-        id: `customer-${String(current.messages.length)}`,
-        from: 'customer',
-        text,
-      }
-      commit({ ...current, status: 'loading', messages: [...current.messages, customerMessage] })
+  const dispatch = useCallback(
+    (text: string, turnId: string, history: Message[]): void => {
+      commit({ ...latestState.current, status: 'loading', messages: history })
 
-      client.sendTurn(text).then(
+      client.sendTurn(text, turnId).then(
         (turn) => {
           const before = latestState.current
           commit({
@@ -116,6 +120,9 @@ export function useConversation(client: ChatClient): Conversation {
           commit({
             ...before,
             status: 'error',
+            messages: before.messages.map((message) =>
+              message.turnId === turnId ? { ...message, failed: true } : message,
+            ),
             error: error instanceof Error ? error.message : 'the message could not be sent',
           })
         },
@@ -124,5 +131,42 @@ export function useConversation(client: ChatClient): Conversation {
     [client, commit],
   )
 
-  return { ...state, send }
+  const send = useCallback(
+    (text: string, shown?: string) => {
+      const current = latestState.current
+      if (current.status === 'loading' || current.latest?.end_session === true) {
+        return
+      }
+      const turnId = crypto.randomUUID()
+      const customerMessage: Message = {
+        id: `customer-${turnId}`,
+        from: 'customer',
+        text: shown ?? text,
+        ...(shown === undefined ? {} : { sent: text }),
+        turnId,
+      }
+      dispatch(text, turnId, [
+        ...current.messages.filter((m) => m.failed !== true),
+        customerMessage,
+      ])
+    },
+    [dispatch],
+  )
+
+  const retry = useCallback(() => {
+    const current = latestState.current
+    const failed = current.messages.find((message) => message.failed === true)
+    if (failed?.turnId === undefined) {
+      return
+    }
+    dispatch(
+      failed.sent ?? failed.text,
+      failed.turnId,
+      current.messages.map((message) =>
+        message === failed ? { ...message, failed: false } : message,
+      ),
+    )
+  }, [dispatch])
+
+  return { ...state, send, retry }
 }

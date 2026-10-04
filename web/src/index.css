@@ -27,3 +27,22 @@ body {
   color: var(--color-text);
   background-color: var(--color-bg);
 }
+
+/* Smooth scrolling to the newest message, and no motion at all for a person who has asked their
+   system to reduce it: animations end at once and scrolling jumps. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

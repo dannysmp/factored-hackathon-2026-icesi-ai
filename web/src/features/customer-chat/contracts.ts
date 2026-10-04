@@ -65,10 +65,13 @@ export const ChoiceSchema = z
   .strict()
 export type Choice = z.infer<typeof ChoiceSchema>
 
+/** The longest customer message the turn endpoint accepts, in characters. */
+export const MAX_TURN_TEXT_LENGTH = 2000
+
 export const TurnRequestSchema = z
   .object({
     turn_id: z.string().regex(IdentifierPattern),
-    text: refuseBlankOrControl(z.string().min(1).max(2000)),
+    text: refuseBlankOrControl(z.string().min(1).max(MAX_TURN_TEXT_LENGTH)),
   })
   .strict()
 export type TurnRequest = z.infer<typeof TurnRequestSchema>
@@ -80,7 +83,7 @@ export const TurnResponseSchema = z
     conversation_id: z.string().min(1).max(64),
     state_version: z.number().int().min(1),
     lang: LangSchema,
-    reply: z.string().min(1).max(2000),
+    reply: z.string().min(1).max(MAX_TURN_TEXT_LENGTH),
     reference_date_line: z.string().min(1).max(120),
     demo_notice: z.string().min(1).max(200).nullable().default(null),
     choices: z.array(ChoiceSchema).max(5).default([]),

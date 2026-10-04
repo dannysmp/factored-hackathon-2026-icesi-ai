@@ -22,6 +22,9 @@ export interface Messages {
   'chat.customerLabel': string
   'chat.confirm': string
   'chat.send': string
+  'chat.assistantTyping': string
+  'chat.notSent': string
+  'chat.charactersLeft': string
   'chat.ended': string
   /** `{ticket}` is replaced with the handoff ticket at render time — the one templated key. */
   'chat.caseReference': string
