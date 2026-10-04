@@ -153,6 +153,17 @@ describe('ConsoleApp', () => {
     ).toBeInTheDocument()
   })
 
+  it('frames every step with a banner holding the console title and one main landmark', async () => {
+    stubTheWholeFlow()
+    render(<ConsoleApp />)
+
+    await screen.findByLabelText(es['signin.personaLabel'])
+    expect(screen.getByRole('banner')).toContainElement(
+      screen.getByRole('heading', { level: 1, name: 'Consola del agente' }),
+    )
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+
   it('has no automatically detectable accessibility violations at the sign-in step', async () => {
     stubTheWholeFlow()
     const { container } = render(<ConsoleApp />)

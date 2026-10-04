@@ -1,4 +1,5 @@
 import type { JSX } from 'react'
+import { Button } from '../../../components/ui/Button'
 import { CONFIRMATION_TEXT } from '../contracts'
 import { useT } from '../../../i18n/useT'
 import type { Lang } from '../../../i18n/lang'
@@ -23,15 +24,18 @@ export function ConfirmationPrompt({
 }): JSX.Element {
   const t = useT(lang)
   return (
-    <button
-      type="button"
-      className={styles.confirm}
-      disabled={disabled}
-      onClick={() => {
-        onConfirm(CONFIRMATION_TEXT)
-      }}
-    >
-      {t('chat.confirm')}
-    </button>
+    <div className={styles.confirm}>
+      <Button
+        variant="primary"
+        large
+        fullWidth
+        disabled={disabled}
+        onClick={() => {
+          onConfirm(CONFIRMATION_TEXT)
+        }}
+      >
+        {t('chat.confirm')}
+      </Button>
+    </div>
   )
 }

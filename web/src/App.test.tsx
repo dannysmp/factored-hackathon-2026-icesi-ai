@@ -78,6 +78,17 @@ describe('App', () => {
     expect(await screen.findByText('Hola, ¿en qué puedo ayudarle?')).toBeInTheDocument()
   })
 
+  it('frames every step with a banner holding the page title and one main landmark', async () => {
+    stubTheWholeFlow()
+    render(<App />)
+
+    await screen.findByLabelText(es['signin.personaLabel'])
+    expect(screen.getByRole('banner')).toContainElement(
+      screen.getByRole('heading', { level: 1, name: 'Dispute intake' }),
+    )
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+
   it('has no automatically detectable accessibility violations at the sign-in step', async () => {
     stubTheWholeFlow()
     const { container } = render(<App />)

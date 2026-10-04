@@ -133,3 +133,13 @@ tbody th[scope='row'] {
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* Rows answer the pointer, so the eye can follow a row across a wide table. */
+tbody tr:hover {
+  background-color: var(--color-bg-subtle);
+}
+
+thead th {
+  background-color: var(--color-bg-subtle);
+  border-bottom-color: var(--color-border-control);
+}
