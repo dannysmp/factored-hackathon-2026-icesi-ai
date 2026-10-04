@@ -12,7 +12,7 @@ Design Principles
 -----------------
 - A sentinel of the provider key's shape is built at run time, so this file never contains a
   match for the repository scan, and every assertion looks for the whole sentinel *and* any
-  twelve-character window of it, so a truncated or partly masked key still fails.
+  sixteen-character window of it, so a truncated or partly masked key still fails.
 - Hermetic: no network, no database, no real key; the HTTP transport is in-process.
 - Each path is exercised through its real code: the real settings loader and application factory
   for the configuration failure, and the real SDK client over an in-process HTTP transport for the
