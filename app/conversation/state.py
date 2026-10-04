@@ -19,10 +19,11 @@ the scoped tools of the service layer and are wired in a later change.
 Design Principles
 -----------------
 - Structured state only, masked, the same shape discipline as the envelope's own facts.
-- The clarification counter is one integer bound to whichever slot is currently pending; asking
-  again for the same slot increments it, asking for a different one resets it to 1, and filling
-  the pending slot resets it to zero. This is the missing-slot guard the architecture describes:
-  it counts consecutive attempts on one element, whatever the reported confidence.
+- The clarification counter is one integer bound to whichever slot is currently pending. It counts
+  the answers that left the question unsettled: the first time a slot is asked it is zero, asking
+  again for the same pending slot increments it, and asking for a different slot or filling the
+  pending one resets it to zero. This is the missing-slot guard the architecture describes: it
+  counts consecutive unsettled answers on one element, whatever the reported confidence.
 - A new login starts a new conversation (AC-E5-60): this model carries no notion of "resume", and
   the store is what would have to go out of its way to look up a stale session by a new one's id,
   which it never does.

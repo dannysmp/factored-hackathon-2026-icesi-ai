@@ -1270,6 +1270,64 @@ def test_the_transaction_question_is_asked_twice_before_a_person_is_involved(
     assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
 
 
+def test_the_reason_question_is_asked_twice_before_a_person_is_involved(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.present_amazon()
+    asked = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    assert asked.next_expected is Slot.REASON
+
+    again = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert again.next_expected is Slot.REASON
+    assert not again.end_session
+    assert dialogue.outbox.packets == []
+
+    third = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert third.end_session
+    assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+
+
+def test_a_described_reply_after_an_unsettled_answer_starts_the_count_again(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute())
+    dialogue.say(_plain(NluIntent.UNCLEAR))
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.clarification_attempts == 1
+
+    presented = dialogue.say(
+        _plain(NluIntent.UNCLEAR, transaction=TransactionHint(merchant="Amazon"))
+    )
+
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.clarification_attempts == 0
+
+
+def test_a_category_on_a_described_answer_does_not_replace_the_one_already_set(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+
+    presented = dialogue.say(
+        _plain(
+            NluIntent.CORRECTION,
+            category=DisputeCategory.WRONG_AMOUNT,
+            transaction=TransactionHint(merchant="Amazon"),
+        )
+    )
+
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.category is DisputeCategory.UNRECOGNIZED_CHARGE
+
+
 @pytest.mark.parametrize(
     "answer",
     [
@@ -1466,6 +1524,84 @@ def test_a_hand_off_turn_records_the_reason_code_it_was_routed_with(
         None,
         ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,
     ]
+
+
+def _logged_reason_codes(
+    policy: Policy,
+    retriever: LexicalRetriever,
+    understandings: list[NluResult],
+    *,
+    port: FakeToolPort,
+    outbox: FakeHandoffOutbox,
+) -> list[ReasonCode | None]:
+    store = InMemoryDialogueStore()
+    turn_log = FakeDialogueTurnLog()
+    for turn, understanding in enumerate(understandings, start=1):
+        controller, _ = _controller(
+            understanding,
+            store=store,
+            tool_port=port,
+            policy=policy,
+            outbox=outbox,
+            retriever=retriever,
+            turn_log=turn_log,
+        )
+        controller.handle_turn(_turn(f"turn-{turn:04d}"), principal=_principal())
+    return [entry.reason_code for entry, _, _ in turn_log.entries]
+
+
+def test_a_policy_escalation_records_its_reason_code_in_the_turn_history(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(Outcome.ESCALATE, ReasonCode.ESCALATE_FRAUD_CLAIM),
+    )
+
+    recorded = _logged_reason_codes(
+        policy,
+        retriever,
+        [
+            _file_dispute(transaction=TransactionHint(merchant="Amazon")),
+            _file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE),
+        ],
+        port=port,
+        outbox=FakeHandoffOutbox(),
+    )
+
+    assert recorded == [None, ReasonCode.ESCALATE_FRAUD_CLAIM]
+
+
+def test_a_hand_off_that_names_no_reason_code_records_none(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        list_transactions_result=ToolFailure(tool=ToolName.LIST_TRANSACTIONS, cause="error")
+    )
+
+    recorded = _logged_reason_codes(
+        policy,
+        retriever,
+        [_file_dispute(transaction=TransactionHint(merchant="Amazon"))],
+        port=port,
+        outbox=FakeHandoffOutbox(),
+    )
+
+    assert recorded == [None]
+
+
+def test_a_hand_off_that_could_not_be_registered_records_no_reason_code(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    recorded = _logged_reason_codes(
+        policy,
+        retriever,
+        [_file_dispute(), _plain(NluIntent.UNCLEAR), _plain(NluIntent.UNCLEAR)],
+        port=FakeToolPort(),
+        outbox=FakeHandoffOutbox(fail=True),
+    )
+
+    assert recorded == [None, None, None]
 
 
 def test_no_turn_log_configured_records_nothing_and_never_fails(

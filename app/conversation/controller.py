@@ -93,6 +93,10 @@ neither a pending-candidate field nor a multi-candidate list exists in ``Dialogu
 session identifies and evaluates at most one transaction/category pair: nothing here resets
 ``selected_ref``/``category`` once set, so a second, different dispute needs a new session. The
 handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name yet.
+While the transaction is the pending question, a message that describes one is taken as the
+answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a category
+carried by such a message does not replace one already set, the same rule as above. A description
+that matches no transaction does not use up the clarification budget.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
@@ -775,7 +779,7 @@ class DialogueController:
     def _handle_unroutable(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
-        """``choice`` and ``correction`` share ``unclear``'s fallback (see Limitations), except
+        """``choice`` and ``correction`` share ``unclear``'s fallback, except
         when the transaction is what was just asked for and the message describes one: the model
         reads each message on its own, so a plain answer to that question can come back under any
         of these intents, and the description is the answer."""
