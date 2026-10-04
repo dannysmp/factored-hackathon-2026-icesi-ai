@@ -104,8 +104,8 @@ file itself.
     still reaches the outbound model request unmasked — a deliberate by-design choice, since a
     document number carries no check digit a detector could key on, not an oversight; every other
     field the system reads is a closed enum or a narrowly patterned value that cannot carry one.
-  - The human-agent console is a viewer; narrow audited writes are the first work scheduled after
-    this release.
+  - The human-agent console is a viewer; its narrow audited writes exist in the API and have no
+    screen yet.
 - The route to operation is the technology evolution matrix (`plan/docs/architecture.md`): every
   right-sized choice on slide 2 has a named next step and a written trigger, so scaling is a
   decision made in advance, not a rescue made under load. Two examples carried onto this slide:
