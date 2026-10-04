@@ -105,7 +105,8 @@ session works on one transaction and reason at a time: a different transaction n
 presented-transaction or filing question replaces the selected one, and a different reason is
 evaluated afresh only at the filing question. A transaction named at the filing question that is
 not found, or that matches several, leaves none selected, so the customer describes the
-transaction again; nothing is filed in between. The handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name yet.
+transaction again; nothing is filed in between. The handoff packet's ``first_name`` is a
+placeholder: no tool exposes the customer's first name yet.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
