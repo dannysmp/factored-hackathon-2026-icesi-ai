@@ -55,7 +55,7 @@ Check: `aws ssm describe-parameters --parameter-filters "Key=Path,Values=/transa
 
 ## 3. Generate the two demonstration access codes and the agent signing key
 
-Each value is generated and stored in one pipeline, so it is never displayed. Rerunning the same command regenerates the value: `put-secret.sh` overwrites.
+Each value is generated and stored in one pipeline, so it is never displayed. Rerunning the same command regenerates the value: `put-secret.sh` overwrites. Once the codes have gone out in the release message they stay fixed for the evaluation period; regenerate one only if it has leaked.
 
 ```sh
 openssl rand -base64 24 | tr -d '/+=' | infra/scripts/put-secret.sh demo-signin-access-code
@@ -81,7 +81,7 @@ sleep 10
 gh run list --workflow deploy.yml --limit 3
 ```
 
-Confirm the newest row is the run just started (a run listed immediately after dispatch can still be the previous one), then follow it; `--exit-status` makes the command fail when the run fails:
+Confirm the newest row is the run just started (a run listed immediately after dispatch can still be the previous one; if it is, wait a few seconds and list again), then follow it; `--exit-status` makes the command fail when the run fails:
 
 ```sh
 run_id="$(gh run list --workflow deploy.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
@@ -103,7 +103,7 @@ gh run view "$run_id" --log | grep -o '[0-9]\{1,3\}-[0-9]\{1,3\}-[0-9]\{1,3\}-[0
 Which checks apply depends on the mode. With `teardown_after` left on, the host no longer exists once the run ends, so the only evidence is the green run: check 1. Checks 2 to 4 need a deployment that persists (`teardown_after=false`).
 
 1. **The pipeline's own checks passed**: the run finished green, including the smoke test and the hardening check. When `deploy_metabase` was on, the run also includes the dashboard smoke test and a second hardening check.
-2. **Sign-in state, without values.** The first command prints the response body and then the HTTP status:
+2. **Sign-in state, without values.** The command prints the response body and then the HTTP status:
 
    ```sh
    curl -s -w '\n%{http_code}\n' "https://<host>/v1/auth/demo-personas"
@@ -122,12 +122,12 @@ Which checks apply depends on the mode. With `teardown_after` left on, the host 
    ```
 
    Expect `201`. Repeat with `demo-agent-access-code`, an agent persona slug and `/v1/auth/demo-agent-sessions`. Each success issues a real session that holds that persona (one session per persona, for 30 minutes for a customer and 60 for an agent), so use a different persona for each of the two codes and for any later manual sign-in, or the second call answers `429`. Do not probe with a wrong code repeatedly: wrong codes count against the caller's address and are rate-limited.
-4. **The web page** at `https://<host>/` loads over a valid certificate in a browser, and a customer sign-in with the code reaches the chat (with a persona not already used in check 3).
+4. **The web page** at `https://<host>/` loads over a valid certificate in a browser, and a customer sign-in reaches the chat. Copy the code with the command in step 6, paste it into the sign-in form, then clear the clipboard; use a persona not already used in check 3.
 5. Record the run in the table at the end of this document.
 
 ## 6. Read the codes for the release message
 
-This is the only step in which a value leaves AWS. Copy it straight to the clipboard so it is never printed, paste it into the message, then clear the clipboard. The subshell fails loudly if the read fails, instead of leaving an empty clipboard. On macOS:
+A code leaves AWS only by this method (check 4 uses it too). Copy it straight to the clipboard so it is never printed, paste it into the message, then clear the clipboard. The subshell fails loudly if the read fails, instead of leaving an empty clipboard. On macOS:
 
 ```sh
 ( set -o pipefail; aws ssm get-parameter --name /transaction-disputes/prod/demo-signin-access-code --with-decryption --query Parameter.Value --output text | tr -d '\n' | pbcopy ) || echo "read failed: nothing was copied"
