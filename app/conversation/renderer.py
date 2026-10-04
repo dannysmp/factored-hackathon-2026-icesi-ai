@@ -319,6 +319,20 @@ def _clarify_confirmation(e: RenderEnvelope) -> str:
     }[e.lang]
 
 
+def _clarify_change(e: RenderEnvelope) -> str:
+    return {
+        "es": "No logré identificar qué desea cambiar. Dígame qué parte es: la transacción o "
+        "el motivo de la disputa. Si todo está bien, responda sí; si no desea continuar, "
+        "responda no.",
+        "pt": "Não consegui identificar o que você quer alterar. Diga qual parte é: a transação "
+        "ou o motivo da contestação. Se estiver tudo certo, responda sim; se não quiser "
+        "continuar, responda não.",
+        "en": "I did not catch what you want to change. Tell me which part it is: the "
+        "transaction or the reason for the dispute. If everything is right, answer yes; if "
+        "you do not want to continue, answer no.",
+    }[e.lang]
+
+
 def _language_offer(e: RenderEnvelope) -> str:
     return {
         "es": "Hola, puedo ayudarle con su disputa. No sé si prefiere continuar "
@@ -649,6 +663,7 @@ _RENDERERS: dict[TemplateId, _Renderer] = {
     TemplateId.CLARIFY_REASON: _clarify_reason,
     TemplateId.CLARIFY_CHOICE: _clarify_choice,
     TemplateId.CLARIFY_CONFIRMATION: _clarify_confirmation,
+    TemplateId.CLARIFY_CHANGE: _clarify_change,
     TemplateId.LANGUAGE_OFFER: _language_offer,
     TemplateId.PRESENT_ONE: _present_one,
     TemplateId.PRESENT_LIST: _present_list,

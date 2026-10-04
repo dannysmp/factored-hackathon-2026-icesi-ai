@@ -195,6 +195,9 @@ def _every_template_envelope(lang: str) -> dict[TemplateId, RenderEnvelope]:
         TemplateId.CLARIFY_CONFIRMATION: env(
             intent=Intent.CLARIFY, template_id=TemplateId.CLARIFY_CONFIRMATION
         ),
+        TemplateId.CLARIFY_CHANGE: env(
+            intent=Intent.CLARIFY, template_id=TemplateId.CLARIFY_CHANGE
+        ),
         TemplateId.LANGUAGE_OFFER: env(
             intent=Intent.CLARIFY, template_id=TemplateId.LANGUAGE_OFFER
         ),

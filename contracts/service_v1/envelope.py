@@ -218,6 +218,7 @@ class TemplateId(StrEnum):
     CLARIFY_REASON = "clarify_reason"
     CLARIFY_CHOICE = "clarify_choice"
     CLARIFY_CONFIRMATION = "clarify_confirmation"
+    CLARIFY_CHANGE = "clarify_change"
     LANGUAGE_OFFER = "language_offer"
     # Showing transactions: one match, a list, a request to narrow several matches, or no match.
     PRESENT_ONE = "present_one"
@@ -533,6 +534,7 @@ TEMPLATE_INTENTS: Mapping[TemplateId, frozenset[Intent]] = {
     TemplateId.CLARIFY_REASON: frozenset({Intent.CLARIFY}),
     TemplateId.CLARIFY_CHOICE: frozenset({Intent.CLARIFY}),
     TemplateId.CLARIFY_CONFIRMATION: frozenset({Intent.CLARIFY}),
+    TemplateId.CLARIFY_CHANGE: frozenset({Intent.CLARIFY}),
     TemplateId.LANGUAGE_OFFER: frozenset({Intent.CLARIFY}),
     TemplateId.PRESENT_ONE: frozenset({Intent.PRESENT_TRANSACTIONS}),
     TemplateId.PRESENT_LIST: frozenset({Intent.PRESENT_TRANSACTIONS}),
