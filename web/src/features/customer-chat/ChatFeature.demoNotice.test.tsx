@@ -24,13 +24,17 @@ describe('ChatFeature demonstration notice', () => {
 
     await user.type(screen.getByLabelText('Your message'), 'the Tienda Sol one')
     await user.click(screen.getByRole('button', { name: 'Send' }))
+    await screen.findByText(/I found one transaction/i)
+    noticeStays()
     await user.click(await screen.findByRole('button', { name: /^1\./ }))
     await screen.findByText(/what is the reason for the dispute/i)
     noticeStays()
 
     await user.type(screen.getByLabelText('Your message'), 'unrecognized charge')
     await user.click(screen.getByRole('button', { name: 'Send' }))
-    await user.click(await screen.findByRole('button', { name: 'Confirm' }))
+    await screen.findByRole('button', { name: 'Confirm' })
+    noticeStays()
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
     await screen.findByText(/case DEMO-1234/)
     noticeStays()
   })
