@@ -331,7 +331,7 @@ def test_an_overlong_date_expression_is_truncated_and_repaired() -> None:
     assert result.transaction.date_on is None
 
 
-def _amount_understanding(amount: str, **extra: object) -> tuple[NluResult, FakeLlm]:
+def _amount_understanding(amount: object, **extra: object) -> tuple[NluResult, FakeLlm]:
     llm = FakeLlm(
         responses=[
             {
@@ -370,6 +370,10 @@ def _amount_understanding(amount: str, **extra: object) -> tuple[NluResult, Fake
         ("0,5", "0.5"),
         ("125.5", "125.5"),
         ("1234", "1234"),
+        ("12 345,67", "12345.67"),
+        ("1'234.50", "1234.50"),
+        ("R$ 1.234,56", "1234.56"),
+        ("1.234,56 €", "1234.56"),
     ],
 )
 def test_a_localized_amount_is_read_with_its_own_separators(spoken: str, expected: str) -> None:
@@ -382,7 +386,30 @@ def test_a_localized_amount_is_read_with_its_own_separators(spoken: str, expecte
 
 
 @pytest.mark.parametrize(
-    "spoken", ["abc", "12.3.4", "1.2345.678", "1,2.3,4", "$", "0.125", "1" * 15]
+    "spoken",
+    [
+        "abc",
+        "12.3.4",
+        "1.2345.678",
+        "1,2.3,4",
+        "$",
+        "0.125",
+        "1" * 15,
+        ",123,456",
+        "1234,567,890",
+        "1234.567,89",
+        "1,23,456",
+        "1.234,56.78",
+        "12 50",
+        "1 2",
+        "-50",
+        "1e5",
+        "100 y 200",
+        "25% de 1.000",
+        "3x 1.500,00",
+        "12abc",
+        "1.234'567,89",
+    ],
 )
 def test_an_unparseable_amount_is_dropped_while_the_rest_of_the_understanding_survives(
     spoken: str,
@@ -395,6 +422,39 @@ def test_an_unparseable_amount_is_dropped_while_the_rest_of_the_understanding_su
     assert result.transaction.amount is None
     assert result.transaction.merchant == "Farmacia Salud"
     assert result.transaction.currency == "ARS"
+    assert len(llm.requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("sent", "expected"), [(99.5, "99.5"), (100, "100"), (0.5, "0.5"), (12.0, "12.0")]
+)
+def test_an_amount_sent_as_a_json_number_is_read_like_one_sent_as_text(
+    sent: object, expected: str
+) -> None:
+    result, llm = _amount_understanding(sent)
+
+    assert result.transaction.amount == Decimal(expected)
+    assert result.transaction.merchant == "Farmacia Salud"
+    assert len(llm.requests) == 1
+
+
+@pytest.mark.parametrize("sent", [True, [99.5], {"value": 1}, 1e16, 0.30000000000000004, 1e-05])
+def test_an_amount_that_is_not_an_amount_is_dropped_whatever_json_type_it_has(
+    sent: object,
+) -> None:
+    result, _llm = _amount_understanding(sent)
+
+    assert result.intent is NluIntent.FILE_DISPUTE
+    assert result.transaction.amount is None
+    assert result.transaction.merchant == "Farmacia Salud"
+    assert result.transaction.currency == "ARS"
+
+
+def test_a_valid_localized_amount_survives_the_repair_of_another_field() -> None:
+    result, llm = _amount_understanding("99.948,89", merchant="F" * 100)
+
+    assert result.transaction.amount == Decimal("99948.89")
+    assert result.transaction.merchant == "F" * 80
     assert len(llm.requests) == 1
 
 

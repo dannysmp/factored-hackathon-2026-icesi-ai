@@ -63,7 +63,12 @@ from decimal import Decimal, InvalidOperation  # Money is never a float; malform
 from typing import cast  # Narrowing a checked-membership str to the closed Lang literal
 
 # Third-party libraries
-from pydantic import BaseModel, ConfigDict, ValidationError  # Loose intermediate model
+from pydantic import (  # Loose intermediate model
+    BaseModel,
+    ConfigDict,
+    ValidationError,
+    field_validator,
+)
 
 # Local modules
 from app.conversation.date_expressions import resolve as resolve_date  # AC-E5-16, deterministic
@@ -178,44 +183,54 @@ _ENUM_REPAIRS: Mapping[str, frozenset[str]] = {
 }
 
 
-_NOT_AMOUNT_CHARACTERS = re.compile(r"[^0-9.,]")
+# A figure is read only when it is exactly: an optional currency (a symbol, or a code spelled as
+# the contract spells one), a number whose marks are digit groups and separators, and an optional
+# currency. Anything else (a sign, a percentage, an exponent, words, digit runs split by text) is
+# not an amount and is never repaired into one.
+_CURRENCY = r"(?:[A-Z]{3}\$?|US\$|R\$|\$|€|£|¥)"
+_SPACING = " \u00a0\u202f"
+_AMOUNT_TEXT = re.compile(
+    rf"(?:{_CURRENCY}[{_SPACING}]*)?"
+    rf"(?P<figure>[.,]?[0-9](?:[0-9.,'\u2019{_SPACING}]*[0-9])?)"
+    rf"(?:[{_SPACING}]*{_CURRENCY})?"
+)
+# Spacing and apostrophes group digits the way "." or "," does; all are one mark while parsing.
+_GROUPING_MARKS = re.compile(rf"['\u2019{_SPACING}]")
+# Money groups thousands in threes, and two decimal places mean "1.234" is 1234, not 1.234.
 _THOUSANDS_GROUP = 3
-_MAX_CENTS_DIGITS = 2
-_MAX_AMOUNT_DIGITS = 14
 
 
 def _parse_amount(text: str) -> Decimal:
     """The amount in ``text``, however the customer's locale writes its separators.
 
     A model told to give plain decimal text still sometimes copies the customer's own figure
-    ("99.948,89", "99,948.89", "$ 1 250,50", "ARS 99948.89"). Currency symbols, codes and spacing
-    are dropped; with both separators present the last is the decimal point; a separator that
-    repeats, or stands once before exactly three digits, groups thousands (money has two decimal
-    places, so "1.234" is 1234); any other single separator is the decimal point.
+    ("99.948,89", "99,948.89", "$ 1 250,50", "ARS 99948.89"). A currency symbol or code at either
+    end is dropped; with both separators present the last is the decimal point; a mark that
+    repeats, or stands once before exactly three digits, groups thousands; any other single
+    separator is the decimal point. Spacing and apostrophes only ever group thousands.
 
     Raises
     ------
     decimal.InvalidOperation
-        ``text`` holds no amount, or its separators are not any locale's grouping.
+        ``text`` is not an amount, or its marks are not any locale's grouping.
     """
-    digits = _NOT_AMOUNT_CHARACTERS.sub("", text)
-    if not any(character.isdigit() for character in digits):
+    match = _AMOUNT_TEXT.fullmatch(text.strip())
+    if match is None:
         raise InvalidOperation(text)
-    present = [separator for separator in (".", ",") if separator in digits]
-    if not present:
-        return Decimal(digits)
-    decimal_point = max(present, key=digits.rindex)
-    grouping = next((separator for separator in present if separator != decimal_point), None)
-    if grouping is not None:
-        grouped, _, fraction = digits.rpartition(decimal_point)
-        return Decimal(f"{_ungrouped(grouped, grouping)}.{fraction}")
-    integer, *later = digits.split(decimal_point)
+    figure = _GROUPING_MARKS.sub("'", match["figure"])
+    separators = [mark for mark in (".", ",") if mark in figure]
+    if not separators:
+        return Decimal(_ungrouped(figure, "'") if "'" in figure else figure)
+    decimal_point = max(separators, key=figure.rindex)
+    others = [mark for mark in (".", ",", "'") if mark in figure and mark != decimal_point]
+    if others:
+        grouped, _, fraction = figure.rpartition(decimal_point)
+        return Decimal(f"{_ungrouped(grouped, others[0])}.{fraction}")
+    integer, *later = figure.split(decimal_point)
     repeated = len(later) > 1
-    stands_before_a_group = (
-        len(later[0]) == _THOUSANDS_GROUP and integer != "" and integer.strip("0") != ""
-    )
+    stands_before_a_group = len(later[0]) == _THOUSANDS_GROUP and integer.strip("0") != ""
     if repeated or stands_before_a_group:
-        return Decimal(_ungrouped(digits, decimal_point))
+        return Decimal(_ungrouped(figure, decimal_point))
     return Decimal(f"{integer or '0'}.{later[0]}")
 
 
@@ -229,15 +244,23 @@ def _ungrouped(digits: str, separator: str) -> str:
     return head + "".join(groups)
 
 
+def _amount_text(value: object) -> object:
+    """A JSON number the model sent as an amount, as text; any other value as it came."""
+    if isinstance(value, int | float):
+        return str(value)
+    return value
+
+
 def _is_amount(value: object) -> bool:
-    if not isinstance(value, str):
+    """Whether ``value`` reads as an amount the contract's own ``TransactionHint`` accepts."""
+    text = _amount_text(value)
+    if not isinstance(text, str):
         return False
     try:
-        amount = _parse_amount(value)
-    except InvalidOperation:
+        TransactionHint(amount=_parse_amount(text))
+    except (InvalidOperation, ValidationError):
         return False
-    parts = amount.as_tuple()
-    return int(parts.exponent) >= -_MAX_CENTS_DIGITS and len(parts.digits) <= _MAX_AMOUNT_DIGITS
+    return True
 
 
 class _ModelExtraction(BaseModel):
@@ -260,6 +283,12 @@ class _ModelExtraction(BaseModel):
     requested_language: str | None = None
     policy_query: str | None = None
     mentions_second_dispute: bool = False
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _number_as_text(cls, value: object) -> object:
+        """Read an amount sent as a JSON number the same way as one sent as text."""
+        return _amount_text(value)
 
 
 def _to_nlu_result(extraction: _ModelExtraction, *, reference_date: date) -> NluResult:
