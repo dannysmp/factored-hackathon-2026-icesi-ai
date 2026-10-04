@@ -1,4 +1,4 @@
-# NLU extraction prompt, version 1.
+# NLU extraction prompt.
 #
 # Loaded by app.llm.prompts.load_prompt("nlu_v1"). Read app/conversation/llm_understanding.py
 # before changing a field name here: the tool schema, the loose intermediate model and this
@@ -33,12 +33,13 @@ system: |
 
   A message that only picks one item from a numbered list, by its number or by an ordinal, is the
   choice intent, and choice is that position as an integer from 1 to 5: "3", "option 2", "the
-  second one", "the last one is 5", "la 2", "la segunda", "opción 3", "a terceira", "o 1", "número
-  4". You are not told whether a list was shown; the assistant checks that, so record the position
-  the customer named. A number that is an amount, a date, a card's last four digits or a quantity
-  inside a description of the transaction is that field, not a choice. Fill choice only for the
-  choice intent, and leave confirmation and requested_language null for every intent other than
-  confirmation and switch_language.
+  second one", "la 2", "la segunda", "opción 3", "a terceira", "o 1", "número 4". Use the choice
+  intent only when the message names a position from 1 to 5; otherwise use another intent, usually
+  unclear. You are not told whether a list was shown; the assistant checks that, so record the
+  position the customer named. A number that is an amount, a date or a card's last four digits is
+  that field, not a choice, and a number inside a description of the transaction is not a choice.
+  Fill choice only for the choice intent, and leave confirmation and requested_language null for
+  every intent other than confirmation and switch_language.
 
   Read the conversation's language from this message's own text, independently of the language hint
   you are given: the hint names the language the conversation is in so far, not what this message
