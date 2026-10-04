@@ -34,17 +34,19 @@ flowchart LR
     api --> controller["Dialogue controller<br/>(state machine)"]
 
     controller -- "1 Understand" --> nlu["Language model<br/>(structured output)"]
-    controller -- "2 Decide" --> policy["Policy engine<br/>(pure code)"]
-    controller -- "3 Act, 4 Verify" --> tools["Tool layer<br/>(scoped to the session's customer)"]
-    controller -- "5 Escalate" --> handoff["Handoff builder"]
+    controller -- "2 Decide, 3 Act, 4 Verify" --> tools["Tool layer<br/>(scoped to the session's customer)"]
+    tools --> policy["Policy engine<br/>(pure code)"]
+    controller -- "5 Escalate" --> handoff["Handoff builder<br/>(pure code)"]
+    handoff --> outbox["Handoff outbox"]
     controller --> render["Renderer and<br/>output verifier"]
+    render -. "optional, off by default" .-> nlu
 
     tools --> db[("Postgres<br/>operational state, audit trail")]
-    handoff --> db
-    db --> risk["Risk score<br/>(routes to review only;<br/>routing off in the shipped policy)"]
-    risk --> policy
-    db -- "handoff queue" --> console
+    outbox --> db
+    api -- "agent queue and ticket reads" --> db
+    risk["Risk score<br/>(not wired: routing is off<br/>in the shipped policy)"] -. "routes to review only" .-> policy
     render --> reply["Reply in the customer's language"]
+    reply --> chat
 ```
 
 Design rules that follow from this:
