@@ -117,6 +117,7 @@ def client(_retriever: LexicalRetriever) -> TestClient:
             outbox=_NoopHandoffOutbox(),
             domain_date=date(2026, 6, 18),
             now=lambda: _NOW,
+            max_turns=30,
         )
 
     def always_active(customer_id: str) -> str | None:

@@ -39,6 +39,7 @@ adapter.
 from __future__ import annotations
 
 # Standard libraries
+from decimal import Decimal  # The daily spend limit is money, never a float
 from enum import StrEnum  # Closed sets for environment, provider and log level
 from pathlib import Path  # Type of the optional .env file location
 
@@ -163,6 +164,11 @@ class Settings(BaseSettings):
         Permission-class invariant the create tool enforces itself (ADR-3), not a policy value:
         an anti-abuse bound on how many cases one session may file, never a limit on how many
         distinct disputes a customer legitimately has. Between 1 and 50.
+    dialogue_max_turns : int
+        The most customer turns one session may apply before the next is answered with a handoff
+        to a person and no model call. A cost control, not a policy value: it bounds the turns one
+        session applies, and so the model calls it can cause after that point. Between 5 and 200;
+        the default sits well above the longest normal flow.
     llm_retry_max_attempts, llm_retry_base_delay_ms, llm_retry_max_delay_ms : int
         Bounded retry (E9) for a transient LLM failure (``LlmUnavailable``): full-jitter
         exponential backoff between attempts, capped at ``llm_retry_max_delay_ms``. A permanent
@@ -172,6 +178,10 @@ class Settings(BaseSettings):
         Bounded retry (E9) for a retryable tool failure (``ToolFailure.retryable`` and
         ``cause`` in ``"timeout"``/``"error"``, never ``"circuit_open"``); a refusal for a
         permission or not-found reason (``retryable=False``) is never retried.
+    llm_daily_spend_limit_usd : Decimal
+        The daily model spend limit (ADR-18), counted per operating day: once the day's recorded
+        spend reaches it, model calls are refused and every turn degrades to a template reply and
+        a handoff to a person until the next operating day.
     llm_breaker_failure_threshold, llm_breaker_reset_seconds : int, float
         The LLM circuit breaker (E9): opens after this many consecutive post-retry failures, and
         allows one trial call again after this many seconds.
@@ -224,12 +234,14 @@ class Settings(BaseSettings):
     model_renderer_enabled: bool = False
     data_as_of_date: str | None = None
     case_create_session_cap: int = Field(default=3, ge=1, le=50)
+    dialogue_max_turns: int = Field(default=30, ge=5, le=200)
     llm_retry_max_attempts: int = Field(default=2, ge=1, le=5)
     llm_retry_base_delay_ms: int = Field(default=200, ge=0, le=5000)
     llm_retry_max_delay_ms: int = Field(default=2000, ge=0, le=30000)
     tool_retry_max_attempts: int = Field(default=3, ge=1, le=5)
     tool_retry_base_delay_ms: int = Field(default=50, ge=0, le=5000)
     tool_retry_max_delay_ms: int = Field(default=400, ge=0, le=30000)
+    llm_daily_spend_limit_usd: Decimal = Field(default=Decimal("10"), gt=0)
     llm_breaker_failure_threshold: int = Field(default=5, ge=1, le=20)
     llm_breaker_reset_seconds: float = Field(default=30.0, ge=1, le=300)
     tool_breaker_failure_threshold: int = Field(default=5, ge=1, le=20)

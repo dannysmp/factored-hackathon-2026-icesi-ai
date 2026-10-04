@@ -187,6 +187,7 @@ def test_a_customer_naming_someone_elses_transaction_ref_in_free_text_is_never_l
         outbox=FakeHandoffOutbox(),
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
@@ -211,6 +212,7 @@ def test_free_text_detail_never_influences_the_reply_or_reaches_a_tool() -> None
         outbox=FakeHandoffOutbox(),
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())

@@ -103,12 +103,14 @@ results still to come say so and name the command that completes them.
   empty account is recorded. One persisting deployment onto an already-provisioned account is
   recorded in the runbook's run table; it reproduces the stack and the dashboard, not the account
   provisioning.
-- **The deployed data has no backup and no restore.** The data on the host is synthetic and can be
-  rebuilt with one command, `python -m app.persistence.load_seed`, which every run of
-  `infra/scripts/05-deploy.sh` also performs. That load truncates and reloads the operational
-  tables, so any case filed on the host is lost by it, and nothing preserves a case otherwise: there
-  is no scheduled dump of the database and no restore procedure. The deployed system makes no
-  claim of data durability.
+- **The deployed data has no backup and no restore.** Cases filed on the host live only in its
+  `postgres-data` volume, and a deployment run with `teardown_after` on, which is the default,
+  removes the host with that volume. The rest of the data is synthetic and can be rebuilt with one
+  command, `python -m app.persistence.load_seed`, which every run of `infra/scripts/05-deploy.sh`
+  also performs. That load truncates the serving tables, including filed cases, and reloads them
+  from the seed except the cases, so a case filed on a persisting host is lost by the next
+  deployment to it. Nothing preserves a case otherwise: there is no scheduled dump of the database
+  and no restore procedure. The deployed system makes no claim of data durability.
 - **Both demonstration sign-ins are gated by an access code kept out of the repository.** Hiding
   the code is not, by itself, a security boundary; it is a demonstration convenience layered on
   top of real authentication and authorization, which are enforced regardless of whether the code

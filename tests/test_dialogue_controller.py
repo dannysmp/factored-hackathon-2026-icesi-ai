@@ -310,6 +310,7 @@ def _controller(
     retriever: LexicalRetriever,
     accounting: TurnAccounting | None = None,
     turn_log: FakeDialogueTurnLog | None = None,
+    max_turns: int = 30,
 ) -> tuple[DialogueController, ScriptedNlu]:
     nlu = ScriptedNlu(result, accounting)
     controller = DialogueController(
@@ -321,6 +322,7 @@ def _controller(
         outbox=outbox,
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=max_turns,
         turn_log=turn_log,
     )
     return controller, nlu
@@ -467,6 +469,7 @@ def _sequenced_controller(
         outbox=FakeHandoffOutbox(),
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
 
@@ -789,6 +792,7 @@ def test_a_localized_amount_in_a_portuguese_report_still_presents_the_one_matchi
         outbox=outbox,
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
     asked = controller.handle_turn(
@@ -2342,6 +2346,7 @@ def test_an_unreachable_understanding_dependency_hands_off_on_a_fresh_session(
         outbox=outbox,
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
@@ -2367,6 +2372,7 @@ def test_an_unreachable_understanding_dependency_still_records_turn_history(
         outbox=FakeHandoffOutbox(),
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
         turn_log=turn_log,
     )
 
@@ -2411,6 +2417,7 @@ def test_an_unreachable_understanding_dependency_never_spends_the_clarification_
         outbox=outbox,
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
     controller.handle_turn(_turn("turn-0001"), principal=_principal())
@@ -2450,6 +2457,7 @@ def test_replaying_a_turn_whose_recompute_hits_an_unreachable_dependency_degrade
         outbox=outbox,
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
     response = replay_controller.handle_turn(_turn("turn-0001"), principal=_principal())
@@ -2457,3 +2465,258 @@ def test_replaying_a_turn_whose_recompute_hits_an_unreachable_dependency_degrade
     assert response.end_session
     assert outbox.packets == []
     assert store.get(_SESSION_ID) == before
+
+
+# -----------------------------------------------------------------------------
+# Per-session turn cap
+# -----------------------------------------------------------------------------
+
+
+def _seed_session(
+    store: InMemoryDialogueStore, *, turns: int, lang: str = "es", **changes: object
+) -> DialogueState:
+    """A session that has already applied ``turns`` customer turns."""
+    values: dict[str, object] = {"session_id": _SESSION_ID, "lang": lang, "updated_at": _NOW}
+    state = DialogueState(**{**values, **changes})
+    saved = store.save(state, expected_version=turns - 1, turn_id="turn-seed", now=_now())
+    assert saved.turns_applied == turns
+    return saved
+
+
+def _capped_controller(
+    policy: Policy,
+    retriever: LexicalRetriever,
+    store: InMemoryDialogueStore,
+    outbox: FakeHandoffOutbox,
+    *,
+    max_turns: int = 3,
+) -> tuple[DialogueController, ScriptedNlu]:
+    return _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=outbox,
+        retriever=retriever,
+        max_turns=max_turns,
+    )
+
+
+def test_the_turn_after_the_cap_is_handed_to_a_person_and_the_cap_turn_is_served(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    controller, nlu = _capped_controller(policy, retriever, store, outbox)
+
+    for number in range(1, 4):
+        served = controller.handle_turn(_turn(f"turn-{number:04d}"), principal=_principal())
+        assert served.handoff_ticket is None
+    assert len(nlu.calls) == 3
+    assert outbox.packets == []
+
+    capped = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert capped.handoff_ticket == "T-0001"
+    assert "T-0001" in capped.reply
+    assert capped.end_session
+    assert len(outbox.packets) == 1
+    packet = outbox.packets[0]
+    assert packet.trigger is HandoffTrigger.LOW_UNDERSTANDING
+    assert [(a.action, a.result) for a in packet.actions] == [("turn_cap", "reached")]
+
+
+def test_a_capped_turn_never_calls_the_model(policy: Policy, retriever: LexicalRetriever) -> None:
+    store = InMemoryDialogueStore()
+    _seed_session(store, turns=3)
+    controller, nlu = _capped_controller(policy, retriever, store, FakeHandoffOutbox())
+
+    controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert nlu.calls == []
+
+
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [
+        ("es", "Un asesor debe revisar esto."),
+        ("pt", "Um atendente precisa analisar isso."),
+        ("en", "A person must review this."),
+    ],
+)
+def test_the_capped_reply_is_in_the_session_language(
+    policy: Policy, retriever: LexicalRetriever, lang: str, expected: str
+) -> None:
+    store = InMemoryDialogueStore()
+    _seed_session(store, turns=3, lang=lang)
+    controller, _ = _capped_controller(policy, retriever, store, FakeHandoffOutbox())
+
+    capped = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert expected in capped.reply
+    assert "T-0001" in capped.reply
+
+
+def test_further_turns_after_the_cap_return_the_same_ticket_and_change_nothing(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    _seed_session(store, turns=3)
+    controller, nlu = _capped_controller(policy, retriever, store, outbox)
+    first = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+    version_at_handoff = store.get(_SESSION_ID)
+    assert version_at_handoff is not None
+
+    for number in range(5, 8):
+        again = controller.handle_turn(_turn(f"turn-{number:04d}"), principal=_principal())
+        assert again.handoff_ticket == first.handoff_ticket
+
+    assert len(outbox.packets) == 1
+    assert nlu.calls == []
+    assert store.get(_SESSION_ID) == version_at_handoff
+
+
+def test_repeating_the_capped_turn_replays_the_handoff_not_a_filing_result(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A session that filed a case and then hit the cap must replay its handoff, not re-announce
+    the earlier filing, when the capped turn's id arrives again."""
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    _seed_session(store, turns=3, last_case_number="D-1")
+    controller, _ = _capped_controller(policy, retriever, store, outbox)
+    first = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    replay = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert replay.reply == first.reply
+    assert replay.handoff_ticket == first.handoff_ticket
+    assert "D-1" not in replay.reply
+    assert len(outbox.packets) == 1
+    assert outbox.packets[0].existing_case_number == "D-1"
+
+
+def test_a_duplicate_of_a_served_turn_is_replayed_even_at_the_cap(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    controller, _ = _capped_controller(policy, retriever, store, outbox)
+    for number in range(1, 4):
+        last = controller.handle_turn(_turn(f"turn-{number:04d}"), principal=_principal())
+
+    replay = controller.handle_turn(_turn("turn-0003"), principal=_principal())
+
+    assert replay.reply == last.reply
+    assert replay.handoff_ticket is None
+    assert outbox.packets == []
+
+
+@dataclass
+class _CappedRaceStore:
+    """Serves a session at the cap and makes the cap turn's save lose to another request."""
+
+    inner: InMemoryDialogueStore
+    outcome: Exception
+
+    def get(self, session_id: str) -> DialogueState | None:
+        return self.inner.get(session_id)
+
+    def save(
+        self, state: DialogueState, *, expected_version: int, turn_id: str, now: datetime
+    ) -> DialogueState:
+        raise self.outcome
+
+
+def test_a_capped_turn_that_loses_the_save_race_replays_the_winners_handoff(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The packet this request recorded stays in the queue unreferenced by the session; the
+    reply is the winner's ticket, so the customer sees one."""
+    inner = InMemoryDialogueStore()
+    _seed_session(inner, turns=3)
+    winner = DialogueState(
+        session_id=_SESSION_ID,
+        version=4,
+        lang="es",
+        phase=ConversationPhase.HANDED_OFF,
+        last_turn_id="turn-0004",
+        last_ticket_ref="T-9999",
+        updated_at=_NOW,
+    )
+    outbox = FakeHandoffOutbox()
+    controller, nlu = _capped_controller(
+        policy,
+        retriever,
+        _CappedRaceStore(inner, DuplicateTurn(winner)),  # type: ignore[arg-type]
+        outbox,
+    )
+
+    response = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert response.handoff_ticket == "T-9999"
+    assert "T-9999" in response.reply
+    assert len(outbox.packets) == 1
+    assert nlu.calls == []
+
+
+def test_a_capped_turn_on_a_stale_version_is_a_turn_conflict(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    inner = InMemoryDialogueStore()
+    _seed_session(inner, turns=3)
+    controller, nlu = _capped_controller(
+        policy,
+        retriever,
+        _CappedRaceStore(inner, Conflict("moved on")),  # type: ignore[arg-type]
+        FakeHandoffOutbox(),
+    )
+
+    with pytest.raises(ProblemError) as excinfo:
+        controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert excinfo.value.code is ErrorCode.TURN_CONFLICT
+    assert nlu.calls == []
+
+
+def test_an_unavailable_outbox_at_the_cap_says_nothing_was_registered_and_the_next_message_retries(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    _seed_session(store, turns=3)
+    outbox = FakeHandoffOutbox(fail=True)
+    controller, nlu = _capped_controller(policy, retriever, store, outbox)
+
+    failed = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert failed.handoff_ticket is None
+    assert failed.end_session
+    assert outbox.packets == []
+
+    outbox.fail = False
+    retried = controller.handle_turn(_turn("turn-0005"), principal=_principal())
+
+    assert retried.handoff_ticket == "T-0001"
+    assert len(outbox.packets) == 1
+    assert nlu.calls == []
+
+
+def test_reaching_the_cap_is_logged_with_the_counts_and_no_message_text(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = InMemoryDialogueStore()
+    _seed_session(store, turns=3)
+    controller, _ = _capped_controller(policy, retriever, store, FakeHandoffOutbox())
+
+    with caplog.at_level(logging.WARNING):
+        controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    logged = [
+        r.getMessage() for r in caplog.records if "dialogue_turn_cap_reached" in r.getMessage()
+    ]
+    assert len(logged) == 1
+    assert f"session_id={_SESSION_ID}" in logged[0]
+    assert "turns_applied=3" in logged[0]
+    assert "max_turns=3" in logged[0]
+    assert _turn("turn-0004").text not in logged[0]

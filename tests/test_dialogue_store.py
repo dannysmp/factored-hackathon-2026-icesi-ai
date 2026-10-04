@@ -83,3 +83,18 @@ def test_different_sessions_do_not_interfere() -> None:
     assert store.get("a") == a
     assert store.get("b") == b
     assert a.session_id != b.session_id
+
+
+def test_turns_applied_counts_each_applied_turn_once_and_ignores_a_repeated_turn_id() -> None:
+    """The turn cap counts applied turns: one per new turn id, none for a replay."""
+    store = InMemoryDialogueStore()
+    first = store.save(_state(), expected_version=0, turn_id="turn-1", now=_T1)
+    second = store.save(first, expected_version=first.version, turn_id="turn-2", now=_T1)
+
+    with pytest.raises(DuplicateTurn):
+        store.save(second, expected_version=second.version, turn_id="turn-2", now=_T1)
+
+    assert (first.turns_applied, second.turns_applied) == (1, 2)
+    stored = store.get("s-1")
+    assert stored is not None
+    assert stored.turns_applied == 2

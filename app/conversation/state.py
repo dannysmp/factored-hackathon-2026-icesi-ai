@@ -90,6 +90,16 @@ class DialogueState(BaseModel):
     updated_at: AwareDatetime
 
     @property
+    def turns_applied(self) -> int:
+        """Customer turns applied to this session so far.
+
+        Equal to ``version``: the store starts a session at version 1 on its first applied turn
+        and advances it by exactly one per applied turn; a replayed or conflicting turn changes
+        nothing.
+        """
+        return self.version
+
+    @property
     def is_opening(self) -> bool:
         """True while no dispute step has been taken: the conversation has had at least one turn
         but is still in its first phase with no slot being asked, no category and no transaction

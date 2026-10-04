@@ -13,8 +13,8 @@
 #   brings the stack up, over SSM, with no SSH key anywhere.
 #   Idempotent by the project tag: re-running with an instance already
 #   tagged for this project leaves it alone rather than launching a second
-#   one, but the two scheduled clean-account runs start from an empty
-#   account, so in practice this creates fresh each time. The Elastic IP is
+#   one, but a run that starts from an empty account creates fresh each
+#   time. The Elastic IP is
 #   reconciled the same way on both the fresh-launch and the already-exists
 #   path, so a run that allocated one but failed before associating it (or
 #   before the instance existed at all) is picked up and attached on the
