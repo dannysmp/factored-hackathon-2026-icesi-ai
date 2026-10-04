@@ -88,7 +88,7 @@ class AppEnvironment(StrEnum):
 class LlmProvider(StrEnum):
     """Providers selectable behind the LLM provider interface.
 
-    ``STUB`` makes no model call at all: the evaluation harness's smoke slice selects it so CI
+    ``STUB`` makes no model call at all: the evaluation harness's smoke subset selects it so CI
     exercises the real turns endpoint and dialogue controller without a network call or a
     configured API key. It is never available in production (see ``Settings._stub_llm_rules``).
     """
@@ -157,11 +157,11 @@ class Settings(BaseSettings):
         closed with a ``ConfigError`` on every request, never a silent no-op and never a call to
         that other provider.
     data_as_of_date : str | None
-        The domain date override (ADR-15): an ISO date, or the literal ``"system"`` for the real
+        The domain date override: an ISO date, or the literal ``"system"`` for the real
         date in the bank's own zone. Optional; when absent, the domain calendar reads the loaded
         seed's own reference date instead.
     case_create_session_cap : int
-        Permission-class invariant the create tool enforces itself (ADR-3), not a policy value:
+        Permission-class invariant the create tool enforces itself, not a policy value:
         an anti-abuse bound on how many cases one session may file, never a limit on how many
         distinct disputes a customer legitimately has. Between 1 and 50.
     dialogue_max_turns : int
@@ -170,23 +170,23 @@ class Settings(BaseSettings):
         session applies, and so the model calls it can cause after that point. Between 5 and 200;
         the default sits well above the longest normal flow.
     llm_retry_max_attempts, llm_retry_base_delay_ms, llm_retry_max_delay_ms : int
-        Bounded retry (E9) for a transient LLM failure (``LlmUnavailable``): full-jitter
+        Bounded retry for a transient LLM failure (``LlmUnavailable``): full-jitter
         exponential backoff between attempts, capped at ``llm_retry_max_delay_ms``. A permanent
         failure (``LlmRequestRejected``, ``LlmOutputInvalid``) is never retried, whatever these
         values are.
     tool_retry_max_attempts, tool_retry_base_delay_ms, tool_retry_max_delay_ms : int
-        Bounded retry (E9) for a retryable tool failure (``ToolFailure.retryable`` and
+        Bounded retry for a retryable tool failure (``ToolFailure.retryable`` and
         ``cause`` in ``"timeout"``/``"error"``, never ``"circuit_open"``); a refusal for a
         permission or not-found reason (``retryable=False``) is never retried.
     llm_daily_spend_limit_usd : Decimal
-        The daily model spend limit (ADR-18), counted per operating day: once the day's recorded
+        The daily model spend limit, counted per operating day: once the day's recorded
         spend reaches it, model calls are refused and every turn degrades to a template reply and
         a handoff to a person until the next operating day.
     llm_breaker_failure_threshold, llm_breaker_reset_seconds : int, float
-        The LLM circuit breaker (E9): opens after this many consecutive post-retry failures, and
+        The LLM circuit breaker: opens after this many consecutive post-retry failures, and
         allows one trial call again after this many seconds.
     tool_breaker_failure_threshold, tool_breaker_reset_seconds : int, float
-        The tool-port circuit breaker (E9), shared by every tool method: the store is one
+        The tool-port circuit breaker, shared by every tool method: the store is one
         dependency, not six, so one outage trips one breaker.
     post_handoff_contact_days_priority, post_handoff_contact_days_default : int
         The promised contact time after a handoff: 1 calendar day for a fraud report or a lost
@@ -196,14 +196,14 @@ class Settings(BaseSettings):
         dispute*, a different lifecycle event a handoff ticket never reaches) and keyed by the
         handoff's own trigger, never its dispute category.
     demo_signin_enabled : bool
-        Turns on the demonstration sign-in broker for customers (ADR-18): a public, persona-based
+        Turns on the demonstration sign-in broker for customers: a public, persona-based
         sign-in path meant for the deployed demonstration, unlike the sandbox login. Mutually
         exclusive with ``test_identity_enabled``; unlike it, not restricted to any environment.
     demo_signin_access_code : SecretStr | None
         Shared secret the demo sign-in broker requires (at least 16 characters), compared in
         constant time and rate-limited.
     demo_agent_signin_enabled : bool
-        Turns on the demonstration sign-in broker for agents (ADR-17, ADR-18): the console's own
+        Turns on the demonstration sign-in broker for agents: the console's own
         sign-in path, separate from the customer broker so a leaked customer code never exposes
         it. Mutually exclusive with ``test_identity_enabled``; not restricted to any environment.
     demo_agent_access_code : SecretStr | None
@@ -212,7 +212,7 @@ class Settings(BaseSettings):
     agent_session_signing_key : SecretStr | None
         Key that signs agent-audience session tokens (at least 32 characters), separate from
         ``session_signing_key`` so a customer token and an agent token can never be confused even
-        if one key were compromised (ADR-18). Optional in ``local``, where a throw-away key is
+        if one key were compromised. Optional in ``local``, where a throw-away key is
         generated; required in ``dev`` and ``prod`` once the agent broker is enabled.
     """
 
@@ -327,8 +327,7 @@ class Settings(BaseSettings):
         """The demo broker needs its own code and never runs alongside the sandbox login.
 
         Unlike the sandbox login, the demo broker is not restricted to any environment: it exists
-        precisely so the deployed demonstration (which runs as ``prod``) has a working sign-in
-        (ADR-18).
+        precisely so the deployed demonstration (which runs as ``prod``) has a working sign-in.
         """
         if self.demo_signin_enabled and self.test_identity_enabled:
             raise ValueError("DEMO_SIGNIN_ENABLED and TEST_IDENTITY_ENABLED are mutually exclusive")
@@ -341,8 +340,8 @@ class Settings(BaseSettings):
         """The agent demo broker needs its own code and never runs alongside the sandbox login.
 
         A separate rule from the customer broker's own (rather than one combined check) because
-        the two settings are independent: either, both or neither may be on (ADR-18 runs both
-        together in the deployment), and each names its own missing setting in the error.
+        the two settings are independent: either, both or neither may be on (the deployment runs
+        both together), and each names its own missing setting in the error.
         """
         if self.demo_agent_signin_enabled and self.test_identity_enabled:
             raise ValueError(
@@ -358,7 +357,7 @@ class Settings(BaseSettings):
     def _demo_broker_secrets_never_collide(self) -> Settings:
         """A copy-paste SSM mistake must not silently defeat the two-broker separation.
 
-        ADR-18's whole reason for two access codes is "a leaked customer code leaves the console
+        Two access codes exist so that "a leaked customer code leaves the console
         protected"; the same reasoning applies to the two signing keys. Checked only when both
         values are actually configured, so one broker alone never trips this.
         """
