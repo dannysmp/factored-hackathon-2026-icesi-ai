@@ -111,6 +111,7 @@ from __future__ import annotations
 # Standard libraries
 import hashlib  # Deterministic idempotency key derived from the turn id
 import logging  # Progress events, never print
+import unicodedata  # Accent-insensitive merchant comparison
 from collections.abc import Callable  # Type of one route's handler
 from datetime import date  # Domain date the controller was built with
 from decimal import Decimal  # Money is never a float
@@ -254,15 +255,23 @@ def _idempotency_key(turn_id: str) -> str:
     return hashlib.sha256(turn_id.encode("utf-8")).hexdigest()[:32]
 
 
+def _fold(text: str) -> str:
+    """``text`` without accents and case, so "cafe" and "Café" compare equal."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+
+
 def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -> bool:
     """Whether ``fact`` could be what the customer described in ``hint``.
 
     Every part of ``hint`` that was given must agree; a part the source data cannot answer (an
-    absent merchant and description, an unknown amount) never matches a hint that names it.
+    absent merchant and description, an unknown amount) never matches a hint that names it. The
+    merchant is compared ignoring accents and case, in both directions: a customer who types
+    "cafe" finds "Café Sol", and one who types "São Paulo" finds "SAO PAULO".
     """
     if hint.merchant is not None:
         label = fact.merchant or fact.description
-        if label is None or hint.merchant.lower() not in label.lower():
+        if label is None or _fold(hint.merchant) not in _fold(label):
             return False
     money = fact.amount.money
     if hint.amount is not None and (money is None or money.amount != hint.amount):
