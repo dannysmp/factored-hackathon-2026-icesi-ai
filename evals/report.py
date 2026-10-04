@@ -62,7 +62,9 @@ its own error message — not a deeper root-cause classification beyond that. ``
 carries only those flags, and building a richer taxonomy is not this slice's own scope. The
 failure gallery draws from ``case_results`` alone, the last run only; the Unsafe outcomes section
 is the one that reports every unsafe result from every repeated run, each tagged with which of
-the harness's own checks fired (``unsafe_reasons``) and its run's number.
+the harness's own checks fired (``unsafe_reasons``) and its run's number. That section also
+states that zero observed unsafe outcomes does not establish zero risk and sizes the set per
+golden-set category; a category's case-runs are its last-run case count times the run count.
 Repeated-run variability and the flip list are rendered only for a ``SystemResult`` whose
 ``run_count`` is greater than one (P, by the plan's own execution protocol); B0 and B1 report a
 single run and show no range, by construction, not because their own results are omitted.
@@ -71,6 +73,7 @@ single run and show no range, by construction, not because their own results are
 from __future__ import annotations
 
 # Standard libraries
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -163,6 +166,11 @@ class EvaluationReport:
     16-case CI-smoke subset, run before the full adversarial set's loader lands) — empty for a
     full-golden-set run. Rendered as a prominent callout, never silently inferred from a case
     count this module has no independent way to call "full" or "partial"."""
+    judge_call_count: int = 0
+    """Calls the live judge made while producing this report; zero when it was not run."""
+    judge_cost_usd: float | None = None
+    """What those calls cost. Evaluation tooling, reported on its own line in the judge-scored
+    section and never added to any system's cost; ``None`` when a call went to an unpriced model."""
 
 
 def _count(value: int) -> str:
@@ -223,11 +231,50 @@ def _versions_section(versions: Versions) -> str:
     return _table(["Field", "Value"], rows)
 
 
+def _cost_sample_cell(result: SystemResult, attempted: Sequence[CaseResult]) -> str:
+    """The last run's count of attempted cases with a measured cost, stated against the cost
+    figure's own basis: that figure averages every run and is undefined when any run is."""
+    measured = sum(1 for r in attempted if r.cost_usd is not None)
+    cell = f"{_count(measured)} of {_count(len(attempted))}"
+    cost_cell = result.variability.cost_per_attempted_case.mean
+    if result.run_count > 1 and cost_cell == NOT_DEFINED and measured:
+        return f"{cell} (cost is not defined in at least one other run)"
+    return cell
+
+
+def _sample_size_rows(results: Sequence[SystemResult]) -> list[list[str]]:
+    """The sample behind the table, per system. Runs is the number of runs the figures average;
+    every other row counts the last run's cases, the only run whose per-case results are kept."""
+    in_scope = [[r for r in result.case_results if not r.is_adversarial] for result in results]
+    attempted = [[r for r in cases if r.automation_attempted] for cases in in_scope]
+    return [
+        ["Runs", *(_count(result.run_count) for result in results), "count"],
+        [
+            "Cases (adversarial included)",
+            *(_count(len(result.case_results)) for result in results),
+            "count, last run",
+        ],
+        [
+            "In-scope cases (denominator of safe resolution, attempted share and containment)",
+            *(_count(len(cases)) for cases in in_scope),
+            "count, last run",
+        ],
+        [
+            "Attempted cases with a measured cost",
+            *(
+                _cost_sample_cell(result, cases)
+                for result, cases in zip(results, attempted, strict=True)
+            ),
+            "count, last run",
+        ],
+    ]
+
+
 def _headline_table(systems: tuple[SystemResult, ...]) -> str:
     by_system = {result.system: result for result in systems}
     present = [s for s in ("P", "B0", "B1") if s in by_system]
     headers = ["Metric", *present, "Basis"]
-    rows = []
+    rows = _sample_size_rows([by_system[s] for s in present])
     for label, accessor in _HEADLINE_METRICS:
         row = [label]
         for system in present:
@@ -250,9 +297,20 @@ def _judge_dimension_mean(values: Sequence[int]) -> str:
     return f"{sum(values) / len(values):.3f}"
 
 
-def _judge_scored_quality_section(systems: tuple[SystemResult, ...]) -> str:
+def _judge_cost_line(report: EvaluationReport) -> str:
+    """The judge's own spend, kept apart from every system's cost: it is evaluation tooling."""
+    cost = NOT_DEFINED if report.judge_cost_usd is None else f"{report.judge_cost_usd:.4f}"
+    return (
+        f"Judge calls: {_count(report.judge_call_count)}; judge cost: {cost} USD. This is "
+        "evaluation tooling cost, reported here only and never included in any system's cost "
+        "above."
+    )
+
+
+def _judge_scored_quality_section(report: EvaluationReport) -> str:
     """Aggregate scores the live judge gave a system's own last run — not the judge-vs-human
     agreement of the Judge validation section below, a different question entirely."""
+    systems = report.systems
     judged = [result for result in systems if result.judge_verdicts]
     not_judged = [result.system for result in systems if not result.judge_verdicts]
     if not judged:
@@ -290,7 +348,7 @@ def _judge_scored_quality_section(systems: tuple[SystemResult, ...]) -> str:
         if not_judged
         else ""
     )
-    return f"{table}{note}"
+    return f"{table}{note}\n\n{_judge_cost_line(report)}"
 
 
 def _repeated_run_section(systems: tuple[SystemResult, ...]) -> str:
@@ -342,9 +400,64 @@ def _failure_gallery(systems: tuple[SystemResult, ...]) -> str:
     return _table(["System", "Case", "Failure class", "Expected vs observed"], rows)
 
 
-def _unsafe_outcomes_section(systems: tuple[SystemResult, ...]) -> str:
+_UNSAFE_CAVEAT = (
+    "Zero observed unsafe outcomes in a set this small does not establish zero risk: it means "
+    "none occurred in the case-runs counted below, no more. The sizes below are the denominators "
+    "of every unsafe-outcome rate in this report."
+)
+
+
+def _unsafe_sizing_rows(
+    systems: tuple[SystemResult, ...], golden_cases: tuple[Case, ...]
+) -> list[list[str]]:
+    """Per system and golden-set category: the case-runs observed and the unsafe ones among them.
+
+    A system's case-runs for a category are the cases its last run held in that category times its
+    run count; every run of a system executes the same case set. A result whose case is not in
+    ``golden_cases`` is counted under "unclassified" rather than dropped.
+    """
+    category_of = {case.case_id: case.category.value for case in golden_cases}
     rows = []
     for result in systems:
+        cases_per_category = Counter(
+            category_of.get(r.case_id, "unclassified") for r in result.case_results
+        )
+        unsafe_per_category = Counter(
+            category_of.get(o.result.case_id, "unclassified") for o in result.unsafe_occurrences
+        )
+        ordered = [c.value for c in CaseCategory if c.value in cases_per_category]
+        ordered += sorted(set(cases_per_category) - set(ordered))
+        for category in ordered:
+            rows.append(
+                [
+                    result.system,
+                    category,
+                    _count(cases_per_category[category]),
+                    _count(result.run_count),
+                    _count(cases_per_category[category] * result.run_count),
+                    _count(unsafe_per_category[category]),
+                ]
+            )
+        rows.append(
+            [
+                result.system,
+                "all categories",
+                _count(len(result.case_results)),
+                _count(result.run_count),
+                _count(len(result.case_results) * result.run_count),
+                _count(len(result.unsafe_occurrences)),
+            ]
+        )
+    return rows
+
+
+def _unsafe_outcomes_section(report: EvaluationReport) -> str:
+    sizing = _table(
+        ["System", "Category", "Cases per run", "Runs", "Case-runs observed", "Unsafe observed"],
+        _unsafe_sizing_rows(report.systems, report.golden_cases),
+    )
+    rows = []
+    for result in report.systems:
         for occurrence in result.unsafe_occurrences:
             case_result = occurrence.result
             reasons = ", ".join(case_result.unsafe_reasons) or "unspecified"
@@ -354,9 +467,13 @@ def _unsafe_outcomes_section(systems: tuple[SystemResult, ...]) -> str:
                 f"observed_escalation={case_result.observed_escalation}"
             )
             rows.append([result.system, run_label, case_result.case_id, reasons, detail])
-    if not rows:
-        return "No unsafe outcome was observed in any run."
-    return _table(["System", "Run", "Case", "Unsafe reason(s)", "Expected vs observed"], rows)
+    if rows:
+        occurrences = _table(
+            ["System", "Run", "Case", "Unsafe reason(s)", "Expected vs observed"], rows
+        )
+    else:
+        occurrences = "No unsafe outcome was observed in any run."
+    return f"{_UNSAFE_CAVEAT}\n\n{sizing}\n\n{occurrences}"
 
 
 def judge_validation_section(
@@ -402,10 +519,15 @@ def _limitations_section(report: EvaluationReport) -> str:
         "example a business-savings projection from cost inputs) is computed by this slice.",
         "- The failure gallery reports which deterministic check failed, not a deeper root-cause "
         "classification.",
-        "- Cost per attempted case and cost per successful automated resolution are always "
-        '"not defined": `evals.scoring.score_case` never populates a `CaseResult`\'s `cost_usd` '
-        "(per-case cost accounting is a later increment's job); a system's real spend is only "
-        "computable from its own structured logs, not from this report.",
+        "- A case's cost is the model spend measured for its run: for the proposed system, the "
+        "priced understanding calls its turns logged; for B1, every priced call it made. B0 makes "
+        "no model call (keyword classifier), so its model cost is zero by construction. Reply "
+        "rendering through the model (`MODEL_RENDERER_ENABLED`) logs no cost and is not counted. "
+        "A case whose spend could not be measured is left out of the cost denominators "
+        "(the sample-size rows of the headline table state how many remain), never counted as "
+        "zero. A model call the application could not use (a failed or unusable understanding "
+        "call) is not priced and is not counted. The judge's own cost is reported separately in "
+        "the judge-scored section.",
         f"- Reference date: {report.reference_date} (source: {report.reference_date_source}, "
         f"bank time zone: {report.bank_timezone}).",
     ]
@@ -438,10 +560,10 @@ def render_markdown(report: EvaluationReport) -> str:
         "## 1. Workload\n\n" + _workload_section(report.golden_cases),
         "## 2. Versions\n\n" + _versions_section(report.versions),
         "## 3. Headline metrics\n\n" + _headline_table(report.systems),
-        "## 4. Judge-scored quality\n\n" + _judge_scored_quality_section(report.systems),
+        "## 4. Judge-scored quality\n\n" + _judge_scored_quality_section(report),
         "## 5. Repeated-run variability\n\n" + _repeated_run_section(report.systems),
         "## 6. Failure gallery\n\n" + _failure_gallery(report.systems),
-        "## 7. Unsafe outcomes\n\n" + _unsafe_outcomes_section(report.systems),
+        "## 7. Unsafe outcomes\n\n" + _unsafe_outcomes_section(report),
         "## 8. Judge validation\n\n"
         + judge_validation_section(report.judge_validation, report.judge_validation_provenance),
         "## 9. Learned components\n\n" + _LEARNED_COMPONENT_SECTION,

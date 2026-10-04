@@ -24,6 +24,31 @@ Every customer message goes through the same five stages:
 | **Verify** | Read back every write before reporting it to the customer | Dialogue controller |
 | **Escalate** | Transfer to a human with the request, verified facts, actions taken, evidence and open questions | Handoff builder and agent console |
 
+```mermaid
+flowchart LR
+    customer["Customer<br/>(es / pt / en)"] --> chat["Chat"]
+    agent["Human agent"] --> console["Agent console<br/>(read-only viewer)"]
+    chat --> caddy["Caddy<br/>(HTTPS)"]
+    console --> caddy
+    caddy --> api["FastAPI backend<br/>(session and authorization)"]
+    api --> controller["Dialogue controller<br/>(state machine)"]
+
+    controller -- "1 Understand" --> nlu["Language model<br/>(structured output)"]
+    controller -- "2 Decide, 3 Act, 4 Verify" --> tools["Tool layer<br/>(scoped to the session's customer)"]
+    tools --> policy["Policy engine<br/>(pure code)"]
+    controller -- "5 Escalate" --> handoff["Handoff builder<br/>(pure code)"]
+    handoff --> outbox["Handoff outbox"]
+    controller --> render["Renderer and<br/>output verifier"]
+    render -. "optional, off by default" .-> nlu
+
+    tools --> db[("Postgres<br/>operational state, audit trail")]
+    outbox --> db
+    api -- "agent queue and ticket reads" --> db
+    risk["Risk score<br/>(not wired: routing is off<br/>in the shipped policy)"] -. "routes to review only" .-> policy
+    render --> reply["Reply in the customer's language"]
+    reply --> chat
+```
+
 Design rules that follow from this:
 
 - Policy and permissions are enforced in code and in the tool layer, never in prompts.

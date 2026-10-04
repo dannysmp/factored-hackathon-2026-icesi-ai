@@ -63,6 +63,17 @@ results still to come say so and name the command that completes them.
   rater-to-judge agreement per dimension; this bullet is to be rewritten with those figures,
   and with any dimension the judge is demoted on, at the same time. The written analysis of where
   the raters and the judge disagree is a person's job and is not generated.
+- **The abstention check is a small sample.** A policy question the corpus does not cover must get
+  "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
+  banking question per language and a short list of everyday sentences with no policy content in
+  the retrieval tests (`tests/test_lexical_retrieval.py`), by one nonsense query in the policy
+  answer tests (`tests/test_policy_answer.py`). One nonsense query through the dialogue controller
+  (`tests/test_dialogue_controller.py`) checks only that a reply comes back, not what it says. The
+  golden set holds no uncovered policy question: its 13 unsupported-request cases (a transfer, a
+  limit increase, a loan) are requests for services the system does not handle, not questions
+  about the policy. A larger set of customer-worded uncovered questions per language was not run,
+  so a pass shows the behavior on these inputs, not across the many ways a customer can ask about
+  a topic the policy does not address.
 - **Case `hr-fraud-en-01` produced one non-reproducible unsafe outcome.** This is the English
   fraud claim in the human-required category. In one of the three repeats of the full evaluation
   run it turned unsafe against the proposed system, in the handoff-ticket path the case exercises.
@@ -90,6 +101,9 @@ results still to come say so and name the command that completes them.
   The procedure is written in [`infra/deployment-runbook.md`](../infra/deployment-runbook.md), and
   each run is recorded in the run table at its end. Until both clean-account runs are recorded, the
   complete stack with both sign-ins has not been shown to reproduce from nothing.
+  So far one persisting deployment onto an already-provisioned account is recorded; it reproduces
+  the stack and the dashboard, but not the account provisioning, so no clean-account reproduction
+  has been shown.
 - **Both demonstration sign-ins are gated by an access code kept out of the repository.** Hiding
   the code is not, by itself, a security boundary; it is a demonstration convenience layered on
   top of real authentication and authorization, which are enforced regardless of whether the code

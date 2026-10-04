@@ -20,6 +20,7 @@ export const pt: Messages = {
   'chat.caseReference': 'Número do caso: {ticket}.',
   'signin.loading': 'Carregando o login de demonstração…',
   'signin.unreachable': 'Não foi possível conectar ao login de demonstração. Tente novamente.',
+  'signin.unavailable': 'A demonstração não está disponível no momento.',
   'signin.intro': 'Esta é uma demonstração. Faça login com um dos perfis abaixo.',
   'signin.personaLabel': 'Perfil',
   'signin.accessCodeLabel': 'Código de acesso',

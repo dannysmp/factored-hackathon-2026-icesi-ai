@@ -324,11 +324,13 @@ def _language_offer(e: RenderEnvelope) -> str:
         "es": "Hola, puedo ayudarle con su disputa. No sé si prefiere continuar "
         "en español o portugués; continuaré en español, avíseme si prefiere otro idioma. / "
         "Olá, posso ajudar com sua contestação. Vou continuar em espanhol; me avise se "
-        "preferir português.",
+        "preferir português. / Hello, I can help with your dispute. I will continue in Spanish; "
+        "let me know if you prefer English.",
         "pt": "Olá, posso ajudar com sua contestação. Não tenho certeza se você prefere "
         "continuar em português ou em espanhol; vou continuar em espanhol, mas me avise se "
         "preferir outro idioma. / Hola, puedo ayudarle con su disputa. Continuaré en español; "
-        "avíseme si prefiere portugués.",
+        "avíseme si prefiere portugués. / Hello, I can help with your dispute. I will continue in "
+        "Spanish; let me know if you prefer English.",
         "en": "Hello, I can help with your dispute.",
     }[e.lang]
 

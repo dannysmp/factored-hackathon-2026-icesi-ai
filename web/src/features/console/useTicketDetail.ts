@@ -6,6 +6,7 @@
  * `status`/`detail`/`error` and calls `retry`, and never talks to the client itself.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { AgentRequestError } from './client'
 import type { TicketDetailClient } from './ticketDetailClient'
 import type { TicketDetail } from './contracts'
 
@@ -24,7 +25,12 @@ export interface TicketDetailQuery extends TicketDetailState {
 
 const INITIAL_STATE: TicketDetailState = { status: 'loading', detail: null, error: null }
 
-export function useTicketDetail(client: TicketDetailClient, ticketRef: string): TicketDetailQuery {
+/** `onSessionExpired` is called on a 401, as in `useQueue`, instead of showing a retryable error. */
+export function useTicketDetail(
+  client: TicketDetailClient,
+  ticketRef: string,
+  onSessionExpired?: () => void,
+): TicketDetailQuery {
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<TicketDetailState>(INITIAL_STATE)
 
@@ -32,6 +38,11 @@ export function useTicketDetail(client: TicketDetailClient, ticketRef: string): 
   // `ticketRef` or a retry can change while a fetch is in flight; only the most recently issued
   // request's response is committed, matching `useQueue`'s own guard.
   const requestId = useRef(0)
+  const expiredHandler = useRef(onSessionExpired)
+
+  useEffect(() => {
+    expiredHandler.current = onSessionExpired
+  }, [onSessionExpired])
 
   useEffect(() => {
     mounted.current = true
@@ -49,6 +60,10 @@ export function useTicketDetail(client: TicketDetailClient, ticketRef: string): 
       },
       (error: unknown) => {
         if (!mounted.current || requestId.current !== thisRequest) return
+        if (error instanceof AgentRequestError && error.status === 401 && expiredHandler.current) {
+          expiredHandler.current()
+          return
+        }
         setState({
           status: 'error',
           detail: null,

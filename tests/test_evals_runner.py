@@ -12,6 +12,7 @@ with no controller or customer-lookup override at all — needs a real store; ma
 from __future__ import annotations
 
 # Standard libraries
+import logging
 import os
 from dataclasses import replace
 from typing import Any, cast
@@ -28,13 +29,31 @@ from app.config import LlmProvider, Settings, load_settings
 from app.main import create_app
 from app.persistence.migrate import apply_migrations
 from app.retrieval.corpus_index import CorpusIndexError
+from contracts.service_v1.api import TurnResponse
 from contracts.service_v1.envelope import Intent
+from evals.cost import TurnCostLedger
 from evals.metrics import CaseResult
 from evals.models import Case, CaseCategory
 from evals.runner.runner import run_cases
+from evals.scoring import RunTranscript
 
 LOGIN_KEY = "test-login-key-0123456789"
 SIGNING_KEY = "s" * 40
+
+
+def _turn_record(session_id: str, cost: str) -> logging.LogRecord:
+    return logging.LogRecord(
+        name="app.conversation.controller",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=0,
+        msg=(
+            f"turn_completed session_id={session_id} case_number=None model=m prompt_version=p "
+            f"input_tokens=1 output_tokens=1 latency_ms=1.0 cost_usd={cost}"
+        ),
+        args=(),
+        exc_info=None,
+    )
 
 
 def _case(**overrides: Any) -> Case:
@@ -230,6 +249,78 @@ def test_capture_transcripts_defaults_off_and_never_calls_the_capture_step(
     run_cases(cast(httpx.Client, object()), "unused-dsn", (_case(),), test_login_key=LOGIN_KEY)
 
     assert calls == []
+
+
+def _stub_transcript(case: Case, session_id: str) -> RunTranscript:
+    return RunTranscript(
+        case=case,
+        session_id=session_id,
+        replies=(
+            TurnResponse(
+                turn_id="turn-00000001",
+                conversation_id=session_id,
+                state_version=1,
+                lang="es",
+                reply="Hola",
+                reference_date_line="Fecha de referencia de los datos: 18 de junio de 2026",
+            ),
+        ),
+        latencies_seconds=(0.1,),
+    )
+
+
+def _stub_score(dsn: str, transcript: RunTranscript) -> CaseResult:
+    return CaseResult(
+        case_id=transcript.case.case_id,
+        is_adversarial=False,
+        expected_escalation=False,
+        observed_escalation=False,
+        automation_attempted=True,
+        correct_outcome=True,
+        cost_usd=transcript.cost_usd,
+    )
+
+
+def test_a_cost_ledger_attaches_each_cases_own_session_cost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sessions = {"runner-test-01": "S-1", "runner-test-02": "S-2", "runner-test-03": "S-unseen"}
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", lambda dsn, ref: "CUST-A")
+    monkeypatch.setattr(
+        "evals.runner.runner.run_case",
+        lambda client, case, *, customer_id, test_login_key: _stub_transcript(
+            case, sessions[case.case_id]
+        ),
+    )
+    monkeypatch.setattr("evals.runner.runner.score_case", _stub_score)
+    ledger = TurnCostLedger()
+    ledger.emit(_turn_record("S-1", "0.5"))
+    ledger.emit(_turn_record("S-2", "0.25"))
+
+    results = run_cases(
+        cast(httpx.Client, object()),
+        "unused-dsn",
+        tuple(_case(case_id=case_id) for case_id in sessions),
+        test_login_key=LOGIN_KEY,
+        cost_ledger=ledger,
+    )
+
+    assert [r.cost_usd for r in results] == [0.5, 0.25, None]
+
+
+def test_without_a_cost_ledger_no_cost_is_attached(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", lambda dsn, ref: "CUST-A")
+    monkeypatch.setattr(
+        "evals.runner.runner.run_case",
+        lambda client, case, *, customer_id, test_login_key: _stub_transcript(case, "S-1"),
+    )
+    monkeypatch.setattr("evals.runner.runner.score_case", _stub_score)
+
+    results = run_cases(
+        cast(httpx.Client, object()), "unused-dsn", (_case(),), test_login_key=LOGIN_KEY
+    )
+
+    assert results[0].cost_usd is None
 
 
 def test_capture_transcripts_true_attaches_the_captured_fields(

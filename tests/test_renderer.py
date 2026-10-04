@@ -341,6 +341,15 @@ def test_the_spanish_language_offer_does_not_speak_in_a_gendered_first_person() 
     assert "segura" not in reply.lower()
 
 
+@pytest.mark.parametrize("lang", ["es", "pt"])
+def test_the_spanish_and_portuguese_language_offers_tell_an_english_customer_they_can_switch(
+    lang: str,
+) -> None:
+    reply = render(_envelope(template_id=TemplateId.LANGUAGE_OFFER, lang=lang)).reply
+
+    assert "let me know if you prefer English" in reply
+
+
 def test_portuguese_replies_keep_their_fixed_wording_faults_out() -> None:
     """No uncontracted "em a"/"por a", no sentence-initial clitic, no "a um atendente"."""
     envelopes = _every_template_envelope("pt")
