@@ -168,8 +168,8 @@ class RoutingRules(_Frozen):
     risk_score_threshold: Rate
     escalate_repeat_complainer: StrictBool
     escalate_unknown_amount: StrictBool
-    # Off while no risk model has cleared its pre-registered precision floor; fraud claims
-    # escalate by category regardless of this flag.
+    # Off while no risk model has cleared its precision floor; fraud claims escalate by
+    # category regardless of this flag.
     risk_routing_enabled: StrictBool
     # Consecutive clarification attempts on the same missing element before the request
     # escalates with `escalate_low_nlu_confidence`; the conversation state carries the count.

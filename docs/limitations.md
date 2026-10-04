@@ -35,10 +35,10 @@ results still to come say so and name the command that completes them.
 ## Machine learning
 
 - **The transaction risk model does not route any case today.** Calibration ran, searched for a
-  threshold that clears the pre-registered precision floor at no more than a 5% routed share, and
-  found none: the model card records this as a negative result and keeps routing switched off. A
-  fraud claim still always reaches a person regardless of this signal, since that rule does not
-  depend on the risk score.
+  threshold that clears the 1% precision floor at no more than a 5% routed share, and found
+  none: the model card records this as a negative result and keeps routing switched off. A fraud
+  claim still always reaches a person regardless of this signal, since that rule does not depend
+  on the risk score.
 - **There is no labeled intent set and no intent-set comparison.** Building a labeled set of
   utterances, scoring the language model's intent understanding against it per language, and
   comparing it with a keyword baseline or a zero-shot multilingual classifier are all out of

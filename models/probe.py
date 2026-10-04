@@ -49,7 +49,7 @@ Limitations
 No feature ablation runs here (the with/without comparison for ``customer_country`` and
 ``country_mismatch`` described in ``models/README.md``); `models.boosted` runs it. A validation
 PR-AUC clearly above the base rate is a necessary, not sufficient, condition for a usable score:
-the threshold is chosen later, on the validation period, and its precision is confirmed once on
+the threshold is chosen later, on the validation period, and its precision is measured once on
 the test period.
 """
 
