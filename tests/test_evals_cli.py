@@ -10,6 +10,7 @@ marked ``integration``, skipped when ``DATABASE_URL`` is not set.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 from collections.abc import Callable, Sequence
@@ -30,7 +31,7 @@ from app.persistence.migrate import apply_migrations
 from contracts.service_v1.envelope import Intent
 from evals.cli import _fmt, _require_test_login_key, _select_cases, main
 from evals.golden.case_sheet import ALL_CASES
-from evals.judge import LlmJudge
+from evals.judge import JudgeVerdict, LlmJudge
 from evals.metrics import NOT_DEFINED, CaseResult, Metric
 from evals.models import Case, CaseCategory
 from evals.runner.smoke import SMOKE_CASE_IDS
@@ -234,6 +235,94 @@ def test_build_system_result_reports_flips_across_repeated_runs() -> None:
     assert result.case_results == runs[-1]
     # None of these results captured a transcript, so nothing reaches the judge at all.
     assert result.judge_verdicts == ()
+
+
+class _RecordingJudge:
+    """Stands in for ``LlmJudge``: records every ``score(...)`` call and returns a fixed verdict
+    naming the case, so a test can tell exactly which cases reached the judge and with what."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def score(self, case_id: str, **kwargs: Any) -> JudgeVerdict:
+        self.calls.append({"case_id": case_id, **kwargs})
+        return JudgeVerdict(
+            case_id=case_id,
+            grounding=2,
+            language_quality=2,
+            clarification=None,
+            rationale="fixed",
+            judge_model="claude-sonnet-5",
+            prompt_version="1",
+        )
+
+
+def _captured(
+    case_id: str, *, reply: str | None = "Listo.", facts: str | None = "facts"
+) -> CaseResult:
+    return dataclasses.replace(_full_result(case_id), reply_text=reply, facts_and_sources=facts)
+
+
+def test_score_with_judge_sends_a_captured_case_its_transcript_and_grounding() -> None:
+    judge = _RecordingJudge()
+    case = _case(case_id="c1", lang="pt", user_turns=("Não reconheço.",))
+
+    verdicts = evals.cli._score_with_judge(
+        cast(LlmJudge, judge), (case,), (_captured("c1", reply="Pronto.", facts="F1"),)
+    )
+
+    assert [verdict.case_id for verdict in verdicts] == ["c1"]
+    assert judge.calls == [
+        {
+            "case_id": "c1",
+            "language": "pt",
+            "user_turns": ("Não reconheço.",),
+            "system_replies": ("Pronto.",),
+            "facts_and_sources": "F1",
+        }
+    ]
+
+
+def test_score_with_judge_skips_a_case_with_no_result_or_an_incomplete_capture() -> None:
+    """A gap in capture must stay a gap, never be scored against empty text."""
+    judge = _RecordingJudge()
+    cases = tuple(_case(case_id=case_id) for case_id in ("c1", "c2", "c3", "c4"))
+    results = (
+        _captured("c1"),
+        _captured("c2", reply=None),
+        _captured("c3", facts=None),
+    )  # c4 has no result at all
+
+    verdicts = evals.cli._score_with_judge(cast(LlmJudge, judge), cases, results)
+
+    assert [verdict.case_id for verdict in verdicts] == ["c1"]
+    assert [call["case_id"] for call in judge.calls] == ["c1"]
+
+
+def test_score_with_judge_matches_results_by_case_id_not_position() -> None:
+    judge = _RecordingJudge()
+    cases = (_case(case_id="c1"), _case(case_id="c2"))
+    results = (_captured("c2", reply="reply-2"), _captured("c1", reply="reply-1"))
+
+    evals.cli._score_with_judge(cast(LlmJudge, judge), cases, results)
+
+    assert [(call["case_id"], call["system_replies"]) for call in judge.calls] == [
+        ("c1", ("reply-1",)),
+        ("c2", ("reply-2",)),
+    ]
+
+
+def test_build_system_result_judges_only_p_and_only_its_last_run() -> None:
+    judge = _RecordingJudge()
+    cases = (_case(case_id="c1"),)
+    runs = [(_captured("c1", reply="first"),), (_captured("c1", reply="last"),)]
+
+    p_result = evals.cli._build_system_result("P", runs, cases, cast(LlmJudge, judge))
+    b1_result = evals.cli._build_system_result("B1", runs[-1:], cases, cast(LlmJudge, judge))
+
+    assert [verdict.case_id for verdict in p_result.judge_verdicts] == ["c1"]
+    assert [call["system_replies"] for call in judge.calls] == [("last",)]
+    assert b1_result.judge_verdicts == ()
 
 
 def test_full_and_system_are_mutually_exclusive() -> None:
