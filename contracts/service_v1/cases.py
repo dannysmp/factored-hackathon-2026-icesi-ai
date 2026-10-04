@@ -5,31 +5,30 @@ Case Contract, Service Version 1
 Overview
 --------
 What a dispute case is once filed: the record the case service holds, read back to verify a
-filing and read again by every later lookup. This module is also the base the other stream-1
-contracts (``tools``, ``audit``) build on: the shared primitives (the base model, the reference
-patterns, an amount that states its own provenance, an instant that must be UTC) are defined once,
-here.
+filing and read again by every later lookup. This module is also the base the sibling contracts
+(``tools``, ``audit``) build on: the shared primitives (the base model, the reference patterns, an
+amount that states its own provenance, an instant that must be UTC) are defined once, here.
 
 Scope
 -----
-In: the case record, its closed set of statuses, and the primitives shared across this stream's
-contracts.
-Out: creating a case (``tools.create_dispute_case``), the mock case-service implementation and
-its lifecycle advancement, and the policy decision a case rests on (``app.domain.policy``, reused
-here, not redefined).
+In: the case record, its closed set of statuses, and the primitives shared by the customer-tool,
+audit and console contracts.
+Out: creating a case (``tools.create_dispute_case``), the case-service implementation and its
+status changes (``app.persistence``), and the policy decision a case rests on
+(``app.domain.policy``, reused here, not redefined).
 
 Design Principles
 -----------------
 - Two clocks, both on every record: the domain date the filing decision used (also the date shown
   to the customer as the day the case was filed) and the real UTC instant the row was written.
-  Neither substitutes for the other (ADR-15).
+  Neither substitutes for the other.
 - An amount never appears without saying where it came from: the source's own figure, a same-day
   conversion, or neither, in which case there is no figure to show, only the fact that there is
   none.
 - The policy version and the reason code travel with every case row, so an independent read can
   ask whether the stored decision was really eligible without re-deriving it from the transcript.
 - Closed sets are enumerations: a status or a provenance is added, never renamed; any other change
-  needs a new contract package (``service_v2``) and a change request.
+  needs a new contract package (``service_v2``).
 - The models are immutable and reject unknown fields, so a misspelled key fails at the boundary,
   not silently.
 
@@ -42,8 +41,8 @@ and ``DisclosedAmount``, imported by ``tools.py`` and ``audit.py``.
 Limitations
 -----------
 The record carries no free text of the customer's own words: only the category and the structured
-details the conversation collected. Append-only is a property of the store, not of this type; a
-Postgres constraint enforces it starting with the serving-store slice.
+details the conversation collected. A case record is not append-only: the case service updates a
+case's status in place, and each change is written to the append-only audit trail.
 """
 
 from __future__ import annotations
@@ -72,6 +71,7 @@ from app.domain.policy.models import DisputeCategory, ReasonCode  # One vocabula
 # Shared primitives (imported by tools.py and audit.py)
 # -----------------------------------------------------------------------------
 
+# The conversation languages: Spanish, Portuguese and English.
 Lang = Literal["es", "pt", "en"]
 
 # Identifier shapes: opaque references of at most 64 characters, and shorter case numbers,
@@ -109,7 +109,7 @@ UtcDatetime = Annotated[AwareDatetime, AfterValidator(_require_utc)]
 
 
 class ContractModel(BaseModel):
-    """Base of every contract model in this stream: immutable, and unknown fields are an error."""
+    """Base of every contract model in this module: immutable, and unknown fields are an error."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -124,8 +124,11 @@ class Money(ContractModel):
 class AmountProvenance(StrEnum):
     """Where a disclosed amount came from."""
 
+    # The figure the source itself states.
     REPORTED = "reported"
+    # The source states none; this is a same-day conversion at the day's exchange rate.
     CONVERTED = "converted"
+    # Neither exists, so there is no figure to show.
     UNKNOWN = "unknown"
 
 
@@ -137,6 +140,7 @@ class DisclosedAmount(ContractModel):
     marked ``unknown`` only when neither is available, and then carries no figure.
     """
 
+    # The figure; absent exactly when the provenance is unknown.
     money: Money | None
     provenance: AmountProvenance
 
@@ -156,10 +160,10 @@ class DisclosedAmount(ContractModel):
 class CaseStatus(StrEnum):
     """Status of a filed case.
 
-    The seed advances a case from Open through In Review to Resolved. Rejected, and any change to
-    a case once it reaches Resolved or Rejected, is reachable only by a narrow, audited agent
-    write (``contracts.service_v1.console.SetCaseStatusRequest``) — Open and In Review are the
-    only statuses a further status-set may still change, never the seed or a customer tool.
+    A case is filed Open. Resolved and Rejected are terminal: a status-set on a case in either is
+    refused. Open and In Review are the only statuses a further status-set may still change, and
+    that change is a narrow, audited agent write
+    (``contracts.service_v1.console.SetCaseStatusRequest``), never a customer tool.
     """
 
     OPEN = "Open"
@@ -178,14 +182,19 @@ class CaseRecord(ContractModel):
 
     case_number: Annotated[str, Field(pattern=NUMBER_PATTERN)]
     status: CaseStatus
+    # The disputed transaction, by its opaque reference.
     transaction_ref: Annotated[str, Field(pattern=REF_PATTERN)]
     category: DisputeCategory
     amount: DisclosedAmount
+    # The domain date the filing decision used; also the filing date shown to the customer.
     domain_date: date
     expected_first_response_date: date
+    # The real instant the row was written.
     created_at_utc: UtcDatetime
+    # The policy version and reason code of the eligible decision the case rests on.
     policy_version: Annotated[str, Field(min_length=1)]
     reason_code: ReasonCode
+    # The language of the session that filed the case.
     language: Lang
 
     @model_validator(mode="after")

@@ -6,15 +6,15 @@ Overview
 --------
 The customer tools: what each takes, what it returns, and the permission invariant it enforces
 itself, beyond the session scoping every tool has. The port (``ToolPort``) is the interface the
-dialogue controller codes against; a later implementation reads and writes the serving store
-behind it.
+dialogue controller codes against; an implementation reads and writes the serving store behind
+it.
 
 Scope
 -----
 In: the tool request and result types, the closed set of tools and the permission invariants each
 one enforces (the permissions table), and ``ToolPort`` itself.
 Out: implementing a tool, applying policy (``app.domain.policy``, called by the controller, never
-by a tool), and everything the controller does with a result (stream 2).
+by a tool), and everything the controller does with a result.
 
 Design Principles
 -----------------
@@ -27,11 +27,12 @@ Design Principles
 - The create tool enforces permission invariants only and never evaluates policy: it refuses only
   what it can verify itself (missing or mismatched confirmation, idempotency-key reuse, the
   per-session cap, a duplicate open case, or a request the controller passed no decision for), and
-  it never trusts a caller-stated amount, category or transaction over the decision it was given
-  (ADR-3). ``not_eligible`` and ``requires_person`` are not codes of this tool: policy eligibility
-  is the controller's decision, made before the tool is ever called.
+  it never trusts a caller-stated amount, category or transaction over the decision it was given.
+  ``not_eligible`` and ``requires_person`` are not codes of this tool: policy eligibility is the
+  controller's decision, made before the tool is ever called.
 - The permissions table is exhaustive over the closed set of tools: a tool added to ``Tool``
-  without an entry in ``PERMISSIONS`` fails the tests, so no tool ships unreviewed for permission.
+  without an entry in ``PERMISSIONS`` fails the tests, so no tool ships without its permissions
+  declared.
 - The models are immutable and reject unknown fields, so a misspelled key fails at the boundary.
 
 Runtime Contract
@@ -42,11 +43,10 @@ Runtime Contract
 
 Limitations
 -----------
-This contract does not cover ``get_policy`` (retrieval) or ``handoff``: those tools are
-implemented and their request and result contracts declared where they are built, in stream 2's
-retrieval and handoff packages. The reference and pattern types here are not themselves
-validated at this boundary; the concrete adapter validates a raw string ref before it reaches the
-store.
+This contract does not cover policy retrieval or the handoff: their request and result types are
+declared with the retrieval and handoff components that implement them. The reference and pattern
+types here are not themselves validated at this boundary; the concrete adapter validates a raw
+string ref before it reaches the store.
 """
 
 from __future__ import annotations
@@ -94,15 +94,22 @@ class Tool(StrEnum):
 class Permission(StrEnum):
     """One invariant a tool enforces itself, beyond the session scoping every tool has."""
 
+    # The request is marked confirmed, and the decision it carries is for the same transaction
+    # and category.
     CONFIRMED = "confirmed"
+    # An idempotency key repeated with the same transaction and category replays the original
+    # filing; with a different payload it conflicts.
     IDEMPOTENT = "idempotent"
+    # A session files at most a bounded number of cases.
     SESSION_CREATE_CAP = "session_create_cap"
+    # A transaction with an open case on file cannot be disputed again.
     NO_DUPLICATE_OPEN_CASE = "no_duplicate_open_case"
+    # The request carries the controller's own decision; the tool never evaluates policy itself.
     CONTROLLER_ONLY = "controller_only"
 
 
-# Exhaustive over Tool (tested): a tool added here without an entry fails the tests. Only the
-# create tool enforces anything beyond session scoping, per ADR-3.
+# Exhaustive over Tool (tested): a tool added without an entry here fails the tests. Only the
+# create tool enforces anything beyond session scoping.
 PERMISSIONS: Mapping[Tool, frozenset[Permission]] = {
     Tool.LIST_TRANSACTIONS: frozenset(),
     Tool.GET_TRANSACTION: frozenset(),
@@ -124,11 +131,17 @@ PERMISSIONS: Mapping[Tool, frozenset[Permission]] = {
 class ToolRefusalCode(StrEnum):
     """Why the create tool refused a request. Policy eligibility is never one of these."""
 
+    # The request is not marked confirmed.
     CONFIRMATION_REQUIRED = "confirmation_required"
+    # The decision carried is for a different transaction or category than the request names.
     CONFIRMATION_MISMATCH = "confirmation_mismatch"
+    # The idempotency key was already used with a different payload.
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
+    # The transaction already has an open case.
     DUPLICATE_OPEN_CASE = "duplicate_open_case"
+    # The session has reached its cap of filed cases.
     SESSION_CAP_REACHED = "session_cap_reached"
+    # The controller passed no decision, so the tool cannot verify anything and refuses.
     DECISION_MISSING = "decision_missing"
 
 
@@ -149,12 +162,14 @@ class TransactionFact(ContractModel):
 
     The merchant name is absent for most of the source data; a customer render shows it when
     present and falls back to ``description`` (the source's own transaction description)
-    otherwise (AC-E4-08). The tool implementation decides which one a page carries; this contract
+    otherwise. The tool implementation decides which one a page carries; this contract
     only says that either, both or neither may be present, never inventing one from the other.
     """
 
+    # Opaque reference of the transaction, the handle every later call uses.
     ref: Annotated[str, Field(pattern=REF_PATTERN)]
     occurred_on: date
+    # Required key but nullable: the source often has no merchant.
     merchant: Annotated[SafeText, Field(min_length=1, max_length=80)] | None
     description: Annotated[SafeText, Field(min_length=1, max_length=200)] | None = None
     amount: DisclosedAmount
@@ -165,6 +180,7 @@ class TransactionFact(ContractModel):
 class TransactionFilters(ContractModel):
     """Optional narrowing of the session customer's own transactions; never a customer field."""
 
+    # Bounds on the transaction date; both inclusive, each optional.
     since: date | None = None
     until: date | None = None
 
@@ -180,6 +196,7 @@ class TransactionPage(ContractModel):
     """At most five of the session customer's own transactions, most recent first."""
 
     items: Annotated[tuple[TransactionFact, ...], Field(max_length=5)] = ()
+    # How many transactions match in all, which may exceed the five listed.
     total_count: Annotated[int, Field(ge=0)] = 0
 
     @model_validator(mode="after")
@@ -198,6 +215,7 @@ class ToolFailure(ContractModel):
     """
 
     tool: Tool
+    # "circuit_open" means the call was not attempted because repeated failures opened the breaker.
     cause: Literal["timeout", "error", "circuit_open"]
     retryable: bool = True
 
@@ -229,7 +247,9 @@ class CreateDisputeCaseRequest(ContractModel):
 
     transaction_ref: Annotated[str, Field(pattern=REF_PATTERN)]
     category: DisputeCategory
+    # Whether the customer explicitly confirmed the filing.
     confirmed: bool
+    # Chosen by the caller; repeating it with the same payload replays the original filing.
     idempotency_key: Annotated[str, Field(pattern=NUMBER_PATTERN)]
     decision: PolicyDecision | None = None
 
@@ -237,11 +257,11 @@ class CreateDisputeCaseRequest(ContractModel):
 class CreateDisputeCaseResult(ContractModel):
     """Either the case was created, or refused for a permission reason — never both.
 
-    ``existing_case_number`` is a compatible addition to this pre-freeze contract: a
-    ``duplicate_open_case`` refusal names the case already on file for the transaction, so the
-    customer does not have to look it up separately.
+    A ``duplicate_open_case`` refusal names the case already on file for the transaction in
+    ``existing_case_number``, so the customer does not have to look it up separately.
     """
 
+    # Exactly one of ``created`` and ``refusal`` holds; ``case_number`` goes with ``created``.
     created: bool
     case_number: Annotated[str, Field(pattern=NUMBER_PATTERN)] | None = None
     refusal: ToolRefusalCode | None = None
@@ -293,20 +313,19 @@ class ToolPort(Protocol):
     ) -> PolicyDecision | ToolFailure | None:
         """The policy decision for ``request``, computed fresh; no side effect.
 
-        ``None`` is a compatible addition to this pre-freeze contract, matching
-        ``get_transaction``/``get_case``'s own shape: ``request.transaction_ref`` resolving to no
-        row, or to one this session's customer does not own, is a normal matchless result (this
-        contract's own Design Principles), never a ``ToolFailure`` — reserved for what the store
-        itself could not do.
+        ``None`` matches the shape of ``get_transaction`` and ``get_case``:
+        ``request.transaction_ref`` resolving to no row, or to one this session's customer does
+        not own, is a normal matchless result (see the Design Principles), never a
+        ``ToolFailure`` — reserved for what the store itself could not do.
         """
 
     def create_dispute_case(
         self, request: CreateDisputeCaseRequest
     ) -> CreateDisputeCaseResult | ToolFailure:
-        """File a case, or refuse for a permission reason; never a policy reason (ADR-3).
+        """File a case, or refuse for a permission reason; never a policy reason.
 
         A ``ToolFailure`` covers what neither party to the decision controls: the store cannot be
         reached, or the audit record for the filing cannot be written. Either fails the filing
         closed — no case is created uncounted, and the customer is told it could not be
-        completed, never that it succeeded (AC-E4-19).
+        completed, never that it succeeded.
         """

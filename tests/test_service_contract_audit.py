@@ -18,6 +18,18 @@ from contracts.service_v1.audit import AuditAction, AuditRecord
 
 
 def _record(**overrides: object) -> AuditRecord:
+    """Build a valid audit record for a plain customer read, with ``overrides`` applied on top.
+
+    Parameters
+    ----------
+    **overrides : object
+        Field values that replace the defaults, so a test varies exactly one thing.
+
+    Raises
+    ------
+    pydantic.ValidationError
+        The overrides make the record invalid; tests rely on this to probe each refusal.
+    """
     fields: dict[str, object] = {
         "trace_id": "TRACE-1",
         "customer_id": "C1",
@@ -99,8 +111,8 @@ def test_an_audit_record_is_immutable() -> None:
 def test_an_agent_console_read_carries_no_reason_code_or_policy_version(
     action: AuditAction,
 ) -> None:
-    """Opening a packet or a timeline is a plain read, like any other (ADR-17): no policy basis
-    to record, same as a customer's own transaction or case read."""
+    """Opening a packet or a timeline is a plain read, like any other: no policy basis to record,
+    same as a customer's own transaction or case read."""
     record = _record(action=action)
 
     assert record.reason_code is None
@@ -115,8 +127,8 @@ def test_agent_id_defaults_to_none_for_a_customer_originated_action() -> None:
 
 
 def test_an_agent_action_names_the_agent_who_acted() -> None:
-    """ADR-17: an agent read or write is audited with the agent's own durable identity, not only
-    the session that carried it."""
+    """An agent read or write is audited with the agent's own durable identity, not only the
+    session that carried it."""
     record = _record(action=AuditAction.PACKET_VIEWED, agent_id="AGT-1")
 
     assert record.agent_id == "AGT-1"

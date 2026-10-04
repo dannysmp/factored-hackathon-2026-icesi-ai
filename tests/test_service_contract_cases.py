@@ -24,6 +24,18 @@ from contracts.service_v1.cases import (
 
 
 def _record(**overrides: object) -> CaseRecord:
+    """Build a valid open case record, with ``overrides`` applied on top of the defaults.
+
+    Parameters
+    ----------
+    **overrides : object
+        Field values that replace the defaults, so a test varies exactly one thing.
+
+    Raises
+    ------
+    pydantic.ValidationError
+        The overrides make the record invalid; tests rely on this to probe each refusal.
+    """
     fields: dict[str, object] = {
         "case_number": "CASE-1",
         "status": CaseStatus.OPEN,
@@ -66,7 +78,7 @@ def test_an_unknown_amount_carries_no_figure() -> None:
 
 
 def test_case_status_includes_rejected() -> None:
-    """Rejected is part of the closed set (architecture.md), reachable only by an agent write."""
+    """Rejected is part of the closed set, reachable only by an agent write."""
     assert set(CaseStatus) == {
         CaseStatus.OPEN,
         CaseStatus.IN_REVIEW,
@@ -77,7 +89,7 @@ def test_case_status_includes_rejected() -> None:
 
 
 def test_a_case_record_builds_from_valid_fields() -> None:
-    """The happy path: every AC-E4-17 field is present and internally consistent."""
+    """The happy path: every field is present and internally consistent."""
     record = _record()
 
     assert record.status is CaseStatus.OPEN

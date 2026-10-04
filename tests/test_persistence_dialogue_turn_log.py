@@ -46,7 +46,7 @@ def dsn() -> str:
     if not value:
         pytest.skip("DATABASE_URL is not set")
     apply_migrations(value)
-    # TRUNCATE is refused at the store (migration 0008), including for this reset: the session's
+    # TRUNCATE is refused at the store, including for this reset: the session's
     # own replication role is switched off for it, since a trigger created without ENABLE REPLICA
     # or ENABLE ALWAYS does not fire under 'replica' (matching tests/test_persistence_audit.py).
     with psycopg.connect(value) as conn, conn.cursor() as cur:
