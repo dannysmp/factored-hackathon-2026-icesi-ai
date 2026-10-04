@@ -244,7 +244,7 @@ def test_the_queue_route_refuses_a_customer_session() -> None:
 
 
 def test_the_queue_route_never_touches_the_audit_sink() -> None:
-    """AC-E10-07 only names the packet and the timeline; listing the queue is not itself an
+    """Only the packet and the timeline are audited; listing the queue is not itself an
     agent's read of one ticket's own material."""
     audit = _FakeAudit()
     client = _client(
@@ -308,7 +308,7 @@ def test_the_ticket_route_refuses_a_customer_session() -> None:
 
 
 def test_a_failing_audit_write_propagates_instead_of_serving_the_ticket() -> None:
-    """Fail-closed (ADR-17): the route must never actually return agent data whose read was not
+    """Fail-closed: the route must never actually return agent data whose read was not
     audited, so the audit sink's own exception is never swallowed."""
 
     class _FailingAudit:
