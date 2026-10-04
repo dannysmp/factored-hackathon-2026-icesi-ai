@@ -32,10 +32,13 @@ function toLang(value: string): Lang {
  * persona list and the broker this screen signs into — `'customer'`, the only caller before the
  * console existed, is the default so every earlier call site is unchanged.
  *
- * When the sign-in is switched off (AC-E10-15: the kill switch) the backend mounts no directory
- * route, or lists no persona for this audience; either way the screen says plainly that the
- * demonstration is not available and offers no form. A directory that fails for any other reason
- * (a network error, a rate limit) stays the retryable "unreachable" state.
+ * When the sign-in is switched off (AC-E10-15: the kill switch) the backend either answers the
+ * persona directory with 401 `session_missing` (both brokers off, so the route is not public) or
+ * lists no persona for this audience (only the other broker on); either way the screen says
+ * plainly that the demonstration is not available and offers no form. A directory that fails for
+ * any other reason (a network error, a rate limit, a server error) stays the retryable
+ * "unreachable" state. No persona is selected in the unavailable state, so its text is always the
+ * default language's; the Portuguese and English catalog entries exist for catalog parity only.
  *
  * `onSignedIn` receives the session token and the chosen persona's language, so the caller can
  * hand both to `LiveChatClient` — the token is this component's own state, held only for the
@@ -85,7 +88,7 @@ export function SignInScreen({
       },
       (error: unknown) => {
         if (cancelled) return
-        const switchedOff = error instanceof SignInError && error.status === 404
+        const switchedOff = error instanceof SignInError && error.status === 401
         setDirectoryStatus(switchedOff ? 'unavailable' : 'error')
       },
     )

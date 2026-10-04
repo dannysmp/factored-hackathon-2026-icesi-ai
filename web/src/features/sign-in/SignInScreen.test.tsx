@@ -37,16 +37,20 @@ describe('SignInScreen', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(es['signin.unreachable'])
   })
 
-  it('says plainly that the demonstration is not available, with no form, when the sign-in is switched off', async () => {
-    vi.spyOn(api, 'fetchCustomerPersonas').mockRejectedValue(new SignInError(404, 'Not Found'))
-    const { container } = render(<SignInScreen onSignedIn={vi.fn()} />)
+  it.each(['customer', 'agent'] as const)(
+    'says plainly that the demonstration is not available, with no form, when both sign-ins are off (%s)',
+    async (audience) => {
+      const fetcher = audience === 'customer' ? 'fetchCustomerPersonas' : 'fetchAgentPersonas'
+      vi.spyOn(api, fetcher).mockRejectedValue(new SignInError(401, 'Sign in required'))
+      const { container } = render(<SignInScreen audience={audience} onSignedIn={vi.fn()} />)
 
-    expect(await screen.findByRole('status')).toHaveTextContent(es['signin.unavailable'])
-    expect(screen.queryByLabelText(es['signin.accessCodeLabel'])).not.toBeInTheDocument()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(await axe(container)).toHaveNoViolations()
-  })
+      expect(await screen.findByRole('status')).toHaveTextContent(es['signin.unavailable'])
+      expect(screen.queryByLabelText(es['signin.accessCodeLabel'])).not.toBeInTheDocument()
+      expect(screen.queryByRole('button')).not.toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(await axe(container)).toHaveNoViolations()
+    },
+  )
 
   it('treats a directory with no persona for its audience as switched off, for the console too', async () => {
     vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue([])
