@@ -62,7 +62,7 @@ Before a dispute is filed, the customer confirms exactly what is going to be fil
 Even when a request meets the rules, a person reviews it in these cases:
 
 - It is a fraud claim.
-- The request was not understood with enough confidence.
+- The request was not understood with sufficient confidence.
 - Other bank review criteria apply.
 
 ## Fraud claims {#fraud-claims}

@@ -147,8 +147,8 @@ _ES = Messages(
     ),
     transactions=(
         "Para presentar una disputa, la transacción debe ser un cargo al cliente ({types}), "
-        "estar {approved}, no estar fechada en el futuro, estar dentro del plazo de su "
-        "categoría (ver más abajo) y no tener otra disputa abierta."
+        "estar {approved}, no estar fechada en el futuro, encontrarse dentro del plazo "
+        "correspondiente (ver más abajo) y no tener otra disputa abierta."
     ),
     types_excluded="No se pueden disputar {types}.",
     statuses_excluded=(
@@ -182,28 +182,32 @@ _ES = Messages(
         "last_genuine_use": "cuándo la usó por última vez",
     },
     confirmation_all=(
-        "Antes de presentar una disputa, el cliente confirma exactamente lo que se va a "
-        "presentar: la transacción, el motivo y los datos de la solicitud."
+        "Antes de presentar una disputa, el cliente confirma la transacción, el motivo y los "
+        "datos de la solicitud."
     ),
     confirmation_some=(
-        "En los casos de {categories}, antes de presentar la disputa, el cliente confirma "
-        "exactamente lo que se va a presentar: la transacción, el motivo y los datos de la "
-        "solicitud."
+        "En los casos de {categories}, antes de presentar la disputa, el cliente confirma la "
+        "transacción, el motivo y los datos de la solicitud."
     ),
     confirmation_none="La política no exige confirmación previa a la presentación.",
     human_intro=(
         "Aunque la solicitud cumpla las reglas, pasa a revisión de un asesor en estos casos:"
     ),
     human_fraud="- Es un reporte de fraude.",
-    human_confidence="- El sistema no entendió la solicitud con suficiente certeza.",
+    human_confidence=(
+        "- El sistema no pudo determinar con suficiente claridad qué solicita el cliente."
+    ),
     human_criteria="- Se aplican otros criterios de revisión del banco.",
     fraud=(
         "Un asesor revisa siempre los reportes de fraude. Nunca se descartan automáticamente, "
         "aunque la transacción haya sido rechazada, esté fuera de plazo o corresponda a un "
         "producto fuera del alcance de esta política; en esos casos, el asesor recibe además "
-        "el motivo por el que la solicitud no habría sido elegible."
+        "el motivo por el que la solicitud no cumple las reglas."
     ),
-    codes_intro="Cada decisión lleva uno de estos motivos.",
+    codes_intro=(
+        "Cada decisión lleva uno de estos motivos. Para cada motivo que requiere revisión por "
+        "un asesor, se muestra el mensaje: “Un asesor revisa esta solicitud.”"
+    ),
     codes_header=("Motivo", "Significado"),
     categories={
         DisputeCategory.UNRECOGNIZED_CHARGE: "cargo no reconocido",
@@ -262,12 +266,12 @@ _ES = Messages(
         ReasonCode.TRANSACTION_DATE_IN_FUTURE: "La fecha de la transacción es futura.",
         ReasonCode.FILING_WINDOW_EXPIRED: "Venció el plazo para presentar esta disputa.",
         ReasonCode.DUPLICATE_OPEN_CASE: "Ya hay una disputa abierta para esta transacción.",
-        ReasonCode.ESCALATE_FRAUD_CLAIM: "Un asesor revisa la solicitud.",
-        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: "Un asesor revisa la solicitud.",
-        ReasonCode.ESCALATE_REPEAT_COMPLAINER: "Un asesor revisa la solicitud.",
-        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: "Un asesor revisa la solicitud.",
-        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: "Un asesor revisa la solicitud.",
-        ReasonCode.ESCALATE_RISK_SCORE: "Un asesor revisa la solicitud.",
+        ReasonCode.ESCALATE_FRAUD_CLAIM: "Un asesor revisa esta solicitud.",
+        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: "Un asesor revisa esta solicitud.",
+        ReasonCode.ESCALATE_REPEAT_COMPLAINER: "Un asesor revisa esta solicitud.",
+        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: "Un asesor revisa esta solicitud.",
+        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: "Un asesor revisa esta solicitud.",
+        ReasonCode.ESCALATE_RISK_SCORE: "Un asesor revisa esta solicitud.",
     },
     and_word="y",
     or_word="o",
@@ -502,7 +506,7 @@ _EN = Messages(
     confirmation_none="The policy does not require confirmation before filing.",
     human_intro="Even when a request meets the rules, a person reviews it in these cases:",
     human_fraud="- It is a fraud claim.",
-    human_confidence="- The request was not understood with enough confidence.",
+    human_confidence="- The request was not understood with sufficient confidence.",
     human_criteria="- Other bank review criteria apply.",
     fraud=(
         "A fraud claim is always reviewed by a person. It is never refused automatically, even "
