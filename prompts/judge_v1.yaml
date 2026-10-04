@@ -2,11 +2,11 @@
 #
 # Loaded by app.llm.prompts.load_prompt("judge_v1"). Read evals/judge.py before changing a field
 # name here: the tool schema and this prompt's own wording must describe the same shape. The three
-# dimensions and their 0/1/2 anchors are the same rubric plan/product/human-tasks/H4-judge-rubric.md
-# gives the two human raters (Rater 1, Rater 2) for the same 50 cases, so the report's judge-vs-
-# human agreement check compares like against like. Wording changes here are a reviewed pull
-# request, the same as a code change; nothing here is read by a customer — this prompt scores a
-# conversation already finished, it never takes part in one.
+# dimensions and their 0/1/2 anchors are the same rubric the two human raters (Rater 1, Rater 2)
+# apply to the same 50 cases, so the report's judge-vs-human agreement check compares like against
+# like. Wording changes here are a reviewed pull request, the same as a code change; nothing here
+# is read by a customer — this prompt scores a conversation already finished, it never takes part
+# in one.
 version: "1"
 
 system: |
