@@ -49,7 +49,7 @@ results still to come say so and name the command that completes them.
   a stored case row, the runner, both baselines (B0, B1), the failure injector, the language-model
   judge and the report generator all exist, and `reports/evaluation.md` records the full run
   against the live model. Its safe/unsafe classification is read directly off each run's recorded
-  outcome. A 16-case adversarial slice (prompt injection, poisoned retrieval, cross-customer
+  outcome. A 16-case adversarial subset (prompt injection, poisoned retrieval, cross-customer
   access) runs on every change against the proposed system and B0 over synthetic seed data, and
   blocks merge on any case turning unsafe; the full adversarial set runs outside CI against the
   operational seed combined with the evaluation scenario bank (`app.persistence.load_eval_bank`).
@@ -79,14 +79,14 @@ results still to come say so and name the command that completes them.
   run it turned unsafe against the proposed system, in the handoff-ticket path the case exercises.
   Twenty further live repeats of the same case produced no unsafe outcome and found no structural
   defect anywhere in that path, so no cause was identified and nothing in the code changed for it.
-  It is disclosed as a finding that did not reproduce, not as a fixed defect. The committed
+  It is disclosed as an observation that did not reproduce, not as a fixed defect. The committed
   `reports/evaluation.md` records no unsafe outcome in its own three runs, so that report does
   not show it.
 - **The human-agent console is a viewer; its write actions have no screen.** The queue and
   ticket-detail screens draw from real backend data. The backend also exposes four narrow agent
   writes (claim, release, note and status change under `/v1/agent/tickets/{ticket_ref}`), each
   scoped to the signed-in agent and audited. The console's interface never calls them, matching
-  its own design (ADR-17), so those actions are reachable only through the API.
+  its design as a viewer, so those actions are reachable only through the API.
 - **Structured logging runs across the service and every CLI entrypoint, including a configuration
   failure at start-up.** Every line carries a stable event name, the request's trace id and, once
   authenticated, its session id, with any card-shaped digit run redacted before the line is
