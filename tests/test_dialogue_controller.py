@@ -1651,7 +1651,7 @@ def test_list_transactions_presents_or_states_not_found(
     )
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert response.next_expected is None
-    assert "coincid" in response.reply.lower()
+    assert "transacciones más recientes" in response.reply.lower()
 
     controller, _ = _controller(
         _plain(NluIntent.LIST_TRANSACTIONS),
@@ -1663,6 +1663,141 @@ def test_list_transactions_presents_or_states_not_found(
     )
     empty = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert "no encontré" in empty.reply.lower()
+
+
+def _three_transactions() -> tuple[TransactionFact, ...]:
+    return (
+        _transaction("TX-1", merchant="Amazon", amount=Decimal("100.00")),
+        _transaction("TX-2", merchant="Netflix", amount=Decimal("45.50")),
+        _transaction("TX-3", merchant="Uber", amount=Decimal("12.25")),
+    )
+
+
+def test_a_list_request_numbers_each_transaction_in_the_reply_and_the_choices(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+
+    listed = dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+
+    assert [choice.number for choice in listed.choices] == [1, 2, 3]
+    for number, merchant, amount in ((1, "Amazon", "100"), (2, "Netflix", "45"), (3, "Uber", "12")):
+        assert f"{number}. " in listed.reply
+        assert merchant in listed.reply
+        assert merchant in listed.choices[number - 1].label
+        assert amount in listed.choices[number - 1].label
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.offered_refs == ("TX-1", "TX-2", "TX-3")
+
+
+def test_a_reply_that_is_not_a_list_offers_no_choices(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+
+    assert dialogue.say(_plain(NluIntent.SMALL_TALK)).choices == ()
+    assert dialogue.present_amazon().choices == ()
+
+
+def test_a_number_chosen_from_the_list_selects_the_transaction_shown_at_that_position(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+
+    picked = dialogue.say(_plain(NluIntent.CHOICE, choice=2))
+
+    assert picked.next_expected is Slot.REASON
+    assert picked.choices == ()
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-2"
+    assert state.offered_refs == ()
+    assert state.pending_slot is Slot.REASON
+
+
+def test_a_number_chosen_from_the_list_evaluates_when_the_reason_is_already_known(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=_three_transactions(),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+
+    confirm = dialogue.say(_plain(NluIntent.CHOICE, choice=3))
+
+    assert confirm.next_expected is Slot.CONFIRMATION
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-3"
+
+
+@pytest.mark.parametrize("number", [4, 5], ids=["past-the-end", "far-past"])
+def test_a_choice_outside_the_list_shown_selects_nothing(
+    policy: Policy, retriever: LexicalRetriever, number: int
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+
+    dialogue.say(_plain(NluIntent.CHOICE, choice=number))
+
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref is None
+    assert state.offered_refs == ("TX-1", "TX-2", "TX-3")
+
+
+def test_a_choice_before_any_list_selects_nothing(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+
+    dialogue.say(_plain(NluIntent.CHOICE, choice=1))
+
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref is None
+
+
+def test_a_list_request_while_a_transaction_is_awaiting_a_yes_lists_and_keeps_it_pending(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.present_amazon()
+
+    listed = dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+
+    assert listed.next_expected is Slot.TRANSACTION_CHOICE
+    assert len(listed.choices) == 3
+    stay = dialogue.store.get(_SESSION_ID)
+    assert stay is not None
+    assert stay.selected_ref == "TX-1"
+
+    picked = dialogue.say(_plain(NluIntent.CHOICE, choice=2))
+    assert picked.next_expected is Slot.REASON
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-2"
+
+
+def test_a_described_transaction_found_after_a_list_clears_the_offered_references(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+
+    dialogue.say(_file_dispute(transaction=TransactionHint(merchant="Uber")))
+
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-3"
+    assert state.offered_refs == ()
 
 
 def test_dispute_status_presents_cases_or_states_none(

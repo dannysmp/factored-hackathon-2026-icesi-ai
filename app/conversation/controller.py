@@ -87,11 +87,13 @@ again within the clarification budget. The question stays pending across a reply
 message (small talk, a policy question, a list request), as the reason and confirmation questions
 do, so the customer's yes after such a reply still selects the presented transaction. The
 unrelated reply itself files nothing; a case is filed only once the policy's confirmation
-requirement for the category is met. Two or more matches ask for more detail rather than
-presenting a numbered list — the same v1 scope decision already made for slot collection, since
-neither a pending-candidate field nor a multi-candidate list exists in ``DialogueState`` yet. A
-session identifies and evaluates at most one transaction/category pair: nothing here resets
-``selected_ref``/``category`` once set, so a second, different dispute needs a new session. The
+requirement for the category is met. A list request shows the customer's most recent
+transactions as numbered options and keeps their references, in order, in ``offered_refs``; a
+later number selects the transaction shown at that position, and its question about the reason or
+the filing follows. Two or more matches for a described transaction ask for more detail rather
+than presenting a numbered list. A session identifies and evaluates at most one
+transaction/category pair: nothing here resets ``selected_ref``/``category`` once set, so a second,
+different dispute needs a new session. The
 handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name yet.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
@@ -126,7 +128,7 @@ from app.conversation.guard import required_slot
 from app.conversation.handoff import HandoffContent
 from app.conversation.model_renderer import LlmRenderer
 from app.conversation.policy_answer import answer as policy_answer
-from app.conversation.renderer import RenderedReply, demo_notice
+from app.conversation.renderer import RenderedReply, demo_notice, transaction_line
 from app.conversation.reply import render_reply
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DialogueStore, DuplicateTurn
@@ -140,7 +142,7 @@ from app.security.sessions import Clock, Principal
 from app.tools.create_dispatch import create_dispute_case
 from app.tools.dispatcher import dispatch
 from contracts.service_v1 import tools as tool_contracts
-from contracts.service_v1.api import TurnRequest, TurnResponse
+from contracts.service_v1.api import Choice, TurnRequest, TurnResponse
 from contracts.service_v1.console import TimelineEntry
 from contracts.service_v1.envelope import (
     CUSTOMER_REASON_OF,
@@ -626,9 +628,32 @@ class DialogueController:
             transactions=tuple(to_envelope_transaction(item) for item in page.items),
             candidate_count=page.total_count,
         )
-        return state, self._envelope(
-            state, Intent.PRESENT_TRANSACTIONS, TemplateId.PRESENT_LIST, facts=facts
+        offered = state.model_copy(
+            update={"offered_refs": tuple(fact.ref for fact in facts.transactions)}
         )
+        return offered, self._envelope(
+            offered, Intent.PRESENT_TRANSACTIONS, TemplateId.PRESENT_LIST, facts=facts
+        )
+
+    def _handle_choice(
+        self, state: DialogueState, result: NluResult
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """The customer picked a number from the list just shown: that transaction is selected."""
+        number = result.choice
+        if number is None or not 1 <= number <= len(state.offered_refs):
+            return self._fallback(state, result)
+        selected = state.model_copy(
+            update={
+                "selected_ref": state.offered_refs[number - 1],
+                "offered_refs": (),
+                "pending_slot": None,
+                "clarification_attempts": 0,
+            }
+        )
+        assert selected.selected_ref is not None  # noqa: S101 - set on the line above
+        if selected.category is None:
+            return self._ask(selected, Slot.REASON)
+        return self._evaluate_and_present(selected, selected.selected_ref, selected.category)
 
     def _handle_dispute_status(
         self, state: DialogueState, _result: NluResult
@@ -774,7 +799,7 @@ class DialogueController:
     def _handle_unroutable(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
-        """``choice`` and ``correction`` share ``unclear``'s fallback (see Limitations)."""
+        """``correction`` shares ``unclear``'s fallback (see Limitations)."""
         return self._fallback(state, result)
 
     # -------------------------------------------------------------------------------------
@@ -858,6 +883,7 @@ class DialogueController:
         new_state = state.model_copy(
             update={
                 "selected_ref": fact.ref,
+                "offered_refs": (),
                 "pending_slot": Slot.TRANSACTION_CHOICE,
                 "clarification_attempts": 0,
             }
@@ -1250,6 +1276,7 @@ class DialogueController:
             demo_notice=demo_notice(state.lang),
             next_expected=envelope.next_expected,
             end_session=envelope.end_session,
+            choices=_choices_of(envelope),
             handoff_ticket=state.last_ticket_ref if envelope.intent is Intent.HANDOFF else None,
         )
 
@@ -1290,6 +1317,16 @@ class DialogueController:
             )
 
 
+def _choices_of(envelope: RenderEnvelope) -> tuple[Choice, ...]:
+    """The numbered options a list reply offers, one per transaction shown, in the order shown."""
+    if envelope.template_id is not TemplateId.PRESENT_LIST:
+        return ()
+    return tuple(
+        Choice(number=number, label=transaction_line(transaction, envelope.lang))
+        for number, transaction in enumerate(envelope.facts.transactions, start=1)
+    )
+
+
 _Handler = Callable[
     [DialogueController, DialogueState, NluResult], tuple[DialogueState, RenderEnvelope]
 ]
@@ -1302,7 +1339,7 @@ _ROUTES: dict[NluIntent, _Handler] = {
     NluIntent.DISPUTE_STATUS: DialogueController._handle_dispute_status,
     NluIntent.POLICY_QUESTION: DialogueController._handle_policy_question,
     NluIntent.CONFIRMATION: DialogueController._handle_confirmation,
-    NluIntent.CHOICE: DialogueController._handle_unroutable,
+    NluIntent.CHOICE: DialogueController._handle_choice,
     NluIntent.CORRECTION: DialogueController._handle_unroutable,
     NluIntent.REPORT_FRAUD: DialogueController._handle_report_fraud,
     NluIntent.REPORT_CARD_LOSS: DialogueController._handle_report_card_loss,

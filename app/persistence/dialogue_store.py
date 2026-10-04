@@ -64,7 +64,8 @@ _CONNECT_TIMEOUT_SECONDS = 5
 
 _COLUMNS = (
     "version, lang, phase, pending_slot, clarification_attempts, category, selected_ref, "
-    "pending_disputes, last_turn_id, last_case_number, last_ticket_ref, updated_at_utc"
+    "offered_refs, pending_disputes, last_turn_id, last_case_number, last_ticket_ref, "
+    "updated_at_utc"
 )
 
 # Selects a session's own row by its primary key; the column list is a module constant, not
@@ -82,6 +83,7 @@ def _row_to_state(session_id: str, row: Any) -> DialogueState:
         clarification_attempts,
         category,
         selected_ref,
+        offered_refs,
         pending_disputes,
         last_turn_id,
         last_case_number,
@@ -97,6 +99,7 @@ def _row_to_state(session_id: str, row: Any) -> DialogueState:
         clarification_attempts=clarification_attempts,
         category=DisputeCategory(category) if category is not None else None,
         selected_ref=selected_ref,
+        offered_refs=tuple(offered_refs),
         pending_disputes=pending_disputes,
         last_turn_id=last_turn_id,
         last_case_number=last_case_number,
@@ -203,13 +206,13 @@ class PostgresDialogueStore:
                     """
                     INSERT INTO dialogue_state (
                         session_id, version, lang, phase, pending_slot, clarification_attempts,
-                        category, selected_ref, pending_disputes, last_turn_id,
-                        last_case_number, last_ticket_ref, updated_at_utc
+                        category, selected_ref, offered_refs, pending_disputes,
+                        last_turn_id, last_case_number, last_ticket_ref, updated_at_utc
                     ) VALUES (
                         %(session_id)s, %(version)s, %(lang)s, %(phase)s, %(pending_slot)s,
                         %(clarification_attempts)s, %(category)s, %(selected_ref)s,
-                        %(pending_disputes)s, %(last_turn_id)s, %(last_case_number)s,
-                        %(last_ticket_ref)s, %(updated_at)s
+                        %(offered_refs)s, %(pending_disputes)s, %(last_turn_id)s,
+                        %(last_case_number)s, %(last_ticket_ref)s, %(updated_at)s
                     )
                     ON CONFLICT (session_id) DO UPDATE SET
                         version = EXCLUDED.version,
@@ -219,6 +222,7 @@ class PostgresDialogueStore:
                         clarification_attempts = EXCLUDED.clarification_attempts,
                         category = EXCLUDED.category,
                         selected_ref = EXCLUDED.selected_ref,
+                        offered_refs = EXCLUDED.offered_refs,
                         pending_disputes = EXCLUDED.pending_disputes,
                         last_turn_id = EXCLUDED.last_turn_id,
                         last_case_number = EXCLUDED.last_case_number,
@@ -240,6 +244,7 @@ class PostgresDialogueStore:
                         if to_save.category is not None
                         else None,
                         "selected_ref": to_save.selected_ref,
+                        "offered_refs": list(to_save.offered_refs),
                         "pending_disputes": to_save.pending_disputes,
                         "last_turn_id": to_save.last_turn_id,
                         "last_case_number": to_save.last_case_number,

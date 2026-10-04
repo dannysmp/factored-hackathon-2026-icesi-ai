@@ -437,6 +437,42 @@ def test_present_one_names_the_merchant_with_its_own_language_s_preposition(
 
 
 @pytest.mark.parametrize(
+    ("lang", "second_line"),
+    [
+        ("es", "2. 80,00 MXN en Panadería, 10 de junio de 2026"),
+        ("pt", "2. 80,00 MXN em Panadería, 10 de junho de 2026"),
+        ("en", "2. 80.00 MXN at Panadería, June 10, 2026"),
+    ],
+)
+def test_present_list_writes_one_numbered_line_per_transaction_in_its_own_language(
+    lang: Lang, second_line: str
+) -> None:
+    """Each option is a line "N. amount at merchant, date", in the order of the facts."""
+    transactions = (
+        _transaction(ref="tx-1"),
+        _transaction(
+            ref="tx-2",
+            merchant="Panadería",
+            occurred_on=date(2026, 6, 10),
+            amount=Money(amount=Decimal("80.00"), currency="MXN"),
+        ),
+    )
+    envelope = _envelope(
+        intent=Intent.PRESENT_TRANSACTIONS,
+        template_id=TemplateId.PRESENT_LIST,
+        lang=lang,
+        facts=DisputeFacts(transactions=transactions, candidate_count=2),
+    )
+
+    lines = render(envelope).reply.split("\n")
+
+    assert len(lines) == 3
+    assert lines[1].startswith("1. ")
+    assert "Tienda Sol" in lines[1]
+    assert lines[2] == second_line
+
+
+@pytest.mark.parametrize(
     ("category", "expected_phrase"),
     [
         (DisputeCategory.UNRECOGNIZED_CHARGE, "an unrecognized charge dispute"),

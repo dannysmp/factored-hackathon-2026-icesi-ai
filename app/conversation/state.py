@@ -39,6 +39,10 @@ dispute step has been taken yet. ``ConversationPhase`` names where the conversat
 
 Limitations
 -----------
+``offered_refs`` holds the references of the transactions shown in the last list, in the order
+shown, so a numbered choice from that list resolves to the transaction the customer saw; it is
+empty until a list is shown and again once a transaction is selected.
+
 ``last_case_number``/``last_ticket_ref`` exist so a repeated turn id can be answered from the
 state alone (no cached reply text is stored, per the store's own idempotent-replay design): the
 caller re-derives the reply from the current record behind the identifier, never from a snapshot
@@ -83,6 +87,9 @@ class DialogueState(BaseModel):
     clarification_attempts: Annotated[int, Field(ge=0)] = 0
     category: DisputeCategory | None = None
     selected_ref: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    offered_refs: Annotated[
+        tuple[Annotated[str, Field(min_length=1, max_length=64)], ...], Field(max_length=5)
+    ] = ()
     pending_disputes: Annotated[int, Field(ge=0, le=5)] = 0
     last_turn_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     last_case_number: Annotated[str, Field(min_length=1, max_length=32)] | None = None
