@@ -1155,6 +1155,86 @@ def test_starting_over_for_the_filed_transaction_is_refused_by_the_policy_not_fi
     assert dialogue.port.create_calls == 1
 
 
+def _assert_dispute_cleared(dialogue: _Dialogue) -> None:
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.phase is ConversationPhase.CLOSED
+    assert state.pending_slot is None
+    assert state.clarification_attempts == 0
+    assert state.selected_ref is None
+    assert state.category is None
+
+
+def test_a_cancelled_filing_clears_the_selected_transaction_and_reason(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    dialogue.say(_confirmation(ConfirmationAnswer.NO))
+
+    _assert_dispute_cleared(dialogue)
+    assert port.create_calls == 0
+
+
+def test_an_ineligible_decision_clears_the_selected_transaction_and_reason(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(Outcome.INELIGIBLE, ReasonCode.FILING_WINDOW_EXPIRED),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    _assert_dispute_cleared(dialogue)
+
+
+def test_a_duplicate_open_case_refusal_clears_the_selected_transaction_and_reason(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+        create_result=CreateDisputeCaseResult(
+            created=False, refusal=ToolRefusalCode.DUPLICATE_OPEN_CASE, existing_case_number="D-9"
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    _assert_dispute_cleared(dialogue)
+
+
 def test_a_policy_question_after_a_case_is_filed_is_declined_when_its_figure_needs_a_reason(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
@@ -1164,7 +1244,7 @@ def test_a_policy_question_after_a_case_is_filed_is_declined_when_its_figure_nee
         _plain(NluIntent.POLICY_QUESTION, policy_query="cuanto tiempo tienen para responder")
     )
 
-    assert "No tengo esa informacion" in reply.reply or "No tengo esa información" in reply.reply
+    assert "No tengo esa información" in reply.reply
     assert "asesor" in reply.reply
     assert dialogue.port.create_calls == 1
 
