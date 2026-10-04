@@ -101,11 +101,11 @@ unrelated reply itself files nothing; a case is filed only once the policy's con
 requirement for the category is met. Two or more matches ask for more detail rather than
 presenting a numbered list — the same v1 scope decision already made for slot collection, since
 neither a pending-candidate field nor a multi-candidate list exists in ``DialogueState`` yet. A
-session works on one transaction and reason at a time: until a case is filed, naming a different
-transaction or stating a different reason replaces the selected pair, which is evaluated afresh.
-A transaction named at the filing question that is not found, or that matches several, leaves
-none selected, so the customer describes the transaction again; nothing is filed in between. The
-handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name yet.
+session works on one transaction and reason at a time: a different transaction named at the
+presented-transaction or filing question replaces the selected one, and a different reason is
+evaluated afresh only at the filing question. A transaction named at the filing question that is
+not found, or that matches several, leaves none selected, so the customer describes the
+transaction again; nothing is filed in between. The handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name yet.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
