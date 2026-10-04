@@ -17,6 +17,7 @@ import pytest
 # Local modules
 from app.domain.policy.models import DisputeCategory
 from contracts.service_v1.envelope import Intent
+from evals.judge import JudgeVerdict
 from evals.judge_validation import DimensionAgreement
 from evals.metrics import (
     CaseResult,
@@ -79,11 +80,25 @@ def _case_result(**overrides: Any) -> CaseResult:
     return CaseResult(**{**defaults, **overrides})
 
 
+def _judge_verdict(**overrides: Any) -> JudgeVerdict:
+    defaults: dict[str, Any] = {
+        "case_id": "norm-es-001",
+        "grounding": 2,
+        "language_quality": 2,
+        "clarification": None,
+        "rationale": "Grounded and natural.",
+        "judge_model": _MODEL,
+        "prompt_version": "1",
+    }
+    return JudgeVerdict(**{**defaults, **overrides})
+
+
 def _system(
     system: str = "P",
     run_count: int = 1,
     case_results: tuple[CaseResult, ...] = (),
     unsafe_occurrences: tuple[UnsafeOccurrence, ...] = (),
+    judge_verdicts: tuple[JudgeVerdict, ...] = (),
 ) -> SystemResult:
     runs = [_headline() for _ in range(run_count)]
     return SystemResult(
@@ -92,7 +107,7 @@ def _system(
         variability=compute_variability(runs),
         case_results=case_results,
         flips=(),
-        judge_verdicts=(),
+        judge_verdicts=judge_verdicts,
         unsafe_occurrences=unsafe_occurrences,
     )
 
@@ -170,12 +185,13 @@ def test_render_includes_every_top_level_section() -> None:
         "## 1. Workload",
         "## 2. Versions",
         "## 3. Headline metrics",
-        "## 4. Repeated-run variability",
-        "## 5. Failure gallery",
-        "## 6. Unsafe outcomes",
-        "## 7. Judge validation",
-        "## 8. Learned components",
-        "## 9. Limitations",
+        "## 4. Judge-scored quality",
+        "## 5. Repeated-run variability",
+        "## 6. Failure gallery",
+        "## 7. Unsafe outcomes",
+        "## 8. Judge validation",
+        "## 9. Learned components",
+        "## 10. Limitations",
     ):
         assert heading in text
 
@@ -196,7 +212,7 @@ def test_no_scope_note_renders_no_scope_callout() -> None:
 def test_a_scope_note_renders_as_a_prominent_callout_and_in_limitations() -> None:
     text = render_markdown(_report(scope_note="Generated from the 16-case CI-smoke subset."))
     assert "**Scope.** Generated from the 16-case CI-smoke subset." in text
-    limitations = text.split("## 9.")[1]
+    limitations = text.split("## 10.")[1]
     assert "Generated from the 16-case CI-smoke subset." in limitations
 
 
@@ -230,20 +246,65 @@ def test_a_repeated_run_shows_a_range_a_single_run_does_not() -> None:
 
 
 # -----------------------------------------------------------------------------
+# Judge-scored quality — the live judge's own verdicts over a system's last run
+# -----------------------------------------------------------------------------
+
+
+def test_no_system_judged_states_so_explicitly() -> None:
+    text = render_markdown(_report(systems=(_system("P"), _system("B0"))))
+    section = text.split("## 4.")[1].split("## 5.")[0]
+    assert "No system in this report was scored by the live judge." in section
+
+
+def test_a_judged_system_shows_mean_scores_and_the_count_judged() -> None:
+    verdicts = (
+        _judge_verdict(case_id="c1", grounding=2, language_quality=2),
+        _judge_verdict(case_id="c2", grounding=0, language_quality=2),
+    )
+    text = render_markdown(_report(systems=(_system("P", judge_verdicts=verdicts),)))
+    section = text.split("## 4.")[1].split("## 5.")[0]
+
+    assert "| P | 1.000 | 2.000 |" in section
+    assert "| 2 |" in section  # cases judged
+
+
+def test_clarification_mean_excludes_na_cases() -> None:
+    verdicts = (
+        _judge_verdict(case_id="c1", clarification=None),
+        _judge_verdict(case_id="c2", clarification=2),
+        _judge_verdict(case_id="c3", clarification=0),
+    )
+    text = render_markdown(_report(systems=(_system("P", judge_verdicts=verdicts),)))
+    section = text.split("## 4.")[1].split("## 5.")[0]
+
+    # (2 + 0) / 2, not / 3: the NA case must not silently pull the mean down.
+    assert "1.000" in section
+
+
+def test_a_system_with_no_judge_verdicts_is_named_not_silently_omitted() -> None:
+    verdicts = (_judge_verdict(),)
+    text = render_markdown(_report(systems=(_system("P", judge_verdicts=verdicts), _system("B0"))))
+    section = text.split("## 4.")[1].split("## 5.")[0]
+
+    assert "B0" in section
+    assert "carried no judge verdicts" in section
+
+
+# -----------------------------------------------------------------------------
 # Failure gallery
 # -----------------------------------------------------------------------------
 
 
 def test_no_failures_states_so_explicitly() -> None:
     text = render_markdown(_report(systems=(_system(case_results=(_case_result(),)),)))
-    section = text.split("## 5.")[1].split("## 6.")[0]
+    section = text.split("## 6.")[1].split("## 7.")[0]
     assert "No case failed" in section
 
 
 def test_a_failed_case_appears_in_the_gallery() -> None:
     failing = _case_result(case_id="norm-es-002", correct_outcome=False)
     text = render_markdown(_report(systems=(_system(case_results=(failing,)),)))
-    section = text.split("## 5.")[1].split("## 6.")[0]
+    section = text.split("## 6.")[1].split("## 7.")[0]
     assert "norm-es-002" in section
     assert "incorrect outcome" in section
 
@@ -251,7 +312,7 @@ def test_a_failed_case_appears_in_the_gallery() -> None:
 def test_an_unsafe_case_is_labeled_unsafe_not_incorrect() -> None:
     unsafe = _case_result(case_id="norm-es-003", is_unsafe=True)
     text = render_markdown(_report(systems=(_system(case_results=(unsafe,)),)))
-    section = text.split("## 5.")[1].split("## 6.")[0]
+    section = text.split("## 6.")[1].split("## 7.")[0]
     assert "unsafe" in section
 
 
@@ -260,7 +321,7 @@ def test_an_errored_case_is_labeled_error_not_incorrect_outcome() -> None:
         case_id="norm-es-004", correct_outcome=False, error="ValueError: bad seed_ref"
     )
     text = render_markdown(_report(systems=(_system(case_results=(errored,)),)))
-    section = text.split("## 5.")[1].split("## 6.")[0]
+    section = text.split("## 6.")[1].split("## 7.")[0]
     assert "norm-es-004" in section
     assert "error" in section
     assert "ValueError: bad seed_ref" in section
@@ -274,7 +335,7 @@ def test_an_errored_case_is_labeled_error_not_incorrect_outcome() -> None:
 
 def test_no_unsafe_occurrences_states_so_explicitly() -> None:
     text = render_markdown(_report(systems=(_system(),)))
-    section = text.split("## 6.")[1].split("## 7.")[0]
+    section = text.split("## 7.")[1].split("## 8.")[0]
     assert "No unsafe outcome was observed" in section
 
 
@@ -290,7 +351,7 @@ def test_an_unsafe_occurrence_names_its_run_and_reasons() -> None:
     text = render_markdown(
         _report(systems=(_system(run_count=3, unsafe_occurrences=(occurrence,)),))
     )
-    section = text.split("## 6.")[1].split("## 7.")[0]
+    section = text.split("## 7.")[1].split("## 8.")[0]
 
     assert "hr-fraud-en-01" in section
     assert "unbacked_handoff" in section
@@ -314,7 +375,7 @@ def test_every_unsafe_run_is_listed_even_when_only_one_survives_to_case_results(
             )
         )
     )
-    section = text.split("## 6.")[1].split("## 7.")[0]
+    section = text.split("## 7.")[1].split("## 8.")[0]
 
     assert "hr-fraud-en-01" in section
     assert "pii_leaked" in section
@@ -345,7 +406,7 @@ def test_a_synthetic_sample_never_renders_an_agreement_rate() -> None:
             judge_validation_provenance="team_generated_synthetic",
         )
     )
-    section = text.split("## 7.")[1].split("## 8.")[0]
+    section = text.split("## 8.")[1].split("## 9.")[0]
 
     assert "Pending H4" in section
     assert "1.000" not in section  # the agreement rate itself must not leak through
@@ -355,7 +416,7 @@ def test_a_human_sample_renders_the_real_agreement_table() -> None:
     text = render_markdown(
         _report(judge_validation=_agreement(), judge_validation_provenance="human")
     )
-    section = text.split("## 7.")[1].split("## 8.")[0]
+    section = text.split("## 8.")[1].split("## 9.")[0]
 
     assert "Pending H4" not in section
     assert "grounding" in section
@@ -388,7 +449,7 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
     text = render_markdown(
         _report(judge_validation=(demoted,), judge_validation_provenance="human")
     )
-    section = text.split("## 7.")[1].split("## 8.")[0]
+    section = text.split("## 8.")[1].split("## 9.")[0]
 
     assert "human-only" in section
 
@@ -400,7 +461,7 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
 
 def test_learned_components_points_at_the_experiment_log_not_a_fabricated_number() -> None:
     text = render_markdown(_report())
-    section = text.split("## 8.")[1].split("## 9.")[0]
+    section = text.split("## 9.")[1].split("## 10.")[0]
     assert "experiment log" in section
 
 
@@ -408,15 +469,15 @@ def test_limitations_names_pending_h4_only_when_not_human() -> None:
     synthetic = render_markdown(_report(judge_validation_provenance="team_generated_synthetic"))
     human = render_markdown(_report(judge_validation_provenance="human"))
 
-    assert "pending the real H4" in synthetic.split("## 9.")[1]
-    assert "pending the real H4" not in human.split("## 9.")[1]
+    assert "pending the real H4" in synthetic.split("## 10.")[1]
+    assert "pending the real H4" not in human.split("## 10.")[1]
 
 
 def test_limitations_explains_why_cost_per_case_is_always_not_defined() -> None:
     """Unconditional, unlike the H4/scope-note bullets: cost_usd is never populated regardless of
     which systems or provenance a report carries."""
     text = render_markdown(_report())
-    section = text.split("## 9.")[1]
+    section = text.split("## 10.")[1]
 
     assert "cost_usd" in section
     assert "never populates" in section

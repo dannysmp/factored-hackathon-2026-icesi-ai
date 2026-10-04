@@ -15,20 +15,25 @@ increment able to produce the plan's single generated report artifact end to end
 135-case golden set (every ``expected_intent`` it declares, including all 32 adversarial cases)
 runs either way; ``SMOKE=1`` stays available as a deliberately narrower, faster scope for a quick
 check, and the written report's own ``scope_note`` discloses the narrowing whenever it is used,
-rather than silently under-reporting.
+rather than silently under-reporting. ``--full`` additionally scores P's last run with the live
+judge (``_JUDGED_SYSTEMS``), feeding the report's own judge-scored-quality section — B0 and B1
+carry no judge verdicts, for the same reason H4's own human validation is scoped to the proposed
+system alone.
 
 Scope
 -----
 In: choosing and building the right dependencies for the requested system variant(s), running the
-batch(es), logging a summary or writing the full report, and the process exit code the CI smoke
-job (and, for ``--full``, any run of any variant) gates on.
+batch(es), logging a summary or writing the full report, scoring P's last ``--full`` run with the
+live judge, and the process exit code the CI smoke job (and, for ``--full``, any run of any
+variant) gates on.
 Out: loading any seed data into the target store — the caller's own responsibility (``make
 load-seed`` for a real run against ``data/gold/ops_seed``, followed by ``make load-eval-bank`` for
 the full 32-case adversarial set (the 16-case CI-smoke subset needs only ``ops_seed``), a CI-only
 fixture for the smoke job);
-scoring the automated judge against every case of a full run (the judge-validation section reads
-this slice's own H4 sample — synthetic today, the real returned sheets later — not a fresh judge
-call over the whole golden set every time ``--full`` runs; see ``evals.judge_validation``).
+the judge-validation (agreement-with-human) section, which still reads the H4 sample separately
+(synthetic today, the real returned sheets later; see ``evals.judge_validation``) — a live judge
+call over P's own run answers "how good is this run," not "how well does the judge agree with a
+human," which is a different question this module leaves alone.
 
 Design Principles
 -----------------
@@ -57,6 +62,10 @@ Design Principles
 - **The exit code is the enforcement mechanism, not a separate check.** A batch with any
   ``CaseResult.is_unsafe`` exits ``1`` — the literal mechanism behind "a regression that turns any
   adversarial case unsafe blocks merge" (``plan/docs/evaluation-plan.md``'s CI wiring section).
+- **A judge call that cannot complete aborts ``--full``, not just that one case.** ``evals.judge``
+  already documents this as deliberate ("a judge call has no customer waiting on it: any
+  ``LlmError`` propagates to the caller"); this module does not add a swallow-and-continue around
+  it that the judge's own module explicitly chose not to have.
 
 Runtime Contract
 -----------------
@@ -71,8 +80,11 @@ A case that fails to resolve, run or score with one of ``evals.runner.runner``'s
 recorded as a named ``CaseResult.error`` and the batch continues, on both ``--system`` and
 ``--full`` (each of ``--full``'s several batches applies this independently, one system at a time).
 An unanticipated exception outside those documented classes still propagates and stops the run.
-``--full``'s judge-validation section is only as real as its own data source (see Scope); it is not
-itself run per system per call.
+``--full``'s judge-validation (agreement-with-human) section is only as real as its own data source
+(see Scope); it is not itself run per system per call. The live judge scores P's last run only, and
+only the cases that run actually captured a transcript for (``evals.runner.runner``'s own
+Limitations (capture)) — a case capture missed is silently absent from the judge-scored-quality
+section's own denominator, not reported as a zero.
 """
 
 from __future__ import annotations
@@ -80,7 +92,7 @@ from __future__ import annotations
 # Standard libraries
 import argparse
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 # Third-party libraries
@@ -90,6 +102,7 @@ from starlette.testclient import TestClient
 from app.config import ConfigError, Settings, load_settings
 from app.domain.calendar import DomainCalendar, DomainCalendarError, resolve_domain_calendar
 from app.domain.policy.loader import load_policy
+from app.llm.anthropic_client import AnthropicLlmClient
 from app.llm.prompts import load_prompt
 from app.main import create_app
 from app.persistence.ops_meta import read_data_as_of
@@ -109,6 +122,7 @@ from evals.golden.judge_validation_sample import (
 from evals.golden.judge_validation_sample import (
     RATER_2_SCORES as _SYNTHETIC_RATER_2_SCORES,
 )
+from evals.judge import JudgeVerdict, LlmJudge
 from evals.judge_validation import compute_agreement
 from evals.metrics import NOT_DEFINED, CaseResult, HeadlineMetrics, Metric, compute_headline_metrics
 from evals.models import Case
@@ -133,6 +147,12 @@ _BANK_TIMEZONE_LABEL = "America/Bogota (UTC-5)"
 # How many times each system runs for a full report: 3 for P (the plan's own repeated-run
 # requirement), 1 for a baseline (there is nothing to average or flip across a single run).
 _RUN_COUNTS = {"P": 3, "B0": 1, "B1": 1}
+
+# The systems the live judge scores in a full report: P only, the same scope H4's own human
+# validation uses (B0 is structurally verified already and needs no judge to trust; B1 is a
+# safety comparison baseline, not a system the judge's reliability is demonstrated against) — the
+# same reasoning applies to judge-sourced report metrics generally, not only to human validation.
+_JUDGED_SYSTEMS: frozenset[str] = frozenset({"P"})
 
 
 def _select_cases(*, smoke: bool) -> tuple[Case, ...]:
@@ -167,11 +187,15 @@ def _resolve_calendar(settings: Settings, *, clock: Clock) -> DomainCalendar:
         raise ConfigError(str(exc)) from exc
 
 
-def _run_p(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]:
+def _run_p(
+    settings: Settings, cases: Sequence[Case], *, capture_transcripts: bool = False
+) -> tuple[CaseResult, ...]:
     dsn = settings.require_database_url().get_secret_value()
     test_login_key = _require_test_login_key(settings)
     client = TestClient(create_app(settings))
-    return run_http_cases(client, dsn, cases, test_login_key=test_login_key)
+    return run_http_cases(
+        client, dsn, cases, test_login_key=test_login_key, capture_transcripts=capture_transcripts
+    )
 
 
 def _run_b0(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]:
@@ -197,19 +221,65 @@ def _run_b1(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]
     )
 
 
-_RUNNERS = {"P": _run_p, "B0": _run_b0, "B1": _run_b1}
+_RUNNERS: dict[str, Callable[..., tuple[CaseResult, ...]]] = {
+    "P": _run_p,
+    "B0": _run_b0,
+    "B1": _run_b1,
+}
 
 
-def _build_system_result(system: str, runs: Sequence[tuple[CaseResult, ...]]) -> SystemResult:
-    """One system's ``SystemResult``, from its repeated (or single) runs' raw case results."""
+def _score_with_judge(
+    judge: LlmJudge, cases: Sequence[Case], results: Sequence[CaseResult]
+) -> tuple[JudgeVerdict, ...]:
+    """Score every case whose transcript was captured (``reply_text`` set) with the live judge.
+
+    Matched by ``case_id``, the same key ``evals.golden.h4_export.build_h4_rows`` already matches
+    a captured result against, rather than assuming ``cases`` and ``results`` share one order and
+    length — a case ``results`` carries nothing for (or nothing captured, matching
+    ``evals.runner.runner``'s own Limitations (capture): a declared policy section that failed to
+    resolve) is skipped here, not scored against empty text, which would let a judge call
+    trivially score "grounded" for having invented nothing, misstating a gap as a pass.
+    """
+    results_by_case_id = {result.case_id: result for result in results}
+    verdicts = []
+    for case in cases:
+        result = results_by_case_id.get(case.case_id)
+        if result is None or result.reply_text is None or result.facts_and_sources is None:
+            continue
+        verdicts.append(
+            judge.score(
+                case.case_id,
+                language=case.lang,
+                user_turns=case.user_turns,
+                system_replies=(result.reply_text,),
+                facts_and_sources=result.facts_and_sources,
+            )
+        )
+    return tuple(verdicts)
+
+
+def _build_system_result(
+    system: str,
+    runs: Sequence[tuple[CaseResult, ...]],
+    cases: Sequence[Case],
+    judge: LlmJudge,
+) -> SystemResult:
+    """One system's ``SystemResult``, from its repeated (or single) runs' raw case results.
+
+    The live judge scores only the last run of a system in ``_JUDGED_SYSTEMS`` (matching
+    ``case_results``' own "last run only" convention) and only the cases that run captured a
+    transcript for; every other system reports an empty ``judge_verdicts``, exactly as before this
+    capability existed.
+    """
     headline_runs = [compute_headline_metrics(run) for run in runs]
+    judge_verdicts = _score_with_judge(judge, cases, runs[-1]) if system in _JUDGED_SYSTEMS else ()
     return SystemResult(
         system=system,  # type: ignore[arg-type]
         run_count=len(runs),
         variability=compute_variability(headline_runs),
         case_results=runs[-1],
         flips=flipped_cases(runs) if len(runs) > 1 else (),
-        judge_verdicts=(),
+        judge_verdicts=judge_verdicts,
         unsafe_occurrences=unsafe_occurrences(runs),
     )
 
@@ -217,9 +287,11 @@ def _build_system_result(system: str, runs: Sequence[tuple[CaseResult, ...]]) ->
 def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationReport, bool]:
     """Run every system variant the plan's execution protocol calls for, and assemble the report.
 
-    P runs three times, B0 and B1 once each (``_RUN_COUNTS``); the judge-validation section reads
-    this slice's own synthetic placeholder sample until the real H4 sheets replace it (see
-    ``evals.golden.judge_validation_sample``).
+    P runs three times, B0 and B1 once each (``_RUN_COUNTS``); the judge-validation
+    (agreement-with-human) section reads its own synthetic placeholder sample until the
+    real H4 sheets replace it (see ``evals.golden.judge_validation_sample``) — a separate question
+    from the judge-scored-quality section, which scores P's own last run directly with the live
+    judge (``_JUDGED_SYSTEMS``).
 
     Parameters
     ----------
@@ -242,15 +314,26 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
     """
     cases = _select_cases(smoke=smoke)
     calendar = _resolve_calendar(settings, clock=_real_clock)
-    all_runs = {
-        system: [_RUNNERS[system](settings, cases) for _ in range(_RUN_COUNTS[system])]
-        for system in _SYSTEMS
-    }
+    judge = LlmJudge(
+        AnthropicLlmClient(settings.require_anthropic_key()), model=settings.judge_model
+    )
+    all_runs: dict[str, list[tuple[CaseResult, ...]]] = {}
+    for system in _SYSTEMS:
+        run_count = _RUN_COUNTS[system]
+        runs = []
+        for run_index in range(run_count):
+            if system in _JUDGED_SYSTEMS and run_index == run_count - 1:
+                runs.append(_RUNNERS[system](settings, cases, capture_transcripts=True))
+            else:
+                runs.append(_RUNNERS[system](settings, cases))
+        all_runs[system] = runs
     unsafe = any(result.is_unsafe for runs in all_runs.values() for run in runs for result in run)
     for system, runs in all_runs.items():
         for run in runs:
             _log_errored_cases(system, run)
-    systems = tuple(_build_system_result(system, all_runs[system]) for system in _SYSTEMS)
+    systems = tuple(
+        _build_system_result(system, all_runs[system], cases, judge) for system in _SYSTEMS
+    )
     versions = Versions(
         nlu_model=settings.nlu_model,
         render_model=settings.render_model,

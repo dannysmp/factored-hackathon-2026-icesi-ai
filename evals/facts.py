@@ -11,12 +11,15 @@ reads the running conversation's own envelope (ADR-2's boundary, the same one
 every fact here comes from either the store's own tables, by the transcript's own ``session_id``
 (the identical "two vantage points" precedent ``evals.scoring``'s ``_case_row_exists`` and
 ``_handoff_ticket_is_backed`` already use), or the golden-set case's own authored, committed
-``expected_policy_section_id``.
+``expected_policy_section_id``. Also attaches this text, and the run's own reply text, to a
+finished ``CaseResult`` (``attach_masked_transcript``) so a judge or a human rater can read both
+long after the run that produced them has ended.
 
 Scope
 -----
 In: the transaction and filed-case facts a session's own stored rows carry; the policy corpus
-section a policy-answer case declares it is grounded in.
+section a policy-answer case declares it is grounded in; attaching both, and the run's own reply
+text, to a ``CaseResult`` for later reading.
 Out: a fact only the running conversation's own envelope would know (a risk score, an NLU
 confidence, a retrieval trace's ranking) — none of those are "facts the reply must cite," they are
 the reasoning that produced the reply, which grounding does not score (see Limitations).
@@ -32,10 +35,21 @@ Design Principles
   clarification, an abstention) has no known facts to check a reply against; grounding then
   means "invents nothing," not "cites something," and the assembled text says so explicitly rather
   than silently returning an empty string a report reader could mistake for an assembly failure.
+- **Attachment masks unconditionally, with no carve-out for trusted-origin text.** Both attached
+  fields pass through ``redact_pan`` before they are stored, exactly like every other field this
+  project ever sends an LLM or writes to a log — the fact that ``facts_and_sources`` originates
+  from the store rather than the customer is not a reason to skip the same egress control everyone
+  else's outbound text already goes through, and ``redact_pan`` is a safe no-op when nothing
+  card-shaped is present.
 
 Runtime Contract
 -----------------
 ``assemble_facts_and_sources(dsn, transcript) -> str``.
+``attach_masked_transcript(dsn, transcript, result) -> CaseResult``: the caller's own opt-in step
+(``evals.runner.runner.run_cases``'s ``capture_transcripts`` flag) that fills a ``CaseResult``'s
+``reply_text``/``facts_and_sources`` fields for a judge or a human rater to read later, once the
+run itself is long over. Never called by ``evals.scoring.score_case``, which stays exactly as
+narrow as this module's own Scope already draws it.
 
 Limitations
 -----------
@@ -50,14 +64,16 @@ policy retrieval" deterministic metric covers that separately.
 from __future__ import annotations
 
 # Standard libraries
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 # Third-party libraries
 import psycopg
 
 # Local modules
+from app.llm.masking import redact_pan  # The one PAN-shaped-digit-run detector this project trusts
 from app.retrieval.corpus_index import load_chunks
+from evals.metrics import CaseResult
 from evals.models import Case
 from evals.scoring import RunTranscript
 
@@ -152,3 +168,24 @@ def assemble_facts_and_sources(dsn: str, transcript: RunTranscript) -> str:
     if not parts:
         return _NO_KNOWN_FACTS
     return "\n\n".join(parts)
+
+
+def attach_masked_transcript(dsn: str, transcript: RunTranscript, result: CaseResult) -> CaseResult:
+    """Fill ``result``'s ``reply_text``/``facts_and_sources`` fields for a later judge or rater.
+
+    Every reply ``transcript`` recorded, joined in order, and this same transcript's own grounding
+    text (``assemble_facts_and_sources``) — both PAN-masked before they are attached, the same
+    unconditional egress control every other outbound LLM field already goes through (CLAUDE.md's
+    own PII-minimization rule draws no exception for text this module already trusts came from the
+    store rather than the customer).
+
+    Raises
+    ------
+    CorpusIndexError, KeyError
+        The case declares a policy section that does not resolve (see
+        ``_render_policy_section``); the caller decides whether that aborts capture for this one
+        case or the whole batch.
+    """
+    reply_text = redact_pan("\n\n".join(reply.reply for reply in transcript.replies)).masked
+    facts_and_sources = redact_pan(assemble_facts_and_sources(dsn, transcript)).masked
+    return replace(result, reply_text=reply_text, facts_and_sources=facts_and_sources)
