@@ -1319,6 +1319,62 @@ def test_a_different_transaction_and_reason_together_carry_both_to_the_new_trans
     assert dialogue.port.evaluate_requests[-1].category is DisputeCategory.DUPLICATE_CHARGE
 
 
+def test_a_transaction_not_found_at_the_filing_question_selects_none_and_files_nothing(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue, _ = _awaiting_filing_confirmation(policy, retriever)
+
+    response = dialogue.say(_file_dispute(transaction=TransactionHint(merchant="Zzzz")))
+
+    assert response.next_expected is None
+    assert not response.end_session
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref is None
+    assert state.pending_slot is None
+    assert state.category is DisputeCategory.UNRECOGNIZED_CHARGE
+
+    after_yes = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert after_yes.next_expected is None
+    assert dialogue.port.create_calls == 0
+    assert len(dialogue.port.evaluate_requests) == 1
+
+
+def test_several_transactions_matching_at_the_filing_question_ask_for_detail_and_file_nothing(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(
+            _transaction(),
+            _transaction("TX-2", merchant="Netflix"),
+            _transaction("TX-3", merchant="Netflix"),
+        ),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    response = dialogue.say(_file_dispute(transaction=TransactionHint(merchant="Netflix")))
+
+    assert response.next_expected is Slot.TRANSACTION
+    assert not response.end_session
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref is None
+    assert state.clarification_attempts == 1
+    assert port.create_calls == 0
+    assert len(port.evaluate_requests) == 1
+
+
 def test_a_description_that_changes_nothing_at_the_filing_question_counts_against_the_budget(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
@@ -1381,9 +1437,21 @@ def test_the_same_reason_at_the_filing_question_is_still_a_change_to_ask_about(
 @pytest.mark.parametrize(
     ("lang", "expected"),
     [
-        ("es", "No logré identificar qué desea cambiar"),
-        ("pt", "Não consegui identificar o que você quer alterar"),
-        ("en", "I did not catch what you want to change"),
+        (
+            "es",
+            "No logré identificar qué desea cambiar. Dígame qué parte es: la transacción o el "
+            "motivo de la disputa. Si todo está bien, responda sí.",
+        ),
+        (
+            "pt",
+            "Não consegui identificar o que você quer alterar. Diga qual parte é: a transação ou "
+            "o motivo da contestação. Se estiver tudo certo, responda sim.",
+        ),
+        (
+            "en",
+            "I did not catch what you want to change. Tell me which part it is: the transaction "
+            "or the reason for the dispute. If everything is right, answer yes.",
+        ),
     ],
 )
 def test_the_change_question_is_asked_in_the_customers_language(
@@ -1400,7 +1468,7 @@ def test_the_change_question_is_asked_in_the_customers_language(
         _confirmation(ConfirmationAnswer.YES_WITH_CHANGE).model_copy(update={"language": lang})
     )
 
-    assert expected in response.reply
+    assert response.reply == expected
 
 
 def _reply_to_after_asking(
@@ -1420,13 +1488,18 @@ def _reply_to_after_asking(
 def test_a_correction_at_a_question_that_is_not_a_change_target_reads_like_an_unclear_reply(
     policy: Policy, retriever: LexicalRetriever, pending: Slot
 ) -> None:
-    unclear = _reply_to_after_asking(policy, retriever, pending, _plain(NluIntent.UNCLEAR))
-    correction = _reply_to_after_asking(policy, retriever, pending, _plain(NluIntent.CORRECTION))
+    roomy = policy.model_copy(
+        update={"routing": policy.routing.model_copy(update={"clarification_budget": 3})}
+    )
+    unclear = _reply_to_after_asking(roomy, retriever, pending, _plain(NluIntent.UNCLEAR))
+    correction = _reply_to_after_asking(roomy, retriever, pending, _plain(NluIntent.CORRECTION))
 
+    assert not unclear.end_session
+    assert not correction.end_session
+    assert unclear.next_expected is pending
     assert correction.reply == unclear.reply
-    assert correction.next_expected == unclear.next_expected
-    assert correction.end_session == unclear.end_session
-    assert "transacción" not in correction.reply or "motivo" not in correction.reply
+    assert correction.next_expected is pending
+    assert "No logré identificar qué desea cambiar" not in correction.reply
 
 
 def test_a_correction_with_no_open_question_falls_back_to_the_greeting(
