@@ -117,6 +117,9 @@ commands are in [`web/README.md`](web/README.md).
 
 | Command | What it does |
 |---|---|
+| `make setup` | Install the locked dependencies and create `.env` from the template |
+| `make run` | Serve the API on port 8000 with reload |
+| `make clean` | Remove caches and build artifacts |
 | `make lint` | Format check, lint and strict type-check |
 | `make format` | Apply the formatter and safe lint fixes |
 | `make test` | Fast hermetic tests with a coverage gate |
@@ -137,6 +140,7 @@ commands are in [`web/README.md`](web/README.md).
 | `make seed` | Build the operational seed from the cleaned layer and write `reports/ops-seed.md` |
 | `make eval-bank` | Write the frozen evaluation scenario bank |
 | `make load-seed`, `make load-eval-bank`, `make load-analytics` | Load the operational seed, the scenario bank and the dispute marts into Postgres |
+| `make seed-ci-smoke` | Seed the synthetic data the CI smoke slice needs into a migrated Postgres |
 | `make reset-demo-personas` | Delete the demonstration personas' accumulated cases before a demonstration |
 | `make corpus` | Regenerate the multilingual policy corpus in `policy/corpus` from the policy YAML |
 | `make corpus-check` | Fail when the committed corpus differs from what the policy generates |
