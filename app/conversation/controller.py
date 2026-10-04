@@ -92,11 +92,13 @@ transactions as numbered options and keeps their references, in order, in ``offe
 later number selects the transaction shown at that position, and its question about the reason or
 the filing follows. Two or more matches for a described transaction ask for more detail rather
 than presenting a numbered list. A session identifies and evaluates at most one
-transaction/category pair: nothing here resets ``selected_ref``/``category`` once set, so a second,
-different dispute needs a new session. The
-handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name yet.
-A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
-the original trigger-specific wording (fraud, card loss, a person requested) though it states the
+transaction/category pair at a time: while a case is still unfiled, a number from a list just
+shown, or a different transaction named by description, replaces the selection, but a session
+that has filed a case, been handed to a person or been closed never selects another, so a
+second, different dispute needs a new session. The handoff packet's ``first_name`` is a
+placeholder: no tool exposes the customer's first name yet. A duplicate turn's handoff replay
+always uses the generic reviewing wording, which may differ from the original trigger-specific
+wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
 handoff packet: neither is available from the tools this module calls. A genuine concurrent
 duplicate (two requests racing on the same turn id, whether the session is brand new or already
@@ -130,7 +132,7 @@ from app.conversation.model_renderer import LlmRenderer
 from app.conversation.policy_answer import answer as policy_answer
 from app.conversation.renderer import RenderedReply, demo_notice, transaction_line
 from app.conversation.reply import render_reply
-from app.conversation.state import ConversationPhase, DialogueState
+from app.conversation.state import FINAL_PHASES, ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DialogueStore, DuplicateTurn
 from app.conversation.understanding import TurnAccounting, Understanding, UnderstandingUnavailable
 from app.domain.policy.models import DisputeCategory, Outcome, Policy, PolicyDecision, ReasonCode
@@ -640,7 +642,11 @@ class DialogueController:
     ) -> tuple[DialogueState, RenderEnvelope]:
         """The customer picked a number from the list just shown: that transaction is selected."""
         number = result.choice
-        if number is None or not 1 <= number <= len(state.offered_refs):
+        if (
+            state.phase in FINAL_PHASES
+            or number is None
+            or not 1 <= number <= len(state.offered_refs)
+        ):
             return self._fallback(state, result)
         selected = state.model_copy(
             update={

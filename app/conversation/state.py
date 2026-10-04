@@ -74,6 +74,11 @@ class ConversationPhase(StrEnum):
     ABANDONED = "abandoned"
 
 
+FINAL_PHASES = frozenset(
+    {ConversationPhase.CLOSED, ConversationPhase.HANDED_OFF, ConversationPhase.ABANDONED}
+)
+
+
 class DialogueState(BaseModel):
     """The structured state of one conversation, keyed by its session id."""
 
@@ -137,25 +142,39 @@ class DialogueState(BaseModel):
         )
 
     def with_slot_filled(self) -> DialogueState:
-        """The pending slot was answered: nothing is pending and the counter resets."""
-        return self.model_copy(update={"pending_slot": None, "clarification_attempts": 0})
+        """The pending slot was answered: nothing is pending, the counter resets and a list of
+        numbered options shown earlier no longer applies."""
+        return self.model_copy(
+            update={"pending_slot": None, "clarification_attempts": 0, "offered_refs": ()}
+        )
 
     def with_language(self, lang: Lang) -> DialogueState:
         """The conversation continues in ``lang``."""
         return self.model_copy(update={"lang": lang})
 
     def with_phase(self, phase: ConversationPhase) -> DialogueState:
-        """Move to ``phase`` without touching anything else."""
+        """Move to ``phase``; a phase the conversation does not leave also drops any numbered
+        options, so a late number cannot select from a list that no longer applies."""
+        if phase in FINAL_PHASES:
+            return self.model_copy(update={"phase": phase, "offered_refs": ()})
         return self.model_copy(update={"phase": phase})
 
     def with_case_filed(self, case_number: str) -> DialogueState:
         """A case was filed this turn: closed, with the case number a replay re-reads from."""
         return self.model_copy(
-            update={"phase": ConversationPhase.CLOSED, "last_case_number": case_number}
+            update={
+                "phase": ConversationPhase.CLOSED,
+                "last_case_number": case_number,
+                "offered_refs": (),
+            }
         )
 
     def with_handed_off(self, ticket_ref: str) -> DialogueState:
         """The conversation was handed to a person: nothing about the ticket changes on replay."""
         return self.model_copy(
-            update={"phase": ConversationPhase.HANDED_OFF, "last_ticket_ref": ticket_ref}
+            update={
+                "phase": ConversationPhase.HANDED_OFF,
+                "last_ticket_ref": ticket_ref,
+                "offered_refs": (),
+            }
         )

@@ -48,7 +48,7 @@ from app.llm.client import FakeLlm
 from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError
 from app.security.sessions import Principal
-from contracts.service_v1.api import TurnRequest, TurnResponse
+from contracts.service_v1.api import MAX_TEXT_LENGTH, TurnRequest, TurnResponse
 from contracts.service_v1.cases import AmountProvenance, CaseRecord, CaseStatus, DisclosedAmount
 from contracts.service_v1.cases import Money as CaseMoney
 from contracts.service_v1.console import TimelineEntry
@@ -1798,6 +1798,92 @@ def test_a_described_transaction_found_after_a_list_clears_the_offered_reference
     assert state is not None
     assert state.selected_ref == "TX-3"
     assert state.offered_refs == ()
+
+
+def _filing_port() -> FakeToolPort:
+    return FakeToolPort(
+        transactions=_three_transactions(),
+        cases=(_case(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+    )
+
+
+def test_a_number_sent_after_the_case_is_filed_selects_nothing(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = _filing_port()
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.present_amazon()
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    filed = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    assert "D-1" in filed.reply
+
+    dialogue.say(_plain(NluIntent.CHOICE, choice=2))
+
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-1"
+    assert state.offered_refs == ()
+    assert state.last_case_number == "D-1"
+    assert port.create_calls == 1
+
+
+def test_a_number_sent_after_the_conversation_is_handed_off_selects_nothing(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+    dialogue.say(_plain(NluIntent.REQUEST_PERSON))
+
+    dialogue.say(_plain(NluIntent.CHOICE, choice=2))
+
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.phase is ConversationPhase.HANDED_OFF
+    assert state.selected_ref is None
+    assert state.offered_refs == ()
+
+
+def test_a_number_sent_after_the_filing_is_cancelled_selects_nothing(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, _filing_port())
+    dialogue.present_amazon()
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    dialogue.say(_confirmation(ConfirmationAnswer.NO))
+
+    dialogue.say(_plain(NluIntent.CHOICE, choice=3))
+
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.phase is ConversationPhase.CLOSED
+    assert state.selected_ref == "TX-1"
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_the_list_reply_and_its_choices_stay_within_their_limits_for_the_longest_transactions(
+    policy: Policy, retriever: LexicalRetriever, lang: str
+) -> None:
+    longest = tuple(
+        _transaction(f"TX-{number}", merchant=f"{number}" * 80, amount=Decimal("999999999.99"))
+        for number in range(1, 6)
+    )
+    unnamed = _transaction("TX-6", merchant=None, amount=None)
+    for transactions in (longest, (unnamed,)):
+        dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=transactions))
+
+        listed = dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS, language=lang))
+
+        assert len(listed.reply) <= MAX_TEXT_LENGTH
+        assert len(listed.choices) == len(transactions)
+        assert all(0 < len(choice.label) <= 200 for choice in listed.choices)
 
 
 def test_dispute_status_presents_cases_or_states_none(
