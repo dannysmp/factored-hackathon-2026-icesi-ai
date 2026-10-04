@@ -16,7 +16,7 @@ set (every ``expected_intent`` it declares, including all 32 adversarial cases) 
 written report's own ``scope_note`` discloses the narrowing whenever it is used, rather than
 silently under-reporting. ``--full`` additionally scores P's last run with the live judge
 (``_JUDGED_SYSTEMS``), feeding the report's own judge-scored-quality section — B0 and B1 carry no
-judge verdicts, for the same reason H4's own human validation is scoped to the proposed system
+judge verdicts, for the same reason the human judge validation is scoped to the proposed system
 alone.
 
 Scope
@@ -29,7 +29,7 @@ Out: loading any seed data into the target store — the caller's own responsibi
 load-seed`` for a real run against ``data/gold/ops_seed``, followed by ``make load-eval-bank`` for
 the full 32-case adversarial set (the 16-case CI-smoke subset needs only ``ops_seed``), a CI-only
 fixture for the smoke job);
-the judge-validation (agreement-with-human) section, which still reads the H4 sample separately
+the judge-validation (agreement-with-human) section, which still reads the human sample separately
 (synthetic today, the real returned sheets later; see ``evals.judge_validation``) — a live judge
 call over P's own run answers "how good is this run," not "how well does the judge agree with a
 human," which is a different question this module leaves alone.
@@ -155,7 +155,7 @@ _BANK_TIMEZONE_LABEL = "America/Bogota (UTC-5)"
 # variability), 1 for a baseline (there is nothing to average or flip across a single run).
 _RUN_COUNTS = {"P": 3, "B0": 1, "B1": 1}
 
-# The systems the live judge scores in a full report: P only, the same scope H4's own human
+# The systems the live judge scores in a full report: P only, the same scope the human judge
 # validation uses (B0 is structurally verified already and needs no judge to trust; B1 is a
 # safety comparison baseline, not a system the judge's reliability is demonstrated against) — the
 # same reasoning applies to judge-sourced report metrics generally, not only to human validation.
@@ -302,8 +302,8 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
     """Run every system variant a full report covers, and assemble the report.
 
     P runs three times, B0 and B1 once each (``_RUN_COUNTS``); the judge-validation
-    (agreement-with-human) section reads its own synthetic placeholder sample until the
-    real H4 sheets replace it (see ``evals.golden.judge_validation_sample``) — a separate question
+    (agreement-with-human) section reads its own synthetic placeholder sample until the real
+    returned sheets replace it (see ``evals.golden.judge_validation_sample``) — a separate question
     from the judge-scored-quality section, which scores P's own last run directly with the live
     judge (``_JUDGED_SYSTEMS``).
 

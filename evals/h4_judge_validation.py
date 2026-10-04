@@ -1,10 +1,10 @@
 """
-H4 Judge Validation — Real Sample
-====================================
+Judge Validation — Real Sample
+==============================
 
 Overview
 --------
-Turns the two returned H4 case sheets (``H4-case-sheet-Rater1.csv``, ``H4-case-sheet-Rater2.csv``)
+Turns the two returned case sheets (``H4-case-sheet-Rater1.csv``, ``H4-case-sheet-Rater2.csv``)
 into ``evals.judge_validation.RaterScore`` tuples, scores the same 50 cases with the real automated
 judge, computes the agreement ``evals.judge_validation.compute_agreement`` already implements and
 the pair counts, weighted kappa and gap direction ``compute_detail`` adds, writes every case's
@@ -150,7 +150,7 @@ _MAX_SCORE = 2
 
 @dataclass(frozen=True, slots=True)
 class RaterCaseRow:
-    """One row of a returned H4 case sheet, every column the rubric names."""
+    """One row of a returned case sheet, every column the rubric names."""
 
     case_id: str
     language: str
@@ -188,7 +188,7 @@ def _parse_clarification(value: str, *, case_id: str) -> int | None:
 
 
 def load_rater_sheet(path: Path) -> tuple[RaterCaseRow, ...]:
-    """Every row of a returned H4 case sheet.
+    """Every row of a returned case sheet.
 
     Raises
     ------

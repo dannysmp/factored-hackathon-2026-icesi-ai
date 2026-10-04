@@ -1,10 +1,10 @@
 """
-H4 Case Sheet Export
-======================
+Case Sheet Export
+=================
 
 Overview
 --------
-Produces the real ``H4-case-sheet.csv`` ``plan/product/human-tasks/H4-judge-rubric.md`` asks two
+Produces the real ``H4-case-sheet.csv`` the judge rubric asks two
 human raters to double-score: a stratified 50-case sample of the golden set, with each row's
 ``system_replies``/``facts_and_sources`` filled from a real, captured run
 (``CaseResult.reply_text``/``facts_and_sources``, ``evals.facts.attach_masked_transcript``'s own
@@ -68,7 +68,7 @@ _COLUMNS = ("case_id", "language", "category", "user_turns", "system_replies", "
 
 
 def select_stratified_sample(cases: Sequence[Case], *, sample_size: int = 50) -> tuple[Case, ...]:
-    """The proportional, deterministic sample H4 double-scores.
+    """The proportional, deterministic sample the human raters double-score.
 
     Each ``CaseCategory``'s share of ``sample_size`` is its share of ``cases`` rounded down, with
     the leftover seats given to the categories with the largest fractional remainder (largest-

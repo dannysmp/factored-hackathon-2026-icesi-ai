@@ -4,9 +4,9 @@ Judge Grounding Facts
 
 Overview
 --------
-Assembles the ``facts_and_sources`` text the LLM judge (``evals.judge``) and the human validation
-sample (H4) both score a case's replies against: what a grounded reply is allowed to state. Never
-reads the running conversation's own envelope (the grounding boundary, the same one
+Assembles the ``facts_and_sources`` text the LLM judge (``evals.judge``) and the human
+judge-validation sample both score a case's replies against: what a grounded reply is allowed to
+state. Never reads the running conversation's own envelope (the grounding boundary, the same one
 ``evals.scoring``'s deterministic checks already refuse to reopen "from outside the process") —
 every fact here comes from either the store's own tables, by the transcript's own ``session_id``
 (the identical "two vantage points" precedent ``evals.scoring``'s ``_case_row_exists`` and

@@ -1,10 +1,10 @@
 """
-Judge Validation (H4)
-======================
+Judge Validation
+================
 
 Overview
 --------
-Computes the per-dimension agreement ``plan/product/human-tasks/H4-judge-rubric.md`` names: between
+Computes the per-dimension agreement the judge rubric names: between
 the two human raters, and between each rater and the automated judge, over the same stratified
 sample of cases. A dimension whose agreement with the judge falls below the committed 80% threshold
 is demoted to human-only scoring for the final report — this module decides that, the report
@@ -23,7 +23,7 @@ Design Principles
 - **Pure functions over plain records.** No I/O, no clock — the same style ``evals.metrics``
   already applies to the deterministic headline metrics, so this module's tests are exact and fast
   regardless of whether the scores being compared are synthetic or the real returned sheets.
-- **Clarification is compared only where both sides scored it.** ``H4-judge-rubric.md``'s own
+- **Clarification is compared only where both sides scored it.** the judge rubric's own
   ``NA`` convention means a case with no clarifying question contributes nothing to that
   dimension's agreement, in either direction — never a forced "no disagreement" nor a forced
   "no data," just excluded from that dimension's own denominator.
@@ -53,7 +53,7 @@ demotion rule; the weighted kappa is reported beside it and never changes the de
 "not defined" when both sides of a pair give one and the same score throughout, and it is close to
 zero whenever one side's scores barely vary, however often the two sides match — it is read together
 with the pair count and the direction counts, not alone. The written analysis of why individual
-cases differ (``H4-disagreement-analysis.md``, a person naming a cause per disagreement) is not
+cases differ (a person naming a cause per disagreement) is not
 reproduced here. A case_id present in one input but missing from another is silently excluded from
 every dimension's comparable set, on the assumption the three inputs are already the same stratified
 sample; a test proves a genuinely mismatched sample does not silently pass as fully compared.

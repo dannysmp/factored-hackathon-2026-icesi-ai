@@ -5,13 +5,13 @@ Evaluation Report Generator
 Overview
 --------
 Turns one full harness run's already-computed results — P's three repeated runs, B0's and B1's
-single runs, the live judge's own verdicts over P's last run, and the H4 judge-validation sample's
-agreement — into ``reports/evaluation.md``, the single generated evaluation artifact. Every piece it
-reads is produced elsewhere (the runner, the metrics engine, the judge, the judge-validation
-agreement computation); this module only assembles and renders what they produced. The
-judge-scored-quality section (a system's own live-judge verdicts) and the judge-validation section
-(the judge's agreement with human raters) answer two different questions from two different data
-sources and are never conflated.
+single runs, the live judge's own verdicts over P's last run, and the human judge-validation
+sample's agreement — into ``reports/evaluation.md``, the single generated evaluation artifact. Every
+piece it reads is produced elsewhere (the runner, the metrics engine, the judge, the
+judge-validation agreement computation); this module only assembles and renders what they produced.
+The judge-scored-quality section (a system's own live-judge verdicts) and the judge-validation
+section (the judge's agreement with human raters) answer two different questions from two different
+data sources and are never conflated.
 
 Scope
 -----
@@ -28,9 +28,9 @@ Design Principles
   touches the filesystem, the same split ``pipelines.profile`` already draws with its own renderer.
 - **A synthetic judge-validation sample never reaches the report as real.** ``EvaluationReport``
   carries the agreement sample's own ``provenance``; the judge-validation section renders the real
-  agreement numbers only when it reads ``"human"``, and a "pending H4" placeholder — never a
-  fabricated agreement rate — for anything else, including the synthetic placeholder
-  fixture (``evals.golden.judge_validation_sample``). A test proves the two paths render
+  agreement numbers only when it reads ``"human"``, and a placeholder stating the human sample is
+  pending — never a fabricated agreement rate — for anything else, including the synthetic
+  placeholder fixture (``evals.golden.judge_validation_sample``). A test proves the two paths render
   different, not just non-empty, text.
 - **Every metric states its basis.** ``evals.metrics.Metric.basis`` already carries "measured" or
   "projected"; this renderer surfaces it on every row rather than repeating the OFFLINE
@@ -48,7 +48,7 @@ Runtime Contract
 ``render_markdown(report) -> str``.
 ``judge_validation_section(agreement, provenance, detail=None, facts_coverage=None) -> str``: the
 exact text ``render_markdown`` puts under its Judge validation heading — exported so a cheaper
-regeneration of just that section (once the real H4 sample lands) renders identically to a
+regeneration of just that section (once the real human sample lands) renders identically to a
 full report, never a hand-maintained second copy of the same wording
 (``evals.h4_judge_validation``).
 
@@ -358,7 +358,7 @@ def _judge_scored_quality_section(report: EvaluationReport) -> str:
     note = (
         f"\n\n{', '.join(not_judged)} carried no judge verdicts in this report: a system's own "
         "run is judge-scored only when it is in scope for judge-sourced report metrics (today, "
-        "the proposed system alone — the same scope H4's own human validation uses)."
+        "the proposed system alone — the same scope the human judge validation uses)."
         if not_judged
         else ""
     )
@@ -785,7 +785,7 @@ def judge_validation_section(
         return (
             "**Pending H4.** The judge-validation sample used to produce this section is "
             f"labeled `{provenance}`, not `human` — the real double-scored sample "
-            "(plan/product/human-tasks/H4-judge-rubric.md) has not landed yet. No agreement rate "
+            "(see the judge rubric) has not landed yet. No agreement rate "
             "is reported here; presenting a synthetic sample's numbers as the real validation "
             "would misstate how well the judge actually agrees with human raters."
         )

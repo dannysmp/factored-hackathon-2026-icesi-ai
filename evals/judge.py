@@ -6,8 +6,8 @@ Overview
 --------
 Scores one finished case transcript against the LLM judge's rubric: grounding, language quality,
 and clarification quality (when the case asked a clarifying question). The rubric is the same one,
-word for word, that ``plan/product/human-tasks/H4-judge-rubric.md`` gives the two human raters who
-double-score the same held-out sample (H4), so the report's judge-vs-human agreement check
+word for word, that the two human raters receive when they
+double-score the same held-out sample, so the report's judge-vs-human agreement check
 compares like against like; the rubric is committed and versioned.
 
 Scope
@@ -33,7 +33,7 @@ Design Principles
 - **Clarification is scored only when it applies.** The rubric names clarification quality as
   applicable only to a case that asked a clarifying question; the tool schema does not require it,
   and the prompt instructs the model to omit it rather than guess a value — matching
-  ``H4-judge-rubric.md``'s own ``NA`` convention for the human raters' identical column.
+  the judge rubric's own ``NA`` convention for the human raters' identical column.
 - **A judge call that cannot complete is not swallowed.** Unlike ``LlmNlu`` (which falls back to
   unusable understanding so a customer is never shown a provider error), a judge call has no
   customer waiting on it: any ``LlmError`` propagates to the caller, matching this harness's own
@@ -49,7 +49,7 @@ Limitations
 -----------
 ``facts_and_sources`` is a plain string this module trusts the caller to have assembled; this
 module has no opinion on whether it came from a store query, a golden-set case's own authored facts,
-or a human-filled H4 sheet column, and does not itself reopen the customer-facing API's envelope
+or a human-filled case-sheet column, and does not itself reopen the customer-facing API's envelope
 boundary to find out. A call that raises aborts scoring that one case; there is no retry or
 partial-credit path here, the same choice the rest of this harness already makes for a case it
 cannot run to completion.
@@ -103,7 +103,7 @@ class JudgeVerdict:
     """One case's rubric score, from either the automated judge or a human rater.
 
     ``clarification`` is ``None`` for a case the rubric does not ask that question about, matching
-    ``H4-judge-rubric.md``'s own ``NA`` convention for the same column.
+    the judge rubric's own ``NA`` convention for the same column.
     """
 
     case_id: str

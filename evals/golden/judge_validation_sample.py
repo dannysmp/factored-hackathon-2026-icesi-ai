@@ -1,16 +1,16 @@
 """
-Judge Validation Sample — Synthetic Placeholder (H4)
-=======================================================
+Judge Validation Sample — Synthetic Placeholder
+======================================================
 
 Overview
 --------
-A synthetic stand-in for the 50-case judge-validation sample ``plan/product/human-tasks/H4-judge-
-rubric.md`` asks two human raters to double-score, shaped exactly like the two sheets they will
-return (``H4-case-sheet-Rater1.csv``, ``H4-case-sheet-Rater2.csv``), plus a synthetic stand-in for
-the automated judge's own verdicts on the same 50 cases. H4 is not due until 2026-10-03/04; this
-fixture exists so ``evals.judge_validation``'s agreement computation, and the report generator's
-judge-validation section, are real, tested code today, not a stub waiting on the human sample to
-find out whether they work.
+A synthetic stand-in for the 50-case judge-validation sample the judge rubric asks two human raters
+to double-score, shaped exactly like the two sheets they will return (``H4-case-sheet-Rater1.csv``,
+``H4-case-sheet-Rater2.csv``), plus a synthetic stand-in for the automated judge's own verdicts on
+the same 50 cases. The real sheets arrive only after the system is built; this fixture exists so
+``evals.judge_validation``'s agreement computation, and the report generator's judge-validation
+section, are real, tested code today, not a stub waiting on the human sample to find out whether
+they work.
 
 Scope
 -----
