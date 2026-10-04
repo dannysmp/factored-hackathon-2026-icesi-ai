@@ -20,12 +20,14 @@ export function TicketDetailScreen({
   client,
   ticketRef,
   onBack,
+  onSessionExpired,
 }: {
   client: TicketDetailClient
   ticketRef: string
   onBack: () => void
+  onSessionExpired?: () => void
 }): JSX.Element {
-  const query = useTicketDetail(client, ticketRef)
+  const query = useTicketDetail(client, ticketRef, onSessionExpired)
 
   if (query.status === 'error') {
     return (

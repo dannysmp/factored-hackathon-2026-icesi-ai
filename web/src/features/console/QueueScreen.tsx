@@ -27,11 +27,13 @@ function itemsForView(items: readonly QueueItem[], view: TriggerView): QueueItem
 export function QueueScreen({
   client,
   onSelectTicket,
+  onSessionExpired,
 }: {
   client: QueueClient
   onSelectTicket: (ticketRef: string) => void
+  onSessionExpired?: () => void
 }): JSX.Element {
-  const queue = useQueue(client)
+  const queue = useQueue(client, onSessionExpired)
   const [triggerView, setTriggerView] = useState<TriggerView>('all')
 
   if (queue.status === 'error') {

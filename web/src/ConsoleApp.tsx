@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { JSX } from 'react'
 import { QueueScreen } from './features/console/QueueScreen'
 import { TicketDetailScreen } from './features/console/TicketDetailScreen'
@@ -23,6 +23,10 @@ import { SignInScreen } from './features/sign-in/SignInScreen'
  * client for it is correct, not wasteful — the same rule the customer chat's own `LiveChatClient`
  * follows in `App.tsx`.
  *
+ * A 401 from the queue or a ticket's detail means the session ended: it is not refreshed, so the
+ * console returns to the sign-in with a notice. Only `session` is cleared; `selectedTicketRef`
+ * stays, so the agent who signs in again lands back on the same ticket (AC-E10-08, AC-E10-16).
+ *
  * The heading is fixed Spanish (D91: the console stays fixed-Spanish). `SignInScreen` reads its
  * copy from the trilingual `useT` hook, but only for the customer audience — passing
  * `audience="agent"` here keeps this screen's own sign-in fixed-Spanish too, regardless of which
@@ -30,6 +34,12 @@ import { SignInScreen } from './features/sign-in/SignInScreen'
  */
 export function ConsoleApp(): JSX.Element {
   const { session, setSession, selectedTicketRef, setSelectedTicketRef } = useConsoleNavigation()
+
+  const [expired, setExpired] = useState(false)
+  const expireSession = (): void => {
+    setExpired(true)
+    setSession(null)
+  }
 
   const queueClient = useMemo(
     () => (session === null ? null : new LiveQueueClient(session)),
@@ -44,9 +54,11 @@ export function ConsoleApp(): JSX.Element {
     return (
       <main>
         <h1>Consola del agente</h1>
+        {expired ? <p role="status">Su sesión terminó. Inicie sesión de nuevo.</p> : null}
         <SignInScreen
           audience="agent"
           onSignedIn={(token) => {
+            setExpired(false)
             setSession({ token })
           }}
         />
@@ -58,11 +70,16 @@ export function ConsoleApp(): JSX.Element {
     <main>
       <h1>Consola del agente</h1>
       {selectedTicketRef === null ? (
-        <QueueScreen client={queueClient} onSelectTicket={setSelectedTicketRef} />
+        <QueueScreen
+          client={queueClient}
+          onSelectTicket={setSelectedTicketRef}
+          onSessionExpired={expireSession}
+        />
       ) : (
         <TicketDetailScreen
           client={ticketDetailClient}
           ticketRef={selectedTicketRef}
+          onSessionExpired={expireSession}
           onBack={() => {
             setSelectedTicketRef(null)
           }}
