@@ -364,6 +364,7 @@ class DialogueController:
             )
         state_before = state.phase
         new_state, envelope = self._advance(state, result)
+        self._log_turn_decided(state, new_state, result, envelope)
         self._log_turn_completed(new_state, accounting)
 
         try:
@@ -525,6 +526,43 @@ class DialogueController:
             updated_at=self._now(),
         )
         return fresh, 0, result, accounting
+
+    def _log_turn_decided(
+        self,
+        state_before: DialogueState,
+        state_after: DialogueState,
+        result: NluResult,
+        envelope: RenderEnvelope,
+    ) -> None:
+        """One log line per real turn saying how it was understood and where the dialogue went, so
+        a surprising hand-off can be traced to its cause without the customer's words.
+
+        It carries only closed-vocabulary values and counters: the intent the understanding
+        reported and its confidence, whether it carried a transaction hint (a flag, never the
+        hint), the pending slot and clarification count before and after, the reply's intent and
+        template, and the hand-off's first reason code (``None`` when the turn did not hand off).
+        """
+        hint = result.transaction
+        has_hint = any(
+            value is not None
+            for value in (hint.merchant, hint.amount, hint.date_on, hint.product_last4)
+        )
+        logger.info(
+            "turn_decided session_id=%s understood=%s confidence=%.2f has_hint=%s "
+            "slot_before=%s attempts_before=%d slot_after=%s attempts_after=%d "
+            "reply=%s template=%s handoff_reason=%s",
+            state_after.session_id,
+            result.intent.value,
+            result.confidence,
+            has_hint,
+            state_before.pending_slot.value if state_before.pending_slot else None,
+            state_before.clarification_attempts,
+            state_after.pending_slot.value if state_after.pending_slot else None,
+            state_after.clarification_attempts,
+            envelope.intent.value,
+            envelope.template_id.value if envelope.template_id else None,
+            self._handoff_reason.value if self._handoff_reason else None,
+        )
 
     def _log_turn_completed(self, state: DialogueState, accounting: TurnAccounting | None) -> None:
         """One stable-shaped log line per real turn: the real cost, if any, of understanding

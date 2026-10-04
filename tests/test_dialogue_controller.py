@@ -787,6 +787,46 @@ def test_a_described_answer_that_matches_nothing_counts_whatever_the_intent_the_
     assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
 
 
+def test_each_turn_logs_how_it_was_understood_and_where_the_dialogue_went(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    with caplog.at_level(logging.INFO, logger="app.conversation.controller"):
+        dialogue.say(_file_dispute())
+        dialogue.say(_plain(NluIntent.UNCLEAR, transaction=_NOBODY))
+        dialogue.say(_plain(NluIntent.UNCLEAR, transaction=_NOBODY))
+
+    decided = [r.getMessage() for r in caplog.records if r.getMessage().startswith("turn_decided")]
+    assert len(decided) == 3
+    assert "understood=file_dispute" in decided[0]
+    assert "has_hint=False" in decided[0]
+    assert "slot_after=transaction attempts_after=0" in decided[0]
+    assert "understood=unclear" in decided[1]
+    assert "has_hint=True" in decided[1]
+    assert "slot_before=transaction attempts_before=0" in decided[1]
+    assert "attempts_after=1" in decided[1]
+    assert "handoff_reason=None" in decided[1]
+    assert "reply=handoff" in decided[2]
+    assert "template=handoff_review" in decided[2]
+    assert "handoff_reason=escalate_low_nlu_confidence" in decided[2]
+
+
+def test_the_turn_decision_log_never_carries_the_customers_description(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    with caplog.at_level(logging.INFO, logger="app.conversation.controller"):
+        dialogue.say(_file_dispute(transaction=_NOBODY))
+
+    decided = " ".join(
+        r.getMessage() for r in caplog.records if r.getMessage().startswith("turn_decided")
+    )
+    assert decided
+    assert "Nobody" not in decided
+
+
 def test_after_a_description_that_matches_nothing_the_transaction_stays_the_open_question(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
