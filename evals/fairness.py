@@ -54,6 +54,7 @@ import math  # Wilson interval
 from collections import Counter  # Failing-case category mix
 from collections.abc import Mapping, Sequence  # Input sequence types
 from dataclasses import dataclass  # Immutable result records
+from fractions import Fraction  # Exact share comparison
 
 # Local modules
 from evals.golden.multilingual import ACCENT_FLAVORED_CASE_IDS  # The accent-flavored subset
@@ -70,7 +71,7 @@ UNKNOWN = "unknown"
 #: only when its share of the failures exceeds its share of the slice's in-scope cases by at least
 #: ``CASE_MIX_EXCESS``.
 CASE_MIX_MIN_FAILURES = 3
-CASE_MIX_EXCESS = 0.20
+CASE_MIX_EXCESS = Fraction(1, 5)
 
 _WILSON_Z = 1.96
 
@@ -153,7 +154,8 @@ class Disparity:
         slice_total = sum(count for _, count in self.slice_categories)
         slice_share = dict(self.slice_categories)
         excess = {
-            category: count / self.failure_count - slice_share.get(category, 0) / slice_total
+            category: Fraction(count, self.failure_count)
+            - Fraction(slice_share.get(category, 0), slice_total)
             for category, count in self.failing_categories
         }
         category = max(excess, key=lambda name: excess[name])

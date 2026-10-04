@@ -546,8 +546,9 @@ def _disparity_note(disparity: Disparity) -> str:
         )
     else:
         explanation = (
-            " The failures follow the slice's own category mix, so the case mix does not explain "
-            "the gap; it is an open investigation, not a conclusion."
+            " The failures follow the slice's own category mix; whether the rest of the dimension "
+            "has a different mix is not compared, so the gap is an open investigation, not a "
+            "conclusion."
         )
     return f"{head}{failing}{errored}{by_category}{explanation}"
 
@@ -555,19 +556,19 @@ def _disparity_note(disparity: Disparity) -> str:
 def _unavailable_notice(profiles: Mapping[str, CaseProfile] | None) -> str:
     """The sentence naming a profile dimension no case could be given, or ``""``."""
     if profiles is None:
-        missing = "Country and segment"
+        absent = ["country", "segment"]
     else:
         absent = [
             name
             for name, found in (
-                ("Country", any(p.country for p in profiles.values())),
-                ("Segment", any(p.segment for p in profiles.values())),
+                ("country", any(p.country for p in profiles.values())),
+                ("segment", any(p.segment for p in profiles.values())),
             )
             if not found
         ]
         if not absent:
             return ""
-        missing = " and ".join(absent)
+    missing = " and ".join(absent).capitalize()
     return (
         f"\n\n{missing} could not be looked up for this run; those cases are in the unknown "
         "slice, so that dimension was not compared."
@@ -623,9 +624,9 @@ def _fairness_section(report: EvaluationReport) -> str:
         notes = "\n".join(_disparity_note(d) for d in analysis.disparities)
         verdict = (
             "**Slices whose 95 % interval does not overlap the rest of their dimension, each with "
-            "an investigation note.** About a dozen comparisons are made, so about one flag in "
-            "twenty is expected from chance alone even when every group is treated the same.\n\n"
-            + notes
+            "an investigation note.** About a dozen comparisons are made, so about one report in "
+            "twenty is expected to show at least one flag from chance alone, even when every group "
+            "is treated the same.\n\n" + notes
         )
     else:
         verdict = (

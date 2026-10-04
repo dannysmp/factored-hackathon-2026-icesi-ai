@@ -87,6 +87,9 @@ def test_read_segments_for_no_customers_returns_nothing(tmp_path: Path) -> None:
 
 
 def _case(case_id: str, seed_ref: str) -> Case:
+    """A case seeded from ``seed_ref``: a filing confirmation for a transaction, a clarification
+    for a customer."""
+    confirms_filing = seed_ref.startswith("ops_seed:TRX-")
     return Case(
         case_id=case_id,
         category=CaseCategory.NORMAL,
@@ -94,8 +97,8 @@ def _case(case_id: str, seed_ref: str) -> Case:
         provenance="observed",
         seed_ref=seed_ref,
         user_turns=("hola",),
-        expected_intent=Intent.CONFIRM_FILING,
-        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        expected_intent=Intent.CONFIRM_FILING if confirms_filing else Intent.CLARIFY,
+        expected_category=DisputeCategory.UNRECOGNIZED_CHARGE if confirms_filing else None,
     )
 
 

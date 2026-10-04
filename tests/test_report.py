@@ -757,8 +757,17 @@ def test_a_hypothesis_of_case_mix_is_only_stated_when_failures_concentrate() -> 
 
     assert "may follow the case mix" not in spread
     assert "failures follow the slice's own category mix" in spread
+    assert "does not explain" not in spread
     assert "concentrated in ambiguous cases" in concentrated
     assert "may follow the case mix" in concentrated
+
+
+def test_a_single_category_slice_is_told_only_what_was_observed() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (60, 30)})
+
+    assert "failures follow the slice's own category mix" in section
+    assert "has a different mix is not compared" in section
+    assert "does not explain" not in section
 
 
 def test_a_slice_with_too_few_failures_says_so_instead_of_naming_a_category() -> None:
@@ -785,7 +794,10 @@ def test_a_flagged_large_slice_carries_no_small_sample_marker_in_its_note() -> N
 def test_the_flagged_verdict_says_how_many_flags_chance_alone_would_give() -> None:
     section = _flagged_language_pair({CaseCategory.NORMAL: (60, 30)})
 
-    assert "about one flag in twenty is expected from chance alone" in section
+    assert (
+        "about one report in twenty is expected to show at least one flag from chance alone"
+        in section
+    )
 
 
 def test_errored_cases_are_listed_apart_from_wrong_outcomes_in_a_flagged_note() -> None:
@@ -799,7 +811,7 @@ def test_errored_cases_are_listed_apart_from_wrong_outcomes_in_a_flagged_note() 
     ("profiles", "named"),
     [
         (None, "Country and segment could not be looked up"),
-        ({}, "Country and Segment could not be looked up"),
+        ({}, "Country and segment could not be looked up"),
         ({"norm-es-001": CaseProfile(country="MX")}, "Segment could not be looked up"),
         ({"norm-es-001": CaseProfile(segment="Plus")}, "Country could not be looked up"),
     ],

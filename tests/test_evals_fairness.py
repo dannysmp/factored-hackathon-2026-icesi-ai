@@ -9,6 +9,7 @@ disparity flag (non-overlapping Wilson intervals) and the accent-flavored compar
 from __future__ import annotations
 
 # Standard libraries
+from fractions import Fraction
 from typing import Any
 
 # Third-party libraries
@@ -20,6 +21,7 @@ from contracts.service_v1.envelope import Intent
 from evals.fairness import (
     ACCENT,
     ACCENT_FLAVORED,
+    CASE_MIX_EXCESS,
     COUNTRY,
     LANGUAGE,
     OTHER_SPANISH,
@@ -27,6 +29,7 @@ from evals.fairness import (
     SMALL_SAMPLE_THRESHOLD,
     UNKNOWN,
     CaseProfile,
+    Disparity,
     SliceRow,
     slice_results,
 )
@@ -350,3 +353,38 @@ def test_each_label_of_a_three_label_dimension_is_compared_with_all_the_others()
     assert flagged["AR"].comparison_in_scope == 120
     assert flagged["AR"].below_comparison is True
     assert flagged["MX"].comparison_rate == pytest.approx(90 / 120)
+
+
+def _slice_with(
+    failing: tuple[tuple[str, int], ...], slice_mix: tuple[tuple[str, int], ...]
+) -> Disparity:
+    return Disparity(
+        dimension=LANGUAGE,
+        label="pt",
+        rate=0.5,
+        comparison_rate=1.0,
+        in_scope=sum(count for _, count in slice_mix),
+        comparison_in_scope=100,
+        failing_case_ids=(),
+        errored_case_ids=(),
+        failing_categories=failing,
+        slice_categories=slice_mix,
+    )
+
+
+def test_a_category_excess_of_exactly_the_threshold_names_the_category() -> None:
+    """3 of 3 failures in a category that is 4 of 5 of the slice: 1 - 4/5 is exactly 1/5."""
+    disparity = _slice_with((("ambiguous", 3),), (("ambiguous", 4), ("normal", 1)))
+
+    assert disparity.concentrated_category() == "ambiguous"
+
+
+def test_a_category_excess_just_below_the_threshold_names_nothing() -> None:
+    """3 of 3 failures in a category that is 9 of 11 of the slice: an excess of 2/11."""
+    disparity = _slice_with((("ambiguous", 3),), (("ambiguous", 9), ("normal", 2)))
+
+    assert disparity.concentrated_category() is None
+
+
+def test_the_category_excess_threshold_is_a_fifth() -> None:
+    assert Fraction(1, 5) == CASE_MIX_EXCESS
