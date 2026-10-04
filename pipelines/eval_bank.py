@@ -8,8 +8,9 @@ Writes ``data/gold/eval_bank``: a small set of frozen customer, product and tran
 golden set's adversarial and edge-case scenarios reference by identifier, for the kind of scenario
 ``data/gold/ops_seed`` structurally cannot hold — a dangling reference, a missing field, an
 injection payload — because the seed only ever selects real, consistent rows from the cleaned
-data. The scenarios are frozen and carry stable identifiers. A golden-set `Case`'s `seed_ref` (`evals/models.py`) resolves against either
-this bank or the seed; this module owns only the former.
+data. The scenarios are frozen and carry stable identifiers. A golden-set `Case`'s `seed_ref`
+(`evals/models.py`) resolves against either this bank or the seed; this module owns only the
+former.
 
 Scope
 -----
