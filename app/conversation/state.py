@@ -89,6 +89,19 @@ class DialogueState(BaseModel):
     last_ticket_ref: Annotated[str, Field(min_length=1, max_length=32)] | None = None
     updated_at: AwareDatetime
 
+    @property
+    def is_opening(self) -> bool:
+        """True while the conversation has only greeted or offered a language: no dispute content
+        is committed yet, so the first message in a recognisable language may still set the
+        language the conversation continues in."""
+        return (
+            self.last_turn_id is not None
+            and self.phase is ConversationPhase.STARTED
+            and self.pending_slot is None
+            and self.category is None
+            and self.selected_ref is None
+        )
+
     def with_clarification(self, slot: Slot) -> DialogueState:
         """Ask for ``slot`` again.
 

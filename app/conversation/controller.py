@@ -414,11 +414,20 @@ class DialogueController:
         A brand-new session starts at expected version 0 (a fresh insert, unconditional on it —
         ``DialogueStore.save``'s own documented behavior); its language is the first message's own,
         or Spanish when the message is too ambiguous to tell (AC: es and pt are both required).
+        While the conversation has not left its opening (``DialogueState.is_opening``) the next
+        message read in another language moves it there, so a customer whose opener carried no
+        language signal is answered in their own language from their first real message.
         """
         if current is not None:
             result, accounting = self._understanding.understand(
                 request.text, language_hint=current.lang, reference_date=self._domain_date
             )
+            if (
+                current.is_opening
+                and result.language is not None
+                and result.language != current.lang
+            ):
+                current = current.with_language(result.language)
             return current, current.version, result, accounting
 
         result, accounting = self._understanding.understand(
