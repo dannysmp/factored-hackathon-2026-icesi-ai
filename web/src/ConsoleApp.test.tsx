@@ -175,15 +175,46 @@ describe('ConsoleApp', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('frames every step with a banner holding the console title and one main landmark', async () => {
+  it('frames the sign-in step with a banner holding the console title and one main landmark', async () => {
     stubTheWholeFlow()
     render(<ConsoleApp />)
 
     await screen.findByLabelText(es['signin.personaLabel'])
+    expect(screen.getAllByRole('banner')).toHaveLength(1)
     expect(screen.getByRole('banner')).toContainElement(
       screen.getByRole('heading', { level: 1, name: 'Consola del agente' }),
     )
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+
+  it('frames the queue and the ticket detail with the same banner, title and single main landmark', async () => {
+    stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<ConsoleApp />)
+
+    await screen.findByLabelText(es['signin.personaLabel'])
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    await screen.findByRole('region', { name: 'Cola de casos escalados' })
+
+    const expectFramed = (): void => {
+      expect(screen.getAllByRole('banner')).toHaveLength(1)
+      expect(screen.getByRole('banner')).toContainElement(
+        screen.getByRole('heading', { level: 1, name: 'Consola del agente' }),
+      )
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+      expect(screen.getAllByRole('main')).toHaveLength(1)
+    }
+    expectFramed()
+
+    const [firstDetail] = DEMO_TICKET_DETAILS
+    if (firstDetail === undefined) {
+      throw new Error('fixture setup: DEMO_TICKET_DETAILS needs at least one entry for this test')
+    }
+    await user.click(screen.getByRole('button', { name: firstDetail.item.ticket_ref }))
+    await screen.findByRole('region', { name: 'Detalle del ticket' })
+    expectFramed()
   })
 
   it('has no automatically detectable accessibility violations at the sign-in step', async () => {

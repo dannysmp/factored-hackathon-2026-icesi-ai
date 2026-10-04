@@ -34,6 +34,18 @@ describe('Notice', () => {
   })
 
   it.each(['info', 'success', 'warning', 'error'] as const)(
+    'carries its own tone class, %s, and no other',
+    (tone) => {
+      const { container } = render(<Notice tone={tone}>Mensaje</Notice>)
+
+      const { className } = container.firstElementChild as HTMLElement
+      const others = (['info', 'success', 'warning', 'error'] as const).filter((t) => t !== tone)
+      expect(className).toMatch(new RegExp(tone))
+      for (const other of others) expect(className).not.toMatch(new RegExp(other))
+    },
+  )
+
+  it.each(['info', 'success', 'warning', 'error'] as const)(
     'carries a decorative icon and no accessibility violations for the %s tone',
     async (tone) => {
       const { container } = render(<Notice tone={tone}>Mensaje</Notice>)

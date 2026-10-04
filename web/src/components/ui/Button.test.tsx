@@ -71,7 +71,17 @@ describe('Button', () => {
 
     const button = screen.getByRole('button', { name: 'Confirmar' })
     expect(button).toHaveClass('extra')
-    expect(button.className.split(' ').length).toBeGreaterThanOrEqual(5)
+    expect(button.className).toMatch(/primary/)
+    expect(button.className).toMatch(/large/)
+    expect(button.className).toMatch(/fullWidth/)
+  })
+
+  it('applies only its own variant class, and no size class unless asked', () => {
+    render(<Button variant="quiet">Ayuda</Button>)
+
+    const { className } = screen.getByRole('button', { name: 'Ayuda' })
+    expect(className).toMatch(/quiet/)
+    expect(className).not.toMatch(/primary|secondary|large|fullWidth/)
   })
 
   it.each(['primary', 'secondary', 'quiet'] as const)(

@@ -107,14 +107,34 @@ describe('App', () => {
     expect(screen.queryByRole('region', { name: es['chat.regionLabel'] })).not.toBeInTheDocument()
   })
 
-  it('frames every step with a banner holding the page title and one main landmark', async () => {
+  it('frames the sign-in step with a banner holding the page title and one main landmark', async () => {
     stubTheWholeFlow()
     render(<App />)
 
     await screen.findByLabelText(es['signin.personaLabel'])
+    expect(screen.getAllByRole('banner')).toHaveLength(1)
     expect(screen.getByRole('banner')).toContainElement(
       screen.getByRole('heading', { level: 1, name: es['app.title'] }),
     )
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+
+  it('frames the chat step with the same banner, title and single main landmark', async () => {
+    stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<App />)
+
+    await screen.findByLabelText(es['signin.personaLabel'])
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    await screen.findByRole('region', { name: es['chat.regionLabel'] })
+
+    expect(screen.getAllByRole('banner')).toHaveLength(1)
+    expect(screen.getByRole('banner')).toContainElement(
+      screen.getByRole('heading', { level: 1, name: es['app.title'] }),
+    )
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getAllByRole('main')).toHaveLength(1)
   })
 
