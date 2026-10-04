@@ -32,9 +32,9 @@ Limitations
 -----------
 In memory and per process: with several processes the effective limit is multiplied, and a
 restart clears it. The key is what the caller passes (the sign-in routes use ``client_address``:
-the reverse proxy's last X-Forwarded-For entry, else the connecting address). When the table is full the oldest key is dropped first, so a flood of distinct
-clients can evict a blocked one. A shared store replaces it when the service runs as more than
-one process.
+the reverse proxy's last X-Forwarded-For entry, else the connecting address). When the table is
+full the oldest key is dropped first, so a flood of distinct clients can evict a blocked one. A
+shared store replaces it when the service runs as more than one process.
 """
 
 from __future__ import annotations
