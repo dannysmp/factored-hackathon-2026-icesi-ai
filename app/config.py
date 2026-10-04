@@ -39,6 +39,7 @@ adapter.
 from __future__ import annotations
 
 # Standard libraries
+from decimal import Decimal  # The daily spend limit is money, never a float
 from enum import StrEnum  # Closed sets for environment, provider and log level
 from pathlib import Path  # Type of the optional .env file location
 
@@ -172,6 +173,10 @@ class Settings(BaseSettings):
         Bounded retry (E9) for a retryable tool failure (``ToolFailure.retryable`` and
         ``cause`` in ``"timeout"``/``"error"``, never ``"circuit_open"``); a refusal for a
         permission or not-found reason (``retryable=False``) is never retried.
+    llm_daily_spend_limit_usd : Decimal
+        The daily model spend limit (ADR-18), counted per operating day: once the day's recorded
+        spend reaches it, model calls are refused and every turn degrades to a template reply and
+        a handoff to a person until the next operating day.
     llm_breaker_failure_threshold, llm_breaker_reset_seconds : int, float
         The LLM circuit breaker (E9): opens after this many consecutive post-retry failures, and
         allows one trial call again after this many seconds.
@@ -230,6 +235,7 @@ class Settings(BaseSettings):
     tool_retry_max_attempts: int = Field(default=3, ge=1, le=5)
     tool_retry_base_delay_ms: int = Field(default=50, ge=0, le=5000)
     tool_retry_max_delay_ms: int = Field(default=400, ge=0, le=30000)
+    llm_daily_spend_limit_usd: Decimal = Field(default=Decimal("10"), gt=0)
     llm_breaker_failure_threshold: int = Field(default=5, ge=1, le=20)
     llm_breaker_reset_seconds: float = Field(default=30.0, ge=1, le=300)
     tool_breaker_failure_threshold: int = Field(default=5, ge=1, le=20)

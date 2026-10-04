@@ -143,6 +143,16 @@ Repeat for `demo-agent-access-code`. Send each code only in the release message 
 
 Turn the sign-in off by following [Turning the demonstration sign-in off](README.md#turning-the-demonstration-sign-in-off), or remove the whole host with `infra/scripts/07-teardown.sh` (the roles, repositories and seed bucket remain).
 
+## 8. Daily model spend limit
+
+The backend counts what every language-model call costs and stops calling the model once a day's total reaches `LLM_DAILY_SPEND_LIMIT_USD` (default `10`, in US dollars). The day is the bank's operating day (America/Bogota), so the total resets at local midnight. The limit is a soft guard that sits under the provider's own hard monthly cap: calls already in flight when it trips still complete, so a day can end slightly above it.
+
+While the limit is reached the service keeps answering. Understanding is unavailable, so a customer message is handed to a person with the usual review notice; the optional model renderer falls back to the template reply. Nothing goes silent. If the day's total cannot be read, the service treats the limit as reached rather than spending unmetered.
+
+- **Change the limit** by setting `LLM_DAILY_SPEND_LIMIT_USD` in the backend's environment and restarting the stack. It must be above zero.
+- **Read the day's total** from the `llm_spend_daily` table (`spend_day`, `spent_usd`).
+- **Recognise a trip** in the backend log: `daily_spend_limit_reached` carries the day, the total and the limit; `daily_spend_unreadable` means the total could not be read, and `daily_spend_charge_failed` means a completed call could not be recorded (the reply is still delivered).
+
 ## Run record
 
 One row per clean-account reproduction or persisting deployment, filled in by the maintainer after step 5.
