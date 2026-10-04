@@ -26,10 +26,22 @@ export function ScrollRegion({
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return undefined
+    // The wrapper keeps its own width when its content grows past it, so the content is observed too.
     const observer = new ResizeObserver(measure)
-    observer.observe(element)
+    const observeBoxes = (): void => {
+      observer.disconnect()
+      observer.observe(element)
+      for (const child of Array.from(element.children)) observer.observe(child)
+    }
+    observeBoxes()
+    const mutations = new MutationObserver(() => {
+      observeBoxes()
+      measure()
+    })
+    mutations.observe(element, { childList: true })
     return () => {
       observer.disconnect()
+      mutations.disconnect()
     }
   }, [])
 

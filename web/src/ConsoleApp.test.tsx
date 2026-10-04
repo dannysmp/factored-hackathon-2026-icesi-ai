@@ -175,6 +175,34 @@ describe('ConsoleApp', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('shows the queue, not the previous ticket, when the agent signs in again after signing out from a ticket', async () => {
+    stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<ConsoleApp />)
+
+    const signIn = async (): Promise<void> => {
+      await screen.findByLabelText(es['signin.personaLabel'])
+      await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
+      await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    }
+    await signIn()
+    await screen.findByRole('region', { name: 'Cola de casos escalados' })
+    const [firstDetail] = DEMO_TICKET_DETAILS
+    if (firstDetail === undefined) {
+      throw new Error('fixture setup: DEMO_TICKET_DETAILS needs at least one entry for this test')
+    }
+    await user.click(screen.getByRole('button', { name: firstDetail.item.ticket_ref }))
+    await screen.findByRole('region', { name: 'Detalle del ticket' })
+
+    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }))
+    await signIn()
+
+    expect(
+      await screen.findByRole('region', { name: 'Cola de casos escalados' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Detalle del ticket' })).not.toBeInTheDocument()
+  })
+
   it('frames the sign-in step with a banner holding the console title and one main landmark', async () => {
     stubTheWholeFlow()
     render(<ConsoleApp />)

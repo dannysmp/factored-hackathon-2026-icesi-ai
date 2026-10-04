@@ -1,15 +1,17 @@
 /** Component test: the app shell walks sign-in into the live chat, with no accessibility
  * violations at either step. Both the sign-in and the turn endpoint are a mocked `fetch`. */
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { findMessage } from './features/customer-chat/findMessage'
+import { en } from './i18n/en'
 import { es } from './i18n/es'
+import { pt } from './i18n/pt'
 
-const PERSONAS_BODY = {
-  personas: [{ slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' }],
+function personasBody(language: string): unknown {
+  return { personas: [{ slug: 'ana', display_name: 'Ana', language, audience: 'customer' }] }
 }
 const SESSION_BODY = {
   access_token: 'token-abc',
@@ -39,15 +41,18 @@ function jsonResponse(body: unknown): Response {
   })
 }
 
-function stubTheWholeFlow(): void {
+function stubTheWholeFlow(options: { personaLanguage?: string; turnLang?: string } = {}): void {
+  const { personaLanguage = 'es', turnLang = 'es' } = options
   // Every call this app makes passes a plain string path (never a Request or URL object), so the
   // mock only needs to handle that one shape.
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) => {
-      if (url === '/v1/auth/demo-personas') return Promise.resolve(jsonResponse(PERSONAS_BODY))
+      if (url === '/v1/auth/demo-personas')
+        return Promise.resolve(jsonResponse(personasBody(personaLanguage)))
       if (url === '/v1/auth/demo-sessions') return Promise.resolve(jsonResponse(SESSION_BODY))
-      if (url === '/v1/turns') return Promise.resolve(jsonResponse(TURN_BODY))
+      if (url === '/v1/turns')
+        return Promise.resolve(jsonResponse({ ...TURN_BODY, lang: turnLang }))
       throw new Error(`unexpected fetch: ${url}`)
     }),
   )
@@ -88,6 +93,41 @@ describe('App', () => {
     await screen.findByLabelText(es['signin.personaLabel'])
     expect(document.documentElement.lang).toBe('es')
     expect(document.title).toBe(es['app.title'])
+  })
+
+  it.each([
+    ['pt', pt],
+    ['en', en],
+  ] as const)(
+    'names the sign-in step in the selected persona’s language (%s) before anyone has signed in',
+    async (language, catalog) => {
+      stubTheWholeFlow({ personaLanguage: language })
+      render(<App />)
+
+      await screen.findByLabelText(catalog['signin.personaLabel'])
+      await waitFor(() => {
+        expect(document.documentElement.lang).toBe(language)
+      })
+      expect(document.title).toBe(catalog['app.title'])
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(catalog['app.title'])
+    },
+  )
+
+  it('follows the conversation’s own language once the chat has started, over the persona’s', async () => {
+    stubTheWholeFlow({ personaLanguage: 'es', turnLang: 'en' })
+    const user = userEvent.setup()
+    render(<App />)
+
+    await screen.findByLabelText(es['signin.personaLabel'])
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+
+    await screen.findByRole('region', { name: en['chat.regionLabel'] })
+    await waitFor(() => {
+      expect(document.documentElement.lang).toBe('en')
+    })
+    expect(document.title).toBe(en['app.title'])
+    expect(screen.getByRole('button', { name: en['app.signOut'] })).toBeInTheDocument()
   })
 
   it('signs the customer out and returns to the sign-in step', async () => {
