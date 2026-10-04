@@ -18,11 +18,11 @@ to `app/conversation/renderer.py` and confirm it was not written by hand for thi
 
 ## How these scripts are produced
 
-This is a first version. The customer's lines are authored to be natural and to drive the
+The customer's lines are authored to be natural and to drive the
 conversation through the same sequence of intents the scripted-flow fixtures record; the system's
 lines are the renderer's real, unedited output. A browser recording that plays out these same
-paths against the customer chat's live turn endpoint is a later deliverable — until it exists,
-these scripts are the demonstration's script, not yet its recording.
+paths against the customer chat's live turn endpoint is made separately; these scripts are the
+demonstration's script, not its recording.
 
 ---
 
@@ -151,5 +151,5 @@ filing decision was made by the system here.
 Required before these scripts are used in the video recording: a native Spanish reading of every
 Spanish line (the Spanish scripts here are the ones to review); the Portuguese lines go through the
 model-reviewer wording check instead of a native reader, since no native Portuguese speaker
-reviews this project's wording (see `docs/limitations.md`). Neither review has run yet against
-this document; this is a first draft.
+reviews this project's wording (see `docs/limitations.md`). Neither review has been run against
+this document yet.

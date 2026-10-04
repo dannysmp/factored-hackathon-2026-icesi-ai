@@ -87,8 +87,9 @@ A single-match search result is presented with ``PRESENT_ONE`` and the customer'
 reason, which implies it) selects it; a no asks for the transaction again; an unclear answer asks
 again within the clarification budget. The question stays pending across a reply to an unrelated
 message (small talk, a policy question, a list request), as the reason and confirmation questions
-do, so the customer's yes after such a reply still selects the presented transaction; nothing is
-written until the filing confirmation. Two or more matches ask for more detail rather than
+do, so the customer's yes after such a reply still selects the presented transaction. The
+unrelated reply itself files nothing; a case is filed only once the policy's confirmation
+requirement for the category is met. Two or more matches ask for more detail rather than
 presenting a numbered list — the same v1 scope decision already made for slot collection, since
 neither a pending-candidate field nor a multi-candidate list exists in ``DialogueState`` yet. A
 session identifies and evaluates at most one transaction/category pair: nothing here resets
@@ -112,6 +113,7 @@ from __future__ import annotations
 # Standard libraries
 import hashlib  # Deterministic idempotency key derived from the turn id
 import logging  # Progress events, never print
+import unicodedata  # Accent-insensitive merchant comparison
 from collections.abc import Callable  # Type of one route's handler
 from datetime import date  # Domain date the controller was built with
 from decimal import Decimal  # Money is never a float
@@ -262,15 +264,23 @@ def _idempotency_key(turn_id: str) -> str:
     return hashlib.sha256(turn_id.encode("utf-8")).hexdigest()[:32]
 
 
+def _fold(text: str) -> str:
+    """``text`` without accents and case, so "cafe" and "Café" compare equal."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+
+
 def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -> bool:
     """Whether ``fact`` could be what the customer described in ``hint``.
 
     Every part of ``hint`` that was given must agree; a part the source data cannot answer (an
-    absent merchant and description, an unknown amount) never matches a hint that names it.
+    absent merchant and description, an unknown amount) never matches a hint that names it. The
+    merchant is compared ignoring accents and case, in both directions: a customer who types
+    "cafe" finds "Café Sol", and one who types "São Paulo" finds "SAO PAULO".
     """
     if hint.merchant is not None:
         label = fact.merchant or fact.description
-        if label is None or hint.merchant.lower() not in label.lower():
+        if label is None or _fold(hint.merchant) not in _fold(label):
             return False
     money = fact.amount.money
     if hint.amount is not None and (money is None or money.amount != hint.amount):
