@@ -120,11 +120,16 @@ Rate = Annotated[float, Field(ge=0, le=1)]
 
 
 class _Frozen(BaseModel):
-    """Base of every model: immutable, and unknown fields are an error."""
+    """Base of every model: immutable, and unknown fields are an error.
+
+    Rejecting unknown fields makes a misspelled key in a policy file or request fail at the
+    boundary instead of being ignored.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+# Key and value types of ReadOnlyMap.
 K = TypeVar("K")
 V = TypeVar("V")
 
@@ -138,38 +143,57 @@ class ReadOnlyMap(Mapping[K, V]):
     """
 
     def __init__(self, data: Mapping[K, V]) -> None:
+        """Keep a private copy of ``data``; later changes to the original do not show through."""
         self._data = dict(data)
 
     def __getitem__(self, key: K) -> V:
+        """The value stored for ``key``; ``KeyError`` when the key is absent."""
         return self._data[key]
 
     def __iter__(self) -> Iterator[K]:
+        """Iterate over the keys in insertion order."""
         return iter(self._data)
 
     def __len__(self) -> int:
+        """The number of entries."""
         return len(self._data)
 
     def __repr__(self) -> str:
+        """The wrapped dictionary, labelled as a ``ReadOnlyMap``."""
         return f"ReadOnlyMap({self._data!r})"
 
 
 class CategoryRule(_Frozen):
-    """Filing rules of one dispute category."""
+    """Filing rules of one dispute category.
+
+    ``filing_window_days`` is the number of calendar days after the transaction date during which
+    a dispute can still be filed (the last valid day is the day equal to the window).
+    ``requires_confirmation`` says whether the customer must confirm the exact filing before the
+    case is created.
+    """
 
     filing_window_days: Annotated[int, Field(ge=1, le=3650)]
     requires_confirmation: StrictBool
 
 
 class RoutingRules(_Frozen):
-    """When a request that could be filed is routed to a person instead."""
+    """When a request that could be filed is routed to a person instead.
+
+    ``escalate_amount_usd`` is the amount, in USD, at or above which a person handles the case;
+    ``nlu_confidence_floor`` is the understanding confidence below which a person does;
+    ``risk_score_threshold`` is the risk score at or above which a person does, when
+    ``risk_routing_enabled`` is on. ``escalate_repeat_complainer`` and ``escalate_unknown_amount``
+    switch the corresponding rules on or off. ``clarification_budget`` is the number of consecutive
+    clarification attempts on one missing element before the request goes to a person.
+    """
 
     escalate_amount_usd: Annotated[Decimal, Field(gt=0)]
     nlu_confidence_floor: Rate
     risk_score_threshold: Rate
     escalate_repeat_complainer: StrictBool
     escalate_unknown_amount: StrictBool
-    # Off while no risk model has cleared its pre-registered precision floor; fraud claims
-    # escalate by category regardless of this flag.
+    # Off unless a risk model has met the minimum precision required to route on its score; fraud
+    # claims escalate by category regardless of this flag.
     risk_routing_enabled: StrictBool
     # Consecutive clarification attempts on the same missing element before the request
     # escalates with `escalate_low_nlu_confidence`; the conversation state carries the count.
@@ -178,7 +202,11 @@ class RoutingRules(_Frozen):
     @field_validator("escalate_amount_usd", mode="before")
     @classmethod
     def _amount_is_not_a_float(cls, value: object) -> object:
-        """Money is written as text in the file; a float would carry binary rounding error."""
+        """Refuse a float amount before coercion, because it would carry binary rounding error.
+
+        Money is written as text in the policy file (for example ``"5000.00"``); any other type is
+        passed through unchanged for the normal validation to judge.
+        """
         if isinstance(value, float):
             raise ValueError('write the amount as text, for example "5000.00"')
         return value
@@ -190,7 +218,12 @@ EvidenceId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=64)]
 
 
 class Policy(_Frozen):
-    """One version of the dispute policy."""
+    """One version of the dispute policy: scope, per-category rules, routing and response times.
+
+    Immutable once built. The mapping fields are exposed as read-only maps and the model
+    validators refuse a policy that leaves any dispute category without a rule, a first-response
+    count or evidence, or that has an empty product or transaction-type scope.
+    """
 
     version: Annotated[str, Field(min_length=1)]
     provenance: Annotated[str, Field(min_length=1)]
@@ -289,7 +322,12 @@ class Policy(_Frozen):
 
 
 class DisputeRequest(_Frozen):
-    """The facts a decision needs, gathered by the service layer from trusted records."""
+    """The facts a decision needs, gathered by the service layer from trusted records.
+
+    ``amount_usd`` is ``None`` when the amount is unknown; ``risk_score`` is ``None`` when no
+    score was computed. ``nlu_confidence`` is the confidence in the understood request, from 0 to
+    1. ``transaction_type`` and ``product_type`` are compared exactly as spelled.
+    """
 
     transaction_ref: Annotated[str, Field(min_length=1, max_length=64)]
     category: DisputeCategory
@@ -315,9 +353,13 @@ class PolicyDecision(_Frozen):
     """The outcome of the policy for one request, with everything needed to explain it.
 
     ``transaction_ref`` and ``category`` identify the request the decision was made for. They
-    carry no rule of their own; they exist so the case-creation tool can refuse
-    ``confirmation_mismatch`` (AC-E4-14) by comparing them against a later filing call, without
-    trusting the caller and without re-running the policy itself (ADR-3).
+    carry no rule of their own; they exist so the case-creation tool can refuse a
+    ``confirmation_mismatch`` by comparing them against a later filing call, without trusting
+    the caller and without re-running the policy itself.
+
+    ``reason_code`` is the stable code of the decision; ``triggers`` lists every routing reason
+    when the outcome is ``escalate`` (empty otherwise); ``requires_confirmation`` is meaningful
+    for an eligible outcome.
     """
 
     outcome: Outcome
