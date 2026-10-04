@@ -59,7 +59,7 @@ results still to come say so and name the command that completes them.
   section 7 of `reports/evaluation.md` states that no agreement rate is reported. The judge's
   quality and correctness scores stay provisional until two raters return the 50-case sheets.
   Running `make judge-validation RATER1=<sheet> RATER2=<sheet>` scores the same cases with the real
-  judge and patches that section and the matching limitations line with rater-to-rater and
+  judge and patches that section and the matching limitations line of that report with rater-to-rater and
   rater-to-judge agreement per dimension; this bullet is to be rewritten with those figures,
   and with any dimension the judge is demoted on, at the same time. The written analysis of where
   the raters and the judge disagree is a person's job and is not generated.
@@ -88,7 +88,7 @@ results still to come say so and name the command that completes them.
 
 - **A full deployment from an empty account is recorded only once its run records are filled.**
   The procedure is written in [`infra/deployment-runbook.md`](../infra/deployment-runbook.md), and
-  the release checklist links the two clean-account run records. Until both are present, the
+  each run is recorded in the run table at its end. Until both clean-account runs are recorded, the
   complete stack with both sign-ins has not been shown to reproduce from nothing.
 - **Both demonstration sign-ins are gated by an access code kept out of the repository.** Hiding
   the code is not, by itself, a security boundary; it is a demonstration convenience layered on
