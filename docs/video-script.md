@@ -47,7 +47,7 @@ masked, and the reasoning that led here."
 
 About 40 seconds.
 
-Narrate each in one sentence, matching `plan/docs/architecture.md`:
+Narrate each in one sentence, matching the architecture document:
 
 - **ADR-1, decide-then-render:** the system uses a deterministic policy engine instead of an
   autonomous agent loop, because dispute eligibility has financial consequences that need
