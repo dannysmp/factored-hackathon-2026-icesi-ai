@@ -1026,20 +1026,35 @@ def test_an_unclear_answer_to_the_presented_transaction_asks_again_then_escalate
     assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
 
 
+@pytest.mark.parametrize(
+    "unrelated",
+    [
+        _plain(NluIntent.SMALL_TALK),
+        _plain(NluIntent.POLICY_QUESTION, policy_query="que es esta politica"),
+        _plain(NluIntent.LIST_TRANSACTIONS),
+    ],
+    ids=["small-talk", "policy-question", "list-request"],
+)
 def test_the_presented_transaction_question_stays_pending_across_an_unrelated_reply(
-    policy: Policy, retriever: LexicalRetriever
+    policy: Policy, retriever: LexicalRetriever, unrelated: NluResult
 ) -> None:
     dialogue = _Dialogue(policy, retriever)
     dialogue.present_amazon()
+    before = dialogue.store.get(_SESSION_ID)
+    assert before is not None
 
-    dialogue.say(_plain(NluIntent.SMALL_TALK))
+    reply = dialogue.say(unrelated)
+    assert reply.next_expected is Slot.TRANSACTION_CHOICE
     state = dialogue.store.get(_SESSION_ID)
     assert state is not None
     assert state.pending_slot is Slot.TRANSACTION_CHOICE
+    assert state.selected_ref == before.selected_ref
+    assert state.clarification_attempts == before.clarification_attempts
 
     answered = dialogue.say(_confirmation(ConfirmationAnswer.YES))
     assert answered.next_expected is Slot.REASON
     assert dialogue.port.create_calls == 0
+    assert dialogue.outbox.packets == []
 
 
 def test_a_repeated_turn_id_replays_the_presented_transaction(
