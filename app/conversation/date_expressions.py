@@ -159,9 +159,10 @@ def _month_alternation(language: Lang) -> str:
 
 
 # A month-and-day phrase, per language, with the day and month as named groups and an optional
-# four-digit year: "3 de junio" / "el 3 de junio de 2026" (es), "dia 21 de abril" / "no dia 21 de
-# abril" (pt), "June 3rd" / "3rd of June" / "on the 3rd of June, 2026" (en). A leading preposition
-# and article are accepted because the model may report the customer's phrase as spoken.
+# year from 1900 to 2099: "3 de junio" / "el 3 de junio de 2026" (es), "dia 21 de abril" / "no dia
+# 21 de abril" (pt), "June 3rd" / "3rd of June" / "on the 3rd of June, 2026" (en). A leading
+# preposition and article are accepted because the model may report the customer's phrase as
+# spoken.
 _YEAR = r"(?P<year>(?:19|20)\d{2})"
 _MONTH_DAY: dict[Lang, tuple[re.Pattern[str], ...]] = {
     "es": (
@@ -172,7 +173,7 @@ _MONTH_DAY: dict[Lang, tuple[re.Pattern[str], ...]] = {
     ),
     "pt": (
         re.compile(
-            r"^(?:(?:no|em|em\s+o|o)\s+)?(?:dia\s+)?(?P<day>\d{1,2})\s+de\s+"
+            r"^(?:(?:no|em|o)\s+)?(?:dia\s+)?(?P<day>\d{1,2})\s+de\s+"
             rf"(?P<month>{_month_alternation('pt')})(?:\s+de\s+{_YEAR})?$"
         ),
     ),
@@ -195,6 +196,8 @@ _NUMERIC = re.compile(r"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?$")
 
 _MAX_MONTHS_BACK = 4  # Bounded search for a day-of-month that doesn't exist in every month.
 _TWO_DIGIT_YEAR_CUTOFF = 100  # A numeric date's own year below this is "26", not "2026".
+_MIN_YEAR = 1900  # An explicit year outside 1900-2099 is never a card transaction's date.
+_MAX_YEAR = 2099
 
 
 def _fold(text: str) -> str:
@@ -233,6 +236,14 @@ def _most_recent_day_of_month(reference_date: date, day: int) -> date | None:
     return None
 
 
+def _date_or_none(year: int, month: int, day: int) -> date | None:
+    """The calendar date, or ``None`` when that day does not exist in that month and year."""
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
 def _resolve_year(day: int, month: int, year: int | None, reference_date: date) -> date | None:
     """A numeric date's own year, when it has one; otherwise the reference date's year, or the
     year before it when that combination would fall after the reference date — a transaction date
@@ -242,20 +253,11 @@ def _resolve_year(day: int, month: int, year: int | None, reference_date: date) 
     if year is not None:
         if year < _TWO_DIGIT_YEAR_CUTOFF:
             year += 2000
-        try:
-            candidate = date(year, month, day)
-        except ValueError:
-            return None
-        return candidate if candidate <= reference_date else None
-    try:
-        candidate = date(reference_date.year, month, day)
-    except ValueError:
-        return None
-    if candidate > reference_date:
-        try:
-            return date(reference_date.year - 1, month, day)
-        except ValueError:
-            return None
+        candidate = _date_or_none(year, month, day) if _MIN_YEAR <= year <= _MAX_YEAR else None
+        return candidate if candidate is not None and candidate <= reference_date else None
+    candidate = _date_or_none(reference_date.year, month, day)
+    if candidate is not None and candidate > reference_date:
+        return _date_or_none(reference_date.year - 1, month, day)
     return candidate
 
 
