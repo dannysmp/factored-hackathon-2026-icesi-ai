@@ -357,6 +357,28 @@ def test_a_correct_key_always_succeeds_however_many_wrong_keys_preceded_it(
     assert _login(client)["token_type"] == "Bearer"
 
 
+def test_the_failure_limit_is_kept_per_forwarded_client_address(client: TestClient) -> None:
+    """Behind the proxy every caller shares one connecting address, so the limit must key on the
+    forwarded one: a client locked out must not lock out a different client."""
+    noisy = {"X-Test-Login-Key": "wrong", "X-Forwarded-For": "203.0.113.30"}
+    for _ in range(5):
+        client.post(LOGIN, json={"customer_id": "C1"}, headers=noisy)
+    _assert_problem(
+        client.post(LOGIN, json={"customer_id": "C1"}, headers=noisy),
+        429,
+        "too_many_attempts",
+        reauth=False,
+    )
+
+    other = client.post(
+        LOGIN,
+        json={"customer_id": "C1"},
+        headers={"X-Test-Login-Key": "wrong", "X-Forwarded-For": "203.0.113.40"},
+    )
+
+    _assert_problem(other, 401, "test_login_rejected", reauth=True)
+
+
 def test_a_successful_login_does_not_clear_failures_for_another_client_on_the_address(
     client: TestClient, clock: Clock
 ) -> None:

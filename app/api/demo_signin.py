@@ -77,6 +77,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr  # Validated models
 
 # Local modules
 from app.api.auth import SessionResponse  # Shared response shape with the sandbox login
+from app.security.client_address import client_address  # The real connecting address
 from app.security.demo_personas import PersonaList  # The validated, seed-checked persona list
 from app.security.errors import ErrorCode, ProblemError  # Failure format
 from app.security.issuance_limits import IssuanceLimiter  # Concurrent-session caps
@@ -148,28 +149,6 @@ class DemoPersonaDirectory(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     personas: tuple[DemoPersonaSummary, ...]
-
-
-def _client_address(request: Request) -> str:
-    """The real connecting address, trusting the reverse proxy's own X-Forwarded-For.
-
-    The backend is reachable only from Caddy, over the internal compose network (infra/Caddyfile;
-    never exposed to the internet directly) -- Caddy is the sole, trusted first hop, and its own
-    ``reverse_proxy`` directive sets X-Forwarded-For to the address it saw on its own accepted
-    connection, verified against a real Caddy instance (a caller-supplied value in the same
-    header does not survive: Caddy replaces it, not appends to it). Only the last entry is
-    trusted, in case a future hop ever does append rather than replace. Without the assumption
-    that ``request.client.host`` is a real client identity, every visitor collapses onto the one
-    address Caddy connects from, silently turning the per-address issuance cap below into a cap
-    on the whole deployment instead of on each caller -- the fallback below (no header, or an
-    empty one) keeps unproxied local runs and the existing test suite working exactly as before.
-    """
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        last = forwarded.rsplit(",", 1)[-1].strip()
-        if last:
-            return last
-    return request.client.host if request.client else "unknown"
 
 
 def _address_hash(address: str) -> str:
@@ -286,7 +265,7 @@ def build_demo_signin_router(
         supplied = (x_demo_access_code or "").encode("utf-8")
         if hmac.compare_digest(supplied, expected):
             return
-        address = _client_address(request)
+        address = client_address(request)
         wait = attempt_limiter.begin_attempt(address)
         record = SignInAuditRecord(
             trace_id=current_request_id(),
@@ -309,7 +288,7 @@ def build_demo_signin_router(
     @router.post(DEMO_SESSIONS_PATH, status_code=201, dependencies=[Depends(authorize_demo_client)])
     def create_demo_session(body: DemoSignInRequest, request: Request) -> SessionResponse:
         """Issue a demo session for a known persona, or refuse (ADR-18)."""
-        address = _client_address(request)
+        address = client_address(request)
         address_hash = _address_hash(address)
         persona = personas.customer_by_slug(body.persona)
         if persona is None:
@@ -451,7 +430,7 @@ def build_demo_agent_signin_router(
         supplied = (x_demo_access_code or "").encode("utf-8")
         if hmac.compare_digest(supplied, expected):
             return
-        address = _client_address(request)
+        address = client_address(request)
         wait = attempt_limiter.begin_attempt(address)
         record = SignInAuditRecord(
             trace_id=current_request_id(),
@@ -476,7 +455,7 @@ def build_demo_agent_signin_router(
     )
     def create_demo_agent_session(body: DemoSignInRequest, request: Request) -> SessionResponse:
         """Issue an agent demo session for a known persona, or refuse (ADR-17, ADR-18)."""
-        address = _client_address(request)
+        address = client_address(request)
         address_hash = _address_hash(address)
         persona = personas.agent_by_slug(body.persona)
         if persona is None:
@@ -586,7 +565,7 @@ def build_demo_persona_directory_router(
     @router.get(DEMO_PERSONAS_PATH)
     def list_demo_personas(request: Request) -> DemoPersonaDirectory:
         """List the personas the enabled broker(s) will accept, never who they map to."""
-        wait = attempt_limiter.begin_attempt(_client_address(request))
+        wait = attempt_limiter.begin_attempt(client_address(request))
         if wait:
             logger.warning("demo_persona_directory_limited request_id=%s", current_request_id())
             raise _rate_limited(wait)
