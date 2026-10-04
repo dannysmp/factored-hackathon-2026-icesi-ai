@@ -1,8 +1,8 @@
 # Limitations and remaining work
 
-This is the honest account of what this system does and does not do today, and what is still to
-be built before release. It grows as work lands; a status here is accurate as of the commit that
-carries it, not a promise about a later one.
+This is the honest account of what this system does and does not do today. A status here is
+accurate as of the commit that carries it, not a promise about a later one. Items that depend on
+results still to come say so and name the command that completes them.
 
 ## Data limitations
 
@@ -14,15 +14,15 @@ carries it, not a promise about a later one.
   Portuguese, Spanish and English, flags unnatural or ambiguous phrasing for the team to correct
   instead. It never assigns the labels the system is scored against. This is a real limitation,
   not a formality, and is disclosed next to every Portuguese result, not only here.
-- **The repeat-complainer signal is not yet wired to a live data source.** The rule itself (a
-  customer is a repeat complainer when their latest complaint on or before the reference date
-  carries the flag) is defined and is exercised by scripted golden-set cases, but the live
-  scoped-read that would compute it for a real conversation currently always reports "not a
-  repeat complainer." A conversation that should escalate on this signal will not, until that
-  wiring lands.
-- **Filing windows are counted on the bank's own operating date** (America/Bogota), not on each
-  customer's local calendar date. A customer in a different time zone could see a slightly
-  different day count than they would expect near a deadline.
+- **The repeat-complainer signal is the seed's point-in-time flag, not a live recomputation.** The
+  rule (a customer is a repeat complainer when their latest complaint on or before the reference
+  date carries the flag) is applied by the policy engine, and the scoped read supplies it from the
+  customer's own stored flag. The service never re-derives it from the complaints table, so a
+  complaint filed after the seed was built does not change it.
+- **There is a single operating time zone.** Filing windows and every reference date are counted
+  on the bank's own operating date (America/Bogota, UTC-5), not on each customer's local calendar
+  date, and no per-customer time zone is stored or applied. A customer in a different time zone
+  could see a slightly different day count than they would expect near a deadline.
 - **The evaluation golden set's language mix, category mix and utterances are team-defined**, not
   sampled from real customer behavior, and its target automation rate is offline and not
   representative of real customers. Every case states its own provenance (observed, team-generated
@@ -35,46 +35,47 @@ carries it, not a promise about a later one.
   found none: the model card records this as a negative result and keeps routing switched off. A
   fraud claim still always reaches a person regardless of this signal, since that rule does not
   depend on the risk score.
-- **The intent classifier's labeled evaluation set is only just becoming available.** The primary
-  evaluation — per-language accuracy and a confusion matrix against that labeled set — stays in
-  scope; a secondary keyword-baseline comparison point is descoped (see Not attempted).
+- **There is no labeled intent set and no intent-set comparison.** Building a labeled set of
+  utterances, scoring the language model's intent understanding against it per language, and
+  comparing it with a keyword baseline or a zero-shot multilingual classifier are all out of
+  scope. Intent understanding is measured only through the end-to-end golden-set evaluation, which
+  scores outcomes, not intent labels; there is no per-language intent accuracy or confusion matrix.
+  See Not attempted.
 
 ## Conversation and evaluation
 
-- **The evaluation harness can now run a case, not only define and score one, and every piece a
-  full report needs now exists.** The golden set (135 scripted cases across every category the
-  evaluation plan names), the scoring formulas, an independent oracle that recomputes the policy
-  decision for a stored case row, the runner, both baseline systems (B0, B1), the failure
-  injector, the LLM judge and its agreement-computation code, and the report generator
-  (`reports/evaluation.md`) all exist. The judge's agreement code is tested today against a
-  disclosed synthetic placeholder sample (`evals/golden/judge_validation_sample.py`,
-  `PROVENANCE = "team_generated_synthetic"`); the real ≥50-case human-rated sample two raters
-  return is due 2026-10-04 and has not landed. A 16-case adversarial slice (prompt injection, poisoned
-  retrieval, cross-customer access) runs on every change, against the proposed system and B0,
-  over synthetic seed data only, and blocks merge on any case turning unsafe. The full 32-case
-  adversarial set can now also run outside CI: a loader (`app.persistence.load_eval_bank`)
-  combines the operational seed with the evaluation scenario bank, so every case that needs a
-  deliberately inconsistent transaction (an orphan reference, a null field, an injected merchant
-  name, an unconvertible amount) resolves against real, loaded data, not only the smoke slice's
-  synthetic subset. The first full `make evaluate` run against the complete 135-case golden set
-  has now executed, scoring all three systems against the live model; its safe/unsafe outcome
-  classification is read directly off each run's own recorded outcome and is final, unaffected by
-  the human-rated judge-validation sample still due. The judge's own quality and correctness
-  scores stay provisional until that sample lands. The recorded report artifact itself
-  (`reports/evaluation.md`) is still pending write-up.
-- **One case in the completed full evaluation run produced a single, non-reproducible unsafe
-  outcome.** The English fraud-claim case in the human-required category turned unsafe in one of
-  three repeated runs against the proposed system, in the handoff-ticket path the case exercises.
-  Twenty further live repeats of the same case produced zero unsafe outcomes and found no
-  structural defect anywhere in that path. This is recorded as a disclosed, non-reproducible
-  finding, not a fixed defect: nothing in the code changed, because nothing reproducible was
-  found to fix, and a rare, non-reproducible finding from a real evaluation run is a fact worth
-  stating plainly rather than treating as resolved once no cause is found.
-- **The human-agent console is now live, read-only.** The queue and ticket-detail screens draw
-  from real backend data (`LiveQueueClient`, `LiveTicketDetailClient`), and `app.main.create_app`
-  registers the console's routes whenever the agent demo broker is enabled — the same flag that
-  gates whether an agent token can ever be issued in the first place. It remains a viewer: no
-  write action exists yet, matching its own design (ADR-17).
+- **The evaluation covers 135 scripted cases, three systems and a 32-case adversarial set.** The
+  golden set, the scoring formulas, an independent oracle that recomputes the policy decision for
+  a stored case row, the runner, both baselines (B0, B1), the failure injector, the language-model
+  judge and the report generator all exist, and `reports/evaluation.md` records the full run
+  against the live model. Its safe/unsafe classification is read directly off each run's recorded
+  outcome. A 16-case adversarial slice (prompt injection, poisoned retrieval, cross-customer
+  access) runs on every change against the proposed system and B0 over synthetic seed data, and
+  blocks merge on any case turning unsafe; the full adversarial set runs outside CI against the
+  operational seed combined with the evaluation scenario bank (`app.persistence.load_eval_bank`).
+- **The judge's agreement with human raters is not yet measured on a real sample.** The agreement
+  code is tested against a disclosed synthetic placeholder
+  (`evals/golden/judge_validation_sample.py`, `PROVENANCE = "team_generated_synthetic"`), and
+  section 7 of `reports/evaluation.md` states that no agreement rate is reported. The judge's
+  quality and correctness scores stay provisional until two raters return the 50-case sheets.
+  Running `make judge-validation RATER1=<sheet> RATER2=<sheet>` scores the same cases with the real
+  judge and patches that section and the matching limitations line of that report with rater-to-rater and
+  rater-to-judge agreement per dimension; this bullet is to be rewritten with those figures,
+  and with any dimension the judge is demoted on, at the same time. The written analysis of where
+  the raters and the judge disagree is a person's job and is not generated.
+- **Case `hr-fraud-en-01` produced one non-reproducible unsafe outcome.** This is the English
+  fraud claim in the human-required category. In one of the three repeats of the full evaluation
+  run it turned unsafe against the proposed system, in the handoff-ticket path the case exercises.
+  Twenty further live repeats of the same case produced no unsafe outcome and found no structural
+  defect anywhere in that path, so no cause was identified and nothing in the code changed for it.
+  It is disclosed as a finding that did not reproduce, not as a fixed defect. The committed
+  `reports/evaluation.md` records no unsafe outcome in its own three runs, so that report does
+  not show it.
+- **The human-agent console is a viewer; its write actions have no screen.** The queue and
+  ticket-detail screens draw from real backend data. The backend also exposes four narrow agent
+  writes (claim, release, note and status change under `/v1/agent/tickets/{ticket_ref}`), each
+  scoped to the signed-in agent and audited. The console's interface never calls them, matching
+  its own design (ADR-17), so those actions are reachable only through the API.
 - **Structured logging runs across the service and every CLI entrypoint, including a configuration
   failure at start-up.** Every line carries a stable event name, the request's trace id and, once
   authenticated, its session id, with any card-shaped digit run redacted before the line is
@@ -85,9 +86,10 @@ carries it, not a promise about a later one.
 
 ## Deployment
 
-- **The deployment path has been exercised once, end to end, against a minimal build** (the health
-  endpoint and the static page only, no sign-in enabled) to prove the pipeline itself works. A full
-  functional deployment, run twice from a clean account before release, has not happened yet.
+- **A full deployment from an empty account is recorded only once its run records are filled.**
+  The procedure is written in [`infra/deployment-runbook.md`](../infra/deployment-runbook.md), and
+  each run is recorded in the run table at its end. Until both clean-account runs are recorded, the
+  complete stack with both sign-ins has not been shown to reproduce from nothing.
 - **Both demonstration sign-ins are gated by an access code kept out of the repository.** Hiding
   the code is not, by itself, a security boundary; it is a demonstration convenience layered on
   top of real authentication and authorization, which are enforced regardless of whether the code
@@ -125,12 +127,7 @@ number's digits are masked before that same request is sent.
 
 ## Not attempted
 
-A zero-shot multilingual intent classifier comparison was considered as further work if time
-allowed once every other item above is closed. It has not been started, and is recorded here as
-descoped work, not a missed requirement.
-
-A keyword-rule baseline for intent classification, compared against the labeled intent set as a
-secondary reference point, was descoped the same way: the primary evaluation it would have stood
-beside — per-language accuracy and a confusion matrix for the intent classifier itself — is
-unaffected and stays in scope. Nothing downstream depends on the keyword baseline, and it is
-recorded here as descoped work, not a missed requirement.
+- **A labeled intent set and everything compared against it.** The set itself, the per-language
+  intent accuracy and confusion matrix, the keyword-rule baseline and the pretrained zero-shot
+  multilingual classifier were descoped together. Nothing downstream depends on them.
+- **Write actions in the console's interface.** See Conversation and evaluation.

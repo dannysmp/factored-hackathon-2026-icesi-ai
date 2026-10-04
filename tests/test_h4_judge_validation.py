@@ -265,7 +265,7 @@ def _minimal_report(**overrides: Any) -> EvaluationReport:
     return EvaluationReport(**{**defaults, **overrides})
 
 
-def test_apply_real_judge_validation_replaces_section_7_and_drops_the_stale_bullet() -> None:
+def test_apply_real_judge_validation_replaces_section_8_and_drops_the_stale_bullet() -> None:
     before_report = _minimal_report()
     before_text = render_markdown(before_report)
     assert "Pending H4" in before_text
@@ -303,15 +303,15 @@ def test_apply_real_judge_validation_raises_on_an_unrecognized_report_shape() ->
         apply_real_judge_validation("not a real report at all", agreement=())
 
 
-def test_apply_real_judge_validation_refuses_section_8_missing_or_out_of_order() -> None:
+def test_apply_real_judge_validation_refuses_section_9_missing_or_out_of_order() -> None:
     text = render_markdown(_minimal_report())
-    without_8 = text.replace("## 8. Learned components", "## Learned components")
+    without_9 = text.replace("## 9. Learned components", "## Learned components")
     with pytest.raises(ValueError, match="cannot recognize"):
-        apply_real_judge_validation(without_8, agreement=())
+        apply_real_judge_validation(without_9, agreement=())
 
-    moved = text.replace("\n\n## 8. Learned components", "\n\n## 8b. Learned components")
+    moved = text.replace("\n\n## 9. Learned components", "\n\n## 9b. Learned components")
     out_of_order = moved.replace(
-        "## 7. Judge validation", "## 8. Learned components\n\nx\n\n## 7. Judge validation"
+        "## 8. Judge validation", "## 9. Learned components\n\nx\n\n## 8. Judge validation"
     )
     with pytest.raises(ValueError, match="cannot recognize"):
         apply_real_judge_validation(out_of_order, agreement=())
@@ -466,11 +466,16 @@ def test_regenerate_report_patches_the_file_logs_agreement_and_calls_the_judge_p
         _minimal_report(judge_validation=agreement, judge_validation_provenance="human")
     )
     assert report.read_text(encoding="utf-8") == expected
+    language_quality = {row.dimension: row for row in agreement}["language_quality"]
+    # Judge scores 2, 1, 2; rater 1 scored 2, 2, 2 (agreement 2/3); rater 2 scored 2, 1, 2 (1.0).
+    assert language_quality.rater1_to_judge == pytest.approx(2 / 3)
+    assert language_quality.rater2_to_judge == pytest.approx(1.0)
     assert len(llm.requests) == 3
     assert not list(tmp_path.glob(".evaluation.md.*"))  # no temporary file left behind
     assert "judge_validation_report_updated" in caplog.text
     assert "dimension=language_quality" in caplog.text
     assert "demoted=True" in caplog.text
+    assert "rater1_to_judge=0.6666666666666666 rater2_to_judge=1.0" in caplog.text
     assert "CASE-001" not in caplog.text  # no sheet text in the logs
     assert "No reconozco" not in caplog.text
 

@@ -22,6 +22,8 @@ Design Principles
 - One call, one forced tool: ``tool_choice`` names the tool, so the model cannot answer in free
   text instead of calling it.
 - The timeout is per-call, from the request, never the SDK's default.
+- ``temperature`` reaches the wire only for a model whose API accepts it; for a model that rejects
+  an explicit value, the parameter is omitted rather than sent and refused.
 - Every failure the provider itself can raise splits three ways, because a future caller adding
   retries needs to tell them apart: a reason that has nothing to do with the request — a timeout, a
   connection error, a rate limit, a server error — becomes ``LlmUnavailable`` (safe to retry); the
@@ -75,6 +77,16 @@ _NON_RETRYABLE_STATUS_ERRORS = (
     anthropic.RequestTooLargeError,
 )
 
+# Anthropic's own wire contract for `temperature` varies by model generation; some newer models
+# reject it as an explicit parameter (400: "'temperature' is deprecated for this model"). Keyed to
+# exactly app.config.ALLOWED_MODELS, the same discipline as app.llm.pricing's own price table: a
+# model reaching complete() that is not registered here is a configuration drift between the two
+# caught by a parity test, not a silent default either way.
+_SUPPORTS_TEMPERATURE: dict[str, bool] = {
+    "claude-haiku-4-5-20251001": True,
+    "claude-sonnet-5": False,
+}
+
 
 class AnthropicLlmClient:
     """``LlmClient`` backed by the Anthropic API."""
@@ -108,6 +120,11 @@ class AnthropicLlmClient:
             JSON object.
         """
         started = time.monotonic()
+        # `anthropic.omit` tells the SDK to omit the parameter from the wire call entirely,
+        # rather than sending an explicit value the model's own API contract may reject.
+        temperature = (
+            request.temperature if _SUPPORTS_TEMPERATURE[request.model] else anthropic.omit
+        )
         try:
             response = self._client.messages.create(
                 model=request.model,
@@ -122,7 +139,7 @@ class AnthropicLlmClient:
                 ],
                 tool_choice={"type": "tool", "name": request.tool.name},
                 max_tokens=request.max_tokens,
-                temperature=request.temperature,
+                temperature=temperature,
                 timeout=request.timeout_seconds,
             )
         except _RETRYABLE_PROVIDER_ERRORS as error:

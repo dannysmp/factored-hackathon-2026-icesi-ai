@@ -56,6 +56,15 @@ FROM python:3.11-slim AS runtime
 RUN python3 -m pip uninstall --yes pip setuptools wheel \
   && rm -rf /usr/local/lib/python3.11/ensurepip
 
+# The base image is rebuilt on its own schedule and can lag a fixed Debian security update by days;
+# upgrading just the flagged libraries (PCRE2 and OpenSSL) from the distribution's own repository
+# closes that window without a full `apt-get upgrade`, which would also pull unrelated packages into
+# the image. Once a rebuilt base image carries the fixed versions this is a no-op.
+RUN apt-get update \
+  && apt-get install --yes --no-install-recommends --only-upgrade \
+    libpcre2-8-0 libssl3t64 openssl openssl-provider-legacy \
+  && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --create-home --shell /usr/sbin/nologin app
 WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv .venv
