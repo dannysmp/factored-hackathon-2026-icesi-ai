@@ -13,9 +13,15 @@ Every command below is written so that a secret value appears only in the mainta
 
 ## Before starting
 
-- The AWS profile `transaction-disputes` is signed in: `aws sso login --profile transaction-disputes`. The scripts refuse any other profile or region.
+- The AWS profile `transaction-disputes` is signed in: `aws sso login --profile transaction-disputes`. The scripts refuse any other profile or region, so the shell must not hold a different `AWS_PROFILE` or `AWS_REGION`. Every `aws` command below also relies on these, so set them once in the shell that runs this document:
+
+  ```sh
+  export AWS_PROFILE=transaction-disputes AWS_REGION=us-east-1
+  ```
+
+- The GitHub CLI is signed in to this repository (`gh auth status`): script `01` and the deploy commands use it.
 - The GitHub Actions repository secret `AWS_ACCOUNT_ID` holds the target account's numeric ID.
-- The operational seed is built on this machine with the data provider's own profile (`make pipeline && make seed`), so `data/gold/ops_seed/` exists. It is never built in CI or on the host.
+- The operational seed is built on this machine from the raw data already in `data/raw` (`make pipeline && make seed`, which need no AWS profile), so `data/gold/ops_seed/` exists. It is never built in CI or on the host.
 - The repository is on `main`, up to date, and CI is green on the commit that will be deployed.
 
 ## 1. Provision the account
@@ -59,7 +65,7 @@ openssl rand -hex 32                   | infra/scripts/put-secret.sh agent-sessi
 
 Constraints the backend enforces at start-up, so a mistake here fails the deployment rather than weakening it:
 
-- Both access codes are at least 16 characters. The pipeline above yields about 30.
+- Both access codes are at least 16 characters. The pipeline above yields about 30. `agent-session-signing-key` is at least 32 characters; the 64 hexadecimal characters above satisfy it.
 - `demo-signin-access-code` differs from `demo-agent-access-code`, and `agent-session-signing-key` differs from `session-signing-key`. Generate each independently; never copy one value into two parameters.
 - The customer sign-in turns on when `demo-signin-access-code` exists. The agent sign-in turns on only when both `demo-agent-access-code` and `agent-session-signing-key` exist.
 
@@ -71,47 +77,65 @@ For a deployment meant to persist, turn the teardown off:
 
 ```sh
 gh workflow run deploy.yml --ref main -f teardown_after=false -f deploy_metabase=false
-gh run watch "$(gh run list --workflow deploy.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
+sleep 10
+gh run list --workflow deploy.yml --limit 3
+```
+
+Confirm the newest row is the run just started (a run listed immediately after dispatch can still be the previous one), then follow it; `--exit-status` makes the command fail when the run fails:
+
+```sh
+run_id="$(gh run list --workflow deploy.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
+gh run watch "$run_id" --exit-status
 ```
 
 Set `deploy_metabase=true` only when the Metabase parameters listed in `README.md` exist. For a clean-account reproduction that is then removed, leave `teardown_after` at its default (on).
 
 The run builds and scans both images, pushes them, brings the stack up over SSM, seeds the database, and runs the smoke test and the hardening check. Any failed step fails the run.
 
-The host name is public (`<address-with-dashes>.sslip.io`). It appears in the run log where the smoke test step is echoed with it:
+The host name is public (`<address-with-dashes>.sslip.io`). It appears in the run log where the smoke test step is echoed with it (same `run_id` as above):
 
 ```sh
-run_id="$(gh run list --workflow deploy.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
 gh run view "$run_id" --log | grep -o '[0-9]\{1,3\}-[0-9]\{1,3\}-[0-9]\{1,3\}-[0-9]\{1,3\}\.sslip\.io' | head -1
 ```
 
 ## 5. Verify
 
-1. **The pipeline's own checks passed**: the run finished green, including the smoke test and both hardening checks.
-2. **Sign-in state, without values.** `curl -s https://<host>/v1/auth/demo-personas` answers `200` only while at least one sign-in is on, and lists each persona with its `audience`. A deployment carrying both sign-ins lists personas of audience `customer` and of audience `agent`. A `404`, or a list missing one audience, means the matching parameters from step 3 were missing when the stack started: set them and redeploy. The response contains no secret.
-3. **Each code works.** The access code is read from SSM inside the command and handed to `curl` through its configuration on standard input, so it never appears in the process listing, the shell history or the output. Only the HTTP status is printed. Substitute a persona slug of each audience from the list in check 2:
+Which checks apply depends on the mode. With `teardown_after` left on, the host no longer exists once the run ends, so the only evidence is the green run: check 1. Checks 2 to 4 need a deployment that persists (`teardown_after=false`).
+
+1. **The pipeline's own checks passed**: the run finished green, including the smoke test and the hardening check. When `deploy_metabase` was on, the run also includes the dashboard smoke test and a second hardening check.
+2. **Sign-in state, without values.** The first command prints the response body and then the HTTP status:
 
    ```sh
-   code="$(aws ssm get-parameter --name /transaction-disputes/prod/demo-signin-access-code --with-decryption --query Parameter.Value --output text)"
-   printf 'header = "X-Demo-Access-Code: %s"\n' "$code" | curl -s -o /dev/null -w '%{http_code}\n' -K - \
-     -X POST -H 'Content-Type: application/json' -d '{"persona":"<customer-slug>"}' \
-     "https://<host>/v1/auth/demo-sessions"
+   curl -s -w '\n%{http_code}\n' "https://<host>/v1/auth/demo-personas"
+   ```
+
+   It answers `200` only while at least one sign-in is on, and lists each persona with its `audience`. A deployment carrying both sign-ins lists personas of audience `customer` and of audience `agent`. With both sign-ins off the backend answers `401` (`session_missing`), and a list missing one audience means that sign-in's parameters from step 3 were missing when the stack started: set them and redeploy. The response contains no secret.
+3. **Each code works.** The access code is read from SSM inside the command and handed to `curl` through its configuration on standard input, so it never appears in the process listing, the shell history or the output. The command sends nothing unless the read returned a value, and prints only the HTTP status. Substitute a persona slug from the list in check 2:
+
+   ```sh
+   code="$(aws ssm get-parameter --name /transaction-disputes/prod/demo-signin-access-code --with-decryption --query Parameter.Value --output text)" \
+     && [ -n "$code" ] \
+     && printf 'header = "X-Demo-Access-Code: %s"\n' "$code" | curl -s -o /dev/null -w '%{http_code}\n' -K - \
+       -X POST -H 'Content-Type: application/json' -d '{"persona":"<customer-slug>"}' \
+       "https://<host>/v1/auth/demo-sessions"
    unset code
    ```
 
-   Expect `201`. Repeat with `demo-agent-access-code`, an agent persona slug and `/v1/auth/demo-agent-sessions`. Do not probe with a wrong code repeatedly: wrong codes count against the caller's address and are rate-limited.
-4. **The web page** at `https://<host>/` loads over a valid certificate in a browser, and a customer sign-in with the code reaches the chat.
+   Expect `201`. Repeat with `demo-agent-access-code`, an agent persona slug and `/v1/auth/demo-agent-sessions`. Each success issues a real session that holds that persona (one session per persona, for 30 minutes for a customer and 60 for an agent), so use a different persona for each of the two codes and for any later manual sign-in, or the second call answers `429`. Do not probe with a wrong code repeatedly: wrong codes count against the caller's address and are rate-limited.
+4. **The web page** at `https://<host>/` loads over a valid certificate in a browser, and a customer sign-in with the code reaches the chat (with a persona not already used in check 3).
 5. Record the run in the table at the end of this document.
 
 ## 6. Read the codes for the release message
 
-This is the only step in which a value leaves AWS. Copy it straight to the clipboard so it is never printed, paste it into the message, then clear the clipboard. On macOS:
+This is the only step in which a value leaves AWS. Copy it straight to the clipboard so it is never printed, paste it into the message, then clear the clipboard. The subshell fails loudly if the read fails, instead of leaving an empty clipboard. On macOS:
 
 ```sh
-aws ssm get-parameter --name /transaction-disputes/prod/demo-signin-access-code --with-decryption --query Parameter.Value --output text | tr -d '\n' | pbcopy
+( set -o pipefail; aws ssm get-parameter --name /transaction-disputes/prod/demo-signin-access-code --with-decryption --query Parameter.Value --output text | tr -d '\n' | pbcopy ) || echo "read failed: nothing was copied"
 # paste into the message, then:
 pbcopy </dev/null
 ```
+
+The clipboard is not private: a clipboard manager may keep its history, and Universal Clipboard can copy the value to other devices signed in to the same account. Quit any clipboard manager and turn Handoff off for the duration, or clear the clipboard immediately after pasting.
 
 Repeat for `demo-agent-access-code`. Send each code only in the release message itself; do not store it in a document, a ticket or the repository.
 
