@@ -1113,6 +1113,75 @@ def test_a_new_dispute_after_a_case_is_filed_starts_from_its_own_transaction(
     assert dialogue.port.create_calls == 1
 
 
+def test_a_new_dispute_with_another_reason_after_a_case_is_filed_is_evaluated_under_that_reason(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+
+    presented = dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.DUPLICATE_CHARGE,
+        )
+    )
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    confirm = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert confirm.next_expected is Slot.CONFIRMATION
+    assert "cargo duplicado" in confirm.reply
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.category is DisputeCategory.DUPLICATE_CHARGE
+    assert dialogue.port.create_calls == 1
+
+
+def test_starting_over_for_the_filed_transaction_is_refused_by_the_policy_not_filed_again(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+    dialogue.port.evaluate_result = _decision(Outcome.INELIGIBLE, ReasonCode.DUPLICATE_OPEN_CASE)
+
+    presented = dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    refused = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert refused.next_expected is None
+    assert "Ya existe una disputa abierta" in refused.reply
+    assert dialogue.port.create_calls == 1
+
+
+def test_a_policy_question_after_a_case_is_filed_is_declined_when_its_figure_needs_a_reason(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+
+    reply = dialogue.say(
+        _plain(NluIntent.POLICY_QUESTION, policy_query="cuanto tiempo tienen para responder")
+    )
+
+    assert "No tengo esa informacion" in reply.reply or "No tengo esa información" in reply.reply
+    assert "asesor" in reply.reply
+    assert dialogue.port.create_calls == 1
+
+
+def test_a_retried_turn_after_a_case_is_filed_replays_the_filing_result(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+    first = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-late")
+    assert "D-1" not in first.reply
+
+    retried = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-late")
+
+    assert "D-1" in retried.reply
+    assert dialogue.port.create_calls == 1
+
+
 def test_the_status_of_a_filed_case_can_still_be_asked_for(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:

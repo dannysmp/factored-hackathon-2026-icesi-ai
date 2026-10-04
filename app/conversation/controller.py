@@ -91,9 +91,12 @@ unrelated reply itself files nothing; a case is filed only once the policy's con
 requirement for the category is met. Two or more matches ask for more detail rather than
 presenting a numbered list — the same v1 scope decision already made for slot collection, since
 neither a pending-candidate field nor a multi-candidate list exists in ``DialogueState`` yet. A
-session identifies and evaluates at most one transaction/category pair: nothing here resets
-``selected_ref``/``category`` once set, so a second, different dispute needs a new session. The
-handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name yet.
+session works on one transaction and reason at a time: the selected pair is kept from selection
+until a case is filed, which clears it so the customer's next dispute starts from its own
+transaction and reason. A dispute that ends without a case (cancelled, ineligible, duplicate)
+keeps the pair. A policy question asked after a filing is answered without a reason, so a figure
+that depends on one is declined with an offer of an advisor. The handoff packet's ``first_name``
+is a placeholder: no tool exposes the customer's first name yet.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
@@ -1147,7 +1150,9 @@ class DialogueController:
         rendered directly from its stored ticket; a pending clarification is a pure re-render.
         The ticket takes precedence over a case when the session is handed off or filed no case,
         so a session holding both replays its handoff, which is the latest outcome but not
-        necessarily the one the replayed turn id originally produced.
+        necessarily the one the replayed turn id originally produced. The same holds for a
+        session with a filed case: a retried turn id that followed the filing, and answered
+        something other than the filing, replays the filing result.
         ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
         cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
         clears the pending slot and leaves no case or ticket behind, so it can never be confused
