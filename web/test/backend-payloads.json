@@ -1,0 +1,189 @@
+{
+  "DemoPersonaDirectory": {
+    "personas": [
+      {
+        "audience": "customer",
+        "display_name": "Ana",
+        "language": "es",
+        "slug": "ana"
+      },
+      {
+        "audience": "agent",
+        "display_name": "Beatriz",
+        "language": "pt",
+        "slug": "agent-beatriz"
+      }
+    ]
+  },
+  "QueueResponse": {
+    "items": [
+      {
+        "age_days": 0,
+        "category": "unrecognized_charge",
+        "claimed_by": null,
+        "created_at": "2026-06-18T14:05:00Z",
+        "language": "pt",
+        "priority": true,
+        "promised_contact_by": "2026-06-19",
+        "reference_date": "2026-06-18",
+        "status": "open",
+        "ticket_ref": "T-20260618-AAAAAAAA",
+        "trigger": "fraud_report"
+      },
+      {
+        "age_days": 0,
+        "category": "unrecognized_charge",
+        "claimed_by": "AGT-1",
+        "created_at": "2026-06-18T14:05:00Z",
+        "language": "pt",
+        "priority": false,
+        "promised_contact_by": "2026-06-19",
+        "reference_date": "2026-06-18",
+        "status": "in_review",
+        "ticket_ref": "T-20260618-BBBBBBBB",
+        "trigger": "low_understanding"
+      }
+    ],
+    "reference_date": "2026-06-18",
+    "reference_date_origin": "setting"
+  },
+  "SessionResponse": {
+    "access_token": "token",
+    "expires_at": "2026-06-18T14:05:00Z",
+    "expires_in": 1800,
+    "token_type": "Bearer"
+  },
+  "TicketDetail": {
+    "item": {
+      "age_days": 0,
+      "category": "unrecognized_charge",
+      "claimed_by": "AGT-1",
+      "created_at": "2026-06-18T14:05:00Z",
+      "language": "pt",
+      "priority": false,
+      "promised_contact_by": "2026-06-19",
+      "reference_date": "2026-06-18",
+      "status": "in_review",
+      "ticket_ref": "T-20260618-BBBBBBBB",
+      "trigger": "low_understanding"
+    },
+    "notes": [
+      {
+        "agent_id": "AGT-1",
+        "created_at": "2026-06-18T14:05:00Z",
+        "note_text": "Called the customer back."
+      }
+    ],
+    "packet": {
+      "actions": [
+        {
+          "action": "evaluate_dispute",
+          "result": "escalate"
+        }
+      ],
+      "attempted_action": {
+        "action": "create_dispute_case",
+        "result": "not_attempted"
+      },
+      "category": "unrecognized_charge",
+      "created_at": "2026-06-18T14:05:00Z",
+      "customer": {
+        "first_name": "Ana",
+        "masked_id": "****34"
+      },
+      "evidence": {
+        "policy_version": "2",
+        "reason_codes": [
+          "escalate_low_nlu_confidence"
+        ],
+        "risk": {
+          "base_rate": 0.05,
+          "interval_high": 0.4,
+          "interval_low": 0.2,
+          "score": 0.31,
+          "threshold": 0.5
+        },
+        "sources": [
+          {
+            "corpus_version": "1",
+            "section_id": "window.30d",
+            "titles": [
+              {
+                "lang": "es",
+                "text": "Plazo"
+              },
+              {
+                "lang": "pt",
+                "text": "Prazo"
+              },
+              {
+                "lang": "en",
+                "text": "Window"
+              }
+            ]
+          }
+        ]
+      },
+      "existing_case_number": "D-1",
+      "language": "pt",
+      "needs_language_routing": true,
+      "open_questions": [
+        {
+          "attempts": 2,
+          "slot": "reason"
+        }
+      ],
+      "reference_date": "2026-06-18",
+      "request_summary": "The customer reported a charge they do not recognize.",
+      "ticket_ref": "T-20260618-BBBBBBBB",
+      "trigger": "low_understanding",
+      "verified_facts": [
+        {
+          "amount": {
+            "amount": "250.00",
+            "currency": "USD"
+          },
+          "merchant": "Farmacia Salud",
+          "occurred_on": "2026-06-18",
+          "product": {
+            "last4": "1234",
+            "name": "Visa Gold"
+          },
+          "ref": "TX-1",
+          "status": "Approved"
+        }
+      ]
+    },
+    "timeline": [
+      {
+        "intent": "handoff",
+        "occurred_at": "2026-06-18T14:05:00Z",
+        "policy_version": "2",
+        "reason_code": "escalate_low_nlu_confidence",
+        "render_mode": "template",
+        "state_after": "handed_off",
+        "state_before": "clarifying",
+        "trace_id": "trace-1"
+      }
+    ]
+  },
+  "TurnResponse": {
+    "choices": [
+      {
+        "label": "Amazon",
+        "number": 1
+      }
+    ],
+    "contract_version": "1",
+    "conversation_id": "conv-1",
+    "demo_notice": "Demostración.",
+    "end_session": false,
+    "handoff_ticket": "T-20260618-AAAAAAAA",
+    "lang": "es",
+    "next_expected": "transaction_choice",
+    "reference_date_line": "Fecha de referencia: 18 de junio de 2026.",
+    "reply": "¿Es esta la transacción?",
+    "state_version": 2,
+    "turn_id": "turn-0001"
+  }
+}
