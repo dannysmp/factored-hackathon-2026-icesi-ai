@@ -462,6 +462,7 @@ def _controller_factory(
             outbox=outbox,
             domain_date=calendar.reference_date,
             now=clock,
+            max_turns=settings.dialogue_max_turns,
             model_renderer=model_renderer,
         )
 
