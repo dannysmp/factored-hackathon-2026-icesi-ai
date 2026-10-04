@@ -9,6 +9,7 @@ SDK object this adapter actually touches (``.messages.create(...)``), not be one
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import time
 from types import SimpleNamespace
@@ -19,7 +20,8 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from app.llm.anthropic_client import AnthropicLlmClient
+from app.config import ALLOWED_MODELS
+from app.llm.anthropic_client import _SUPPORTS_TEMPERATURE, AnthropicLlmClient
 from app.llm.client import (
     CompletionRequest,
     LlmOutputInvalid,
@@ -129,6 +131,30 @@ def test_the_call_forces_the_requested_tool_and_carries_the_timeout() -> None:
     assert call["timeout"] == _REQUEST.timeout_seconds
     assert call["temperature"] == 0.0
     assert call["messages"] == [{"role": "user", "content": "hola"}]
+
+
+def test_every_allowed_model_declares_whether_it_accepts_temperature() -> None:
+    """A model reaching the config allow-list without an entry here would fail every call with a
+    ``KeyError`` instead of a decided wire contract."""
+    assert set(_SUPPORTS_TEMPERATURE) == set(ALLOWED_MODELS)
+
+
+def test_a_model_that_rejects_temperature_gets_no_temperature_on_the_wire() -> None:
+    stub = _StubAnthropic(_tool_use_response({"intent": "farewell", "confidence": 0.9}))
+    client = AnthropicLlmClient(SecretStr("test-key"), client=stub)  # type: ignore[arg-type]
+
+    client.complete(dataclasses.replace(_REQUEST, model="claude-sonnet-5"))
+
+    assert stub.messages.calls[0]["temperature"] is anthropic.omit
+
+
+def test_a_model_that_accepts_temperature_gets_the_requested_value() -> None:
+    stub = _StubAnthropic(_tool_use_response({"intent": "farewell", "confidence": 0.9}))
+    client = AnthropicLlmClient(SecretStr("test-key"), client=stub)  # type: ignore[arg-type]
+
+    client.complete(dataclasses.replace(_REQUEST, temperature=0.3))
+
+    assert stub.messages.calls[0]["temperature"] == 0.3
 
 
 def test_a_response_that_does_not_call_the_tool_is_output_invalid() -> None:

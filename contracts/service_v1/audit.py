@@ -71,7 +71,10 @@ class AuditAction(StrEnum):
     handoff packet or a conversation's audit timeline is a customer-data access like any other
     (ADR-17), so it is audited under the same fail-closed rule — ``customer_id`` names the
     customer whose packet or timeline was opened, and ``session_id`` the agent's own session,
-    never a customer one.
+    never a customer one. ``TICKET_CLAIMED``, ``TICKET_RELEASED``, ``TICKET_NOTE_ADDED`` and
+    ``CASE_STATUS_SET`` are the narrow agent writes (ADR-17): each carries ``agent_id`` the
+    same way the two read actions above do, since a session alone cannot answer who made the
+    write once it expires.
     """
 
     TRANSACTIONS_LISTED = "transactions_listed"
@@ -86,6 +89,10 @@ class AuditAction(StrEnum):
     CASE_CREATION_REPLAYED = "case_creation_replayed"
     PACKET_VIEWED = "packet_viewed"
     TIMELINE_VIEWED = "timeline_viewed"
+    TICKET_CLAIMED = "ticket_claimed"
+    TICKET_RELEASED = "ticket_released"
+    TICKET_NOTE_ADDED = "ticket_note_added"
+    CASE_STATUS_SET = "case_status_set"
 
 
 class AuditRecord(ContractModel):

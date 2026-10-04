@@ -64,8 +64,8 @@ Narrate each in one sentence, matching `plan/docs/architecture.md`:
   versioned corpus with a relevance floor, and a question below that floor gets a plain "I don't
   have that" and a person, never a guess.
 - **ADR-17, the console as a read-only viewer:** the human-agent console shows cases and audit
-  timelines across customers as its own authorization domain, and ships as a viewer first, with
-  narrow audited writes as the next scheduled step, not as a missing feature.
+  timelines across customers as its own authorization domain, and ships as a viewer first; its
+  narrow audited writes exist in the API and have no screen, by that design, not as a missing feature.
 
 ## Closing
 

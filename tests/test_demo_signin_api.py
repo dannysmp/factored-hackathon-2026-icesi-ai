@@ -24,7 +24,15 @@ from app.domain.calendar import DomainCalendar
 from app.main import AgentConsolePorts, create_app
 from app.security.demo_personas import load_personas
 from app.security.signin_audit import SignInAuditRecord
-from contracts.service_v1.console import QueueFilters, QueueResponse, TicketDetail
+from contracts.service_v1.cases import CaseStatus
+from contracts.service_v1.console import (
+    CaseStatusResult,
+    Note,
+    QueueFilters,
+    QueueItem,
+    QueueResponse,
+    TicketDetail,
+)
 
 START = datetime(2026, 9, 26, 12, 0, 0, tzinfo=UTC)
 ACCESS_CODE = "demo-access-code-0123456789"
@@ -48,6 +56,21 @@ customers:
     customer_id: CUST-2
     language: pt
     scenario: repeat_complainer
+  - slug: emma
+    display_name: Emma
+    customer_id: CUST-3
+    language: en
+    scenario: eligible
+  - slug: carlos
+    display_name: Carlos
+    customer_id: CUST-4
+    language: es
+    scenario: eligible
+  - slug: mariana
+    display_name: Mariana
+    customer_id: CUST-5
+    language: pt
+    scenario: eligible
 agents:
   - slug: agent-beatriz
     display_name: Beatriz
@@ -146,6 +169,24 @@ class _UnreachableAgentConsole:
     def timeline_viewed(self, **kwargs: object) -> None:
         raise NotImplementedError
 
+    def claim_ticket(self, *, agent_id: str, session_id: str, ticket_ref: str) -> QueueItem | None:
+        raise NotImplementedError
+
+    def release_ticket(
+        self, *, agent_id: str, session_id: str, ticket_ref: str
+    ) -> QueueItem | None:
+        raise NotImplementedError
+
+    def add_note(
+        self, *, agent_id: str, session_id: str, ticket_ref: str, note_text: str
+    ) -> Note | None:
+        raise NotImplementedError
+
+    def set_case_status(
+        self, *, agent_id: str, session_id: str, ticket_ref: str, status: CaseStatus
+    ) -> CaseStatusResult | None:
+        raise NotImplementedError
+
 
 def _agent_console() -> AgentConsolePorts:
     unreachable = _UnreachableAgentConsole()
@@ -153,6 +194,7 @@ def _agent_console() -> AgentConsolePorts:
         queue=unreachable,
         ticket_detail=unreachable,
         audit=unreachable,
+        writes=unreachable,
     )
 
 
@@ -314,6 +356,65 @@ def test_a_different_persona_is_unaffected_by_another_personas_slot_cap(
     )
 
     assert other.status_code == 201
+
+
+def test_a_visitor_can_sign_into_every_customer_persona_in_one_sitting(
+    client: TestClient,
+) -> None:
+    """The address cap must not refuse a real evaluation session stepping through the roster."""
+    for slug in ("ana", "joao", "emma", "carlos", "mariana"):
+        response = client.post(
+            DEMO_LOGIN, json={"persona": slug}, headers={"X-Demo-Access-Code": ACCESS_CODE}
+        )
+        assert response.status_code == 201, f"{slug} was refused: {response.json()}"
+
+
+def test_the_address_cap_trusts_only_the_last_forwarded_hop(
+    client: TestClient, audit: _RecordingAuditSink
+) -> None:
+    """A caller-supplied earlier hop in the chain must not let one visitor pose as another."""
+    client.post(
+        DEMO_LOGIN,
+        json={"persona": "ana"},
+        headers={
+            "X-Demo-Access-Code": ACCESS_CODE,
+            "X-Forwarded-For": "198.51.100.1, 203.0.113.30",
+        },
+    )
+
+    other = client.post(
+        DEMO_LOGIN,
+        json={"persona": "joao"},
+        headers={
+            "X-Demo-Access-Code": ACCESS_CODE,
+            # A spoofed earlier hop claiming the first visitor's own trusted address; only the
+            # last, proxy-appended entry may ever be trusted.
+            "X-Forwarded-For": "203.0.113.30, 203.0.113.40",
+        },
+    )
+
+    assert other.status_code == 201
+    hashes = {record.client_address_hash for record in audit.records}
+    assert len(hashes) == 2, "the two visitors' addresses collapsed onto the same audit key"
+
+
+@pytest.mark.parametrize("forwarded", ["198.51.100.1,", "198.51.100.1, ", ",", " "])
+def test_a_forwarded_header_with_an_empty_last_hop_falls_back_to_the_connecting_address(
+    client: TestClient, audit: _RecordingAuditSink, forwarded: str
+) -> None:
+    """An empty trailing entry is no client identity: it must key on the connecting address, never
+    on an empty string and never on the earlier entry the proxy did not vouch for."""
+    client.post(DEMO_LOGIN, json={"persona": "ana"}, headers={"X-Demo-Access-Code": ACCESS_CODE})
+    unproxied_hash = audit.records[-1].client_address_hash
+
+    response = client.post(
+        DEMO_LOGIN,
+        json={"persona": "joao"},
+        headers={"X-Demo-Access-Code": ACCESS_CODE, "X-Forwarded-For": forwarded},
+    )
+
+    assert response.status_code == 201
+    assert audit.records[-1].client_address_hash == unproxied_hash
 
 
 def test_a_filing_that_cannot_be_audited_fails_closed(clock: Clock) -> None:
@@ -655,7 +756,7 @@ def test_the_persona_directory_lists_customer_personas_when_the_customer_broker_
 
     assert response.status_code == 200
     slugs = [persona["slug"] for persona in response.json()["personas"]]
-    assert slugs == ["ana", "joao"]
+    assert slugs == ["ana", "joao", "emma", "carlos", "mariana"]
 
 
 def test_the_persona_directory_omits_agent_personas_when_only_the_customer_broker_is_on(
@@ -678,7 +779,7 @@ def test_the_persona_directory_lists_both_audiences_when_both_brokers_are_on(
         for audience in ("customer", "agent")
     }
     assert slugs_by_audience == {
-        "customer": ["ana", "joao"],
+        "customer": ["ana", "carlos", "emma", "joao", "mariana"],
         "agent": ["agent-beatriz", "agent-diego"],
     }
 
@@ -720,6 +821,9 @@ def test_the_persona_directory_never_reveals_a_customer_or_agent_identifier(
     for leaked in (
         "CUST-1",
         "CUST-2",
+        "CUST-3",
+        "CUST-4",
+        "CUST-5",
         "AGENT-1",
         "AGENT-2",
         "customer_id",

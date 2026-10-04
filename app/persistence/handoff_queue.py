@@ -66,7 +66,9 @@ from contracts.service_v1.handoff import HandoffTrigger
 
 _CONNECT_TIMEOUT_SECONDS = 5
 
-_COLUMNS = "ticket_ref, trigger, language, category, status, created_at_utc, reference_date"
+_COLUMNS = (
+    "ticket_ref, trigger, language, category, status, created_at_utc, reference_date, claimed_by"
+)
 
 
 _CLOSED_STATUSES = (TicketStatus.RESOLVED.value, TicketStatus.REJECTED.value)
@@ -110,7 +112,16 @@ class PostgresHandoffQueue:
         return reference_date + timedelta(days=days)
 
     def _row_to_item(self, row: Any, *, calendar: DomainCalendar) -> QueueItem:
-        (ticket_ref, trigger, language, category, status, created_at, reference_date) = row
+        (
+            ticket_ref,
+            trigger,
+            language,
+            category,
+            status,
+            created_at,
+            reference_date,
+            claimed_by,
+        ) = row
         trigger_enum = HandoffTrigger(trigger)
         return QueueItem(
             ticket_ref=ticket_ref,
@@ -123,6 +134,7 @@ class PostgresHandoffQueue:
             promised_contact_by=self._promised_contact_by(trigger_enum, reference_date),
             age_days=(calendar.reference_date - reference_date).days,
             priority=is_priority(trigger_enum),
+            claimed_by=claimed_by,
         )
 
     def list_tickets(self, filters: QueueFilters, *, calendar: DomainCalendar) -> QueueResponse:

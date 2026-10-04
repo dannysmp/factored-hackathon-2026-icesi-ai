@@ -79,7 +79,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException  # Rout
 from starlette.responses import Response  # Handler return type
 
 # Local modules
-from app.api.agent import (  # The console's own queue and ticket-detail routes
+from app.api.agent import (  # The console's own routes
+    AgentWritesPort,
     ConsoleAuditSink,
     QueuePort,
     TicketDetailPort,
@@ -119,6 +120,7 @@ from app.observability.logging import (  # Structured logging, installed once
     configure_logging,
     configure_logging_from_settings,
 )
+from app.persistence.agent_writes import PostgresAgentWrites  # The console's own narrow writes
 from app.persistence.audit import PostgresAuditSink
 from app.persistence.console_audit import PostgresConsoleAuditSink  # The console's own audit write
 from app.persistence.customers import customer_status  # The sandbox login's existence check
@@ -251,13 +253,14 @@ def _domain_calendar(settings: Settings, *, clock: Clock) -> DomainCalendar:
 
 @dataclass(frozen=True, slots=True)
 class AgentConsolePorts:
-    """The three collaborators the console's own routes read through (``app.api.agent``),
-    bundled so a test can inject one hermetic value instead of three, the same way
-    ``controller_factory`` and ``signin_audit`` are already injectable."""
+    """The four collaborators the console's own routes read and write through
+    (``app.api.agent``), bundled so a test can inject one hermetic value instead of four, the
+    same way ``controller_factory`` and ``signin_audit`` are already injectable."""
 
     queue: QueuePort
     ticket_detail: TicketDetailPort
     audit: ConsoleAuditSink
+    writes: AgentWritesPort
 
 
 def _default_customer_lookup(settings: Settings) -> CustomerLookup:
@@ -275,7 +278,7 @@ def _default_customer_lookup(settings: Settings) -> CustomerLookup:
 def _default_agent_console(
     settings: Settings, *, calendar: DomainCalendar, retriever: LexicalRetriever, clock: Clock
 ) -> AgentConsolePorts:
-    """The console's real, store-backed queue, ticket-detail and audit collaborators.
+    """The console's real, store-backed queue, ticket-detail, audit and writes collaborators.
 
     Raises
     ------
@@ -283,6 +286,7 @@ def _default_agent_console(
         ``DATABASE_URL`` is not configured; the console has nothing to read from without it.
     """
     dsn = settings.require_database_url().get_secret_value()
+    audit_sink = PostgresAuditSink(dsn)
     queue = PostgresHandoffQueue(
         dsn,
         contact_days_priority=settings.post_handoff_contact_days_priority,
@@ -291,10 +295,9 @@ def _default_agent_console(
     ticket_detail = PostgresTicketDetail(
         dsn, retriever=retriever, queue=queue, turn_log=PostgresDialogueTurnLog(dsn)
     )
-    audit = PostgresConsoleAuditSink(
-        dsn, sink=PostgresAuditSink(dsn), calendar=calendar, clock=clock
-    )
-    return AgentConsolePorts(queue=queue, ticket_detail=ticket_detail, audit=audit)
+    audit = PostgresConsoleAuditSink(dsn, sink=audit_sink, calendar=calendar, clock=clock)
+    writes = PostgresAgentWrites(dsn, sink=audit_sink, queue=queue, calendar=calendar, clock=clock)
+    return AgentConsolePorts(queue=queue, ticket_detail=ticket_detail, audit=audit, writes=writes)
 
 
 def _build_agent_router(
@@ -313,7 +316,11 @@ def _build_agent_router(
         else _default_agent_console(settings, calendar=calendar, retriever=retriever, clock=clock)
     )
     return build_agent_router(
-        queue=ports.queue, ticket_detail=ports.ticket_detail, calendar=calendar, audit=ports.audit
+        queue=ports.queue,
+        ticket_detail=ports.ticket_detail,
+        calendar=calendar,
+        audit=ports.audit,
+        writes=ports.writes,
     )
 
 

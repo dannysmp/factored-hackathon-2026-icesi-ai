@@ -49,6 +49,10 @@ Runtime Contract
 -----------------
 ``Versions``, ``SystemResult``, ``EvaluationReport``.
 ``render_markdown(report) -> str``.
+``judge_validation_section(agreement, provenance) -> str``: the exact text ``render_markdown``
+puts under "## 8. Judge validation" — exported so a later, cheaper regeneration of just that
+section (once the real H4 sample lands) renders identically to a full report, never a
+hand-maintained second copy of the same wording (``evals.h4_judge_validation``).
 
 Limitations
 -----------
@@ -355,10 +359,11 @@ def _unsafe_outcomes_section(systems: tuple[SystemResult, ...]) -> str:
     return _table(["System", "Run", "Case", "Unsafe reason(s)", "Expected vs observed"], rows)
 
 
-def _judge_validation_section(
+def judge_validation_section(
     agreement: tuple[DimensionAgreement, ...],
     provenance: Literal["team_generated_synthetic", "human"],
 ) -> str:
+    """The text of the report's judge-validation section for the given sample provenance."""
     if provenance != "human":
         return (
             "**Pending H4.** The judge-validation sample used to produce this section is "
@@ -438,7 +443,7 @@ def render_markdown(report: EvaluationReport) -> str:
         "## 6. Failure gallery\n\n" + _failure_gallery(report.systems),
         "## 7. Unsafe outcomes\n\n" + _unsafe_outcomes_section(report.systems),
         "## 8. Judge validation\n\n"
-        + _judge_validation_section(report.judge_validation, report.judge_validation_provenance),
+        + judge_validation_section(report.judge_validation, report.judge_validation_provenance),
         "## 9. Learned components\n\n" + _LEARNED_COMPONENT_SECTION,
         "## 10. Limitations\n\n" + _limitations_section(report),
     ]
