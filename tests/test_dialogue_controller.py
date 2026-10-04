@@ -1022,6 +1022,22 @@ def test_an_unclear_answer_to_the_presented_transaction_asks_again_then_escalate
     assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
 
 
+def test_the_presented_transaction_question_stays_pending_across_an_unrelated_reply(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.present_amazon()
+
+    dialogue.say(_plain(NluIntent.SMALL_TALK))
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.pending_slot is Slot.TRANSACTION_CHOICE
+
+    answered = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    assert answered.next_expected is Slot.REASON
+    assert dialogue.port.create_calls == 0
+
+
 def test_a_repeated_turn_id_replays_the_presented_transaction(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
