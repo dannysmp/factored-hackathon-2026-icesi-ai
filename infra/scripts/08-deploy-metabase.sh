@@ -119,6 +119,9 @@ fi
 echo "setting analytics_reader's password and enabling login"
 psql_set_password "ALTER ROLE analytics_reader LOGIN PASSWORD :'pw'" "\${analytics_reader_password}"
 
+echo "disk space on the host before the metabase image is pulled:"
+df -h /
+
 echo "starting the metabase container"
 export MB_DB_PASS="\${db_password}"
 export MB_SESSION_SECRET_KEY="\${session_key}"
@@ -168,7 +171,7 @@ else
 fi
 
 echo '${caddyfile_with_metabase_b64}' | base64 -d >/opt/dispute-intake/infra/Caddyfile
-docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.metabase.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile
 echo "metabase deployed and reachable through Caddy"
 SCRIPT
 )"
