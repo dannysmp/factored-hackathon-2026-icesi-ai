@@ -5,10 +5,10 @@ Lexical Policy Retrieval
 Overview
 --------
 Answers a policy question by searching the corpus for the section that covers it: accent-folded
-BM25 with per-language stopwords and a curated synonym set, behind a ``Retriever`` port (ADR-16,
-amending ADR-5's hybrid design: the corpus is small, about nine sections per language, and the
-provider ratified in ADR-7 has no embeddings endpoint). Retrieval never feeds the policy engine;
-it only grounds what a reply may cite.
+BM25 with per-language stopwords and a curated synonym set, behind a ``Retriever`` port. It is
+lexical rather than embedding-based because the corpus is small, about nine sections per language,
+and the model provider has no embeddings endpoint. Retrieval never feeds the policy engine; it only
+grounds what a reply may cite.
 
 Scope
 -----
@@ -23,11 +23,11 @@ Design Principles
   with any chunk returns no hits at all, so the caller has one signal for "nothing found" instead
   of having to compare scores itself.
 - Search runs only within the query's language; a corpus chunk from another language is never a
-  candidate, so a language a customer did not use is never quoted at them (AC-E5-54).
+  candidate, so a language a customer did not use is never quoted at them.
 - A synonym set folds a handful of same-idea words and phrases (plazo, tiempo, límite, vence;
   prazo, tempo, limite, vence; deadline, how long, time limit) to one canonical term before
   scoring, on both the query and the corpus side, so a paraphrase still finds the section a
-  literal keyword match would (AC-E5-53).
+  literal keyword match would.
 - Accent folding and stopword removal happen once per chunk, at construction, not per query.
 - Pure and hermetic: no model call, no network, no import-time file read (the retriever is built
   explicitly from chunks the caller already loaded).
@@ -75,7 +75,7 @@ _B = 0.75
 _MIN_TOKEN_LENGTH = 3
 
 # A shared idea folded to one canonical term, on both the query and the corpus side, so a
-# paraphrase using any member finds what a literal match on another member would (AC-E5-53).
+# paraphrase using any member finds what a literal match on another member would.
 # Multi-word entries are matched as a phrase before the text is tokenized into single words.
 # Common conjugations of "vencer" ("to expire") are listed explicitly, the same way the
 # stopword lists enumerate verb conjugations, rather than stemmed: "vencio" is the accent-folded
@@ -717,7 +717,7 @@ class _Indexed:
 
 
 class LexicalRetriever:
-    """Accent-folded BM25 over the corpus, with per-language stopwords and synonyms (ADR-16)."""
+    """Accent-folded BM25 over the corpus, with per-language stopwords and synonyms."""
 
     def __init__(self, chunks_by_lang: dict[Lang, tuple[PolicyChunk, ...]]) -> None:
         self._index: dict[Lang, tuple[_Indexed, ...]] = {
@@ -747,7 +747,7 @@ class LexicalRetriever:
         """Every chunk of ``lang``'s corpus above the relevance floor, best match first.
 
         The floor is the mathematical minimum: a chunk with no scoring term in common with the
-        query scores zero and is never returned, which is the abstention signal (ADR-16).
+        query scores zero and is never returned, which is the abstention signal.
         """
         indexed = self._index[lang]
         query_terms = tokenize(query, lang)

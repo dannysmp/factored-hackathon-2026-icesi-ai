@@ -4,7 +4,7 @@ Anthropic Adapter
 
 Overview
 --------
-The ``LlmClient`` implementation behind the Anthropic API (ADR-7): one structured-output call,
+The ``LlmClient`` implementation behind the Anthropic API: one structured-output call,
 with a forced tool, a per-call timeout and the accounting the port promises.
 
 Scope

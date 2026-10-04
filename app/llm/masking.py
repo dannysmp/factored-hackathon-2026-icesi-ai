@@ -5,9 +5,8 @@ Masking Serializer
 Overview
 --------
 The egress control every request applies to a customer's free text immediately before it leaves
-the process for the language model, the boundary the architecture names for PII minimization
-(``plan/docs/architecture.md``, Security and privacy). Card-shaped (PAN-like) digit runs are found
-and replaced with a fixed placeholder; nothing else in the text is touched.
+the process for the language model, the boundary where PII is minimized. Card-shaped (PAN-like)
+digit runs are found and replaced with a fixed placeholder; nothing else in the text is touched.
 
 Scope
 -----
@@ -16,7 +15,7 @@ reference-number suffix guaranteed never to combine with the digits before it in
 detector would itself flag — the one other place in this project that needs to reason about the
 same digit-run rule, not a second implementation of it.
 Out: what a caller does with masked text (the LLM port), and masking of any other field kind
-(none exists yet: this slice's only outbound free text is the customer's message to the NLU
+(none exists yet: the only outbound free text is the customer's message to the NLU
 adapter; a future caller that sends another masked field, for example a name or a contact detail,
 extends this module rather than duplicating the pattern elsewhere).
 
