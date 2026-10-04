@@ -242,8 +242,8 @@ make evaluate FULL=1              # P three times, B0 and B1 once; writes report
 
 A run needs a migrated Postgres loaded with `make load-seed` (and `make load-eval-bank` for the full
 adversarial set), `TEST_IDENTITY_ENABLED=true` with a `TEST_IDENTITY_KEY` (the harness never turns
-the sandbox login on itself), and `ANTHROPIC_API_KEY` for B1, for the judge and for P unless
-`LLM_PROVIDER=stub`. Any run in which a case turns unsafe exits with code 1. CI runs the 16-case
+the sandbox login on itself), and `ANTHROPIC_API_KEY` for B1 and for P unless `LLM_PROVIDER=stub`.
+`make judge-validation` also calls the judge model and needs the key. Any run in which a case turns unsafe exits with code 1. CI runs the 16-case
 slice for P and B0 against stubbed models on every pull request and blocks the merge on a failure.
 `make evaluate FULL=1` calls the live model many times and costs real money.
 
