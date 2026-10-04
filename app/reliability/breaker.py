@@ -22,7 +22,7 @@ Design Principles
   the turns route's own per-request factory (see ``app/main.py``'s own Design Principles).
 - **In-memory and lock-guarded, matching ``InMemoryRevocationStore``'s own shape**
   (``app.security.sessions``): correct for this project's single-host, single-worker deployment
-  (ADR-9, ADR-13); a shared store is the explicit trigger for the day this stops holding, not
+ ; a shared store is the explicit trigger for the day this stops holding, not
   something to build ahead of need.
 - **One trial call while half-open**, not a flood: the first ``allow()`` call after the cool-down
   elapses is let through and marks a trial in flight; every other caller is refused until that
