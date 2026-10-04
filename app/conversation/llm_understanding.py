@@ -31,10 +31,10 @@ Design Principles
   it, and reading an intent reported without its slot as ``unclear``) and validated again; the
   transaction the customer described survives each of these. A result that still fails becomes
   ``NluResult.unusable()``: one question, then a person — the customer is never shown a model or
-  provider error — and the fields and rules that failed (never the customer's words) are logged. A call the port
-  could not complete at all is a different outcome (``UnderstandingUnavailable``, raised rather than
-  swallowed): unlike a malformed result, it is not the customer's own ambiguity, so it must not
-  be treated as one.
+  provider error — and the fields and rules that failed (never the customer's words) are logged.
+  A call the port could not complete at all is a different outcome (``UnderstandingUnavailable``,
+  raised rather than swallowed): unlike a malformed result, it is not the customer's own
+  ambiguity, so it must not be treated as one.
 - The masking serializer is the only path text takes to leave the process: this class never builds
   the user message from anything but ``redact_pan(text).masked``.
 - Temperature 0: this is structured extraction, not open-ended writing.
