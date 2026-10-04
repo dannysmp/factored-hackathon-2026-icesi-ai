@@ -50,7 +50,7 @@ Runtime Contract
 ``Versions``, ``SystemResult``, ``EvaluationReport``.
 ``render_markdown(report) -> str``.
 ``judge_validation_section(agreement, provenance) -> str``: the exact text ``render_markdown``
-puts under "## 8. Judge validation" — exported so a later, cheaper regeneration of just that
+puts under its Judge validation heading — exported so a later, cheaper regeneration of just that
 section (once the real H4 sample lands) renders identically to a full report, never a
 hand-maintained second copy of the same wording (``evals.h4_judge_validation``).
 
@@ -71,14 +71,21 @@ single run and show no range, by construction, not because their own results are
 from __future__ import annotations
 
 # Standard libraries
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 # Local modules
+from evals.fairness import (
+    SMALL_SAMPLE_THRESHOLD,
+    CaseProfile,
+    Disparity,
+    FairnessAnalysis,
+    slice_results,
+)
 from evals.judge import JudgeVerdict
 from evals.judge_validation import DimensionAgreement
-from evals.metrics import NOT_DEFINED, CaseResult
+from evals.metrics import NOT_DEFINED, CaseResult, Metric
 from evals.models import Case, CaseCategory
 from evals.repeated_runs import (
     CaseFlip,
@@ -168,6 +175,9 @@ class EvaluationReport:
     judge_cost_usd: float | None = None
     """What those calls cost. Evaluation tooling, reported on its own line in the judge-scored
     section and never added to any system's cost; ``None`` when a call went to an unpriced model."""
+    case_profiles: Mapping[str, CaseProfile] | None = None
+    """The country and segment of each case's customer, by case id, for the fairness slices;
+    ``None`` when the caller could not look them up, in which case those slices say so."""
 
 
 def _count(value: int) -> str:
@@ -414,6 +424,90 @@ def _unsafe_outcomes_section(systems: tuple[SystemResult, ...]) -> str:
     return _table(["System", "Run", "Case", "Unsafe reason(s)", "Expected vs observed"], rows)
 
 
+def _fmt_slice_metric(metric: Metric) -> str:
+    if metric.value == NOT_DEFINED:
+        return f"{NOT_DEFINED} (n={metric.denominator})"
+    return f"{metric.value:.3f} (n={metric.denominator})"
+
+
+def _disparity_note(disparity: Disparity) -> str:
+    mix = ", ".join(f"{category} {count}" for category, count in disparity.failing_categories)
+    dominant = max(disparity.failing_categories, key=lambda item: item[1])[0]
+    return (
+        f"- **{disparity.dimension}: {disparity.label}.** Correct-outcome rate "
+        f"{disparity.rate:.3f} (n={disparity.in_scope}) against {disparity.comparison_rate:.3f} "
+        f"(n={disparity.comparison_in_scope}) for the rest of the dimension; the 95 % intervals "
+        f"do not overlap. Failing cases: {', '.join(disparity.failing_case_ids)} "
+        f"({mix}). Hypothesis: the gap follows the case mix (failures concentrate in "
+        f"{dominant} cases) rather than the {disparity.dimension} itself. Follow-up: re-run the "
+        "slice with category-matched cases before attributing the gap to the slice."
+    )
+
+
+def _fairness_section(report: EvaluationReport) -> str:
+    proposed = next((result for result in report.systems if result.system == "P"), None)
+    if proposed is None:
+        return "System P was not run, so there is nothing to slice."
+    analysis: FairnessAnalysis = slice_results(
+        proposed.case_results, report.golden_cases, report.case_profiles or {}
+    )
+    rows = [
+        [
+            row.dimension,
+            row.label,
+            _count(row.cases),
+            _count(row.in_scope),
+            _fmt_slice_metric(row.correct_outcome),
+            _fmt_slice_metric(row.safe_automated_resolution),
+            _count(row.unsafe),
+            f"small sample (fewer than {SMALL_SAMPLE_THRESHOLD} in-scope cases)"
+            if row.small_sample
+            else "",
+        ]
+        for row in analysis.rows
+    ]
+    table = _table(
+        [
+            "Dimension",
+            "Slice",
+            "Cases",
+            "In-scope cases",
+            "Correct outcome",
+            "Safe automated resolution",
+            "Unsafe",
+            "Sample",
+        ],
+        rows,
+    )
+    intro = (
+        "System P, last run, sliced by language, country, customer segment and the "
+        "accent-flavored phrasing subset (compared with the other Spanish cases). Slices overlap "
+        "and are not adjusted for each other or for the category mix. Correct outcome is the "
+        "share of in-scope cases with the correct result, whether automated or handed to a "
+        "person; safe automated resolution counts only the automated ones, so it also falls "
+        "when a slice holds more cases that should go to a person. Only correct outcome drives "
+        "the disparity check."
+    )
+    unavailable = (
+        ""
+        if report.case_profiles is not None
+        else "\n\nCountry and segment could not be looked up for this run; those cases are "
+        "in the unknown slice."
+    )
+    if analysis.disparities:
+        notes = "\n".join(_disparity_note(d) for d in analysis.disparities)
+        verdict = (
+            "**Disparities beyond sampling noise, each with an investigation note:**\n\n" + notes
+        )
+    else:
+        verdict = (
+            "No slice differs from the rest of its dimension by more than sampling noise "
+            "(95 % Wilson intervals that do not overlap). With slices this small that is the "
+            "expected outcome and is not evidence of equal treatment."
+        )
+    return f"{intro}{unavailable}\n\n{table}\n\n{verdict}"
+
+
 def judge_validation_section(
     agreement: tuple[DimensionAgreement, ...],
     provenance: Literal["team_generated_synthetic", "human"],
@@ -502,9 +596,10 @@ def render_markdown(report: EvaluationReport) -> str:
         "## 5. Repeated-run variability\n\n" + _repeated_run_section(report.systems),
         "## 6. Failure gallery\n\n" + _failure_gallery(report.systems),
         "## 7. Unsafe outcomes\n\n" + _unsafe_outcomes_section(report.systems),
-        "## 8. Judge validation\n\n"
+        "## 8. Fairness and disparity\n\n" + _fairness_section(report),
+        "## 9. Judge validation\n\n"
         + judge_validation_section(report.judge_validation, report.judge_validation_provenance),
-        "## 9. Learned components\n\n" + _LEARNED_COMPONENT_SECTION,
-        "## 10. Limitations\n\n" + _limitations_section(report),
+        "## 10. Learned components\n\n" + _LEARNED_COMPONENT_SECTION,
+        "## 11. Limitations\n\n" + _limitations_section(report),
     ]
     return "\n\n".join(sections) + "\n"

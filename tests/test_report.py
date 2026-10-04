@@ -190,9 +190,9 @@ def test_render_includes_every_top_level_section() -> None:
         "## 5. Repeated-run variability",
         "## 6. Failure gallery",
         "## 7. Unsafe outcomes",
-        "## 8. Judge validation",
-        "## 9. Learned components",
-        "## 10. Limitations",
+        "## 9. Judge validation",
+        "## 10. Learned components",
+        "## 11. Limitations",
     ):
         assert heading in text
 
@@ -213,7 +213,7 @@ def test_no_scope_note_renders_no_scope_callout() -> None:
 def test_a_scope_note_renders_as_a_prominent_callout_and_in_limitations() -> None:
     text = render_markdown(_report(scope_note="Generated from the 16-case CI-smoke subset."))
     assert "**Scope.** Generated from the 16-case CI-smoke subset." in text
-    limitations = text.split("## 10.")[1]
+    limitations = text.split("## 11.")[1]
     assert "Generated from the 16-case CI-smoke subset." in limitations
 
 
@@ -407,7 +407,7 @@ def test_a_synthetic_sample_never_renders_an_agreement_rate() -> None:
             judge_validation_provenance="team_generated_synthetic",
         )
     )
-    section = text.split("## 8.")[1].split("## 9.")[0]
+    section = text.split("## 9.")[1].split("## 10.")[0]
 
     assert "Pending H4" in section
     assert "1.000" not in section  # the agreement rate itself must not leak through
@@ -417,7 +417,7 @@ def test_a_human_sample_renders_the_real_agreement_table() -> None:
     text = render_markdown(
         _report(judge_validation=_agreement(), judge_validation_provenance="human")
     )
-    section = text.split("## 8.")[1].split("## 9.")[0]
+    section = text.split("## 9.")[1].split("## 10.")[0]
 
     assert "Pending H4" not in section
     assert "grounding" in section
@@ -450,7 +450,7 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
     text = render_markdown(
         _report(judge_validation=(demoted,), judge_validation_provenance="human")
     )
-    section = text.split("## 8.")[1].split("## 9.")[0]
+    section = text.split("## 9.")[1].split("## 10.")[0]
 
     assert "human-only" in section
 
@@ -462,7 +462,7 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
 
 def test_learned_components_points_at_the_experiment_log_not_a_fabricated_number() -> None:
     text = render_markdown(_report())
-    section = text.split("## 9.")[1].split("## 10.")[0]
+    section = text.split("## 10.")[1].split("## 11.")[0]
     assert "experiment log" in section
 
 
@@ -470,13 +470,13 @@ def test_limitations_names_pending_h4_only_when_not_human() -> None:
     synthetic = render_markdown(_report(judge_validation_provenance="team_generated_synthetic"))
     human = render_markdown(_report(judge_validation_provenance="human"))
 
-    assert "pending the real H4" in synthetic.split("## 10.")[1]
-    assert "pending the real H4" not in human.split("## 10.")[1]
+    assert "pending the real H4" in synthetic.split("## 11.")[1]
+    assert "pending the real H4" not in human.split("## 11.")[1]
 
 
 def test_limitations_states_what_a_cases_cost_covers_and_that_unknown_is_not_zero() -> None:
     text = render_markdown(_report())
-    section = text.split("## 10.")[1]
+    section = text.split("## 11.")[1]
 
     assert "no model call" in section
     assert "never counted as zero" in section
