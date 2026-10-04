@@ -56,17 +56,17 @@ first-response date computed from policy, not invented by the model.
 | Turn | Speaker | Line |
 |---|---|---|
 | 1 | Customer | Olá, tem uma cobrança no meu cartão que eu não reconheço. |
-| 1 | System (`clarify` / `clarify_transaction`) | Você poderia me dizer o comerciante, o valor ou a data da cobrança que quer contestar? |
+| 1 | System (`clarify` / `clarify_transaction`) | Você poderia me dizer o estabelecimento, o valor ou a data da cobrança que quer contestar? |
 | 2 | Customer | Foi na Tienda Sol, acho que foram 250 pesos, no dia 12 de junho. |
-| 2 | System (`present_transactions` / `present_one`) | Encontrei uma transação de 250,00 MXN em Tienda Sol em 12 de junho de 2026. É esta que você quer contestar? |
+| 2 | System (`present_transactions` / `present_one`) | Encontrei uma transação de 250,00 MXN em Tienda Sol no dia 12 de junho de 2026. É esta que você quer contestar? |
 | 3 | Customer | Sim, é essa. |
 | 3 | System (`clarify` / `clarify_reason`) | Qual é o motivo? Pode ser uma cobrança não reconhecida, uma cobrança em duplicidade, um valor incorreto, um serviço não recebido ou uma fraude. |
 | 4 | Customer | Não reconheço essa cobrança, nunca comprei lá. |
-| 4 | System (`confirm_filing` / `confirm_filing`) | Vou apresentar uma contestação por cobrança não reconhecida sobre a cobrança de 250,00 MXN de 12 de junho de 2026. Um atendente vai analisar; isso não garante um resultado. Você confirma que quer apresentá-la? |
+| 4 | System (`confirm_filing` / `confirm_filing`) | Vou apresentar uma contestação por cobrança não reconhecida sobre a cobrança de 250,00 MXN do dia 12 de junho de 2026. Um atendente vai analisar o pedido; isso não garante um resultado. Você confirma que quer apresentá-la? |
 | 5 | Customer | Sim, confirmo. |
-| 5 | System (`filing_result` / `filing_result`) | Sua contestação foi registrada com o número de caso D-2001. Aguarde uma primeira resposta até 25 de junho de 2026. |
+| 5 | System (`filing_result` / `filing_result`) | Sua contestação foi registrada com o número do caso D-2001. Você deve receber uma primeira resposta até 25 de junho de 2026. |
 | 6 | Customer | Obrigado, é só isso. |
-| 6 | System (`farewell` / `farewell`) | Obrigado por escrever. Tenha um bom dia. |
+| 6 | System (`farewell` / `farewell`) | Agradeço o contato. Tenha um bom dia. |
 
 Every turn also carries: `Data de referência dos dados: 18 de junho de 2026`.
 
@@ -117,7 +117,7 @@ reach instead.
 | Turn | Speaker | Line |
 |---|---|---|
 | 1 | Customer | Quero aumentar o limite do meu cartão de crédito. |
-| 1 | System (`refuse` / `refuse_unsupported`) | Isso eu não posso fazer aqui. Posso ajudar a contestar uma transação, consultar um caso ou explicar a política; para isso use a seção de cartões do aplicativo do banco, ou encaminho você a um atendente. |
+| 1 | System (`refuse` / `refuse_unsupported`) | Isso eu não posso fazer por aqui. Posso ajudar a contestar uma transação, consultar um caso ou explicar a política. Para isso, use a seção de cartões do aplicativo do banco, ou posso encaminhar você para um atendente. |
 
 **What this demonstrates:** the same refusal, correctly worded in Portuguese, with the same
 redirection and the same offer of a person.
@@ -140,7 +140,7 @@ filing decision was made by the system here.
 | Turn | Speaker | Line |
 |---|---|---|
 | 1 | Customer | Tem uma cobrança que eu não reconheço e acho que é uma fraude, alguém está usando meu cartão. |
-| 1 | System (`handoff` / `handoff_fraud`) | Isso é atendido por um atendente imediatamente por ser uma possível fraude. Não prometo um resultado. Vão entrar em contato em até 24 horas. Sua referência é T-100. |
+| 1 | System (`handoff` / `handoff_fraud`) | Como pode se tratar de fraude, um atendente cuida disso de imediato. Não posso prometer um resultado. Um atendente entrará em contato com você em até 24 horas. Sua referência é T-100. |
 
 **What this demonstrates:** the same escalation path, correctly worded in Portuguese.
 

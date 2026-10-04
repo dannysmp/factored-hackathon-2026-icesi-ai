@@ -80,8 +80,9 @@ file itself.
   run's own recorded outcome and is final, independent of the human-rated sample still due. The
   judge's own quality and correctness scores stay provisional until that sample lands. The
   evaluation report (`reports/evaluation.md`) records the 135-case workload and the headline
-  metrics for all three systems; its judge-validation section reports no agreement rate until the real sample is
-  scored, and this slide states that plainly rather than showing a synthetic sample's numbers.
+  metrics for all three systems; its judge-validation section reports no agreement rate until the
+  real sample is scored, and this slide states that plainly rather than showing a synthetic
+  sample's numbers.
 - Independent of the harness, the deterministic checks run in the test suite this release ships
   with: authorization tests, the confirmation and verification tests, and the reason-code coverage
   of the policy engine itself.

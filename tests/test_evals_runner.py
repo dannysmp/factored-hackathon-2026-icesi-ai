@@ -13,6 +13,7 @@ from __future__ import annotations
 
 # Standard libraries
 import os
+from dataclasses import replace
 from typing import Any, cast
 
 # Third-party libraries
@@ -26,6 +27,7 @@ from pydantic import SecretStr
 from app.config import LlmProvider, Settings, load_settings
 from app.main import create_app
 from app.persistence.migrate import apply_migrations
+from app.retrieval.corpus_index import CorpusIndexError
 from contracts.service_v1.envelope import Intent
 from evals.metrics import CaseResult
 from evals.models import Case, CaseCategory
@@ -198,6 +200,149 @@ def test_an_unanticipated_exception_still_stops_the_batch(monkeypatch: pytest.Mo
         run_cases(cast(httpx.Client, object()), "unused-dsn", cases, test_login_key=LOGIN_KEY)
 
 
+def test_capture_transcripts_defaults_off_and_never_calls_the_capture_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every caller before ``capture_transcripts`` existed must see zero behavior change."""
+    calls: list[str] = []
+
+    def fake_attach(dsn: str, transcript: object, result: CaseResult) -> CaseResult:
+        calls.append("attach")
+        return result
+
+    def fake_score(dsn: str, transcript: str) -> CaseResult:
+        return CaseResult(
+            case_id=transcript,
+            is_adversarial=False,
+            expected_escalation=False,
+            observed_escalation=False,
+            automation_attempted=True,
+            correct_outcome=True,
+        )
+
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", lambda dsn, ref: "CUST-A")
+    monkeypatch.setattr(
+        "evals.runner.runner.run_case", lambda client, case, *, customer_id, test_login_key: "t"
+    )
+    monkeypatch.setattr("evals.runner.runner.score_case", fake_score)
+    monkeypatch.setattr("evals.runner.runner.attach_masked_transcript", fake_attach)
+
+    run_cases(cast(httpx.Client, object()), "unused-dsn", (_case(),), test_login_key=LOGIN_KEY)
+
+    assert calls == []
+
+
+def test_capture_transcripts_true_attaches_the_captured_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_score(dsn: str, transcript: str) -> CaseResult:
+        return CaseResult(
+            case_id="c1",
+            is_adversarial=False,
+            expected_escalation=False,
+            observed_escalation=False,
+            automation_attempted=True,
+            correct_outcome=True,
+        )
+
+    def fake_attach(dsn: str, transcript: object, result: CaseResult) -> CaseResult:
+        return replace(result, reply_text="captured reply", facts_and_sources="captured facts")
+
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", lambda dsn, ref: "CUST-A")
+    monkeypatch.setattr(
+        "evals.runner.runner.run_case", lambda client, case, *, customer_id, test_login_key: "t"
+    )
+    monkeypatch.setattr("evals.runner.runner.score_case", fake_score)
+    monkeypatch.setattr("evals.runner.runner.attach_masked_transcript", fake_attach)
+
+    results = run_cases(
+        cast(httpx.Client, object()),
+        "unused-dsn",
+        (_case(case_id="c1"),),
+        test_login_key=LOGIN_KEY,
+        capture_transcripts=True,
+    )
+
+    assert results[0].reply_text == "captured reply"
+    assert results[0].facts_and_sources == "captured facts"
+
+
+def test_a_capture_failure_leaves_the_real_verdict_standing_with_the_fields_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A capture failure (a declared policy section that does not resolve) must not demote an
+    otherwise-valid ``CaseResult`` to an error result — only its two extra fields stay unset."""
+
+    def fake_score(dsn: str, transcript: str) -> CaseResult:
+        return CaseResult(
+            case_id="c1",
+            is_adversarial=False,
+            expected_escalation=False,
+            observed_escalation=False,
+            automation_attempted=True,
+            correct_outcome=True,
+        )
+
+    def fake_attach(dsn: str, transcript: object, result: CaseResult) -> CaseResult:
+        raise KeyError("section 'nope' does not resolve in the es corpus")
+
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", lambda dsn, ref: "CUST-A")
+    monkeypatch.setattr(
+        "evals.runner.runner.run_case", lambda client, case, *, customer_id, test_login_key: "t"
+    )
+    monkeypatch.setattr("evals.runner.runner.score_case", fake_score)
+    monkeypatch.setattr("evals.runner.runner.attach_masked_transcript", fake_attach)
+
+    results = run_cases(
+        cast(httpx.Client, object()),
+        "unused-dsn",
+        (_case(case_id="c1"),),
+        test_login_key=LOGIN_KEY,
+        capture_transcripts=True,
+    )
+
+    assert len(results) == 1
+    assert results[0].error is None
+    assert results[0].correct_outcome is True
+    assert results[0].reply_text is None
+    assert results[0].facts_and_sources is None
+
+
+def test_a_capture_corpus_index_error_is_also_caught_not_only_key_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_score(dsn: str, transcript: str) -> CaseResult:
+        return CaseResult(
+            case_id="c1",
+            is_adversarial=False,
+            expected_escalation=False,
+            observed_escalation=False,
+            automation_attempted=True,
+            correct_outcome=True,
+        )
+
+    def fake_attach(dsn: str, transcript: object, result: CaseResult) -> CaseResult:
+        raise CorpusIndexError("the es corpus file could not be read")
+
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", lambda dsn, ref: "CUST-A")
+    monkeypatch.setattr(
+        "evals.runner.runner.run_case", lambda client, case, *, customer_id, test_login_key: "t"
+    )
+    monkeypatch.setattr("evals.runner.runner.score_case", fake_score)
+    monkeypatch.setattr("evals.runner.runner.attach_masked_transcript", fake_attach)
+
+    results = run_cases(
+        cast(httpx.Client, object()),
+        "unused-dsn",
+        (_case(case_id="c1"),),
+        test_login_key=LOGIN_KEY,
+        capture_transcripts=True,
+    )
+
+    assert results[0].error is None
+    assert results[0].reply_text is None
+
+
 def test_an_unanticipated_exception_mid_batch_never_reaches_the_cases_behind_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -303,6 +448,22 @@ def test_run_cases_end_to_end_against_the_real_running_system(dsn: str) -> None:
     assert result.is_unsafe is False
     assert result.latency_seconds is not None
     assert result.latency_seconds >= 0
+
+
+@pytest.mark.integration
+def test_run_cases_end_to_end_with_capture_transcripts_fills_the_two_fields(dsn: str) -> None:
+    settings = _settings(database_url=SecretStr(dsn))
+    app = create_app(settings)
+    client = TestClient(app)
+    case = _case()
+
+    results = run_cases(client, dsn, (case,), test_login_key=LOGIN_KEY, capture_transcripts=True)
+
+    assert len(results) == 1
+    result = results[0]
+    assert result.reply_text
+    assert result.facts_and_sources
+    assert "filing-windows" in result.facts_and_sources
 
 
 @pytest.mark.integration

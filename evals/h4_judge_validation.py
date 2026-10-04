@@ -54,7 +54,7 @@ grounding, language_quality, clarification, comment)``.
 ``load_rater_sheet(path) -> tuple[RaterCaseRow, ...]``.
 ``score_with_judge(rows, judge) -> tuple[JudgeVerdict, ...]``, one call per row via the given
 ``LlmJudge``.
-``apply_real_judge_validation(report_markdown, agreement) -> str``: the report text with section 7
+``apply_real_judge_validation(report_markdown, agreement) -> str``: the report text with section 8
 and the stale limitations bullet replaced for a ``human``-provenance ``agreement``.
 ``regenerate_report(rater1_path, rater2_path, report_path, judge)``: the whole orchestration with
 the judge injected, so it is testable without a model; the report file is replaced atomically.
@@ -99,8 +99,8 @@ _PENDING_LIMITATIONS_BULLET = re.compile(
     re.MULTILINE,
 )
 
-_SECTION_7_START = "## 7. Judge validation\n\n"
-_SECTION_8_BOUNDARY = "\n\n## 8."
+_SECTION_8_START = "## 8. Judge validation\n\n"
+_SECTION_9_BOUNDARY = "\n\n## 9."
 
 _TURN_SEPARATOR = " | "
 
@@ -299,21 +299,21 @@ def score_with_judge(rows: Sequence[RaterCaseRow], judge: LlmJudge) -> tuple[Jud
     )
 
 
-def _section_7_bounds(report_markdown: str) -> tuple[int, int]:
-    """Start and end offsets of section 7's body, or ``ValueError`` if the shape is unexpected."""
-    start = report_markdown.find(_SECTION_7_START)
+def _section_8_bounds(report_markdown: str) -> tuple[int, int]:
+    """Start and end offsets of section 8's body, or ``ValueError`` if the shape is unexpected."""
+    start = report_markdown.find(_SECTION_8_START)
     if start == -1:
         raise ValueError(_UNRECOGNIZED_REPORT)
-    body_start = start + len(_SECTION_7_START)
-    end = report_markdown.find(_SECTION_8_BOUNDARY, body_start)
+    body_start = start + len(_SECTION_8_START)
+    end = report_markdown.find(_SECTION_9_BOUNDARY, body_start)
     if end == -1:
         raise ValueError(_UNRECOGNIZED_REPORT)
     return body_start, end
 
 
 _UNRECOGNIZED_REPORT = (
-    "report_markdown does not carry a '## 7. Judge validation' section immediately "
-    "followed by '## 8.' — refusing to patch a report this module cannot recognize"
+    "report_markdown does not carry a '## 8. Judge validation' section immediately "
+    "followed by '## 9.' — refusing to patch a report this module cannot recognize"
 )
 
 
@@ -326,11 +326,11 @@ def apply_real_judge_validation(
     Raises
     ------
     ValueError
-        ``report_markdown`` does not carry a ``## 7. Judge validation`` section followed by
-        ``## 8.`` — the report this module was given does not match the shape
+        ``report_markdown`` does not carry a ``## 8. Judge validation`` section followed by
+        ``## 9.`` — the report this module was given does not match the shape
         ``evals.report.render_markdown`` produces, so patching it would corrupt rather than update.
     """
-    body_start, end = _section_7_bounds(report_markdown)
+    body_start, end = _section_8_bounds(report_markdown)
     new_section = judge_validation_section(agreement, "human")
     patched = report_markdown[:body_start] + new_section + report_markdown[end:]
     return _PENDING_LIMITATIONS_BULLET.sub("", patched)
@@ -366,7 +366,7 @@ def regenerate_report(
     _check_roles(rater1_rows, rater2_rows)
     _check_same_prepared_packet(rater1_rows, rater2_rows)
     current = report_path.read_text(encoding="utf-8")
-    _section_7_bounds(current)
+    _section_8_bounds(current)
 
     judge_verdicts = score_with_judge(rater1_rows, judge)
     agreement = compute_agreement(
