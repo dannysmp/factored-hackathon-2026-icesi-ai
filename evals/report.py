@@ -54,6 +54,10 @@ exact text ``render_markdown`` puts under its Judge validation heading — expor
 cheaper regeneration of just that section (once the real H4 sample lands) renders identically to a
 full report, never a hand-maintained second copy of the same wording
 (``evals.h4_judge_validation``).
+``withhold_demoted_judge_means(section_body, agreement, human_means) -> str``: the body of the
+Judge-scored quality section with each demoted dimension's judge mean replaced by "not reportable
+by the judge" in every system row, and a note beneath the table giving the raters' means; raises
+``ValueError`` for a demoted dimension with no column or no rater mean.
 
 Limitations
 -----------
