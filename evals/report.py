@@ -49,10 +49,11 @@ Runtime Contract
 -----------------
 ``Versions``, ``SystemResult``, ``EvaluationReport``.
 ``render_markdown(report) -> str``.
-``judge_validation_section(agreement, provenance) -> str``: the exact text ``render_markdown``
-puts under its Judge validation heading — exported so a later, cheaper regeneration of just that
-section (once the real H4 sample lands) renders identically to a full report, never a
-hand-maintained second copy of the same wording (``evals.h4_judge_validation``).
+``judge_validation_section(agreement, provenance, detail=None, facts_coverage=None) -> str``: the
+exact text ``render_markdown`` puts under its Judge validation heading — exported so a later,
+cheaper regeneration of just that section (once the real H4 sample lands) renders identically to a
+full report, never a hand-maintained second copy of the same wording
+(``evals.h4_judge_validation``).
 
 Limitations
 -----------
@@ -88,7 +89,12 @@ from evals.fairness import (
     slice_results,
 )
 from evals.judge import JudgeVerdict
-from evals.judge_validation import DimensionAgreement
+from evals.judge_validation import (
+    DEMOTION_THRESHOLD,
+    DimensionAgreement,
+    DimensionDetail,
+    PairDetail,
+)
 from evals.metrics import NOT_DEFINED, CaseResult, Metric
 from evals.models import Case, CaseCategory
 from evals.repeated_runs import (
@@ -637,11 +643,147 @@ def _fairness_section(report: EvaluationReport) -> str:
     return f"{intro}{unavailable}\n\n{table}\n\n{verdict}"
 
 
+def _agreement_cell(value: VariabilityValue, detail: PairDetail | None) -> str:
+    if detail is None:
+        return _fmt_variability_value(value)
+    kappa = detail.weighted_kappa
+    kappa_text = kappa if kappa == NOT_DEFINED else f"{kappa:.2f}"
+    return f"{_fmt_variability_value(value)} (n={detail.compared}, kappa {kappa_text})"
+
+
+def _direction_table(detail: tuple[DimensionDetail, ...]) -> str:
+    rows = [
+        [
+            entry.dimension,
+            f"{entry.rater_to_rater.first_higher} / {entry.rater_to_rater.second_higher}",
+            f"{entry.rater1_to_judge.second_higher} / {entry.rater1_to_judge.first_higher}",
+            f"{entry.rater2_to_judge.second_higher} / {entry.rater2_to_judge.first_higher}",
+        ]
+        for entry in detail
+    ]
+    return _table(
+        [
+            "Dimension",
+            "Rater 1 higher / Rater 2 higher",
+            "Judge higher / lower than Rater 1",
+            "Judge higher / lower than Rater 2",
+        ],
+        rows,
+    )
+
+
+#: A judge-versus-rater gap is called one-sided from this many differences, when at least this
+#: share of them run the same way.
+_LEAN_MIN_DIFFERENCES = 5
+_LEAN_SHARE = 0.8
+
+
+def _judge_lean(dimension: str, label: str, pair: PairDetail) -> str | None:
+    """A sentence when the judge differs from a rater almost always in the same direction."""
+    differences = pair.first_higher + pair.second_higher
+    if differences < _LEAN_MIN_DIFFERENCES:
+        return None
+    if pair.second_higher / differences >= _LEAN_SHARE:
+        direction, count = "higher", pair.second_higher
+    elif pair.first_higher / differences >= _LEAN_SHARE:
+        direction, count = "lower", pair.first_higher
+    else:
+        return None
+    return (
+        f"  On {dimension} the judge scores {direction} than {label} in {count} of the "
+        f"{differences} cases where they differ, a systematic offset rather than scattered "
+        "disagreement."
+    )
+
+
+def _demotion_reason(entry: DimensionAgreement, threshold: str) -> str:
+    """Why a dimension was demoted: a rate below the bar, or no pair to compute one from."""
+    undefined = [
+        label
+        for label, value in (
+            ("Rater 1", entry.rater1_to_judge),
+            ("Rater 2", entry.rater2_to_judge),
+        )
+        if value == NOT_DEFINED
+    ]
+    if undefined:
+        return (
+            f"No case was scored by both {' and '.join(undefined)} and the judge, so the "
+            "judge's agreement is not defined, and an agreement that cannot be measured does "
+            "not validate the judge."
+        )
+    return f"The judge's agreement with at least one rater is below {threshold}."
+
+
+def _validation_decision(
+    agreement: tuple[DimensionAgreement, ...],
+    detail: tuple[DimensionDetail, ...] | None,
+) -> str:
+    threshold = f"{DEMOTION_THRESHOLD:.0%}"
+    lines = []
+    by_dimension = {entry.dimension: entry for entry in detail or ()}
+    for entry in agreement:
+        if entry.demoted:
+            lines.append(
+                f"- **{entry.dimension}: not validated.** {_demotion_reason(entry, threshold)} "
+                "The judge's mean for it in the judge-scored quality section is the judge's own "
+                "output, not a validated measure of quality; the raters' per-case scores are "
+                "in the cases file written beside this report."
+            )
+        else:
+            lines.append(
+                f"- **{entry.dimension}: judge-scored.** The judge agrees with both raters at "
+                f"{threshold} or more."
+            )
+        pairs = by_dimension.get(entry.dimension)
+        for label, pair in (
+            ("Rater 1", pairs.rater1_to_judge if pairs else None),
+            ("Rater 2", pairs.rater2_to_judge if pairs else None),
+        ):
+            lean = _judge_lean(entry.dimension, label, pair) if pair else None
+            if lean:
+                lines.append(lean)
+        if entry.rater_to_rater != NOT_DEFINED and entry.rater_to_rater < DEMOTION_THRESHOLD:
+            lines.append(
+                f"  The two raters agree with each other on {entry.dimension} in "
+                f"{entry.rater_to_rater:.0%} of cases, below the same bar, so the raters' "
+                "scores are themselves not settled and a single rater's score is not a reference."
+            )
+    reading = (
+        "Agreement is the share of cases scored identically. The weighted kappa is the "
+        "quadratic-weighted Cohen's kappa over the 0 to 2 scale: it is near zero whenever one "
+        "side gives almost the same score to every case, however often the two sides match, so "
+        "it is read with the pair count and the direction table, not alone. "
+        "Clarification is scored only for the cases the rubric asks the question about, so its "
+        "pair count is the number of those cases, shown in its row."
+    )
+    return "**Decision per dimension**\n\n" + "\n".join(lines) + "\n\n" + reading
+
+
+def _facts_coverage_note(facts_coverage: tuple[int, int]) -> str:
+    without, total = facts_coverage
+    return (
+        f"**Limitation: the facts column.** {without} of the {total} sheet rows carried the "
+        "statement that no case-specific facts are on record: a sheet shows the transaction "
+        "of a case the conversation filed, and the policy section a policy question declares, "
+        "and nothing else. Raters and judge scored grounding against that statement for those "
+        "rows, which is a weaker test of grounding than a reply set beside the facts it should "
+        "cite; low agreement on grounding is read with that in mind."
+    )
+
+
 def judge_validation_section(
     agreement: tuple[DimensionAgreement, ...],
     provenance: Literal["team_generated_synthetic", "human"],
+    detail: tuple[DimensionDetail, ...] | None = None,
+    facts_coverage: tuple[int, int] | None = None,
 ) -> str:
-    """The text of the report's judge-validation section for the given sample provenance."""
+    """The text of the report's judge-validation section for the given sample provenance.
+
+    ``detail`` adds each agreement's pair count and kappa, the direction table and the decision
+    per dimension; ``facts_coverage`` is ``(rows with no case facts, rows)`` and adds the matching
+    limitation. Neither is rendered for a sample that is not ``human``.
+    """
     if provenance != "human":
         return (
             "**Pending H4.** The judge-validation sample used to produce this section is "
@@ -650,20 +792,29 @@ def judge_validation_section(
             "is reported here; presenting a synthetic sample's numbers as the real validation "
             "would misstate how well the judge actually agrees with human raters."
         )
-    rows = [
-        [
-            entry.dimension,
-            _fmt_variability_value(entry.rater_to_rater),
-            _fmt_variability_value(entry.rater1_to_judge),
-            _fmt_variability_value(entry.rater2_to_judge),
-            "yes (human-only in this report)" if entry.demoted else "no",
-        ]
-        for entry in agreement
-    ]
+    by_dimension = {entry.dimension: entry for entry in detail or ()}
+    rows = []
+    for entry in agreement:
+        pairs = by_dimension.get(entry.dimension)
+        rows.append(
+            [
+                entry.dimension,
+                _agreement_cell(entry.rater_to_rater, pairs.rater_to_rater if pairs else None),
+                _agreement_cell(entry.rater1_to_judge, pairs.rater1_to_judge if pairs else None),
+                _agreement_cell(entry.rater2_to_judge, pairs.rater2_to_judge if pairs else None),
+                "yes (judge score not validated)" if entry.demoted else "no",
+            ]
+        )
     table = _table(
         ["Dimension", "Rater-to-rater", "Rater 1-to-judge", "Rater 2-to-judge", "Demoted"], rows
     )
-    return f"Judge-validation sample provenance: `human`.\n\n{table}"
+    parts = [f"Judge-validation sample provenance: `human`.\n\n{table}"]
+    if detail is not None:
+        parts.append(_direction_table(detail))
+        parts.append(_validation_decision(agreement, detail))
+    if facts_coverage is not None and facts_coverage[0] > 0:
+        parts.append(_facts_coverage_note(facts_coverage))
+    return "\n\n".join(parts)
 
 
 _LEARNED_COMPONENT_SECTION = (

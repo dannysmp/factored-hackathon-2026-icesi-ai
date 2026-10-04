@@ -12,6 +12,7 @@ from __future__ import annotations
 # Standard libraries
 import logging
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -23,19 +24,22 @@ import pytest
 from app.llm.client import FakeLlm
 from contracts.service_v1.envelope import Intent
 from evals import h4_judge_validation
+from evals.facts import NO_KNOWN_FACTS
 from evals.h4_judge_validation import (
     RaterCaseRow,
     _as_rater_scores,
     _check_roles,
     _check_same_prepared_packet,
+    _facts_coverage,
     apply_real_judge_validation,
+    case_scores_csv,
     load_rater_sheet,
     main,
     regenerate_report,
     score_with_judge,
 )
 from evals.judge import LlmJudge
-from evals.judge_validation import compute_agreement
+from evals.judge_validation import compute_agreement, compute_detail
 from evals.metrics import CaseResult, compute_headline_metrics
 from evals.models import Case, CaseCategory
 from evals.repeated_runs import compute_variability
@@ -290,7 +294,7 @@ def test_apply_real_judge_validation_replaces_the_validation_and_drops_the_stale
     assert "Pending H4" not in after_text
     assert "pending the real H4 human sample" not in after_text
     assert "Judge-validation sample provenance: `human`." in after_text
-    assert "yes (human-only in this report)" in after_text  # language_quality's own demotion
+    assert "yes (judge score not validated)" in after_text  # language_quality's own demotion
 
     # Every other section is untouched: the same "after" text, rendered directly from a report
     # that already carried the real agreement and human provenance, matches exactly.
@@ -473,10 +477,19 @@ def test_regenerate_report_patches_the_file_logs_agreement_and_calls_the_judge_p
     with caplog.at_level(logging.INFO, logger="evals.h4_judge_validation"):
         agreement = regenerate_report(rater1, rater2, report, LlmJudge(llm, model=_MODEL))
 
-    expected = render_markdown(
-        _minimal_report(judge_validation=agreement, judge_validation_provenance="human")
+    verdicts = score_with_judge(
+        load_rater_sheet(rater1), LlmJudge(FakeLlm(_JUDGE_RESPONSES), model=_MODEL)
+    )
+    rater_scores_1 = _as_rater_scores(load_rater_sheet(rater1))
+    rater_scores_2 = _as_rater_scores(load_rater_sheet(rater2))
+    expected = apply_real_judge_validation(
+        render_markdown(_minimal_report()),
+        agreement,
+        compute_detail(rater_scores_1, rater_scores_2, verdicts),
+        _facts_coverage(load_rater_sheet(rater1)),
     )
     assert report.read_text(encoding="utf-8") == expected
+    assert "kappa" in expected  # the detail reaches the committed text, not only the table
     language_quality = {row.dimension: row for row in agreement}["language_quality"]
     # Judge scores 2, 1, 2; rater 1 scored 2, 2, 2 (agreement 2/3); rater 2 scored 2, 1, 2 (1.0).
     assert language_quality.rater1_to_judge == pytest.approx(2 / 3)
@@ -559,3 +572,147 @@ def test_a_failed_replace_leaves_the_report_and_the_directory_clean(
     monkeypatch.undo()
     assert target.read_text(encoding="utf-8") == "original"
     assert [p.name for p in tmp_path.iterdir()] == ["evaluation.md"]
+
+
+# -----------------------------------------------------------------------------
+# Detail, facts coverage and the per-case scores file
+# -----------------------------------------------------------------------------
+
+
+def test_facts_coverage_counts_the_rows_that_state_no_facts_are_on_record() -> None:
+    rows = [
+        _row(case_id="J-01", facts_and_sources=NO_KNOWN_FACTS),
+        _row(case_id="J-02", facts_and_sources="Case CASE-002 filed."),
+        _row(case_id="J-03", facts_and_sources=NO_KNOWN_FACTS),
+    ]
+
+    assert _facts_coverage(rows) == (2, 3)
+
+
+def test_facts_coverage_does_not_count_a_row_that_only_mentions_the_sentinel() -> None:
+    rows = [_row(facts_and_sources=NO_KNOWN_FACTS + " Plus a policy section.")]
+
+    assert _facts_coverage(rows) == (0, 1)
+
+
+def test_the_patched_section_carries_the_decision_direction_table_and_facts_limitation() -> None:
+    rater1 = load_rater_sheet(_RATER_1_CSV)
+    rater2 = load_rater_sheet(_RATER_2_CSV)
+    verdicts = score_with_judge(rater1, LlmJudge(FakeLlm(_JUDGE_RESPONSES), model=_MODEL))
+    scores_1, scores_2 = _as_rater_scores(rater1), _as_rater_scores(rater2)
+    agreement = compute_agreement(scores_1, scores_2, verdicts)
+    detail = compute_detail(scores_1, scores_2, verdicts)
+
+    patched = apply_real_judge_validation(
+        render_markdown(_minimal_report()), agreement, detail, (46, 50)
+    )
+
+    assert "Decision per dimension" in patched
+    assert "language_quality: not validated" in patched
+    assert "Judge higher / lower than Rater 1" in patched
+    assert "46 of the 50 sheet rows" in patched
+
+
+def test_case_scores_csv_has_one_row_per_case_with_every_source_and_no_text() -> None:
+    rater1 = load_rater_sheet(_RATER_1_CSV)
+    rater2 = load_rater_sheet(_RATER_2_CSV)
+    verdicts = score_with_judge(rater1, LlmJudge(FakeLlm(_JUDGE_RESPONSES), model=_MODEL))
+
+    text = case_scores_csv(rater1, rater2, verdicts)
+    lines = text.splitlines()
+
+    assert lines[0] == (
+        "case_id,language,category,"
+        "grounding_rater1,grounding_rater2,grounding_judge,"
+        "language_quality_rater1,language_quality_rater2,language_quality_judge,"
+        "clarification_rater1,clarification_rater2,clarification_judge"
+    )
+    assert len(lines) == 1 + len(rater1)
+    first = lines[1].split(",")
+    assert first[0] == rater1[0].case_id
+    assert first[3:6] == [
+        str(rater1[0].grounding),
+        str(rater2[0].grounding),
+        str(verdicts[0].grounding),
+    ]
+    assert "No reconozco" not in text  # no conversation text
+    assert all(row.comment not in text for row in rater1 if row.comment)
+
+
+def test_case_scores_csv_leaves_a_clarification_that_was_not_asked_blank() -> None:
+    row_1 = _row(case_id="J-01", clarification=None)
+    row_2 = _row(case_id="J-01", role="Rater 2", clarification=None)
+    verdict = LlmJudge(
+        FakeLlm([{"grounding": 2, "language_quality": 2, "rationale": "ok"}]), model=_MODEL
+    ).score(
+        "J-01",
+        language="es",
+        user_turns=row_1.user_turns,
+        system_replies=row_1.system_replies,
+        facts_and_sources=row_1.facts_and_sources,
+    )
+
+    line = case_scores_csv([row_1], [row_2], [verdict]).splitlines()[1]
+
+    assert line.endswith(",,,")
+
+
+def test_regenerate_report_writes_the_cases_file_beside_the_report(tmp_path: Path) -> None:
+    rater1, rater2, report = _stage(tmp_path)
+
+    regenerate_report(rater1, rater2, report, LlmJudge(FakeLlm(_JUDGE_RESPONSES), model=_MODEL))
+
+    written = (tmp_path / "judge-validation-cases.csv").read_text(encoding="utf-8")
+    assert written.splitlines()[0].startswith("case_id,language,category")
+    assert not list(tmp_path.glob(".judge-validation-cases.csv.*"))
+
+
+def test_regenerate_report_writes_the_cases_file_where_it_is_told(tmp_path: Path) -> None:
+    rater1, rater2, report = _stage(tmp_path)
+    elsewhere = tmp_path / "scores.csv"
+
+    regenerate_report(
+        rater1, rater2, report, LlmJudge(FakeLlm(_JUDGE_RESPONSES), model=_MODEL), elsewhere
+    )
+
+    assert elsewhere.exists()
+    assert not (tmp_path / "judge-validation-cases.csv").exists()
+
+
+def test_case_scores_csv_puts_each_source_in_its_own_column() -> None:
+    row_1 = _row(case_id="J-01", grounding=0, language_quality=1, clarification=2)
+    row_2 = _row(case_id="J-01", role="Rater 2", grounding=1, language_quality=2, clarification=0)
+    verdict = LlmJudge(
+        FakeLlm([{"grounding": 2, "language_quality": 0, "clarification": 1, "rationale": "ok"}]),
+        model=_MODEL,
+    ).score(
+        "J-01",
+        language="es",
+        user_turns=row_1.user_turns,
+        system_replies=row_1.system_replies,
+        facts_and_sources=row_1.facts_and_sources,
+    )
+
+    line = case_scores_csv([row_1], [row_2], [verdict]).splitlines()[1]
+
+    assert line == "J-01,es,normal,0,1,2,1,2,0,2,0,1"
+
+
+def test_a_demoted_dimension_claims_only_what_the_whole_report_does_with_the_judge_score() -> None:
+    rater1 = load_rater_sheet(_RATER_1_CSV)
+    rater2 = load_rater_sheet(_RATER_2_CSV)
+    verdicts = score_with_judge(rater1, LlmJudge(FakeLlm(_JUDGE_RESPONSES), model=_MODEL))
+    scores_1, scores_2 = _as_rater_scores(rater1), _as_rater_scores(rater2)
+    agreement = compute_agreement(scores_1, scores_2, verdicts)
+    detail = compute_detail(scores_1, scores_2, verdicts)
+    base = _minimal_report()
+    judged = replace(base.systems[0], judge_verdicts=verdicts)
+    report = replace(base, systems=(judged,))
+
+    patched = apply_real_judge_validation(render_markdown(report), agreement, detail)
+
+    judged_section = patched.split("## 4.")[1].split("## 5.")[0]
+    assert "| P |" in judged_section
+    assert "states no judge score" not in patched
+    assert "scores stand in its place" not in patched
+    assert "not a validated measure of quality" in patched
