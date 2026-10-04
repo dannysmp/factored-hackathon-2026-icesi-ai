@@ -69,7 +69,7 @@ Every requirement is checked with a link to its evidence.
 | Held-out evaluation including failure conditions | The adversarial suite results | [ ] |
 | Successful, unsafe, handoff, latency and cost with sample sizes | The evaluation report | [ ] |
 | Outcome definitions honored | The metric definitions and the report | [ ] |
-| Tracing, retries, safe fallback, reproducible setup | The chaos test results; the quickstart | [ ] |
+| Tracing, retries, safe fallback, reproducible setup | [The dialogue controller tests](../tests/test_dialogue_controller.py) and the [retry](../tests/test_reliability_retry.py), [breaker](../tests/test_reliability_breaker.py) and [tool port](../tests/test_reliability_tool_port.py) tests, run with `uv run pytest tests/test_dialogue_controller.py tests/test_reliability_retry.py tests/test_reliability_breaker.py tests/test_reliability_tool_port.py`; the quickstart | [ ] |
 | Capacity limits, monitoring, access, retention, remaining work | The capacity, retention and remaining-work sections | [ ] |
 | Explanations from records | The audit timeline of a synthetic conversation, identifiers masked | [ ] |
 | Provided data only; labeled inputs; no private records externally | [The data-use section](../README.md#where-each-input-comes-from); [the request-capture test](../tests/test_request_capture_pii.py) | [ ] |
