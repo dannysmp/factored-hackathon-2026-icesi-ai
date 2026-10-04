@@ -397,12 +397,33 @@ def test_matches_hint_falls_back_to_description_when_merchant_is_absent() -> Non
     assert _matches_hint(fact, TransactionHint(merchant="amzn"))
 
 
-def test_matches_hint_is_accent_and_case_insensitive() -> None:
-    """Spanish and Portuguese merchant names carry accents the customer may not retype."""
+def test_matches_hint_ignores_case_in_an_accented_name_typed_with_its_accent() -> None:
     fact = _transaction(merchant="Café Colombia")
     assert _matches_hint(fact, TransactionHint(merchant="café"))
     assert _matches_hint(fact, TransactionHint(merchant="CAFÉ"))
     assert _matches_hint(fact, TransactionHint(merchant="colombia"))
+
+
+@pytest.mark.parametrize(
+    ("stored", "typed"),
+    [
+        ("Café Sol", "cafe"),
+        ("Café Sol", "Cafe Sol"),
+        ("Cafe Sol", "Café"),
+        ("São Paulo", "SAO PAULO"),
+        ("SAO PAULO", "são paulo"),
+        ("Pão de Açúcar", "pao de acucar"),
+    ],
+)
+def test_matches_hint_ignores_accents_whichever_side_carries_them(stored: str, typed: str) -> None:
+    """A customer may drop an accent the stored name has, or add one it lacks."""
+    assert _matches_hint(_transaction(merchant=stored), TransactionHint(merchant=typed))
+
+
+def test_matches_hint_still_rejects_a_different_merchant_after_accent_folding() -> None:
+    assert not _matches_hint(
+        _transaction(merchant="Café Sol"), TransactionHint(merchant="Sol Luna")
+    )
 
 
 def test_matches_hint_never_matches_an_unknown_amount_against_a_stated_one() -> None:
