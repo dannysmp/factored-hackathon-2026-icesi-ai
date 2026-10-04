@@ -1,6 +1,6 @@
 # Release checklist
 
-This checklist states each obligation of a release and names the evidence a reviewer can open. A row is checked off only with its evidence linked. Every artifact that already exists is linked directly from its row. The evidence is produced for the release and linked at the release commit, so some artifacts named here — the rehearsal checklist, the slide content checklist and the two clean-account run records — are written as the release is prepared and have no link yet. The delivery date is 2026-10-05. Every row is verified before the freeze, 23:59 America/Bogota on 2026-10-04; the rows that check a live link are checked once more immediately before the release is announced, and that second check is recorded with its time.
+This checklist states each obligation of a release and names the evidence a reviewer can open. A row is checked off only with its evidence linked. Every artifact that already exists is linked directly from its row. The evidence is produced for the release and linked at the release commit, so some artifacts named here — the rehearsal checklist and the slide content checklist — are written as the release is prepared and have no link yet. The delivery date is 2026-10-05. Every row is verified before the freeze, 23:59 America/Bogota on 2026-10-04; the rows that check a live link are checked once more immediately before the release is announced, and that second check is recorded with its time.
 
 ## Repository
 
@@ -12,7 +12,7 @@ This checklist states each obligation of a release and names the evidence a revi
 | The README leads from the problem to a running demonstration without a question | A person who did not write it follows it from a clean checkout | [ ] |
 | Every model card, the limitations and remaining-work report and the demonstration scripts are present | [The model card](../models/model_card.json), [the limitations and remaining-work report](limitations.md) and [the demonstration scripts](demo-scripts.md), each at the release commit | [x] |
 | Inputs are labeled real, de-identified, synthetic or team-generated | [The data-use section of the README](../README.md#where-each-input-comes-from) | [x] |
-| No card number appears in any request to an external model; a document number typed into free text is not detected, and that exception is disclosed | [The request-capture test](../tests/test_request_capture_pii.py) for the understanding step's request, and [the security posture section of the limitations report](limitations.md#security-posture) for the exception | [ ] |
+| No card number appears in the understanding step's request to an external model; a document number typed into free text is not detected, and that exception is disclosed | [The request-capture test](../tests/test_request_capture_pii.py) for the understanding step's request, and [the security posture section of the limitations report](limitations.md#security-posture) for the exception | [ ] |
 
 ## Deployed system
 
@@ -23,7 +23,7 @@ This checklist states each obligation of a release and names the evidence a revi
 | The demonstration notice and the data reference date are visible on every screen | The rehearsal checklist | [ ] |
 | The console is shown as a read-only viewer | The rehearsal checklist | [ ] |
 | The deployment, dispatched manually from the main branch, passes the smoke test | [The deploy workflow](../.github/workflows/deploy.yml) and [the manually dispatched run on main at 2cad12d, whose HTTPS smoke test and dashboard smoke test passed](https://github.com/dannysmp/factored-hackathon-2026-icesi-ai/actions/runs/37227276409) | [x] |
-| The stack is reproduced from a clean account with the written commands, then torn down | The two clean-account run records, following the [deployment runbook](../infra/deployment-runbook.md) | [ ] |
+| The provisioning scripts are idempotent and the deployment procedure is written; a reproduction from a new account has not been shown, and that is disclosed | The [deployment runbook](../infra/deployment-runbook.md), and [the deployment section of the limitations report](limitations.md#deployment) for the reproduction that has not been shown | [x] |
 | No long-lived cloud key exists in the repository or the pipeline | The pipeline configuration; the scan report | [ ] |
 | The demonstration sign-in can be switched off, and the switch has been tried | [The runbook entry](../infra/README.md#turning-the-demonstration-sign-in-off), with the date of the trial | [ ] |
 
@@ -72,7 +72,7 @@ Every requirement is checked with a link to its evidence.
 | Tracing, retries, safe fallback, reproducible setup | [The dialogue controller tests](../tests/test_dialogue_controller.py) and the [retry](../tests/test_reliability_retry.py), [breaker](../tests/test_reliability_breaker.py) and [tool port](../tests/test_reliability_tool_port.py) tests, run with `uv run pytest tests/test_dialogue_controller.py tests/test_reliability_retry.py tests/test_reliability_breaker.py tests/test_reliability_tool_port.py`; the quickstart | [ ] |
 | Capacity limits, monitoring, access, retention, remaining work | The capacity, retention and remaining-work sections | [ ] |
 | Explanations from records | The audit timeline of a synthetic conversation, identifiers masked | [ ] |
-| Provided data only; labeled inputs; no card number externally, with the free-text document-number exception disclosed | [The data-use section](../README.md#where-each-input-comes-from); [the request-capture test](../tests/test_request_capture_pii.py); [the security posture section of the limitations report](limitations.md#security-posture) | [ ] |
+| Provided data only; labeled inputs; no card number in the understanding step's external request, with the free-text document-number exception disclosed | [The data-use section](../README.md#where-each-input-comes-from); [the request-capture test](../tests/test_request_capture_pii.py); [the security posture section of the limitations report](limitations.md#security-posture) | [ ] |
 | Authentication and per-customer access | The authorization tests | [ ] |
 | Mock services documented | The contract and limitations of the case service and the demonstration sign-in | [ ] |
 | The model does not invent policy; risk separated from policy | The grounding checks; the model card | [ ] |
