@@ -331,6 +331,16 @@ def test_every_template_id_has_a_working_renderer(lang: str) -> None:
         assert rendered.reply.strip()
 
 
+def test_the_spanish_language_offer_does_not_speak_in_a_gendered_first_person() -> None:
+    """The assistant has no gender, so the Spanish offer must not say it is "segura"."""
+    envelope = _envelope(template_id=TemplateId.LANGUAGE_OFFER)
+
+    reply = render(envelope).reply
+
+    assert "No sé si prefiere continuar en español o portugués" in reply
+    assert "segura" not in reply.lower()
+
+
 def test_portuguese_replies_keep_their_fixed_wording_faults_out() -> None:
     """No uncontracted "em a"/"por a", no sentence-initial clitic, no "a um atendente"."""
     envelopes = _every_template_envelope("pt")

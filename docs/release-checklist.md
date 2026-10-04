@@ -22,7 +22,7 @@ This checklist states each obligation of a release and names the evidence a revi
 | The three demonstration paths run in the browser, in Spanish and Portuguese, and the normal path in English | The rehearsal checklist, second run, all passing | [ ] |
 | The demonstration notice and the data reference date are visible on every screen | The rehearsal checklist | [ ] |
 | The console is shown as a read-only viewer | The rehearsal checklist | [ ] |
-| A push to the main branch deploys and passes the smoke test | The pipeline run | [ ] |
+| The deployment, dispatched manually from the main branch, passes the smoke test | [The deploy workflow](../.github/workflows/deploy.yml) and the run of that workflow that passed | [ ] |
 | The stack is reproduced from a clean account with the written commands, then torn down | The two clean-account run records, following the [deployment runbook](../infra/deployment-runbook.md) | [ ] |
 | No long-lived cloud key exists in the repository or the pipeline | The pipeline configuration; the scan report | [ ] |
 | The demonstration sign-in can be switched off, and the switch has been tried | [The runbook entry](../infra/README.md#turning-the-demonstration-sign-in-off), with the date of the trial | [ ] |
@@ -69,7 +69,7 @@ Every requirement is checked with a link to its evidence.
 | Held-out evaluation including failure conditions | The adversarial suite results | [ ] |
 | Successful, unsafe, handoff, latency and cost with sample sizes | The evaluation report | [ ] |
 | Outcome definitions honored | The metric definitions and the report | [ ] |
-| Tracing, retries, safe fallback, reproducible setup | The chaos test results; the quickstart | [ ] |
+| Tracing, retries, safe fallback, reproducible setup | [The dialogue controller tests](../tests/test_dialogue_controller.py) and the [retry](../tests/test_reliability_retry.py), [breaker](../tests/test_reliability_breaker.py) and [tool port](../tests/test_reliability_tool_port.py) tests, run with `uv run pytest tests/test_dialogue_controller.py tests/test_reliability_retry.py tests/test_reliability_breaker.py tests/test_reliability_tool_port.py`; the quickstart | [ ] |
 | Capacity limits, monitoring, access, retention, remaining work | The capacity, retention and remaining-work sections | [ ] |
 | Explanations from records | The audit timeline of a synthetic conversation, identifiers masked | [ ] |
 | Provided data only; labeled inputs; no private records externally | [The data-use section](../README.md#where-each-input-comes-from); [the request-capture test](../tests/test_request_capture_pii.py) | [ ] |
