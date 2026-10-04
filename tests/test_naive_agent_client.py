@@ -22,7 +22,7 @@ from pydantic import SecretStr
 
 from app.llm.client import LlmRequestRejected, LlmUnavailable
 from app.llm.masking import redact_pan
-from evals.runner.baselines.naive_agent_client import NaiveAgentClient
+from evals.runner.baselines.naive_agent_client import NaiveAgentClient, NaiveAgentRequestTooLarge
 
 _MODEL = "claude-haiku-4-5-20251001"
 _TOOLS = [{"name": "get_transaction", "description": "Look one up.", "input_schema": {}}]
@@ -213,6 +213,30 @@ def test_a_non_retryable_status_error_is_a_rejected_request(
 
     with pytest.raises(LlmRequestRejected):
         client.send(_MESSAGES, _TOOLS, system="s", max_tokens=512, timeout_seconds=10.0)
+
+
+def test_a_request_too_large_is_a_narrower_rejected_request() -> None:
+    stub = _StubAnthropic(
+        anthropic.RequestTooLargeError("too large", response=_http_response(413), body=None)
+    )
+    client = NaiveAgentClient(SecretStr("test-key"), model=_MODEL, client=stub)  # type: ignore[arg-type]
+
+    with pytest.raises(NaiveAgentRequestTooLarge, match="413") as raised:
+        client.send(_MESSAGES, _TOOLS, system="s", max_tokens=512, timeout_seconds=10.0)
+
+    assert isinstance(raised.value, LlmRequestRejected)
+
+
+def test_an_account_level_rejection_is_not_the_request_too_large_class() -> None:
+    stub = _StubAnthropic(
+        anthropic.AuthenticationError("bad key", response=_http_response(401), body=None)
+    )
+    client = NaiveAgentClient(SecretStr("test-key"), model=_MODEL, client=stub)  # type: ignore[arg-type]
+
+    with pytest.raises(LlmRequestRejected) as raised:
+        client.send(_MESSAGES, _TOOLS, system="s", max_tokens=512, timeout_seconds=10.0)
+
+    assert not isinstance(raised.value, NaiveAgentRequestTooLarge)
 
 
 def test_an_unrecognized_status_error_still_falls_back_to_unavailable() -> None:

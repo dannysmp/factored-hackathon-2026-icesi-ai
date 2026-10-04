@@ -41,7 +41,11 @@ from evals.runner.baselines.b1 import (
     run_case,
     run_cases,
 )
-from evals.runner.baselines.naive_agent_client import NaiveAgentClient, NaiveAgentTurn
+from evals.runner.baselines.naive_agent_client import (
+    NaiveAgentClient,
+    NaiveAgentRequestTooLarge,
+    NaiveAgentTurn,
+)
 from evals.scoring import score_case
 
 _NOW = datetime(2026, 6, 18, 15, 0, tzinfo=UTC)
@@ -702,6 +706,78 @@ def test_run_cases_catches_a_transient_provider_failure_and_continues(
     assert failed.case_id == "unavailable"
     assert failed.error is not None
     assert "APITimeoutError" in failed.error
+    assert failed.correct_outcome is False
+    assert succeeded.case_id == "transcript-for-c2"
+    assert succeeded.error is None
+    assert succeeded.correct_outcome is True
+
+
+def test_run_cases_records_a_request_too_large_against_its_case_and_continues(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request over the provider's byte limit is driven by one case's own conversation, so it is
+    recorded against that case — unlike an account-level rejection, which stops the run."""
+    settings = _settings(database_url=SecretStr("postgresql://unused"))
+    cases = (_b1_case(case_id="too_large"), _b1_case(case_id="c2"))
+    client = NaiveAgentClient(
+        SecretStr("unused"),
+        model=_MODEL,
+        client=_StubAnthropic([]),  # type: ignore[arg-type]
+    )
+
+    def fake_resolve(dsn: str, seed_ref: str) -> str:
+        return "CUST-A"
+
+    def fake_build_dispatcher(
+        settings: Settings,
+        *,
+        policy: object,
+        retriever: object,
+        calendar: object,
+        clock: object,
+        customer_id: str,
+        lang: str,
+    ) -> tuple[object, str]:
+        return object(), "SESSION-B1-HERMETIC"
+
+    def fake_run_case(
+        client: object, dispatcher: object, case: Case, *, session_id: str, calendar: object
+    ) -> str:
+        if case.case_id == "too_large":
+            raise NaiveAgentRequestTooLarge("Anthropic call failed: status 413")
+        return f"transcript-for-{case.case_id}"
+
+    def fake_score(dsn: str, transcript: str) -> CaseResult:
+        return CaseResult(
+            case_id=transcript,
+            is_adversarial=False,
+            expected_escalation=False,
+            observed_escalation=False,
+            automation_attempted=True,
+            correct_outcome=True,
+        )
+
+    monkeypatch.setattr("evals.runner.baselines.b1.resolve_customer_id", fake_resolve)
+    monkeypatch.setattr("evals.runner.baselines.b1._build_dispatcher", fake_build_dispatcher)
+    monkeypatch.setattr("evals.runner.baselines.b1.run_case", fake_run_case)
+    monkeypatch.setattr("evals.runner.baselines.b1.score_case", fake_score)
+
+    results = run_cases(
+        client,
+        settings,
+        "postgresql://unused",
+        cases,
+        policy=load_policy(),
+        retriever=LexicalRetriever.from_corpus(),
+        calendar=DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING),
+        clock=lambda: _NOW,
+    )
+
+    assert len(results) == 2
+    failed, succeeded = results
+    assert failed.case_id == "too_large"
+    assert failed.error is not None
+    assert "NaiveAgentRequestTooLarge" in failed.error
     assert failed.correct_outcome is False
     assert succeeded.case_id == "transcript-for-c2"
     assert succeeded.error is None
