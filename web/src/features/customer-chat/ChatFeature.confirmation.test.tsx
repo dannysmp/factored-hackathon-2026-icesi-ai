@@ -1,11 +1,13 @@
 /** Component test: the confirmation button never confirms anything but the summary on screen. */
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { ChatFeature } from './ChatFeature'
 import type { ChatClient } from './client'
 import { CONFIRMATION_TEXT, TurnResponseSchema } from './contracts'
 import type { TurnResponse } from './contracts'
+import { es } from '../../i18n/es'
+import { pt } from '../../i18n/pt'
 
 function turn(
   version: number,
@@ -113,7 +115,50 @@ describe('ChatFeature confirmation button', () => {
     expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
   })
 
-  it('is disabled while a turn is in flight, so a second click cannot confirm twice', async () => {
+  it('is offered again, once, when a second summary follows the first without a change turn', async () => {
+    const user = userEvent.setup()
+    const { client, sent } = recordingClient([SUMMARY_250, SUMMARY_180, FILED])
+    render(<ChatFeature client={client} lang="en" />)
+    await screen.findByText(OPENING.reply)
+    await sendText(user, 'the Tienda Sol one')
+    await screen.findByRole('button', { name: 'Confirm' })
+
+    await sendText(user, 'make it 180')
+    await screen.findByText(SUMMARY_180.reply)
+    expect(screen.getAllByRole('button', { name: 'Confirm' })).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    await screen.findByText(FILED.reply)
+    expect(sent).toEqual(['the Tienda Sol one', 'make it 180', CONFIRMATION_TEXT])
+  })
+
+  it.each([
+    ['es', es],
+    ['pt', pt],
+  ] as const)(
+    'is labelled in the customer language (%s) and sends the same text',
+    async (lang, catalog) => {
+      const user = userEvent.setup()
+      const { client, sent } = recordingClient([
+        { ...SUMMARY_250, lang },
+        { ...FILED, lang },
+      ])
+      const opening = { ...OPENING, lang }
+      render(
+        <ChatFeature client={{ ...client, start: () => Promise.resolve(opening) }} lang={lang} />,
+      )
+      await screen.findByText(opening.reply)
+      await user.type(screen.getByLabelText(catalog['chat.messageLabel']), 'x')
+      await user.click(screen.getByRole('button', { name: catalog['chat.send'] }))
+
+      await user.click(await screen.findByRole('button', { name: catalog['chat.confirm'] }))
+
+      await screen.findByText(FILED.reply)
+      expect(sent).toEqual(['x', CONFIRMATION_TEXT])
+    },
+  )
+
+  it('is disabled while a turn is in flight and confirms once', async () => {
     const user = userEvent.setup()
     const sent: string[] = []
     let release: (value: TurnResponse) => void = () => undefined
@@ -139,7 +184,9 @@ describe('ChatFeature confirmation button', () => {
       expect(confirm).toBeDisabled()
     })
     await user.click(confirm)
-    release(FILED)
+    act(() => {
+      release(FILED)
+    })
 
     await screen.findByText(FILED.reply)
     expect(sent.filter((text) => text === CONFIRMATION_TEXT)).toHaveLength(1)

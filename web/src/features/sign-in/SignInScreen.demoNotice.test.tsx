@@ -60,4 +60,14 @@ describe('SignInScreen demonstration notice', () => {
     await screen.findByRole('alert')
     expect(screen.getByText(es['signin.intro'])).toBeInTheDocument()
   })
+
+  it('is shown on the agent console sign-in too, with its submit as the only button', async () => {
+    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue([
+      { slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' as const },
+    ])
+    render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
+
+    expect(await screen.findByText(es['signin.intro'])).toBeInTheDocument()
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+  })
 })
