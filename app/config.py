@@ -157,9 +157,9 @@ class Settings(BaseSettings):
         closed with a ``ConfigError`` on every request, never a silent no-op and never a call to
         that other provider.
     data_as_of_date : str | None
-        The domain date override: an ISO date, or the literal ``"system"`` for the real
-        date in the bank's own zone. Optional; when absent, the domain calendar reads the loaded
-        seed's own reference date instead.
+        The domain date override: an ISO date, or the literal ``"system"`` for the real date in
+        the bank's own zone. Optional; when absent, the domain calendar reads the loaded seed's own
+        reference date instead.
     case_create_session_cap : int
         Permission-class invariant the create tool enforces itself, not a policy value:
         an anti-abuse bound on how many cases one session may file, never a limit on how many
@@ -357,9 +357,9 @@ class Settings(BaseSettings):
     def _demo_broker_secrets_never_collide(self) -> Settings:
         """A copy-paste SSM mistake must not silently defeat the two-broker separation.
 
-        Two access codes exist so that "a leaked customer code leaves the console
-        protected"; the same reasoning applies to the two signing keys. Checked only when both
-        values are actually configured, so one broker alone never trips this.
+        Two access codes exist so that a leaked customer code leaves the console protected; the same
+        reasoning applies to the two signing keys. Checked only when both values are actually
+        configured, so one broker alone never trips this.
         """
         if (
             self.demo_signin_access_code is not None

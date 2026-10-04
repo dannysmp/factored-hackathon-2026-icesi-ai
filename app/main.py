@@ -25,15 +25,15 @@ Design Principles
   agent only when its broker is enabled). In ``local`` a throw-away key is generated per audience
   (sessions end when the process restarts); in ``dev`` and ``prod`` a missing key is a start-up
   error.
-- The service starts only with a resolved domain date: an explicit setting, the real date
-  in the bank zone, or the loaded seed's own reference date; none of the three is a start-up error.
+- The service starts only with a resolved domain date: an explicit setting, the real date in the
+  bank zone, or the loaded seed's own reference date; none of the three is a start-up error.
 - The turns route's own heavy dependencies (a database connection, an LLM provider key) are
   resolved lazily, inside its per-request factory, never at start-up: an app that never calls
   ``/v1/turns`` — most tests, a bare health check — never needs them configured.
-- The console's own read routes (``app.api.agent``), when the agent demo broker is enabled, are
-  the opposite: their collaborators (the queue, the ticket detail and the audit sink) are built
-  eagerly, here, like every other collaborator that only needs ``DATABASE_URL`` — a missing one
-  is a start-up error, not a first-request surprise (``AgentConsolePorts``,
+- The console's own routes (``app.api.agent``), when the agent demo broker is enabled, are the
+  opposite: their collaborators (the queue, the ticket detail, the audit sink and the writes) are
+  built eagerly, here, like every other collaborator that only needs ``DATABASE_URL`` — a missing
+  one is a start-up error, not a first-request surprise (``AgentConsolePorts``,
   ``_default_agent_console``).
 - Configuration resolves first, and structured JSON logging installs immediately after — not
   before it, since the service version and environment logging carries come from that same
@@ -564,9 +564,9 @@ def create_app(
         inject a fake one. When omitted and either broker is enabled, the real, store-backed one
         is built from ``DATABASE_URL``.
     agent_console : AgentConsolePorts | None
-        The console's own queue, ticket-detail and audit collaborators; tests inject a hermetic
-        bundle. When omitted and the agent demo broker is enabled, the real, store-backed ones are
-        built from ``DATABASE_URL``.
+        The console's own queue, ticket-detail, audit and writes collaborators; tests inject a
+        hermetic bundle. When omitted and the agent demo broker is enabled, the real, store-backed
+        ones are built from ``DATABASE_URL``.
 
     Returns
     -------
@@ -651,9 +651,9 @@ def create_app(
             attempt_limiter=AttemptLimiter(clock=clock),
         )
 
-    # The console's own two read routes, gated on the same flag as the only broker that
-    # can ever mint an agent token — a second flag would gate the same precondition twice with no
-    # scenario where they should disagree.
+    # The console's own routes, gated on the same flag as the only broker that can ever mint an
+    # agent token — a second flag would gate the same precondition twice with no scenario where
+    # they should disagree.
     agent_router = (
         _build_agent_router(
             resolved, agent_console, calendar=calendar, retriever=retriever, clock=clock
