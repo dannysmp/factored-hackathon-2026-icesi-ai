@@ -787,6 +787,21 @@ def test_a_described_answer_that_matches_nothing_counts_whatever_the_intent_the_
     assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
 
 
+def test_an_empty_transaction_list_never_counts_toward_the_budget(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, port=FakeToolPort(transactions=()))
+
+    for _ in range(4):
+        reply = dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+        assert not reply.end_session
+
+    assert dialogue.outbox.packets == []
+    state = dialogue.store.get("sess-1")
+    assert state is not None
+    assert state.clarification_attempts == 0
+
+
 def test_each_turn_logs_how_it_was_understood_and_where_the_dialogue_went(
     policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
 ) -> None:

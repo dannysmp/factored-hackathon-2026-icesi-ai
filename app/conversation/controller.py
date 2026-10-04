@@ -96,8 +96,11 @@ handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's
 While the transaction is the pending question, a message that describes one is taken as the
 answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a category
 carried by such a message does not replace one already set, the same rule as above. A description
-that matches no transaction, or more than one, counts as one unsettled answer to the question,
-the same as any other reply that leaves it open.
+that matches no transaction, or more than one, is an unsettled answer to the question, the same
+as any other reply that leaves it open: a person is involved once the clarification budget of
+such answers has followed the question. When the opening message already described the
+transaction, that message is itself the question, so the hand-off follows the third unmatched
+description. An empty transaction list never counts.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
@@ -909,8 +912,9 @@ class DialogueController:
         self, state: DialogueState, template: TemplateId
     ) -> tuple[DialogueState, RenderEnvelope]:
         """The description matched no transaction, or more than one: ask for it again, or hand
-        over once the clarification budget is spent. Each such reply counts as one unsettled
-        answer to the transaction question."""
+        over once the clarification budget is spent. Each such reply is an unsettled answer to the
+        transaction question; the count is zero on the first ask, so the budget is reached by the
+        second answer that follows a question already asked."""
         new_state = state.with_clarification(Slot.TRANSACTION)
         if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
             return self._handoff(
