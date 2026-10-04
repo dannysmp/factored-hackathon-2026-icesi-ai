@@ -25,10 +25,10 @@ Design Principles
   text; ``_ModelExtraction`` accepts them loosely (no length or cross-field rules), then the
   mapping into ``NluResult`` is where the contract's own bounds and rules apply. A result that
   fails them once is repaired once (truncating an overlong free-text field, dropping a choice out
-  of range, nulling an enum-like value the model spelled wrong or an amount that holds no figure)
-  and validated again; a result that still fails becomes ``NluResult.unusable()``: one question,
-  then a person — the customer is never shown a model or provider error. A call the port could
-  not complete at all is a different outcome (``UnderstandingUnavailable``, raised rather than
+  of range, nulling an enum-like value the model spelled wrong or an amount that is not a plain
+  figure) and validated again; a result that still fails becomes ``NluResult.unusable()``: one
+  question, then a person — the customer is never shown a model or provider error. A call the port
+  could not complete at all is a different outcome (``UnderstandingUnavailable``, raised rather than
   swallowed): unlike a malformed result, it is not the customer's own ambiguity, so it must not
   be treated as one.
 - The masking serializer is the only path text takes to leave the process: this class never builds
@@ -56,7 +56,7 @@ expression it never recognized, rather than guessing one specific day out of it.
 from __future__ import annotations
 
 # Standard libraries
-import re  # Stripping an amount's currency symbols and spacing
+import re  # Matching an amount's currency, digits and separators
 from collections.abc import Mapping  # Type of the raw tool arguments
 from datetime import date  # The domain calendar's own reference date
 from decimal import Decimal, InvalidOperation  # Money is never a float; malformed amounts repair
@@ -183,11 +183,14 @@ _ENUM_REPAIRS: Mapping[str, frozenset[str]] = {
 }
 
 
-# A figure is read only when it is exactly: an optional currency (a symbol, or a code spelled as
-# the contract spells one), a number whose marks are digit groups and separators, and an optional
-# currency. Anything else (a sign, a percentage, an exponent, words, digit runs split by text) is
-# not an amount and is never repaired into one.
-_CURRENCY = r"(?:[A-Z]{3}\$?|US\$|R\$|\$|€|£|¥)"
+# A figure is read only when it is exactly: an optional currency (a symbol, or one of the ISO 4217
+# codes the bank's customers write), a number whose marks are digit groups and separators, and an
+# optional currency. Anything else (a sign, a percentage, an exponent, words, a code outside this
+# list, digit runs split by text) is not an amount and is never repaired into one.
+_CURRENCY_CODES = (
+    "ARS|BOB|BRL|CLP|COP|CRC|CUP|DOP|EUR|GBP|GTQ|HNL|JPY|MXN|NIO|PAB|PEN|PYG|USD|UYU|VES"
+)
+_CURRENCY = rf"(?:(?:{_CURRENCY_CODES})\$?|US\$|R\$|\$|€|£|¥)"
 _SPACING = " \u00a0\u202f"
 _AMOUNT_TEXT = re.compile(
     rf"(?:{_CURRENCY}[{_SPACING}]*)?"

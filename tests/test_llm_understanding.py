@@ -374,6 +374,15 @@ def _amount_understanding(amount: object, **extra: object) -> tuple[NluResult, F
         ("1'234.50", "1234.50"),
         ("R$ 1.234,56", "1234.56"),
         ("1.234,56 €", "1234.56"),
+        ("US$ 100", "100"),
+        ("\u00a5 1.500", "1500"),
+        ("\u00a3 12,50", "12.50"),
+        ("ARS$ 5", "5"),
+        ("1\u2019250,50", "1250.50"),
+        ("1\u00a0250", "1250"),
+        ("1\u202f250,50", "1250.50"),
+        (",5", "0.5"),
+        (" 99.948,89\n", "99948.89"),
     ],
 )
 def test_a_localized_amount_is_read_with_its_own_separators(spoken: str, expected: str) -> None:
@@ -409,6 +418,10 @@ def test_a_localized_amount_is_read_with_its_own_separators(spoken: str, expecte
         "3x 1.500,00",
         "12abc",
         "1.234'567,89",
+        "5 MIL",
+        "MIL 5",
+        "PIX 50",
+        "12ABC",
     ],
 )
 def test_an_unparseable_amount_is_dropped_while_the_rest_of_the_understanding_survives(
