@@ -163,6 +163,10 @@ class Settings(BaseSettings):
         Permission-class invariant the create tool enforces itself (ADR-3), not a policy value:
         an anti-abuse bound on how many cases one session may file, never a limit on how many
         distinct disputes a customer legitimately has. Between 1 and 50.
+    dialogue_max_turns : int
+        The most customer turns one session may apply before the next is answered with a handoff
+        to a person and no model call. A cost control, not a policy value: it bounds what one
+        session can spend. Between 5 and 200; the default sits well above the longest normal flow.
     llm_retry_max_attempts, llm_retry_base_delay_ms, llm_retry_max_delay_ms : int
         Bounded retry (E9) for a transient LLM failure (``LlmUnavailable``): full-jitter
         exponential backoff between attempts, capped at ``llm_retry_max_delay_ms``. A permanent
@@ -224,6 +228,7 @@ class Settings(BaseSettings):
     model_renderer_enabled: bool = False
     data_as_of_date: str | None = None
     case_create_session_cap: int = Field(default=3, ge=1, le=50)
+    dialogue_max_turns: int = Field(default=30, ge=5, le=200)
     llm_retry_max_attempts: int = Field(default=2, ge=1, le=5)
     llm_retry_base_delay_ms: int = Field(default=200, ge=0, le=5000)
     llm_retry_max_delay_ms: int = Field(default=2000, ge=0, le=30000)

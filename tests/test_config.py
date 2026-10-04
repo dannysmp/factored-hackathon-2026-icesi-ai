@@ -41,6 +41,7 @@ _ENV_KEYS = (
     "DATABASE_URL",
     "MODEL_RENDERER_ENABLED",
     "CASE_CREATE_SESSION_CAP",
+    "DIALOGUE_MAX_TURNS",
     "LLM_RETRY_MAX_ATTEMPTS",
     "LLM_RETRY_BASE_DELAY_MS",
     "LLM_RETRY_MAX_DELAY_MS",
@@ -667,3 +668,29 @@ def test_model_renderer_may_now_be_enabled_since_the_verifier_exists(
     monkeypatch.setenv("MODEL_RENDERER_ENABLED", "true")
 
     assert load_settings(env_file=None).model_renderer_enabled is True
+
+
+def test_the_dialogue_turn_cap_defaults_to_thirty() -> None:
+    """A bare environment yields the documented default."""
+    assert load_settings(env_file=None).dialogue_max_turns == 30
+
+
+@pytest.mark.parametrize("cap", ["4", "201", "0", "-1", "many"])
+def test_a_dialogue_turn_cap_outside_five_to_two_hundred_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, cap: str
+) -> None:
+    """The cap is bounded so it can neither starve a real conversation nor stop capping."""
+    monkeypatch.setenv("DIALOGUE_MAX_TURNS", cap)
+
+    with pytest.raises(ConfigError, match="DIALOGUE_MAX_TURNS"):
+        load_settings(env_file=None)
+
+
+@pytest.mark.parametrize("cap", ["5", "200"])
+def test_the_dialogue_turn_cap_bounds_are_inclusive(
+    monkeypatch: pytest.MonkeyPatch, cap: str
+) -> None:
+    """Five and two hundred are valid."""
+    monkeypatch.setenv("DIALOGUE_MAX_TURNS", cap)
+
+    assert load_settings(env_file=None).dialogue_max_turns == int(cap)

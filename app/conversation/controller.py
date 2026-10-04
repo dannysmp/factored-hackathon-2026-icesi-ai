@@ -68,11 +68,13 @@ Design Principles
 Runtime Contract
 ----------------
 ``DialogueController(understanding, store, tool_port, retriever, policy, outbox, *, domain_date,
-now, model_renderer=None, turn_log=None)`` with ``handle_turn(request: TurnRequest, *, principal:
-Principal) -> TurnResponse``. ``HandoffOutbox`` (protocol): the port this module writes a handoff
-through. ``model_renderer`` is ``None`` by default (the fixed-wording template path only); passing
-an ``LlmRenderer`` lets eligible replies render through the model path instead, verified, with the
-template as its own deterministic fallback (``app.conversation.reply.render_reply``).
+now, max_turns, model_renderer=None, turn_log=None)`` with ``handle_turn(request: TurnRequest, *,
+principal: Principal) -> TurnResponse``. ``max_turns`` is the most customer turns a session may
+apply; the next one is answered with a handoff and no understanding call. ``HandoffOutbox``
+(protocol): the port this module writes a handoff through. ``model_renderer`` is ``None`` by
+default (the fixed-wording template path only); passing an ``LlmRenderer`` lets eligible replies
+render through the model path instead, verified, with the template as its own deterministic
+fallback (``app.conversation.reply.render_reply``).
 ``DialogueTurnLog`` (protocol): the port this module records the console's own audit timeline
 through (ADR-17); ``turn_log`` is ``None`` by default (nothing is recorded) and is never consulted
 on a replayed turn, only on a turn this call genuinely advances.
@@ -287,6 +289,7 @@ class DialogueController:
         outbox: HandoffOutbox,
         domain_date: date,
         now: Clock,
+        max_turns: int,
         model_renderer: LlmRenderer | None = None,
         turn_log: DialogueTurnLog | None = None,
     ) -> None:
@@ -298,6 +301,7 @@ class DialogueController:
         self._outbox = outbox
         self._domain_date = domain_date
         self._now = now
+        self._max_turns = max_turns
         self._model_renderer = model_renderer
         self._turn_log = turn_log
         # Set once per call, at the top of handle_turn: every private helper below reads the
@@ -327,6 +331,9 @@ class DialogueController:
         if current is not None and current.last_turn_id == request.turn_id:
             return self._respond(current, self._replay_envelope(current))
 
+        if current is not None and current.turns_applied >= self._max_turns:
+            return self._cap_reached(current)
+
         try:
             state, expected_version, result, accounting = self._start_turn(current, request)
         except UnderstandingUnavailable:
@@ -355,6 +362,50 @@ class DialogueController:
             ) from conflict
 
         return self._respond(saved, envelope, state_before=state_before)
+
+    def _cap_reached(self, current: DialogueState) -> TurnResponse:
+        """Answer a turn the session's turn cap refuses, without calling the model.
+
+        A session that already has a handoff ticket gets that same ticket again and nothing is
+        written, so a customer who keeps typing neither mints tickets nor advances the state. A
+        session without one is handed to a person once, through the same idempotent save as any
+        other handoff turn.
+        """
+        request = self._request
+        assert request is not None  # noqa: S101 - set at the top of handle_turn
+        logger.warning(
+            "dialogue_turn_cap_reached session_id=%s turns_applied=%d max_turns=%d request_id=%s",
+            current.session_id,
+            current.turns_applied,
+            self._max_turns,
+            current_request_id(),
+        )
+        if current.last_ticket_ref is not None:
+            return self._respond(current, self._ticket_envelope(current))
+        new_state, envelope = self._handoff(
+            current,
+            trigger=HandoffTrigger.LOW_UNDERSTANDING,
+            reason_codes=(),
+            template=TemplateId.HANDOFF_REVIEW,
+            actions=(ActionRecord(action="turn_cap", result="reached"),),
+        )
+        try:
+            saved = self._store.save(
+                new_state,
+                expected_version=current.version,
+                turn_id=request.turn_id,
+                now=self._now(),
+            )
+        except DuplicateTurn as duplicate:
+            return self._respond(duplicate.state, self._replay_envelope(duplicate.state))
+        except Conflict as conflict:
+            raise ProblemError(
+                ErrorCode.TURN_CONFLICT,
+                409,
+                "The conversation moved on",
+                "Fetch the current state and try again.",
+            ) from conflict
+        return self._respond(saved, envelope, state_before=current.phase)
 
     def _handoff_from_turn(
         self, current: DialogueState | None, *, expected_version: int
@@ -959,6 +1010,18 @@ class DialogueController:
     # Replay of a duplicate turn
     # -------------------------------------------------------------------------------------
 
+    def _ticket_envelope(self, state: DialogueState) -> RenderEnvelope:
+        """The handoff reply for the ticket ``state`` already holds."""
+        facts = DisputeFacts(ticket_ref=state.last_ticket_ref, category=state.category)
+        return self._envelope(
+            state,
+            Intent.HANDOFF,
+            TemplateId.HANDOFF_REVIEW,
+            facts=facts,
+            decisions=(_escalate_decision(self._policy),),
+            end_session=True,
+        )
+
     def _replay_envelope(self, state: DialogueState) -> RenderEnvelope:
         """The reply for a turn id already applied to ``state`` — no further side effect.
 
@@ -976,6 +1039,11 @@ class DialogueController:
         farewell, which touches no state at all) has no such decision to protect and no tool call
         that is not already safe to repeat, so it is recomputed exactly as the original turn was.
         """
+        if state.last_ticket_ref is not None and (
+            state.phase is ConversationPhase.HANDED_OFF or state.last_case_number is None
+        ):
+            return self._ticket_envelope(state)
+
         if state.last_case_number is not None:
             case = dispatch(self._tool_port, tool_contracts.Tool.GET_CASE, state.last_case_number)
             if isinstance(case, ToolFailure) or case is None:
@@ -988,18 +1056,6 @@ class DialogueController:
             )
             return self._envelope(
                 state, Intent.FILING_RESULT, TemplateId.FILING_RESULT, facts=facts
-            )
-
-        if state.last_ticket_ref is not None:
-            facts = DisputeFacts(ticket_ref=state.last_ticket_ref, category=state.category)
-            decisions = (_escalate_decision(self._policy),)
-            return self._envelope(
-                state,
-                Intent.HANDOFF,
-                TemplateId.HANDOFF_REVIEW,
-                facts=facts,
-                decisions=decisions,
-                end_session=True,
             )
 
         if state.pending_slot is not None:

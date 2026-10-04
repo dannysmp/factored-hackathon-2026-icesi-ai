@@ -182,6 +182,12 @@ A base deployment that later disables `deploy_metabase` still carries the dashbo
 `08-deploy-metabase.sh` has run since the last `05-deploy.sh`: that script always writes the plain
 `infra/Caddyfile`, which would otherwise silently drop the `dashboard.` route until `08` runs again.
 
+## Per-session turn cap
+
+`DIALOGUE_MAX_TURNS` (default `30`, between 5 and 200) is the most customer turns one session may apply. The longest normal flow is about six messages, so the default only reaches a session that keeps talking. The next message after the cap is answered with the standard handoff to a person, with no model call, and a session that already holds a handoff ticket is shown the same ticket again rather than a new one. Change it by setting the variable in the backend's environment and restarting the stack.
+
+A capped session shows up as a handoff whose action record is `turn_cap` with result `reached`, and as a `dialogue_turn_cap_reached` line in the backend log carrying the session, the turns applied and the cap.
+
 ## Images
 
 `Dockerfile` (backend) and `web/Dockerfile` are both multi-stage builds: a builder stage installs

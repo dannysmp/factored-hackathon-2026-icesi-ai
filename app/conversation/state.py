@@ -89,6 +89,16 @@ class DialogueState(BaseModel):
     last_ticket_ref: Annotated[str, Field(min_length=1, max_length=32)] | None = None
     updated_at: AwareDatetime
 
+    @property
+    def turns_applied(self) -> int:
+        """Customer turns applied to this session so far.
+
+        Equal to ``version``: the store starts a session at version 1 on its first applied turn
+        and advances it by exactly one per applied turn; a replayed or conflicting turn changes
+        nothing.
+        """
+        return self.version
+
     def with_clarification(self, slot: Slot) -> DialogueState:
         """Ask for ``slot`` again.
 
