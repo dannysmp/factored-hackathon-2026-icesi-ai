@@ -38,7 +38,7 @@ Design Principles
 
 Runtime Contract
 -----------------
-``run_cases(client, dsn, cases, *, test_login_key, capture_transcripts=False) ->
+``run_cases(client, dsn, cases, *, test_login_key, capture_transcripts=False, cost_ledger=None) ->
 tuple[CaseResult, ...]``, one result per case, in the given order — a normal verdict, or a named
 error result for a case that could not resolve, run or be scored. ``capture_transcripts`` is the
 opt-in step (default off, no behavior change for any existing caller) that additionally fills each
@@ -58,6 +58,7 @@ exactly as before.
 from __future__ import annotations
 
 # Standard libraries
+import dataclasses
 import logging
 from collections.abc import Sequence
 
@@ -66,6 +67,7 @@ import httpx
 
 # Local modules
 from app.retrieval.corpus_index import CorpusIndexError  # A declared policy section not resolving
+from evals.cost import TurnCostLedger  # Per-session model cost, read from the turn log
 from evals.facts import attach_masked_transcript  # Fills reply_text/facts_and_sources, opt-in
 from evals.metrics import CaseResult  # The verdict this module produces, one per case
 from evals.models import Case  # The cases this module runs
@@ -96,6 +98,7 @@ def run_cases(
     *,
     test_login_key: str,
     capture_transcripts: bool = False,
+    cost_ledger: TurnCostLedger | None = None,
 ) -> tuple[CaseResult, ...]:
     """Resolve, run and score every case in ``cases``, in order.
 
@@ -112,6 +115,9 @@ def run_cases(
     capture_transcripts : bool
         Opt-in, default off: also fills each result's ``reply_text``/``facts_and_sources`` fields
         for a judge or a human rater to read later (see the module's own Limitations (capture)).
+    cost_ledger : TurnCostLedger | None
+        When given, each case's result carries the model cost the ledger recorded for the case's
+        session (``None`` where it recorded none); when omitted, no cost is attached.
 
     Returns
     -------
@@ -136,6 +142,10 @@ def run_cases(
             transcript = run_case(
                 client, case, customer_id=customer_id, test_login_key=test_login_key
             )
+            if cost_ledger is not None:
+                transcript = dataclasses.replace(
+                    transcript, cost_usd=cost_ledger.cost_for(transcript.session_id)
+                )
             result = score_case(dsn, transcript)
         except _CASE_FAILURES as exc:
             results.append(error_result(case, exc))

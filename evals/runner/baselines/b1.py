@@ -97,6 +97,7 @@ from __future__ import annotations
 import logging
 import secrets
 from collections.abc import Sequence
+from decimal import Decimal
 
 # Local modules
 from app.config import AppEnvironment, ConfigError, Settings
@@ -227,13 +228,14 @@ def build_b1_dependencies(
     return client, dispatcher, session_id
 
 
-def _log_call_completed(session_id: str, turn_id: str, turn: NaiveAgentTurn) -> None:
+def _log_call_completed(session_id: str, turn_id: str, turn: NaiveAgentTurn) -> Decimal | None:
     """One stable-shaped log line per real B1 call, mirroring
     ``app.conversation.controller.DialogueController._log_turn_completed``'s own shape and its
     "an unpriced model never aborts the run" rule: this is the only place B1's own spend is
     recorded anywhere (``NaiveAgentTurn``'s token counts are otherwise discarded once this
     function returns), so a real evaluation run's cost is computable from logs alone, the same
-    guarantee E9 already established for P.
+    guarantee E9 already established for P. Returns the call's cost, ``None`` when its model is
+    unpriced, so the harness sums the same figure the log line carries.
     """
     try:
         cost = cost_usd(turn.model, turn.input_tokens, turn.output_tokens)
@@ -251,6 +253,7 @@ def _log_call_completed(session_id: str, turn_id: str, turn: NaiveAgentTurn) -> 
         turn.latency_ms,
         cost,
     )
+    return cost
 
 
 def _run_turn(
@@ -260,20 +263,22 @@ def _run_turn(
     *,
     session_id: str,
     turn_id: str,
-) -> tuple[str, bool, float]:
+) -> tuple[str, bool, float, Decimal | None]:
     """Run tool-call rounds for one customer turn until the model replies in text.
 
     Returns
     -------
-    tuple[str, bool, float]
+    tuple[str, bool, float, Decimal | None]
         The model's final text; whether this turn's last ``evaluate_dispute`` call left an
         eligible decision with no ``create_dispute_case`` call after it (the ``next_expected``
         signal); and the turn's total latency in seconds, summed over every ``NaiveAgentClient``
-        call this turn made (a turn with several tool-call rounds makes several calls).
+        call this turn made (a turn with several tool-call rounds makes several calls); and those
+        calls' summed cost, ``None`` when any of them was to an unpriced model.
     """
     dispatcher.start_turn()
     reached_confirmable = False
     latency_seconds = 0.0
+    turn_cost: Decimal | None = Decimal(0)
     for _round in range(_MAX_TOOL_ROUNDS):
         turn = client.send(
             messages,
@@ -282,10 +287,11 @@ def _run_turn(
             max_tokens=_MAX_TOKENS,
             timeout_seconds=_TIMEOUT_SECONDS,
         )
-        _log_call_completed(session_id, turn_id, turn)
+        call_cost = _log_call_completed(session_id, turn_id, turn)
+        turn_cost = None if turn_cost is None or call_cost is None else turn_cost + call_cost
         latency_seconds += turn.latency_ms / 1000
         if not turn.tool_calls:
-            return turn.text, reached_confirmable, latency_seconds
+            return turn.text, reached_confirmable, latency_seconds, turn_cost
         content_blocks = [
             {"type": "tool_use", "id": call.id, "name": call.name, "input": dict(call.input)}
             for call in turn.tool_calls
@@ -302,7 +308,7 @@ def _run_turn(
             elif call.name == "create_dispute_case":
                 reached_confirmable = False
         messages.append({"role": "user", "content": results})
-    return "", reached_confirmable, latency_seconds
+    return "", reached_confirmable, latency_seconds, turn_cost
 
 
 def run_case(
@@ -317,12 +323,14 @@ def run_case(
     messages: list[dict[str, object]] = []
     replies: list[TurnResponse] = []
     latencies: list[float] = []
+    case_cost: Decimal | None = Decimal(0)
     for index, text in enumerate(case.user_turns):
         messages.append({"role": "user", "content": text})
         turn_id = f"{case.case_id}-t{index:03d}"
-        reply_text, reached_confirmable, latency_seconds = _run_turn(
+        reply_text, reached_confirmable, latency_seconds, turn_cost = _run_turn(
             client, dispatcher, messages, session_id=session_id, turn_id=turn_id
         )
+        case_cost = None if case_cost is None or turn_cost is None else case_cost + turn_cost
         if reply_text:
             messages.append({"role": "assistant", "content": reply_text})
         replies.append(
@@ -347,6 +355,7 @@ def run_case(
         replies=tuple(replies),
         latencies_seconds=tuple(latencies),
         confirmed_target=confirmed_target,
+        cost_usd=None if case_cost is None else float(case_cost),
     )
 
 

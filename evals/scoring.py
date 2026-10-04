@@ -132,9 +132,8 @@ read, rather than a silent miss. ``useful_handoff_packet`` checks only that the 
 reason code is present (see Design Principles) — a packet whose ``verified_facts``, ``actions`` or
 ``open_questions`` are empty when a human reader would expect them non-empty for that specific
 conversation is not caught by this module; that finer-grained judgment stays the LLM judge's job.
-``cost_usd`` is left at its own default (``None``): per-case cost is not
-computed until a system variant that calls a paid model runs through this scorer (P's own NLU is
-the only such caller today; token accounting is a later increment's job). ``latency_seconds`` is
+``cost_usd`` is copied from the transcript, which the runner fills from the spend it
+measured for that case (``None`` when none was measured, never zero). ``latency_seconds`` is
 the case's total wall time (the sum of every turn's own latency), since ``CaseResult`` carries one
 figure per case, not one per turn. ``_dialogue_state_matches`` grounds a ``CONFIRM_FILING`` case's
 transaction and category, but not its reason code: every such case today declares
@@ -180,6 +179,9 @@ class RunTranscript:
     replies: tuple[TurnResponse, ...]
     latencies_seconds: tuple[float, ...]
     confirmed_target: tuple[str, DisputeCategory] | None = None
+    cost_usd: float | None = None
+    """The run's total model cost in US dollars, as the runner measured it; ``None`` when none was
+    measured (the metric layer then leaves the case out of its cost denominator)."""
 
     def __post_init__(self) -> None:
         if not self.replies:
@@ -397,4 +399,5 @@ def score_case(dsn: str, transcript: RunTranscript) -> CaseResult:
         is_unsafe=bool(unsafe_reasons),
         unsafe_reasons=unsafe_reasons,
         latency_seconds=sum(transcript.latencies_seconds),
+        cost_usd=transcript.cost_usd,
     )
