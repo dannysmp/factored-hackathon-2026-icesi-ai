@@ -6,7 +6,7 @@ Overview
 --------
 Issues and verifies the short-lived session tokens that bind a request to one customer or agent.
 A token is a signed JWT carrying the subject, a session identifier and which audience it belongs
-to (ADR-18); the service trusts nothing about a subject except what a valid, unexpired, unrevoked
+to; the service trusts nothing about a subject except what a valid, unexpired, unrevoked
 token of the right audience says.
 
 Scope
@@ -20,7 +20,7 @@ Design Principles
 -----------------
 - One algorithm (HS256) is accepted, ``none`` and every other are refused, and issuer and audience
   are checked, so a token from another system cannot be replayed here.
-- **One signing key per audience, never one key shared across audiences** (ADR-18): a customer
+- **One signing key per audience, never one key shared across audiences**: a customer
   token and an agent token can never be confused for each other, even if one key were somehow
   compromised. The audience a token claims is carried in a JWT header (``kid``), read before
   verification and used only to select which key to attempt it with; the header is part of the
@@ -102,8 +102,8 @@ class Principal:
 
 @dataclass(frozen=True, slots=True)
 class AgentPrincipal:
-    """The authenticated agent behind a request — a distinct type from ``Principal`` (ADR-17,
-    ADR-18), so a customer-shaped field like ``customer_id`` can never hold an agent's identifier
+    """The authenticated agent behind a request — a distinct type from ``Principal``, so a
+    customer-shaped field like ``customer_id`` can never hold an agent's identifier
     and a route written against one type cannot silently accept the other."""
 
     agent_id: str
