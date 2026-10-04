@@ -2,7 +2,7 @@
 # docker-compose.metabase.yml — the BI dashboard, on top of the deployed stack
 # =============================================================================
 # Purpose:
-#   Metabase (ADR-11): reads the `analytics` schema the mart-load job
+#   Metabase: reads the `analytics` schema the mart-load job
 #   populates (docker-compose.prod.yml's own Postgres service), keeping its
 #   own application data in a separate database and role, never the default
 #   embedded H2.
@@ -10,7 +10,7 @@
 #   A third, additive compose file, never merged into docker-compose.prod.yml:
 #   `infra/scripts/08-deploy-metabase.sh` creates this service's database and
 #   role before starting it, and completes its first-run setup before Caddy
-#   is given a config that can reach it (ADR-11's own hardening) — bringing
+#   is given a config that can reach it, so the proxy never exposes an unconfigured Metabase — bringing
 #   it up as part of the same `up -d` docker-compose.prod.yml uses would skip
 #   both steps. `MB_DB_*` name its own database; `MB_DB_PASS` and the heap
 #   cap are environment variables the deploy step sets, never literals here.
@@ -37,8 +37,8 @@ services:
       # Signs session tokens against forgery by anyone with database access; unset, Metabase
       # itself warns that sessions are then forgeable from the application database alone.
       MB_SESSION_SECRET_KEY: ${MB_SESSION_SECRET_KEY}
-      # A JVM heap cap on a shared host (ADR-11: "Metabase runs with a heap cap, and the memory
-      # footprint of the five services on the host is measured and recorded").
+      # A JVM heap cap on a shared host (the memory footprint of the five services on the host is
+      # measured and recorded by the deploy script).
       JAVA_TOOL_OPTIONS: -Xmx384m
     ports:
       - "127.0.0.1:3000:3000"
