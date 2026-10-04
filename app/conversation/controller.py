@@ -1252,10 +1252,12 @@ class DialogueController:
         assert request is not None  # noqa: S101 - set at the top of handle_turn
         # A replay's own re-understanding is not a new turn (per-turn accounting is scoped to
         # handle_turn's own call in _start_turn); its accounting, if any, is not logged again here.
+        result = _number_from_list(state, request.text)
         try:
-            result, _replay_accounting = self._understanding.understand(
-                request.text, language_hint=state.lang, reference_date=self._domain_date
-            )
+            if result is None:
+                result, _replay_accounting = self._understanding.understand(
+                    request.text, language_hint=state.lang, reference_date=self._domain_date
+                )
         except UnderstandingUnavailable:
             logger.warning(
                 "llm_understanding_unavailable_replay session_id=%s request_id=%s",

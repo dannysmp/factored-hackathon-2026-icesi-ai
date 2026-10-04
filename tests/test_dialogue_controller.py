@@ -1759,19 +1759,23 @@ def test_a_choice_outside_the_list_shown_selects_nothing_and_shows_the_list_agai
     assert state.offered_refs == ("TX-1", "TX-2", "TX-3")
 
 
+@pytest.mark.parametrize(
+    ("text", "expected_ref"), [("1", "TX-1"), (" 2 ", "TX-2"), ("3", "TX-3"), ("03", "TX-3")]
+)
 def test_a_bare_number_sent_after_the_list_selects_that_position_without_the_model(
-    policy: Policy, retriever: LexicalRetriever
+    policy: Policy, retriever: LexicalRetriever, text: str, expected_ref: str
 ) -> None:
+    """Every position on the list is reachable by its number, the first and the last included."""
     dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
     dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
     dialogue.understood.clear()
 
-    picked = dialogue.say(_plain(NluIntent.SMALL_TALK), text=" 2 ")
+    picked = dialogue.say(_plain(NluIntent.SMALL_TALK), text=text)
 
     assert picked.next_expected is Slot.REASON
     state = dialogue.store.get(_SESSION_ID)
     assert state is not None
-    assert state.selected_ref == "TX-2"
+    assert state.selected_ref == expected_ref
     assert state.offered_refs == ()
     assert dialogue.understood == []
 
@@ -1780,6 +1784,7 @@ def test_a_bare_number_sent_after_the_list_selects_that_position_without_the_mod
 def test_a_bare_number_past_the_end_of_the_list_shows_the_list_again(
     policy: Policy, retriever: LexicalRetriever, text: str
 ) -> None:
+    """A number that is no position on the list is a request to see the list again."""
     dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
     dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
     dialogue.understood.clear()
@@ -1794,10 +1799,11 @@ def test_a_bare_number_past_the_end_of_the_list_shows_the_list_again(
     assert dialogue.understood == []
 
 
-@pytest.mark.parametrize("text", ["2 please", "dos", "2024", "-1", "²", "2.5"])
+@pytest.mark.parametrize("text", ["2 please", "dos", "100", "2024", "-1", "²", "2.5"])
 def test_a_message_that_is_more_than_a_short_number_is_left_to_the_model(
     policy: Policy, retriever: LexicalRetriever, text: str
 ) -> None:
+    """Only a short bare number is a position; amounts, words and decimals need the model."""
     dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
     dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
     dialogue.understood.clear()
@@ -1810,9 +1816,74 @@ def test_a_message_that_is_more_than_a_short_number_is_left_to_the_model(
     assert state.selected_ref is None
 
 
+def test_a_number_turn_is_logged_with_no_model_cost(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A number read without the model reports zero tokens and cost, and no message text."""
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+    caplog.clear()
+
+    with caplog.at_level("INFO"):
+        dialogue.say(_plain(NluIntent.SMALL_TALK), text="2")
+
+    completed = [
+        r.getMessage() for r in caplog.records if r.getMessage().startswith("turn_completed")
+    ]
+    assert len(completed) == 1
+    assert "input_tokens=0 output_tokens=0" in completed[0]
+    assert "cost_usd=0" in completed[0]
+    assert "model=None" in completed[0]
+
+
+def test_a_replayed_out_of_range_number_shows_the_list_again_without_calling_the_model(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A retried number is answered as the first delivery was, not by the model's reading of it."""
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+    first = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-0002", text="7")
+    stored = dialogue.store.get(_SESSION_ID)
+    dialogue.understood.clear()
+
+    replay = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-0002", text="7")
+
+    assert [choice.number for choice in replay.choices] == [1, 2, 3]
+    assert replay.reply == first.reply
+    assert dialogue.understood == []
+    assert dialogue.store.get(_SESSION_ID) == stored
+
+
+def test_a_replayed_out_of_range_number_is_answered_while_the_model_is_unreachable(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The retry needs no model, so an outage must not end a conversation that is still open."""
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+    first = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-0002", text="7")
+    controller = DialogueController(
+        UnavailableNlu(),
+        store=dialogue.store,
+        tool_port=dialogue.port,
+        retriever=retriever,
+        policy=policy,
+        outbox=dialogue.outbox,
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+        max_turns=30,
+    )
+
+    replay = controller.handle_turn(_turn("turn-0002", "7"), principal=_principal())
+
+    assert not replay.end_session
+    assert [choice.number for choice in replay.choices] == [1, 2, 3]
+    assert replay.reply == first.reply
+
+
 def test_a_bare_number_sent_with_no_list_on_offer_is_left_to_the_model(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
+    """A number means a position only while a list is on offer."""
     dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
     dialogue.say(_plain(NluIntent.SMALL_TALK))
 
@@ -1827,6 +1898,7 @@ def test_a_bare_number_sent_with_no_list_on_offer_is_left_to_the_model(
 def test_a_bare_number_sent_once_the_list_is_replaced_by_a_selection_is_left_to_the_model(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
+    """Once a transaction is selected the list is gone, so a later number is not a position."""
     dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
     dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
     dialogue.say(_plain(NluIntent.SMALL_TALK), text="2")
@@ -1843,6 +1915,7 @@ def test_a_bare_number_sent_once_the_list_is_replaced_by_a_selection_is_left_to_
 def test_a_bare_number_never_selects_from_a_stored_list_once_the_conversation_is_final(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
+    """A list kept on a finished conversation is never offered again."""
     dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
     dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
     listed = dialogue.store.get(_SESSION_ID)
