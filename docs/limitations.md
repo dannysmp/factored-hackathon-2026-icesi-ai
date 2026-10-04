@@ -56,11 +56,14 @@ results still to come say so and name the command that completes them.
 - **The judge's agreement with human raters is not yet measured on a real sample.** The agreement
   code is tested against a disclosed synthetic placeholder
   (`evals/golden/judge_validation_sample.py`, `PROVENANCE = "team_generated_synthetic"`), and
-  section 7 of `reports/evaluation.md` states that no agreement rate is reported. The judge's
-  quality and correctness scores stay provisional until two raters return the 50-case sheets.
+  the Judge validation section of `reports/evaluation.md` states that no agreement rate is
+  reported. The judge's quality and correctness scores stay provisional until two raters return the
+  50-case sheets.
   Running `make judge-validation RATER1=<sheet> RATER2=<sheet>` scores the same cases with the real
-  judge and patches that section and the matching limitations line of that report with rater-to-rater and
-  rater-to-judge agreement per dimension; this bullet is to be rewritten with those figures,
+  judge and patches that section and the matching limitations line of that report with rater-to-rater
+  and rater-to-judge agreement per dimension, each with its pair count and weighted kappa, the
+  direction of the differences and the decision per dimension, and writes every case's scores to
+  `reports/judge-validation-cases.csv`; this bullet is to be rewritten with those figures,
   and with any dimension the judge is demoted on, at the same time. The written analysis of where
   the raters and the judge disagree is a person's job and is not generated.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get

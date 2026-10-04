@@ -19,7 +19,7 @@ from app.domain.policy.models import DisputeCategory
 from contracts.service_v1.envelope import Intent
 from evals.fairness import CaseProfile
 from evals.judge import JudgeVerdict
-from evals.judge_validation import DimensionAgreement
+from evals.judge_validation import DimensionAgreement, DimensionDetail, PairDetail
 from evals.metrics import (
     CaseResult,
     CostMetrics,
@@ -31,7 +31,13 @@ from evals.metrics import (
 )
 from evals.models import Case, CaseCategory, SafeBehavior
 from evals.repeated_runs import CaseFlip, UnsafeOccurrence, compute_variability
-from evals.report import EvaluationReport, SystemResult, Versions, render_markdown
+from evals.report import (
+    EvaluationReport,
+    SystemResult,
+    Versions,
+    judge_validation_section,
+    render_markdown,
+)
 
 _MODEL = "claude-sonnet-5"
 
@@ -516,6 +522,87 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
     section = text.split("## 9.")[1].split("## 10.")[0]
 
     assert "human-only" in section
+
+
+def _detail(first_higher: int = 0, second_higher: int = 3) -> tuple[DimensionDetail, ...]:
+    pair = PairDetail(
+        compared=50, weighted_kappa=0.069, first_higher=first_higher, second_higher=second_higher
+    )
+    return (
+        DimensionDetail(
+            dimension="grounding", rater_to_rater=pair, rater1_to_judge=pair, rater2_to_judge=pair
+        ),
+    )
+
+
+def _agreement_at(rater_to_rater: float, to_judge: float, demoted: bool) -> DimensionAgreement:
+    return DimensionAgreement(
+        dimension="grounding",
+        rater_to_rater=rater_to_rater,
+        rater1_to_judge=to_judge,
+        rater2_to_judge=to_judge,
+        demoted=demoted,
+    )
+
+
+def test_detail_adds_the_pair_count_and_kappa_to_every_agreement_cell() -> None:
+    section = judge_validation_section(_agreement(), "human", _detail())
+
+    assert "1.000 (n=50, kappa 0.07)" in section
+
+
+def test_detail_renders_the_direction_table_with_the_judge_side_first() -> None:
+    # first_higher is the rater scoring above the judge, so the judge is "lower" that often.
+    section = judge_validation_section(
+        _agreement(), "human", _detail(first_higher=7, second_higher=2)
+    )
+
+    assert "| grounding | 7 / 2 | 2 / 7 | 2 / 7 |" in section
+
+
+def test_a_kappa_that_is_not_defined_is_stated_not_hidden() -> None:
+    pair = PairDetail(compared=4, weighted_kappa="not defined", first_higher=0, second_higher=0)
+    detail = (
+        DimensionDetail(
+            dimension="grounding", rater_to_rater=pair, rater1_to_judge=pair, rater2_to_judge=pair
+        ),
+    )
+
+    assert "kappa not defined" in judge_validation_section(_agreement(), "human", detail)
+
+
+def test_a_demoted_dimension_is_stated_human_only_and_a_kept_one_judge_scored() -> None:
+    demoted = judge_validation_section((_agreement_at(0.9, 0.5, True),), "human", _detail())
+    kept = judge_validation_section((_agreement_at(0.9, 0.9, False),), "human", _detail())
+
+    assert "grounding: human-only" in demoted
+    assert "grounding: judge-scored" not in demoted
+    assert "grounding: judge-scored" in kept
+    assert "human-only.**" not in kept
+
+
+def test_raters_who_disagree_with_each_other_are_called_out_below_the_threshold() -> None:
+    low = judge_validation_section((_agreement_at(0.38, 0.5, True),), "human", _detail())
+    high = judge_validation_section((_agreement_at(0.94, 0.5, True),), "human", _detail())
+
+    assert "38% of cases" in low and "not settled" in low
+    assert "not settled" not in high
+
+
+def test_the_facts_limitation_states_how_many_rows_had_no_facts() -> None:
+    section = judge_validation_section(_agreement(), "human", _detail(), facts_coverage=(46, 50))
+
+    assert "46 of the 50 sheet rows" in section
+    assert "46 of" not in judge_validation_section(_agreement(), "human", _detail())
+
+
+def test_the_detail_and_the_facts_limitation_never_reach_a_synthetic_sample() -> None:
+    section = judge_validation_section(
+        _agreement(), "team_generated_synthetic", _detail(), facts_coverage=(46, 50)
+    )
+
+    assert "Pending H4" in section
+    assert "kappa" not in section and "46" not in section
 
 
 # -----------------------------------------------------------------------------

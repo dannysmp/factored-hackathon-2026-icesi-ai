@@ -7,8 +7,12 @@ Component: ``evals.judge_validation``. Hermetic and pure: every case is built in
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+import pytest
+
 from evals.judge import JudgeVerdict
-from evals.judge_validation import DEMOTION_THRESHOLD, RaterScore, compute_agreement
+from evals.judge_validation import DEMOTION_THRESHOLD, RaterScore, compute_agreement, compute_detail
 
 _MODEL = "claude-sonnet-5"
 
@@ -153,3 +157,95 @@ def test_a_case_id_missing_from_one_side_is_excluded_from_that_comparison() -> N
     # rater_to_rater only has C1 to compare (full agreement); rater1_to_judge has both (also full).
     assert grounding.rater_to_rater == 1.0
     assert grounding.rater1_to_judge == 1.0
+
+
+def _grounding_only(
+    first: Sequence[int], second: Sequence[int]
+) -> tuple[list[RaterScore], list[JudgeVerdict]]:
+    rater = [
+        _rater(f"C{n}", "Rater 1", grounding=score, language_quality=0)
+        for n, score in enumerate(first)
+    ]
+    judge = [_judge(f"C{n}", grounding=score, language_quality=0) for n, score in enumerate(second)]
+    return rater, judge
+
+
+def _grounding_kappa(first: Sequence[int], second: Sequence[int]) -> float | str:
+    rater, judge = _grounding_only(first, second)
+    detail = compute_detail(rater, rater, judge)[0]
+    assert detail.dimension == "grounding"
+    return detail.rater1_to_judge.weighted_kappa
+
+
+def test_weighted_kappa_is_one_for_identical_scores_with_spread() -> None:
+    assert _grounding_kappa([0, 1, 2, 2], [0, 1, 2, 2]) == pytest.approx(1.0)
+
+
+def test_weighted_kappa_matches_a_hand_computed_value() -> None:
+    # Observed weighted disagreement 0.25 (one 2-vs-1 pair, weight 1/4); expected 5.0 / 4 = 1.25.
+    assert _grounding_kappa([0, 1, 2, 2], [0, 1, 1, 2]) == pytest.approx(0.8)
+
+
+def test_weighted_kappa_is_minus_one_for_complete_opposition() -> None:
+    assert _grounding_kappa([0, 2], [2, 0]) == pytest.approx(-1.0)
+
+
+def test_weighted_kappa_is_zero_when_one_side_never_varies() -> None:
+    assert _grounding_kappa([0, 1, 2], [1, 1, 1]) == pytest.approx(0.0)
+
+
+def test_weighted_kappa_is_not_defined_when_both_sides_give_one_score() -> None:
+    assert _grounding_kappa([2, 2, 2], [2, 2, 2]) == "not defined"
+
+
+def test_weighted_kappa_penalizes_a_two_point_gap_more_than_a_one_point_gap() -> None:
+    near = _grounding_kappa([0, 1, 2, 1], [1, 1, 2, 1])
+    far = _grounding_kappa([0, 1, 2, 1], [2, 1, 2, 1])
+    assert isinstance(near, float) and isinstance(far, float)
+    assert near > far
+
+
+def test_detail_counts_which_side_scored_higher_where_they_differ() -> None:
+    rater, judge = _grounding_only([2, 2, 1, 0, 1], [1, 0, 2, 0, 1])
+    pair = compute_detail(rater, rater, judge)[0].rater1_to_judge
+
+    assert pair.compared == 5
+    assert pair.first_higher == 2  # the rater scored above the judge twice
+    assert pair.second_higher == 1
+
+
+def test_detail_compares_clarification_only_where_both_sides_scored_it() -> None:
+    rater1 = [
+        _rater("C1", "Rater 1", grounding=2, language_quality=2, clarification=2),
+        _rater("C2", "Rater 1", grounding=2, language_quality=2, clarification=None),
+        _rater("C3", "Rater 1", grounding=2, language_quality=2, clarification=0),
+    ]
+    rater2 = [
+        _rater("C1", "Rater 2", grounding=2, language_quality=2, clarification=2),
+        _rater("C2", "Rater 2", grounding=2, language_quality=2, clarification=None),
+        _rater("C3", "Rater 2", grounding=2, language_quality=2, clarification=1),
+    ]
+    judge = [
+        _judge("C1", grounding=2, language_quality=2, clarification=2),
+        _judge("C2", grounding=2, language_quality=2, clarification=1),
+        _judge("C3", grounding=2, language_quality=2, clarification=None),
+    ]
+    clarification = {d.dimension: d for d in compute_detail(rater1, rater2, judge)}["clarification"]
+
+    assert clarification.rater_to_rater.compared == 2
+    assert clarification.rater1_to_judge.compared == 1  # C2 is NA for the rater, C3 for the judge
+    assert clarification.rater_to_rater.second_higher == 1
+
+
+def test_detail_pair_counts_are_the_denominators_of_the_agreement_rates() -> None:
+    rater1 = [_rater("C1", "Rater 1", grounding=2, language_quality=1)]
+    rater2 = [_rater("C1", "Rater 2", grounding=2, language_quality=1)]
+    judge = [_judge("C1", grounding=2, language_quality=2)]
+
+    detail = compute_detail(rater1, rater2, judge)
+    agreement = compute_agreement(rater1, rater2, judge)
+
+    assert [d.dimension for d in detail] == [a.dimension for a in agreement]
+    clarification = detail[2].rater1_to_judge
+    assert clarification.compared == 0 and clarification.weighted_kappa == "not defined"
+    assert agreement[2].rater1_to_judge == "not defined"
