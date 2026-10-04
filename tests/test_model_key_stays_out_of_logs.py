@@ -13,9 +13,12 @@ Design Principles
 - A sentinel of the provider key's shape is built at run time, so this file never contains a
   match for the repository scan, and every assertion looks for the whole sentinel *and* any
   twelve-character window of it, so a truncated or partly masked key still fails.
+- Hermetic: no network, no database, no real key; the HTTP transport is in-process.
 - Each path is exercised through its real code: the real settings loader and application factory
   for the configuration failure, and the real SDK client over an in-process HTTP transport for the
   provider call, so the SDK's and the HTTP library's own log lines are in the capture.
+- The text checked includes the full traceback of each raised error (with its chained causes),
+  not only the top-level message.
 - The captured text is checked to be non-empty and to contain the expected event, so a capture
   that silently saw nothing cannot pass.
 
@@ -24,28 +27,37 @@ Limitations
 - Only the loggers active at the level under test are captured. Production runs at ``INFO``; the
   provider-call test also runs at ``DEBUG`` as a stricter floor.
 - A key that is transformed (encoded, split) before being written is not detected.
+- The provider call is also driven through the retry wrapper over a server error; the spend
+  wrapper and the circuit breaker's own state log nothing about the request and are not driven.
 - The provider's own servers and any proxy in front of them are outside what this can see.
 """
 
 from __future__ import annotations
 
+# Standard libraries
 import logging
+import traceback
 from collections.abc import Iterator
 from pathlib import Path
 
+# Third-party libraries
 import anthropic
 import httpx
 import pytest
 from pydantic import SecretStr
 
+# Local modules
 from app.config import ConfigError, Settings
 from app.llm.anthropic_client import AnthropicLlmClient
-from app.llm.client import CompletionRequest, LlmRequestRejected, ToolSpec
+from app.llm.client import CompletionRequest, LlmRequestRejected, LlmUnavailable, ToolSpec
 from app.main import create_app
 from app.observability.logging import configure_logging
+from app.reliability.breaker import InMemoryCircuitBreaker
+from app.reliability.retry import RetriedLlmClient, RetryPolicy
 
 _SENTINEL = "sk-ant-" + "api03-" + "A1b2C3d4" * 5
-_WINDOW = 12
+# Longer than the shared `sk-ant-api03-` prefix, so a line naming the key format alone is not a hit.
+_WINDOW = 16
 _MODEL = "claude-haiku-4-5-20251001"
 _TOOL = ToolSpec(
     name="record",
@@ -59,6 +71,7 @@ def _key_fragments() -> list[str]:
 
 
 def _assert_no_key(text: str) -> None:
+    """Fail when the sentinel, or any window of it, appears in ``text``."""
     for fragment in _key_fragments():
         assert fragment not in text, f"part of the model key reached the output: {fragment[:6]}..."
 
@@ -92,6 +105,13 @@ def _message_response(request: httpx.Request) -> httpx.Response:
     )
 
 
+def _server_error_response(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(
+        500,
+        json={"type": "error", "error": {"type": "api_error", "message": "internal"}},
+    )
+
+
 def _rejection_response(request: httpx.Request) -> httpx.Response:
     return httpx.Response(
         401,
@@ -100,6 +120,10 @@ def _rejection_response(request: httpx.Request) -> httpx.Response:
             "error": {"type": "authentication_error", "message": "invalid x-api-key"},
         },
     )
+
+
+def _traceback_text(error: BaseException) -> str:
+    return "".join(traceback.format_exception(error))
 
 
 def _sdk_client(handler: httpx.MockTransport) -> anthropic.Anthropic:
@@ -114,13 +138,14 @@ def test_the_fragment_check_fails_on_a_whole_a_partial_and_a_clean_text() -> Non
     with pytest.raises(AssertionError):
         _assert_no_key(f"auth failed for {_SENTINEL[:20]}")
     with pytest.raises(AssertionError):
-        _assert_no_key(f"auth failed for {_SENTINEL[-15:]}")
+        _assert_no_key(f"auth failed for {_SENTINEL[-20:]}")
     _assert_no_key("auth failed for sk-ant-...")
 
 
 def test_a_configuration_failure_logs_and_raises_without_the_key(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """The start-up failure event, the raised error and its traceback hold no part of the key."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("ANTHROPIC_API_KEY", _SENTINEL)
     # The sentinel is also the invalid value, the case where a naive error would echo its input.
@@ -136,9 +161,11 @@ def test_a_configuration_failure_logs_and_raises_without_the_key(
     _assert_no_key(captured.out)
     _assert_no_key(str(raised.value))
     _assert_no_key(repr(raised.value))
+    _assert_no_key(_traceback_text(raised.value))
 
 
 def test_the_settings_object_does_not_print_the_key() -> None:
+    """The settings object's text forms hold no part of the key."""
     settings = Settings(anthropic_api_key=SecretStr(_SENTINEL), _env_file=None)
 
     assert settings.anthropic_api_key is not None
@@ -152,6 +179,7 @@ def test_the_settings_object_does_not_print_the_key() -> None:
 def test_a_successful_provider_call_logs_without_the_key(
     level: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """A successful call sends the key as the credential header and logs none of it."""
     configure_logging(level, service_version="test-sha", environment="local")
     seen_headers: list[httpx.Headers] = []
 
@@ -177,6 +205,7 @@ def test_a_successful_provider_call_logs_without_the_key(
 def test_a_rejected_provider_call_logs_and_raises_without_the_key(
     level: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """A rejected call logs and raises with no part of the key, in any chained cause."""
     configure_logging(level, service_version="test-sha", environment="local")
     sdk = _sdk_client(httpx.MockTransport(_rejection_response))
 
@@ -189,6 +218,31 @@ def test_a_rejected_provider_call_logs_and_raises_without_the_key(
     _assert_no_key(captured.out)
     _assert_no_key(str(raised.value))
     _assert_no_key(repr(raised.value.__cause__))
+    _assert_no_key(_traceback_text(raised.value))
+
+
+@pytest.mark.parametrize("level", ["INFO", "DEBUG"])
+def test_a_retried_provider_failure_logs_and_raises_without_the_key(
+    level: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every retry attempt over a server error, and the final error, hold no part of the key."""
+    configure_logging(level, service_version="test-sha", environment="local")
+    sdk = _sdk_client(httpx.MockTransport(_server_error_response))
+    client = RetriedLlmClient(
+        build_inner=lambda: AnthropicLlmClient(SecretStr(_SENTINEL), client=sdk),
+        policy=RetryPolicy(max_attempts=3, base_delay_ms=1, max_delay_ms=1),
+        breaker=InMemoryCircuitBreaker(10, 30),
+        sleep=lambda _seconds: None,
+    )
+
+    with pytest.raises(LlmUnavailable) as raised:
+        client.complete(_request())
+
+    captured = capsys.readouterr()
+    assert captured.err.count('"event": "llm_retry_attempt"') == 2
+    _assert_no_key(captured.err)
+    _assert_no_key(captured.out)
+    _assert_no_key(_traceback_text(raised.value))
 
 
 @pytest.fixture(autouse=True)
