@@ -434,8 +434,8 @@ def test_a_filing_that_cannot_be_audited_fails_closed(clock: Clock) -> None:
 def test_a_failed_audit_write_releases_the_issuance_reservations_it_held(clock: Clock) -> None:
     """The default persona cap is 1: if a failed audit write left its reservation burning, an
     immediate retry for the same persona would also be refused, even though no session was ever
-    delivered the first time. It must not be — this is the fix for the gap the architect's
-    conformance review found in this same round."""
+    delivered the first time. It must not be: the reservation is released when the audit write
+    fails."""
     app = create_app(
         _settings(),
         clock=clock,

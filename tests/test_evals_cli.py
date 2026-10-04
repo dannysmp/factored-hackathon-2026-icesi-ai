@@ -647,7 +647,7 @@ def _set_smoke_env(monkeypatch: pytest.MonkeyPatch, dsn: str) -> None:
 
 
 @pytest.mark.integration
-def test_main_runs_the_smoke_slice_against_b0_end_to_end(
+def test_main_runs_the_smoke_subset_against_b0_end_to_end(
     dsn: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The whole pipeline, together: seed the CI-only synthetic data, then run the real B0
@@ -663,7 +663,7 @@ def test_main_runs_the_smoke_slice_against_b0_end_to_end(
 
 
 @pytest.mark.integration
-def test_main_runs_the_smoke_slice_against_p_end_to_end(
+def test_main_runs_the_smoke_subset_against_p_end_to_end(
     dsn: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The same pipeline, but for the proposed system itself — the CLI's _run_p wiring

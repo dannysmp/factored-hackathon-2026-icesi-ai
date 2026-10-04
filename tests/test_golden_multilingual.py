@@ -37,9 +37,9 @@ def test_no_case_declares_a_safe_behavior() -> None:
 
 
 def test_lang_is_one_of_the_three_supported_languages() -> None:
-    # The mix table gives no per-language split for this category (just a total of 10); the
-    # invariant here is only that every case declares a supported language, per the architect's
-    # ruling that `lang` names the conversation's sticky reply language.
+    # The designed mix gives no per-language split for this category (just a total of 10); the
+    # invariant here is only that every case declares a supported language, because `lang` names
+    # the conversation's sticky reply language.
     assert all(case.lang in {"es", "pt", "en"} for case in CASES)
 
 

@@ -106,7 +106,7 @@ def test_an_unrelated_banking_question_abstains_in_every_language(
 @pytest.mark.parametrize(
     ("lang", "query"),
     [
-        # The originally reported forms (present perfect / conditional).
+        # Present-perfect and conditional forms.
         ("es", "mi hermano ha sido muy amable conmigo hoy"),
         ("pt", "acho que seria bom sair mais cedo do trabalho"),
         # A different tense of the same auxiliary, found on the very sentence in the corpus
@@ -138,7 +138,7 @@ def test_a_common_auxiliary_verb_conjugation_does_not_leak_relevance(
     retriever: LexicalRetriever, lang: Lang, query: str
 ) -> None:
     """An unrelated sentence sharing only a "to be"/"to have" auxiliary — in any person or
-    tense, not only the specific forms first reported — still abstains."""
+    tense, not only the present-perfect and conditional forms — still abstains."""
     assert retriever.search(query, lang) == ()
 
 
