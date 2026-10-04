@@ -36,7 +36,7 @@ export function QueueTable({
     // A narrow viewport scrolls this wrapper horizontally rather than wrapping every cell's text
     // across several lines (AC-E10-20: no truncated or illegible text at the mobile breakpoint) —
     // the same accepted pattern `Tabs.css`'s own trigger list already uses for the same reason.
-    <ScrollRegion className="queue-table-scroll" label="Tickets escalados">
+    <ScrollRegion className="queue-table-scroll queue-table-openable" label="Tickets escalados">
       <table>
         <caption className="sr-only">Tickets escalados</caption>
         <thead>
