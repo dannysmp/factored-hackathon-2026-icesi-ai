@@ -548,6 +548,38 @@ def test_the_policy_answer_cites_the_section_title_in_the_reply_language() -> No
     assert source.section_id not in rendered.reply
 
 
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [
+        (
+            "es",
+            "Puede consultarlo en la sección “Plazos para disputar” de nuestra "
+            "política de disputas.",
+        ),
+        (
+            "pt",
+            "Você pode consultar isso na seção “Prazos para contestar” da nossa "
+            "política de disputas.",
+        ),
+        ("en", "You can find this in the “Filing windows” section of our dispute policy."),
+    ],
+)
+def test_a_policy_answer_without_a_figure_cites_the_section_alone(
+    lang: Lang, expected: str
+) -> None:
+    envelope = _envelope(
+        intent=Intent.POLICY_ANSWER,
+        template_id=TemplateId.POLICY_ANSWER,
+        lang=lang,
+        sources=(_source(),),
+    )
+
+    rendered = render(envelope)
+
+    assert rendered.reply == expected
+    assert ": ." not in rendered.reply
+
+
 def test_dispute_status_grounds_a_case_without_an_expected_response_date() -> None:
     """A case fact with no response date yet still renders without failing."""
     case = CaseFact(

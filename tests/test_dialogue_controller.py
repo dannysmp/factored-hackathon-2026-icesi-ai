@@ -1727,6 +1727,26 @@ def test_policy_question_answers_or_abstains(policy: Policy, retriever: LexicalR
     assert abstained.reply
 
 
+def test_a_policy_question_answered_by_a_section_without_a_figure_cites_the_section(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    controller, _ = _controller(
+        _plain(NluIntent.POLICY_QUESTION, policy_query="que transacciones se pueden disputar"),
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+
+    response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.reply == (
+        "Puede consultarlo en la sección “Qué transacciones se pueden disputar” de nuestra "
+        "política de disputas."
+    )
+
+
 @pytest.mark.parametrize(
     "intent",
     [

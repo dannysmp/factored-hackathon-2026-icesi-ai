@@ -504,6 +504,12 @@ def _no_case_found(e: RenderEnvelope) -> str:
 
 def _policy_answer(e: RenderEnvelope) -> str:
     title = e.sources[0].title_for(e.lang)
+    if not e.facts.policy_values:
+        return {
+            "es": f"Puede consultarlo en la sección “{title}” de nuestra política de disputas.",
+            "pt": f"Você pode consultar isso na seção “{title}” da nossa política de disputas.",
+            "en": f"You can find this in the “{title}” section of our dispute policy.",
+        }[e.lang]
     values = ", ".join(f"{v.name}: {v.value}" for v in e.facts.policy_values)
     parts = {
         "es": f"Según la sección “{title}”: {values}.",
