@@ -398,6 +398,25 @@ def test_the_address_cap_trusts_only_the_last_forwarded_hop(
     assert len(hashes) == 2, "the two visitors' addresses collapsed onto the same audit key"
 
 
+@pytest.mark.parametrize("forwarded", ["198.51.100.1,", "198.51.100.1, ", ",", " "])
+def test_a_forwarded_header_with_an_empty_last_hop_falls_back_to_the_connecting_address(
+    client: TestClient, audit: _RecordingAuditSink, forwarded: str
+) -> None:
+    """An empty trailing entry is no client identity: it must key on the connecting address, never
+    on an empty string and never on the earlier entry the proxy did not vouch for."""
+    client.post(DEMO_LOGIN, json={"persona": "ana"}, headers={"X-Demo-Access-Code": ACCESS_CODE})
+    unproxied_hash = audit.records[-1].client_address_hash
+
+    response = client.post(
+        DEMO_LOGIN,
+        json={"persona": "joao"},
+        headers={"X-Demo-Access-Code": ACCESS_CODE, "X-Forwarded-For": forwarded},
+    )
+
+    assert response.status_code == 201
+    assert audit.records[-1].client_address_hash == unproxied_hash
+
+
 def test_a_filing_that_cannot_be_audited_fails_closed(clock: Clock) -> None:
     app = create_app(
         _settings(), clock=clock, customer_lookup=_always_active, signin_audit=_FailingAuditSink()
