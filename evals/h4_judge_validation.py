@@ -97,12 +97,14 @@ from evals.judge_validation import (
     DIMENSIONS,
     DimensionAgreement,
     DimensionDetail,
+    HumanMean,
     RaterScore,
     Role,
     compute_agreement,
     compute_detail,
+    compute_human_means,
 )
-from evals.report import judge_validation_section
+from evals.report import judge_validation_section, withhold_demoted_judge_means
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +117,7 @@ _PENDING_LIMITATIONS_BULLET = re.compile(
 )
 
 _JUDGE_VALIDATION_START = re.compile(r"^## \d+\. Judge validation\n\n", re.MULTILINE)
+_JUDGE_SCORED_START = re.compile(r"^## \d+\. Judge-scored quality\n\n", re.MULTILINE)
 _NEXT_SECTION_BOUNDARY = re.compile(r"\n\n## \d+\.")
 
 _CASES_FILE_NAME = "judge-validation-cases.csv"
@@ -340,9 +343,13 @@ def apply_real_judge_validation(
     agreement: tuple[DimensionAgreement, ...],
     detail: tuple[DimensionDetail, ...] | None = None,
     facts_coverage: tuple[int, int] | None = None,
+    human_means: tuple[HumanMean, ...] | None = None,
 ) -> str:
     """``report_markdown`` with its judge-validation section, and the one limitations bullet that
     names it as pending, replaced for a real, ``human``-provenance sample.
+
+    With ``human_means`` the judge-scored quality section is patched too: each dimension the
+    sample demoted shows no judge mean there, and the raters' means stand in its place.
 
     Raises
     ------
@@ -354,7 +361,26 @@ def apply_real_judge_validation(
     body_start, end = _judge_validation_bounds(report_markdown)
     new_section = judge_validation_section(agreement, "human", detail, facts_coverage)
     patched = report_markdown[:body_start] + new_section + report_markdown[end:]
+    if human_means is not None:
+        patched = _withhold_in_judge_scored_section(patched, agreement, human_means)
     return _PENDING_LIMITATIONS_BULLET.sub("", patched)
+
+
+def _withhold_in_judge_scored_section(
+    report_markdown: str,
+    agreement: tuple[DimensionAgreement, ...],
+    human_means: tuple[HumanMean, ...],
+) -> str:
+    start = _JUDGE_SCORED_START.search(report_markdown)
+    boundary = _NEXT_SECTION_BOUNDARY.search(report_markdown, start.end()) if start else None
+    if start is None or boundary is None:
+        raise ValueError(_UNRECOGNIZED_REPORT)
+    body = report_markdown[start.end() : boundary.start()]
+    return (
+        report_markdown[: start.end()]
+        + withhold_demoted_judge_means(body, agreement, human_means)
+        + report_markdown[boundary.start() :]
+    )
 
 
 def _write_atomically(path: Path, text: str) -> None:
@@ -438,6 +464,7 @@ def regenerate_report(
     scores_1, scores_2 = _as_rater_scores(rater1_rows), _as_rater_scores(rater2_rows)
     agreement = compute_agreement(scores_1, scores_2, judge_verdicts)
     detail = compute_detail(scores_1, scores_2, judge_verdicts)
+    human_means = compute_human_means(scores_1, scores_2)
     for entry in agreement:
         logger.info(
             "judge_validation dimension=%s rater_to_rater=%s rater1_to_judge=%s "
@@ -450,7 +477,9 @@ def regenerate_report(
         )
     target = cases_path or report_path.with_name(_CASES_FILE_NAME)
     _write_atomically(target, case_scores_csv(rater1_rows, rater2_rows, judge_verdicts))
-    patched = apply_real_judge_validation(current, agreement, detail, _facts_coverage(rater1_rows))
+    patched = apply_real_judge_validation(
+        current, agreement, detail, _facts_coverage(rater1_rows), human_means
+    )
     _write_atomically(report_path, patched)
     logger.info("judge_validation_report_updated path=%s cases=%s", report_path, target)
     return agreement

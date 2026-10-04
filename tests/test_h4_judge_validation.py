@@ -39,11 +39,17 @@ from evals.h4_judge_validation import (
     score_with_judge,
 )
 from evals.judge import LlmJudge
-from evals.judge_validation import compute_agreement, compute_detail
+from evals.judge_validation import compute_agreement, compute_detail, compute_human_means
 from evals.metrics import CaseResult, compute_headline_metrics
 from evals.models import Case, CaseCategory
 from evals.repeated_runs import compute_variability
-from evals.report import EvaluationReport, SystemResult, Versions, render_markdown
+from evals.report import (
+    EvaluationReport,
+    SystemResult,
+    Versions,
+    render_markdown,
+    withhold_demoted_judge_means,
+)
 
 _MODEL = "claude-sonnet-5"
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -294,7 +300,7 @@ def test_apply_real_judge_validation_replaces_the_validation_and_drops_the_stale
     assert "Pending H4" not in after_text
     assert "pending the real H4 human sample" not in after_text
     assert "Judge-validation sample provenance: `human`." in after_text
-    assert "yes (judge score not validated)" in after_text  # language_quality's own demotion
+    assert "yes (judge mean withheld)" in after_text  # language_quality's own demotion
 
     # Every other section is untouched: the same "after" text, rendered directly from a report
     # that already carried the real agreement and human provenance, matches exactly.
@@ -504,6 +510,24 @@ def test_regenerate_report_patches_the_file_logs_agreement_and_calls_the_judge_p
     assert "No reconozco" not in caplog.text
 
 
+def test_regenerate_report_withholds_the_demoted_judge_means_in_the_written_file(
+    tmp_path: Path,
+) -> None:
+    rater1, rater2, report = _stage(tmp_path)
+    base = _minimal_report()
+    verdicts = score_with_judge(
+        load_rater_sheet(rater1), LlmJudge(FakeLlm(_JUDGE_RESPONSES), model=_MODEL)
+    )
+    judged = replace(base.systems[0], judge_verdicts=verdicts)
+    report.write_text(render_markdown(replace(base, systems=(judged,))), encoding="utf-8")
+
+    regenerate_report(rater1, rater2, report, LlmJudge(FakeLlm(_JUDGE_RESPONSES), model=_MODEL))
+
+    written = report.read_text(encoding="utf-8")
+    assert "not reportable by the judge" in written
+    assert "**Withheld judge means.**" in written
+
+
 def test_regenerate_report_leaves_an_unrecognized_report_untouched_before_any_judge_call(
     tmp_path: Path,
 ) -> None:
@@ -698,21 +722,76 @@ def test_case_scores_csv_puts_each_source_in_its_own_column() -> None:
     assert line == "J-01,es,normal,0,1,2,1,2,0,2,0,1"
 
 
-def test_a_demoted_dimension_claims_only_what_the_whole_report_does_with_the_judge_score() -> None:
+def _judged_report_and_inputs() -> tuple[str, tuple, tuple, tuple]:  # type: ignore[type-arg]
     rater1 = load_rater_sheet(_RATER_1_CSV)
     rater2 = load_rater_sheet(_RATER_2_CSV)
     verdicts = score_with_judge(rater1, LlmJudge(FakeLlm(_JUDGE_RESPONSES), model=_MODEL))
     scores_1, scores_2 = _as_rater_scores(rater1), _as_rater_scores(rater2)
-    agreement = compute_agreement(scores_1, scores_2, verdicts)
-    detail = compute_detail(scores_1, scores_2, verdicts)
     base = _minimal_report()
     judged = replace(base.systems[0], judge_verdicts=verdicts)
-    report = replace(base, systems=(judged,))
+    return (
+        render_markdown(replace(base, systems=(judged,))),
+        compute_agreement(scores_1, scores_2, verdicts),
+        compute_detail(scores_1, scores_2, verdicts),
+        compute_human_means(scores_1, scores_2),
+    )
 
-    patched = apply_real_judge_validation(render_markdown(report), agreement, detail)
 
-    judged_section = patched.split("## 4.")[1].split("## 5.")[0]
-    assert "| P |" in judged_section
-    assert "states no judge score" not in patched
-    assert "scores stand in its place" not in patched
-    assert "not a validated measure of quality" in patched
+def test_a_demoted_dimension_shows_no_judge_mean_anywhere_in_the_patched_report() -> None:
+    markdown, agreement, detail, human_means = _judged_report_and_inputs()
+    before_row = next(
+        line
+        for line in markdown.split("## 4.")[1].split("## 5.")[0].splitlines()
+        if line.startswith("| P |")
+    )
+    demoted = [entry.dimension for entry in agreement if entry.demoted]
+    assert demoted
+
+    patched = apply_real_judge_validation(markdown, agreement, detail, None, human_means)
+
+    section = patched.split("## 4.")[1].split("## 5.")[0]
+    row = next(line for line in section.splitlines() if line.startswith("| P |"))
+    assert row.count("not reportable by the judge") == len(demoted)
+    columns = {"grounding": 1, "language_quality": 2, "clarification": 3}
+    before_cells = [cell.strip() for cell in before_row.strip("|").split("|")]
+    after_cells = [cell.strip() for cell in row.strip("|").split("|")]
+    for dimension in demoted:
+        assert before_cells[columns[dimension]] != "not reportable by the judge"
+        assert after_cells[columns[dimension]] == "not reportable by the judge"
+    for dimension, index in columns.items():
+        if dimension not in demoted:
+            assert after_cells[index] == before_cells[index]
+    assert "**Withheld judge means.**" in section
+    for dimension in demoted:
+        assert f"{dimension}: Rater 1" in section
+
+
+def test_a_kept_dimension_keeps_its_judge_mean() -> None:
+    markdown, agreement, detail, human_means = _judged_report_and_inputs()
+    kept = [replace(entry, demoted=False) for entry in agreement]
+
+    patched = apply_real_judge_validation(markdown, tuple(kept), detail, None, human_means)
+
+    section = patched.split("## 4.")[1].split("## 5.")[0]
+    assert "not reportable by the judge" not in section
+    assert "Withheld judge means" not in section
+
+
+def test_a_report_with_no_judged_system_is_patched_without_a_withheld_note() -> None:
+    _, agreement, detail, human_means = _judged_report_and_inputs()
+
+    patched = apply_real_judge_validation(
+        render_markdown(_minimal_report()), agreement, detail, None, human_means
+    )
+
+    section = patched.split("## 4.")[1].split("## 5.")[0]
+    assert "No system in this report was scored by the live judge." in section
+    assert "Withheld judge means" not in patched
+
+
+def test_withholding_needs_a_human_mean_for_every_demoted_dimension() -> None:
+    markdown, agreement, _, human_means = _judged_report_and_inputs()
+    body = markdown.split("## 4. ")[1].split("\n\n", 1)[1].split("\n\n## 5.")[0]
+
+    with pytest.raises(ValueError, match="no column or human mean"):
+        withhold_demoted_judge_means(body, agreement, human_means[:1])
