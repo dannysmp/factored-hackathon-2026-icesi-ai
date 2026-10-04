@@ -18,7 +18,7 @@
 #   can reach Metabase directly by port, only through Caddy once routed.
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-#     -f docker-compose.metabase.yml up -d metabase
+#     -f docker-compose.metabase.yml up -d --no-deps metabase
 #   (infra/scripts/08-deploy-metabase.sh runs this on the host; not run
 #   directly from a developer machine)
 # =============================================================================

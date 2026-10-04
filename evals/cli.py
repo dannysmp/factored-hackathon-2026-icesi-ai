@@ -96,6 +96,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 # Third-party libraries
+import duckdb
+import psycopg
 from starlette.testclient import TestClient
 
 # Local modules
@@ -109,6 +111,8 @@ from app.persistence.ops_meta import read_data_as_of
 from app.retrieval.lexical import LexicalRetriever
 from app.security.sessions import Clock
 from app.security.sessions import utc_now as _real_clock
+from evals.cost import CostTrackingLlm, TurnCostLedger
+from evals.fairness import CaseProfile
 from evals.golden.case_sheet import ALL_CASES
 from evals.golden.judge_validation_sample import (
     JUDGE_VERDICTS as _SYNTHETIC_JUDGE_VERDICTS,
@@ -126,6 +130,7 @@ from evals.judge import JudgeVerdict, LlmJudge
 from evals.judge_validation import compute_agreement
 from evals.metrics import NOT_DEFINED, CaseResult, HeadlineMetrics, Metric, compute_headline_metrics
 from evals.models import Case
+from evals.profiles import load_case_profiles
 from evals.repeated_runs import compute_variability, flipped_cases, unsafe_occurrences
 from evals.report import EvaluationReport, SystemResult, Versions, render_markdown
 from evals.runner.baselines.b0 import build_b0_app
@@ -138,6 +143,9 @@ from pipelines.silver import git_version
 logger = logging.getLogger(__name__)
 
 _SYSTEMS = ("P", "B0", "B1")
+
+#: Where the data pipeline writes its cleaned tables; the customer segment is read from there.
+_SILVER_DIR = Path(__file__).resolve().parents[1] / "data" / "silver"
 
 # The bank's operating zone (app.domain.calendar.BANK_ZONE): a fixed UTC-5 offset, stated here as
 # the descriptive label the report's own text carries, since Bogotá has had no daylight-saving
@@ -193,16 +201,23 @@ def _run_p(
     dsn = settings.require_database_url().get_secret_value()
     test_login_key = _require_test_login_key(settings)
     client = TestClient(create_app(settings))
-    return run_http_cases(
-        client, dsn, cases, test_login_key=test_login_key, capture_transcripts=capture_transcripts
-    )
+    with TurnCostLedger() as ledger:
+        return run_http_cases(
+            client,
+            dsn,
+            cases,
+            test_login_key=test_login_key,
+            capture_transcripts=capture_transcripts,
+            cost_ledger=ledger,
+        )
 
 
 def _run_b0(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]:
     dsn = settings.require_database_url().get_secret_value()
     test_login_key = _require_test_login_key(settings)
     client = TestClient(build_b0_app(settings))
-    return run_http_cases(client, dsn, cases, test_login_key=test_login_key)
+    with TurnCostLedger() as ledger:
+        return run_http_cases(client, dsn, cases, test_login_key=test_login_key, cost_ledger=ledger)
 
 
 def _run_b1(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]:
@@ -314,9 +329,8 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
     """
     cases = _select_cases(smoke=smoke)
     calendar = _resolve_calendar(settings, clock=_real_clock)
-    judge = LlmJudge(
-        AnthropicLlmClient(settings.require_anthropic_key()), model=settings.judge_model
-    )
+    judge_client = CostTrackingLlm(AnthropicLlmClient(settings.require_anthropic_key()))
+    judge = LlmJudge(judge_client, model=settings.judge_model)
     all_runs: dict[str, list[tuple[CaseResult, ...]]] = {}
     for system in _SYSTEMS:
         run_count = _RUN_COUNTS[system]
@@ -357,15 +371,33 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
     report = EvaluationReport(
         versions=versions,
         golden_cases=tuple(cases),
+        case_profiles=_load_profiles(settings, cases),
         systems=systems,
         judge_validation=agreement,
         judge_validation_provenance=_SYNTHETIC_JUDGE_VALIDATION_PROVENANCE,
+        judge_call_count=judge_client.call_count,
+        judge_cost_usd=judge_client.total_cost_usd,
         reference_date=calendar.reference_date.isoformat(),
         reference_date_source=calendar.origin.value,
         bank_timezone=_BANK_TIMEZONE_LABEL,
         scope_note=scope_note,
     )
     return report, unsafe
+
+
+def _load_profiles(settings: Settings, cases: Sequence[Case]) -> dict[str, CaseProfile] | None:
+    """Each case's customer country and segment, or ``None`` when the lookup cannot run.
+
+    The fairness section states that the profiles were unavailable instead of failing a run whose
+    systems have already been scored.
+    """
+    try:
+        return load_case_profiles(
+            settings.require_database_url().get_secret_value(), cases, silver_dir=_SILVER_DIR
+        )
+    except (psycopg.Error, duckdb.Error, ConfigError):
+        logger.exception("case_profiles_unavailable")
+        return None
 
 
 def _log_errored_cases(system: str, results: Sequence[CaseResult]) -> None:

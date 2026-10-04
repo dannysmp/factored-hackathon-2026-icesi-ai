@@ -32,7 +32,13 @@
 #   loopback-only and Caddy never routes to it until setup has already
 #   claimed that token. Once Metabase is healthy, the script also captures
 #   and logs the memory footprint of the five services now sharing the
-#   host, per ADR-11's own capacity requirement.
+#   host, per ADR-11's own capacity requirement. The host holds no copy of
+#   `docker-compose.metabase.yml` until this script writes it, so the file
+#   travels in the command the same way 05-deploy.sh ships the base compose
+#   files; the service is started with `--no-deps`, since this command runs
+#   in a fresh shell without the variables 05-deploy.sh exported, and a
+#   dependency reconcile there would recreate Postgres from a config that
+#   differs from the running one.
 # Usage:
 #   infra/scripts/08-deploy-metabase.sh
 #   (needs 05-deploy.sh already run, and the SSM parameters this script
@@ -60,6 +66,7 @@ if [[ -z "${instance_id}" ]]; then
   exit 1
 fi
 
+compose_metabase_b64="$(base64 <"${REPO_ROOT}/docker-compose.metabase.yml" | tr -d '\n')"
 caddyfile_with_metabase_b64="$(cat "${REPO_ROOT}/infra/Caddyfile" "${REPO_ROOT}/infra/Caddyfile.dashboard-block" | base64 | tr -d '\n')"
 
 # Unquoted heredoc: every `${...}` below is substituted now, baking the Caddyfile content
@@ -70,6 +77,7 @@ set -euo pipefail
 command -v curl >/dev/null 2>&1 || dnf install -y curl >/dev/null
 command -v python3 >/dev/null 2>&1 || dnf install -y python3 >/dev/null
 cd /opt/dispute-intake
+echo '${compose_metabase_b64}' | base64 -d >/opt/dispute-intake/docker-compose.metabase.yml
 
 db_password="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/metabase-db-password --with-decryption --query Parameter.Value --output text)"
 session_key="\$(aws ssm get-parameter --name ${SSM_SECRET_PREFIX}/metabase-session-secret-key --with-decryption --query Parameter.Value --output text)"
@@ -111,10 +119,13 @@ fi
 echo "setting analytics_reader's password and enabling login"
 psql_set_password "ALTER ROLE analytics_reader LOGIN PASSWORD :'pw'" "\${analytics_reader_password}"
 
+echo "disk space on the host before the metabase image is pulled:"
+df -h /
+
 echo "starting the metabase container"
 export MB_DB_PASS="\${db_password}"
 export MB_SESSION_SECRET_KEY="\${session_key}"
-docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.metabase.yml up -d metabase
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.metabase.yml up -d --no-deps metabase
 
 echo "waiting for metabase to become healthy"
 for i in \$(seq 1 40); do
@@ -160,7 +171,7 @@ else
 fi
 
 echo '${caddyfile_with_metabase_b64}' | base64 -d >/opt/dispute-intake/infra/Caddyfile
-docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.metabase.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile
 echo "metabase deployed and reachable through Caddy"
 SCRIPT
 )"

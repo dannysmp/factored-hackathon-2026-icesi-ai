@@ -265,7 +265,7 @@ def _minimal_report(**overrides: Any) -> EvaluationReport:
     return EvaluationReport(**{**defaults, **overrides})
 
 
-def test_apply_real_judge_validation_replaces_section_8_and_drops_the_stale_bullet() -> None:
+def test_apply_real_judge_validation_replaces_the_validation_and_drops_the_stale_bullet() -> None:
     before_report = _minimal_report()
     before_text = render_markdown(before_report)
     assert "Pending H4" in before_text
@@ -303,18 +303,29 @@ def test_apply_real_judge_validation_raises_on_an_unrecognized_report_shape() ->
         apply_real_judge_validation("not a real report at all", agreement=())
 
 
-def test_apply_real_judge_validation_refuses_section_9_missing_or_out_of_order() -> None:
+def test_apply_real_judge_validation_refuses_a_report_with_no_section_after_the_validation() -> (
+    None
+):
     text = render_markdown(_minimal_report())
-    without_9 = text.replace("## 9. Learned components", "## Learned components")
+    start = text.index("## 9. Judge validation")
+    truncated = text[:start] + "## 9. Judge validation\n\nbody only, nothing after it\n"
     with pytest.raises(ValueError, match="cannot recognize"):
-        apply_real_judge_validation(without_9, agreement=())
+        apply_real_judge_validation(truncated, agreement=())
 
-    moved = text.replace("\n\n## 9. Learned components", "\n\n## 9b. Learned components")
-    out_of_order = moved.replace(
-        "## 8. Judge validation", "## 9. Learned components\n\nx\n\n## 8. Judge validation"
-    )
+
+def test_apply_real_judge_validation_refuses_a_report_with_no_validation_section() -> None:
+    text = render_markdown(_minimal_report())
+    renamed = text.replace("## 9. Judge validation", "## 9. Rater agreement")
     with pytest.raises(ValueError, match="cannot recognize"):
-        apply_real_judge_validation(out_of_order, agreement=())
+        apply_real_judge_validation(renamed, agreement=())
+
+
+def test_apply_real_judge_validation_finds_the_section_by_title_not_number() -> None:
+    text = render_markdown(_minimal_report())
+    renumbered = text.replace("## 9. Judge validation", "## 4. Judge validation")
+    patched = apply_real_judge_validation(renumbered, agreement=())
+    assert "## 4. Judge validation" in patched
+    assert "Pending H4" not in patched
 
 
 def test_apply_real_judge_validation_drops_the_bullet_without_a_trailing_newline() -> None:

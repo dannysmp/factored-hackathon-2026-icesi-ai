@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Lang } from '../customer-chat/contracts'
+import { AgentRequestError } from './client'
 import type { QueueClient } from './client'
 import type { QueueItem } from './contracts'
 
@@ -40,7 +41,12 @@ const INITIAL_STATE: QueueState = {
   error: null,
 }
 
-export function useQueue(client: QueueClient): Queue {
+/**
+ * `onSessionExpired` is called, instead of showing a retryable error, when the backend answers
+ * 401: the session is not refreshed, so retrying with the same token can never succeed and the
+ * only recovery is a new sign-in.
+ */
+export function useQueue(client: QueueClient, onSessionExpired?: () => void): Queue {
   const [language, setLanguageState] = useState<Lang | undefined>(undefined)
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<QueueState>(INITIAL_STATE)
@@ -50,6 +56,11 @@ export function useQueue(client: QueueClient): Queue {
   // request's response is committed, so a slow response to a stale combination never overwrites
   // a newer one that already answered.
   const requestId = useRef(0)
+  const expiredHandler = useRef(onSessionExpired)
+
+  useEffect(() => {
+    expiredHandler.current = onSessionExpired
+  }, [onSessionExpired])
 
   useEffect(() => {
     mounted.current = true
@@ -76,6 +87,10 @@ export function useQueue(client: QueueClient): Queue {
       },
       (error: unknown) => {
         if (!mounted.current || requestId.current !== thisRequest) return
+        if (error instanceof AgentRequestError && error.status === 401 && expiredHandler.current) {
+          expiredHandler.current()
+          return
+        }
         setState((current) => ({
           ...current,
           status: 'error',

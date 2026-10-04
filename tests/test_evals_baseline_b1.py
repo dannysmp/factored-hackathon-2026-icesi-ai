@@ -37,6 +37,7 @@ from evals.models import Case, CaseCategory
 from evals.runner.baselines.b1 import (
     _MAX_TOOL_ROUNDS,
     _log_call_completed,
+    _run_turn,
     build_b1_dependencies,
     run_case,
     run_cases,
@@ -45,6 +46,7 @@ from evals.runner.baselines.naive_agent_client import (
     NaiveAgentClient,
     NaiveAgentRequestTooLarge,
     NaiveAgentTurn,
+    ToolCall,
 )
 from evals.scoring import score_case
 
@@ -293,6 +295,60 @@ def test_an_unpriced_model_never_aborts_the_batch(caplog: pytest.LogCaptureFixtu
     completed = [r for r in caplog.records if r.message.startswith("b1_call_completed")]
     assert len(completed) == 1
     assert "cost_usd=None" in completed[0].message
+
+
+class _ScriptedClient:
+    """Serves the given turns in order, as ``NaiveAgentClient.send`` would."""
+
+    def __init__(self, *turns: NaiveAgentTurn) -> None:
+        self._turns = list(turns)
+
+    def send(self, *args: Any, **kwargs: Any) -> NaiveAgentTurn:
+        return self._turns.pop(0)
+
+
+class _NoopDispatcher:
+    def start_turn(self) -> None:
+        return None
+
+    def dispatch(self, call: ToolCall, **kwargs: Any) -> str:
+        return "{}"
+
+
+def _agent_turn(model: str, *, tool: bool = False) -> NaiveAgentTurn:
+    return NaiveAgentTurn(
+        text="" if tool else "listo",
+        tool_calls=(ToolCall(id="t1", name="get_policy", input={}),) if tool else (),
+        stop_reason="tool_use" if tool else "end_turn",
+        model=model,
+        input_tokens=1000,
+        output_tokens=500,
+        latency_ms=100.0,
+    )
+
+
+def _run_scripted_turn(*turns: NaiveAgentTurn) -> Any:
+    return _run_turn(
+        _ScriptedClient(*turns),  # type: ignore[arg-type]
+        _NoopDispatcher(),  # type: ignore[arg-type]
+        [],
+        session_id="S-1",
+        turn_id="turn-0001",
+    )
+
+
+def test_a_turn_costs_the_sum_of_every_call_it_made() -> None:
+    one_call_cost = _run_scripted_turn(_agent_turn(_MODEL))[3]
+    two_call_cost = _run_scripted_turn(_agent_turn(_MODEL, tool=True), _agent_turn(_MODEL))[3]
+
+    assert one_call_cost is not None and one_call_cost > 0
+    assert two_call_cost == 2 * one_call_cost
+
+
+def test_a_turn_with_one_unpriced_call_has_no_cost() -> None:
+    cost = _run_scripted_turn(_agent_turn(_MODEL, tool=True), _agent_turn("claude-opus-4"))[3]
+
+    assert cost is None
 
 
 @pytest.mark.integration

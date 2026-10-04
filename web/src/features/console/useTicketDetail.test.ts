@@ -1,6 +1,7 @@
 /** Unit tests: the parts of `useTicketDetail`'s race guard a rendered UI can't reach directly. */
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { AgentRequestError } from './client'
 import type { TicketDetailClient } from './ticketDetailClient'
 import type { TicketDetail } from './contracts'
 import { DEMO_TICKET_DETAILS } from './fixtures'
@@ -99,5 +100,93 @@ describe('useTicketDetail', () => {
 
     await Promise.resolve()
     expect(result.current.detail?.item.ticket_ref).toBe(SECOND_DETAIL?.item.ticket_ref)
+  })
+
+  describe('when the backend answers 401', () => {
+    const expired = (): Promise<TicketDetail | null> =>
+      Promise.reject(new AgentRequestError(401, 'Session expired'))
+
+    it('calls onSessionExpired once and does not enter the error state', async () => {
+      const onSessionExpired = vi.fn()
+      const client: TicketDetailClient = { fetchTicketDetail: expired }
+      const { result } = renderHook(() => useTicketDetail(client, 'T-ANY', onSessionExpired))
+
+      await waitFor(() => {
+        expect(onSessionExpired).toHaveBeenCalledTimes(1)
+      })
+      expect(result.current.status).toBe('loading')
+    })
+
+    it('stays a retryable error when no handler is given', async () => {
+      const client: TicketDetailClient = { fetchTicketDetail: expired }
+      const { result } = renderHook(() => useTicketDetail(client, 'T-ANY'))
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('error')
+      })
+    })
+
+    it('does not call it for another status', async () => {
+      const onSessionExpired = vi.fn()
+      const client: TicketDetailClient = {
+        fetchTicketDetail: () => Promise.reject(new AgentRequestError(500, 'Internal error')),
+      }
+      const { result } = renderHook(() => useTicketDetail(client, 'T-ANY', onSessionExpired))
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('error')
+      })
+      expect(onSessionExpired).not.toHaveBeenCalled()
+    })
+
+    it('does not call it after unmount', async () => {
+      const onSessionExpired = vi.fn()
+      let rejectRequest: (reason: Error) => void = () => undefined
+      const client: TicketDetailClient = {
+        fetchTicketDetail: () =>
+          new Promise<TicketDetail | null>((_resolve, reject) => {
+            rejectRequest = reject
+          }),
+      }
+      const { unmount } = renderHook(() => useTicketDetail(client, 'T-ANY', onSessionExpired))
+      unmount()
+
+      await act(async () => {
+        rejectRequest(new AgentRequestError(401, 'Session expired'))
+        await Promise.resolve()
+      })
+
+      expect(onSessionExpired).not.toHaveBeenCalled()
+    })
+
+    it('ignores a superseded request and honours the current one', async () => {
+      const onSessionExpired = vi.fn()
+      const rejections: ((reason: Error) => void)[] = []
+      const client: TicketDetailClient = {
+        fetchTicketDetail: () =>
+          new Promise<TicketDetail | null>((_resolve, reject) => {
+            rejections.push(reject)
+          }),
+      }
+      const { rerender } = renderHook(({ ref }) => useTicketDetail(client, ref, onSessionExpired), {
+        initialProps: { ref: 'T-ONE' },
+      })
+      rerender({ ref: 'T-TWO' })
+      await waitFor(() => {
+        expect(rejections).toHaveLength(2)
+      })
+
+      await act(async () => {
+        rejections[0]?.(new AgentRequestError(401, 'Session expired'))
+        await Promise.resolve()
+      })
+      expect(onSessionExpired).not.toHaveBeenCalled()
+
+      await act(async () => {
+        rejections[1]?.(new AgentRequestError(401, 'Session expired'))
+        await Promise.resolve()
+      })
+      expect(onSessionExpired).toHaveBeenCalledTimes(1)
+    })
   })
 })

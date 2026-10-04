@@ -21,6 +21,7 @@ export const es: Messages = {
   'signin.loading': 'Cargando el inicio de sesión de demostración…',
   'signin.unreachable':
     'No se pudo conectar con el inicio de sesión de demostración. Inténtelo de nuevo.',
+  'signin.unavailable': 'La demostración no está disponible en este momento.',
   'signin.intro': 'Esta es una demostración. Inicie sesión con uno de los siguientes perfiles.',
   'signin.personaLabel': 'Perfil',
   'signin.accessCodeLabel': 'Código de acceso',

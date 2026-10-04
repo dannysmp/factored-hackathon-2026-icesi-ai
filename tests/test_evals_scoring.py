@@ -342,6 +342,26 @@ def test_a_policy_answer_case_with_no_filing_or_escalation_is_correct(dsn: str) 
 
 
 @pytest.mark.integration
+def test_the_transcripts_measured_cost_reaches_the_scored_result(dsn: str) -> None:
+    def transcript(cost: float | None) -> RunTranscript:
+        return RunTranscript(
+            case=_case(
+                expected_intent=Intent.POLICY_ANSWER,
+                expected_policy_section_id="filing-windows",
+                expected_category=None,
+                user_turns=("¿Cuánto tiempo tengo?",),
+            ),
+            session_id=SESSION_ID,
+            replies=(_reply(),),
+            latencies_seconds=(0.3,),
+            cost_usd=cost,
+        )
+
+    assert score_case(dsn, transcript(0.0123)).cost_usd == 0.0123
+    assert score_case(dsn, transcript(None)).cost_usd is None
+
+
+@pytest.mark.integration
 def test_a_reply_in_the_wrong_language_fails_scoring(dsn: str) -> None:
     transcript = RunTranscript(
         case=_case(

@@ -81,11 +81,15 @@ on a replayed turn, only on a turn this call genuinely advances.
 
 Limitations
 -----------
-A single-match search result is accepted immediately (``PRESENT_ONE`` is informational, not a
-second confirmation gate) and two or more matches ask for more detail rather than presenting a
-numbered list — the same v1 scope decision already made for slot collection, since neither a
-pending-candidate field nor a multi-candidate list exists in ``DialogueState`` yet. A session
-identifies and evaluates at most one transaction/category pair: nothing here resets
+A single-match search result is presented with ``PRESENT_ONE`` and the customer's yes (or a
+reason, which implies it) selects it; a no asks for the transaction again; an unclear answer asks
+again within the clarification budget. The question stays pending across a reply to an unrelated
+message (small talk, a policy question, a list request), as the reason and confirmation questions
+do, so the customer's yes after such a reply still selects the presented transaction; nothing is
+written until the filing confirmation. Two or more matches ask for more detail rather than
+presenting a numbered list — the same v1 scope decision already made for slot collection, since
+neither a pending-candidate field nor a multi-candidate list exists in ``DialogueState`` yet. A
+session identifies and evaluates at most one transaction/category pair: nothing here resets
 ``selected_ref``/``category`` once set, so a second, different dispute needs a new session. The
 handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name yet.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
@@ -169,6 +173,8 @@ _UNKNOWN_FIRST_NAME = "Customer"
 _ROUTED_HANDOFFS = frozenset({TemplateId.HANDOFF_REVIEW, TemplateId.HANDOFF_FRAUD})
 
 _EMPTY_FACTS = DisputeFacts()
+
+_LANGUAGE_NEUTRAL_INTENTS = frozenset({NluIntent.UNCLEAR, NluIntent.SWITCH_LANGUAGE})
 
 _ASK_TEMPLATE_OF: dict[Slot, TemplateId] = {
     Slot.TRANSACTION: TemplateId.CLARIFY_TRANSACTION,
@@ -472,11 +478,24 @@ class DialogueController:
         A brand-new session starts at expected version 0 (a fresh insert, unconditional on it —
         ``DialogueStore.save``'s own documented behavior); its language is the first message's own,
         or Spanish when the message is too ambiguous to tell (AC: es and pt are both required).
+        While the conversation has not left its opening (``DialogueState.is_opening``) the next
+        message read in another language moves it there, so a customer whose opener carried no
+        language signal is answered in their own language from their first real message. A message
+        the understanding could not make sense of, or one that asks for a language outright, never
+        triggers that move: the first says nothing reliable about the language and the second
+        already names it.
         """
         if current is not None:
             result, accounting = self._understanding.understand(
                 request.text, language_hint=current.lang, reference_date=self._domain_date
             )
+            if (
+                current.is_opening
+                and result.intent not in _LANGUAGE_NEUTRAL_INTENTS
+                and result.language is not None
+                and result.language != current.lang
+            ):
+                current = current.with_language(result.language)
             return current, current.version, result, accounting
 
         result, accounting = self._understanding.understand(
@@ -569,6 +588,9 @@ class DialogueController:
         if result.category is not None and state.category is None:
             state = state.model_copy(update={"category": result.category})
 
+        if state.pending_slot is Slot.TRANSACTION_CHOICE:
+            state = state.with_slot_filled()
+
         slot = required_slot(result, state)
         if slot is Slot.TRANSACTION:
             return self._ask(state, Slot.TRANSACTION)
@@ -630,9 +652,16 @@ class DialogueController:
     def _handle_confirmation(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
-        if state.pending_slot is not Slot.CONFIRMATION:
-            return self._fallback(state, result)
+        if state.pending_slot is Slot.TRANSACTION_CHOICE:
+            return self._handle_transaction_choice(state, result)
+        if state.pending_slot is Slot.CONFIRMATION:
+            return self._handle_filing_confirmation(state, result)
+        return self._fallback(state, result)
 
+    def _handle_filing_confirmation(
+        self, state: DialogueState, result: NluResult
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """The customer's yes or no to filing the evaluated dispute."""
         answer = result.confirmation
         if answer is ConfirmationAnswer.NO:
             new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
@@ -651,6 +680,25 @@ class DialogueController:
         if decision.outcome is not Outcome.ELIGIBLE:
             return self._present_non_eligible(state, state.category, decision)
         return self._file_and_verify(state, state.selected_ref, state.category, decision)
+
+    def _handle_transaction_choice(
+        self, state: DialogueState, result: NluResult
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """The customer's yes or no to the one transaction just presented."""
+        answer = result.confirmation
+        if answer is ConfirmationAnswer.NO:
+            return self._ask(
+                state.model_copy(update={"selected_ref": None, "pending_slot": None}),
+                Slot.TRANSACTION,
+            )
+        if answer is not ConfirmationAnswer.YES:
+            return self._ask(state, Slot.TRANSACTION_CHOICE)
+
+        state = state.with_slot_filled()
+        assert state.selected_ref is not None  # noqa: S101 - set whenever this slot is pending
+        if state.category is None:
+            return self._ask(state, Slot.REASON)
+        return self._evaluate_and_present(state, state.selected_ref, state.category)
 
     def _handle_report_fraud(
         self, state: DialogueState, _result: NluResult
@@ -741,7 +789,33 @@ class DialogueController:
                 reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
                 template=TemplateId.HANDOFF_REVIEW,
             )
+        if slot is Slot.TRANSACTION_CHOICE:
+            envelope = self._transaction_choice_envelope(new_state)
+            if envelope is None:
+                return self._tool_failure_handoff(
+                    new_state, tool=tool_contracts.Tool.GET_TRANSACTION
+                )
+            return new_state, envelope
         return new_state, self._envelope(new_state, Intent.CLARIFY, _ASK_TEMPLATE_OF[slot])
+
+    def _present_selected(
+        self, state: DialogueState, fact: EnvelopeTransactionFact
+    ) -> RenderEnvelope:
+        """Present the one transaction found, asking the customer to say it is the right one."""
+        facts = DisputeFacts(transactions=(fact,), candidate_count=1, selected_ref=fact.ref)
+        return self._envelope(
+            state, Intent.PRESENT_TRANSACTIONS, TemplateId.PRESENT_ONE, facts=facts
+        )
+
+    def _transaction_choice_envelope(self, state: DialogueState) -> RenderEnvelope | None:
+        """The selected transaction presented again, read fresh; ``None`` if it cannot be read."""
+        assert state.selected_ref is not None  # noqa: S101 - set whenever this slot is pending
+        transaction = dispatch(
+            self._tool_port, tool_contracts.Tool.GET_TRANSACTION, state.selected_ref
+        )
+        if isinstance(transaction, ToolFailure) or transaction is None:
+            return None
+        return self._present_selected(state, to_envelope_transaction(transaction))
 
     def _resolve_transaction(
         self, state: DialogueState, hint: TransactionHint
@@ -771,11 +845,14 @@ class DialogueController:
             return new_state, self._envelope(new_state, Intent.CLARIFY, TemplateId.PRESENT_NARROW)
 
         fact = to_envelope_transaction(matches[0])
-        new_state = state.with_slot_filled().model_copy(update={"selected_ref": fact.ref})
-        facts = DisputeFacts(transactions=(fact,), candidate_count=1, selected_ref=fact.ref)
-        return new_state, self._envelope(
-            new_state, Intent.PRESENT_TRANSACTIONS, TemplateId.PRESENT_ONE, facts=facts
+        new_state = state.model_copy(
+            update={
+                "selected_ref": fact.ref,
+                "pending_slot": Slot.TRANSACTION_CHOICE,
+                "clarification_attempts": 0,
+            }
         )
+        return new_state, self._present_selected(new_state, fact)
 
     def _evaluate_and_present(
         self, state: DialogueState, ref: str, category: DisputeCategory
@@ -1069,12 +1146,20 @@ class DialogueController:
             )
 
         if state.pending_slot is not None:
-            return self._envelope(state, Intent.CLARIFY, _ASK_TEMPLATE_OF[state.pending_slot])
+            return self._replay_pending(state, state.pending_slot)
 
         if state.phase is ConversationPhase.CLOSED:
             return self._envelope(state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
 
         return self._replay_recompute(state)
+
+    def _replay_pending(self, state: DialogueState, slot: Slot) -> RenderEnvelope:
+        """The question still open, rendered again."""
+        if slot is not Slot.TRANSACTION_CHOICE:
+            return self._envelope(state, Intent.CLARIFY, _ASK_TEMPLATE_OF[slot])
+        return self._transaction_choice_envelope(state) or self._envelope(
+            state, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
+        )
 
     def _replay_recompute(self, state: DialogueState) -> RenderEnvelope:
         """Recompute a replayed turn's reply exactly as the original turn was, unless the

@@ -25,11 +25,12 @@ Design Principles
   text; ``_ModelExtraction`` accepts them loosely (no length or cross-field rules), then the
   mapping into ``NluResult`` is where the contract's own bounds and rules apply. A result that
   fails them once is repaired once (truncating an overlong free-text field, dropping a choice out
-  of range, nulling an enum-like value the model spelled wrong) and validated again; a result that
-  still fails becomes ``NluResult.unusable()``: one question, then a person — the customer is
-  never shown a model or provider error. A call the port could not complete at all is a different
-  outcome (``UnderstandingUnavailable``, raised rather than swallowed): unlike a malformed result,
-  it is not the customer's own ambiguity, so it must not be treated as one.
+  of range, nulling an enum-like value the model spelled wrong or an amount that is not a plain
+  figure) and validated again; a result that still fails becomes ``NluResult.unusable()``: one
+  question, then a person — the customer is never shown a model or provider error. A call the port
+  could not complete at all is a different outcome (``UnderstandingUnavailable``, raised rather than
+  swallowed): unlike a malformed result, it is not the customer's own ambiguity, so it must not
+  be treated as one.
 - The masking serializer is the only path text takes to leave the process: this class never builds
   the user message from anything but ``redact_pan(text).masked``.
 - Temperature 0: this is structured extraction, not open-ended writing.
@@ -55,13 +56,19 @@ expression it never recognized, rather than guessing one specific day out of it.
 from __future__ import annotations
 
 # Standard libraries
+import re  # Matching an amount's currency, digits and separators
 from collections.abc import Mapping  # Type of the raw tool arguments
 from datetime import date  # The domain calendar's own reference date
 from decimal import Decimal, InvalidOperation  # Money is never a float; malformed amounts repair
 from typing import cast  # Narrowing a checked-membership str to the closed Lang literal
 
 # Third-party libraries
-from pydantic import BaseModel, ConfigDict, ValidationError  # Loose intermediate model
+from pydantic import (  # Loose intermediate model
+    BaseModel,
+    ConfigDict,
+    ValidationError,
+    field_validator,
+)
 
 # Local modules
 from app.conversation.date_expressions import resolve as resolve_date  # AC-E5-16, deterministic
@@ -122,7 +129,10 @@ _NLU_TOOL = ToolSpec(
             },
             "amount": {
                 "type": ["string", "null"],
-                "description": 'The amount as decimal text, e.g. "125.50", or null.',
+                "description": (
+                    "The amount as plain decimal text: digits with a point before the cents, "
+                    'no thousands separator, e.g. "99948.89" for "99.948,89", or null.'
+                ),
             },
             "currency": {
                 "type": ["string", "null"],
@@ -173,6 +183,89 @@ _ENUM_REPAIRS: Mapping[str, frozenset[str]] = {
 }
 
 
+# A figure is read only when it is exactly: an optional currency (a symbol, or one of the ISO 4217
+# codes the bank's customers write), a number whose marks are digit groups and separators, and an
+# optional currency. Anything else (a sign, a percentage, an exponent, words, a code outside this
+# list, digit runs split by text) is not an amount and is never repaired into one.
+_CURRENCY_CODES = (
+    "ARS|BOB|BRL|CLP|COP|CRC|CUP|DOP|EUR|GBP|GTQ|HNL|JPY|MXN|NIO|PAB|PEN|PYG|USD|UYU|VES"
+)
+_CURRENCY = rf"(?:(?:{_CURRENCY_CODES})\$?|US\$|R\$|\$|€|£|¥)"
+_SPACING = " \u00a0\u202f"
+_AMOUNT_TEXT = re.compile(
+    rf"(?:{_CURRENCY}[{_SPACING}]*)?"
+    rf"(?P<figure>[.,]?[0-9](?:[0-9.,'\u2019{_SPACING}]*[0-9])?)"
+    rf"(?:[{_SPACING}]*{_CURRENCY})?"
+)
+# Spacing and apostrophes group digits the way "." or "," does; all are one mark while parsing.
+_GROUPING_MARKS = re.compile(rf"['\u2019{_SPACING}]")
+# Money groups thousands in threes, and two decimal places mean "1.234" is 1234, not 1.234.
+_THOUSANDS_GROUP = 3
+
+
+def _parse_amount(text: str) -> Decimal:
+    """The amount in ``text``, however the customer's locale writes its separators.
+
+    A model told to give plain decimal text still sometimes copies the customer's own figure
+    ("99.948,89", "99,948.89", "$ 1 250,50", "ARS 99948.89"). A currency symbol or code at either
+    end is dropped; with both separators present the last is the decimal point; a mark that
+    repeats, or stands once before exactly three digits, groups thousands; any other single
+    separator is the decimal point. Spacing and apostrophes only ever group thousands.
+
+    Raises
+    ------
+    decimal.InvalidOperation
+        ``text`` is not an amount, or its marks are not any locale's grouping.
+    """
+    match = _AMOUNT_TEXT.fullmatch(text.strip())
+    if match is None:
+        raise InvalidOperation(text)
+    figure = _GROUPING_MARKS.sub("'", match["figure"])
+    separators = [mark for mark in (".", ",") if mark in figure]
+    if not separators:
+        return Decimal(_ungrouped(figure, "'") if "'" in figure else figure)
+    decimal_point = max(separators, key=figure.rindex)
+    others = [mark for mark in (".", ",", "'") if mark in figure and mark != decimal_point]
+    if others:
+        grouped, _, fraction = figure.rpartition(decimal_point)
+        return Decimal(f"{_ungrouped(grouped, others[0])}.{fraction}")
+    integer, *later = figure.split(decimal_point)
+    repeated = len(later) > 1
+    stands_before_a_group = len(later[0]) == _THOUSANDS_GROUP and integer.strip("0") != ""
+    if repeated or stands_before_a_group:
+        return Decimal(_ungrouped(figure, decimal_point))
+    return Decimal(f"{integer or '0'}.{later[0]}")
+
+
+def _ungrouped(digits: str, separator: str) -> str:
+    """``digits`` without its thousands ``separator``; raises when the groups are not thousands."""
+    head, *groups = digits.split(separator)
+    if not 1 <= len(head) <= _THOUSANDS_GROUP or any(
+        len(group) != _THOUSANDS_GROUP for group in groups
+    ):
+        raise InvalidOperation(digits)
+    return head + "".join(groups)
+
+
+def _amount_text(value: object) -> object:
+    """A JSON number the model sent as an amount, as text; any other value as it came."""
+    if isinstance(value, int | float):
+        return str(value)
+    return value
+
+
+def _is_amount(value: object) -> bool:
+    """Whether ``value`` reads as an amount the contract's own ``TransactionHint`` accepts."""
+    text = _amount_text(value)
+    if not isinstance(text, str):
+        return False
+    try:
+        TransactionHint(amount=_parse_amount(text))
+    except (InvalidOperation, ValidationError):
+        return False
+    return True
+
+
 class _ModelExtraction(BaseModel):
     """The tool call's arguments, accepted loosely; the contract's own rules apply on mapping."""
 
@@ -193,6 +286,12 @@ class _ModelExtraction(BaseModel):
     requested_language: str | None = None
     policy_query: str | None = None
     mentions_second_dispute: bool = False
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _number_as_text(cls, value: object) -> object:
+        """Read an amount sent as a JSON number the same way as one sent as text."""
+        return _amount_text(value)
 
 
 def _to_nlu_result(extraction: _ModelExtraction, *, reference_date: date) -> NluResult:
@@ -218,7 +317,7 @@ def _to_nlu_result(extraction: _ModelExtraction, *, reference_date: date) -> Nlu
     )
     transaction = TransactionHint(
         merchant=extraction.merchant,
-        amount=Decimal(extraction.amount) if extraction.amount else None,
+        amount=_parse_amount(extraction.amount) if extraction.amount else None,
         currency=extraction.currency,
         date_on=resolved_date[0] if resolved_date is not None else None,
         date_source=resolved_date[1] if resolved_date is not None else None,
@@ -255,6 +354,8 @@ def _repaired(raw: Mapping[str, object]) -> dict[str, object]:
         value = repaired.get(key)
         if isinstance(value, str) and value not in allowed:
             repaired[key] = None
+    if repaired.get("amount") is not None and not _is_amount(repaired["amount"]):
+        repaired["amount"] = None
     choice = repaired.get("choice")
     if isinstance(choice, int) and not (_MIN_CHOICE <= choice <= _MAX_CHOICE):
         repaired["choice"] = None
