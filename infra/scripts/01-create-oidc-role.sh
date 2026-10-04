@@ -4,7 +4,7 @@
 # =============================================================================
 # Purpose:
 #   The one role CI assumes to push images and drive a deploy end to end: no
-#   static AWS keys in the repository or in CI (ADR-13). Trust is scoped to
+#   static AWS keys in the repository or in CI. Trust is scoped to
 #   this repository's own default branch, not any branch or pull request;
 #   permissions are scoped to ECR push, to SSM commands against instances
 #   tagged for this project, to finding those tagged resources (the EC2

@@ -7,7 +7,7 @@
 #   app's own site block and its hardening headers) with this file, rather
 #   than deploying a second, separately hand-maintained copy of the app's
 #   site block that could drift from the real one and silently lose
-#   hardening (ADR-13) the day either file changes without the other.
+#   hardening the day either file changes without the other.
 #   Sslip.io resolves any subdomain of a `<dashes>.sslip.io` name to the
 #   same IP, so `dashboard.` needs no DNS record of its own; Caddy issues
 #   that block its own certificate automatically, the same way it does for
@@ -16,7 +16,7 @@
 #   A subdomain, not a path prefix, because Metabase does not support being
 #   served under a non-root path without extra configuration this project
 #   does not otherwise need. Deployed only after Metabase's first-run setup
-#   succeeds (ADR-11: the reverse proxy must not reach Metabase before
+#   succeeds (the reverse proxy must not reach Metabase before
 #   then) — until `08-deploy-metabase.sh` runs, this file is never
 #   appended to the live Caddyfile, so Metabase is unreachable through
 #   Caddy by construction, not by a request-time check.

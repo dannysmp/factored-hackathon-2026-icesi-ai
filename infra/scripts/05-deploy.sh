@@ -3,7 +3,7 @@
 # 05-deploy.sh — bring the compose stack up on the host, over SSM
 # =============================================================================
 # Purpose:
-#   The one way the stack reaches the host: no SSH key anywhere (ADR-13). The
+#   The one way the stack reaches the host: no SSH key anywhere. The
 #   CI deploy role's own permissions (01-create-oidc-role.sh) are exactly
 #   ssm:SendCommand and ssm:GetCommandInvocation against instances tagged for
 #   this project — nothing broader.
@@ -32,7 +32,7 @@
 #   08-deploy-metabase.sh already established for the Metabase-side roles —
 #   piped over stdin, never `-c`, since `:'var'` substitution only takes
 #   effect that way (verified against a real Postgres server, not assumed).
-#   The three demo sign-in parameters (ADR-18) are optional: a deployment
+#   The three demo sign-in parameters are optional: a deployment
 #   where the maintainer hasn't created them yet (the smoke-only path) gets
 #   an empty value for each and sign-in stays disabled, exactly as before
 #   this script knew about them — `DEMO_SIGNIN_ENABLED`/
@@ -60,7 +60,7 @@
 #   container using the backend image with a different command, never
 #   `docker compose exec` against the long-running `backend` service: that
 #   service's own startup (`app.main.create_app`) validates every demo
-#   persona against a seeded customer when demo sign-in is enabled (ADR-18)
+#   persona against a seeded customer when demo sign-in is enabled
 #   and fails closed before binding a port if the database is still empty —
 #   exactly the state right after `up -d` on a freshly launched instance —
 #   so `backend` would still be crash-looping, unreachable by `exec`, at the

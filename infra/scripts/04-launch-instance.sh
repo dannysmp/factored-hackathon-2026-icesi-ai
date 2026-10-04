@@ -3,13 +3,13 @@
 # 04-launch-instance.sh — the security group, the instance, its Elastic IP
 # =============================================================================
 # Purpose:
-#   The one host the whole stack runs on (ADR-13): a t3.large-class instance
+#   The one host the whole stack runs on: a t3.large-class instance
 #   in the default VPC, a security group open on 80/443 only, and a static
 #   Elastic IP so the host name (sslip.io on that IP) survives a stop/start.
 # Design:
 #   User data installs Docker and the compose plugin and prepares the app
 #   directory; it does not fetch or start the stack itself — the deploy
-#   pipeline (a later slice) copies the compose file and the images and
+#   pipeline copies the compose file and the images and
 #   brings the stack up, over SSM, with no SSH key anywhere.
 #   Idempotent by the project tag: re-running with an instance already
 #   tagged for this project leaves it alone rather than launching a second

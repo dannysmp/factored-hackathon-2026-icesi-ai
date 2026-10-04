@@ -6,11 +6,10 @@
 #   Runs after 05-deploy.sh has the base stack up. Creates Metabase's own
 #   database and role, brings up its container, completes its first-run
 #   setup and connects the analytics schema, then — only once that succeeds
-#   — swaps in the Caddyfile that can reach it (ADR-11's own hardening: "the
-#   first-run setup... is completed by the provisioning script before the
-#   reverse proxy exposes Metabase"), built by concatenating the real
+#   — swaps in the Caddyfile that can reach it (the first-run setup is completed by this script before the
+#   reverse proxy exposes Metabase), built by concatenating the real
 #   `infra/Caddyfile` (unchanged, the only copy of the app's own site block
-#   and its hardening headers, ADR-13) with `infra/Caddyfile.dashboard-block`
+#   and its hardening headers) with `infra/Caddyfile.dashboard-block`
 #   — never a second, separately maintained copy of the app's own site
 #   block, which could silently drift from the real one and lose hardening
 #   the day either file changes without the other. Also sets
@@ -32,7 +31,7 @@
 #   loopback-only and Caddy never routes to it until setup has already
 #   claimed that token. Once Metabase is healthy, the script also captures
 #   and logs the memory footprint of the five services now sharing the
-#   host, per ADR-11's own capacity requirement. The host holds no copy of
+#   host, as the capacity check for a one-host deployment. The host holds no copy of
 #   `docker-compose.metabase.yml` until this script writes it, so the file
 #   travels in the command the same way 05-deploy.sh ships the base compose
 #   files; the service is started with `--no-deps`, since this command runs

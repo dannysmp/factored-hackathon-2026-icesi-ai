@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 12-hardening-check.sh — the post-deploy hardening check (ADR-13)
+# 12-hardening-check.sh — the post-deploy hardening check
 # =============================================================================
 # Purpose:
 #   Proves the deployed edge actually carries the hardening baseline
-#   ADR-13 requires, against the live address, after the smoke test and
+#   the deployment requires, against the live address, after the smoke test and
 #   before any account-touching run reaches it: TLS 1.1 and below refused
 #   while a plain HTTPS request succeeds with a valid certificate chain; an
 #   HSTS header with a max-age of at least 15,552,000 seconds; an enforcing
@@ -147,7 +147,7 @@ check_no_version_disclosure() {
 
 check_cookie_flags() {
   # Probes the two routes that could ever set a session cookie -- the customer and agent demo
-  # sign-in brokers (ADR-18) -- not an unrelated route. A wrong access code still reaches each
+  # sign-in brokers -- not an unrelated route. A wrong access code still reaches each
   # handler's real code (the code is compared before anything else, including the persona
   # lookup), so this needs no real credentials to be a genuine, non-vacuous test of what a
   # refused sign-in attempt actually does. Known residual gap: a cookie set only on a
