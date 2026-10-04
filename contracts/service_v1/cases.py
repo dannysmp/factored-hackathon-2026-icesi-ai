@@ -41,8 +41,8 @@ and ``DisclosedAmount``, imported by ``tools.py`` and ``audit.py``.
 Limitations
 -----------
 The record carries no free text of the customer's own words: only the category and the structured
-details the conversation collected. Append-only is a property of the store, not of this type; the
-serving store enforces it with database triggers.
+details the conversation collected. A case record is not append-only: the case service updates a
+case's status in place, and each change is written to the append-only audit trail.
 """
 
 from __future__ import annotations
