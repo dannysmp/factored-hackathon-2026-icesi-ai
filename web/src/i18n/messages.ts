@@ -23,6 +23,7 @@ export interface Messages {
   'chat.caseReference': string
   'signin.loading': string
   'signin.unreachable': string
+  'signin.unavailable': string
   'signin.intro': string
   'signin.personaLabel': string
   'signin.accessCodeLabel': string

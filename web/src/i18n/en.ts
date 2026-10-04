@@ -20,6 +20,7 @@ export const en: Messages = {
   'chat.caseReference': 'Case reference: {ticket}.',
   'signin.loading': 'Loading the demonstration sign-in…',
   'signin.unreachable': 'The demonstration sign-in could not be reached. Please try again.',
+  'signin.unavailable': 'The demonstration is not available at the moment.',
   'signin.intro': 'This is a demonstration. Sign in with one of the personas below.',
   'signin.personaLabel': 'Persona',
   'signin.accessCodeLabel': 'Access code',

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as api from './api'
+import { SignInError } from './api'
 import { SignInScreen } from './SignInScreen'
 import { en } from '../../i18n/en'
 import { es } from '../../i18n/es'
@@ -34,6 +35,33 @@ describe('SignInScreen', () => {
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(es['signin.unreachable'])
+  })
+
+  it('says plainly that the demonstration is not available, with no form, when the sign-in is switched off', async () => {
+    vi.spyOn(api, 'fetchCustomerPersonas').mockRejectedValue(new SignInError(404, 'Not Found'))
+    const { container } = render(<SignInScreen onSignedIn={vi.fn()} />)
+
+    expect(await screen.findByRole('status')).toHaveTextContent(es['signin.unavailable'])
+    expect(screen.queryByLabelText(es['signin.accessCodeLabel'])).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('treats a directory with no persona for its audience as switched off, for the console too', async () => {
+    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue([])
+    render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
+
+    expect(await screen.findByRole('status')).toHaveTextContent(es['signin.unavailable'])
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('keeps a failure that is not the switch-off a retryable error, not "not available"', async () => {
+    vi.spyOn(api, 'fetchCustomerPersonas').mockRejectedValue(new SignInError(429, 'Too many'))
+    render(<SignInScreen onSignedIn={vi.fn()} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(es['signin.unreachable'])
+    expect(screen.queryByText(es['signin.unavailable'])).not.toBeInTheDocument()
   })
 
   it('signs in with the selected persona and access code, then calls onSignedIn', async () => {
