@@ -17,8 +17,8 @@ import styles from './SignInScreen.module.css'
 type DirectoryStatus = 'loading' | 'ready' | 'unavailable' | 'error'
 
 /** Before any persona is selected (loading, the directory error), nothing has told this screen
- * which language to speak in yet — Spanish is the product's own first-listed, required language
- * (CLAUDE.md), so it is this screen's own starting point, not a guess. */
+ * which language to speak in yet. Spanish is the product's first-listed, required language, so
+ * it is this screen's starting point rather than a guess. */
 const DEFAULT_LANG: Lang = 'es'
 
 /** `DemoPersonaSummary.language` is a bare, unvalidated string at the wire contract (it mirrors
