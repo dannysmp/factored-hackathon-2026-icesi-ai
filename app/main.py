@@ -116,6 +116,7 @@ from app.domain.policy.loader import load_policy
 from app.domain.policy.models import Policy
 from app.llm.anthropic_client import AnthropicLlmClient
 from app.llm.client import LlmClient  # The port the retried client implements
+from app.llm.spend import SpendGatedLlmClient  # The daily spend breaker
 from app.observability.logging import (  # Structured logging, installed once
     configure_logging,
     configure_logging_from_settings,
@@ -131,6 +132,7 @@ from app.persistence.handoff_queue import PostgresHandoffQueue
 from app.persistence.ops_meta import read_data_as_of  # The seed's own reference date
 from app.persistence.reads import PostgresToolPort
 from app.persistence.signin_audit import PostgresSignInAuditSink  # The demo broker's audit store
+from app.persistence.spend_ledger import PostgresSpendLedger  # The day's recorded spend
 from app.persistence.ticket_detail import PostgresTicketDetail
 from app.reliability.breaker import InMemoryCircuitBreaker  # Shared per dependency
 from app.reliability.retry import RetriedLlmClient, RetryPolicy  # Bounded retry
@@ -442,11 +444,17 @@ def _controller_factory(
             breaker=tool_breaker,
         )
         outbox: HandoffOutbox = PostgresHandoffOutbox(dsn)
+        gated_client: LlmClient = SpendGatedLlmClient(
+            llm_client,
+            PostgresSpendLedger(dsn),
+            settings.llm_daily_spend_limit_usd,
+            clock,
+        )
         model_renderer = (
-            _model_renderer(llm_client, settings) if settings.model_renderer_enabled else None
+            _model_renderer(gated_client, settings) if settings.model_renderer_enabled else None
         )
         return DialogueController(
-            _understanding(llm_client, settings),
+            _understanding(gated_client, settings),
             store=store,
             tool_port=tool_port,
             retriever=retriever,
@@ -454,6 +462,7 @@ def _controller_factory(
             outbox=outbox,
             domain_date=calendar.reference_date,
             now=clock,
+            max_turns=settings.dialogue_max_turns,
             model_renderer=model_renderer,
         )
 

@@ -11,85 +11,82 @@ cannot ask for anyone else's data by passing a different identifier.
 
 Scope
 -----
-In: all six methods of ``ToolPort``, the cross-customer probe distinction issue #73 asks for,
-auditing every call, the create tool's own permission invariants (ADR-3).
+In: all six methods of ``ToolPort``, the distinction between a probe of another customer's
+reference and a plain miss (kept in the audit trail only), auditing every call, the create tool's
+own permission invariants.
 Out: loading the policy file (``app.domain.policy.loader``, supplied already loaded), evaluating
-policy inside the create tool (the controller's job, never this module's, per ADR-3), deciding
-what a tool call means (the dialogue controller, stream 2).
+policy inside the create tool (the controller's job, never this module's), deciding what a tool
+call means (the dialogue controller).
 
 Design Principles
 -----------------
-- **A foreign reference answers exactly like a missing one** (AC-E4-06): ``get_transaction`` and
+- **A foreign reference answers exactly like a missing one:** ``get_transaction`` and
   ``get_case`` look up a reference without scoping the query by customer, then decide in Python
   whether the row belongs to the session's customer; either way the caller gets ``None``, never a
   hint that the reference exists at all. The two cases are still told apart in the audit record
-  (``transaction_probed``/``case_probed`` vs. ``transaction_viewed``/``case_viewed``, issue #73),
-  since the trail is not the same audience as the response.
+  (``transaction_probed``/``case_probed`` vs. ``transaction_viewed``/``case_viewed``), since the
+  trail is not the same audience as the response.
 - **Fail closed on the audit write.** Every successful read or write is audited before it is
   returned; ``AuditSink.record`` raising propagates instead of being swallowed, so a customer
-  never receives data, or an outcome, whose access or filing was not recorded (extending
-  AC-E4-25's console rule to every call here). A call that itself fails at the store
-  (``AC-E4-11``) is not audited: there was no completed action to record, only an infrastructure
-  failure the caller already sees as a ``ToolFailure``.
-- **No customer parameter anywhere** (AC-E4-07): every SQL statement here is written to be
-  incapable of returning or changing another customer's row by construction, not merely by a
-  value a caller happens to pass correctly.
-- **``evaluate_dispute`` has no not-found return.** Unlike the ``get_*`` methods, its contract
-  offers only ``PolicyDecision | ToolFailure``; a transaction reference that does not exist or
-  belongs to another customer is reported as ``ToolFailure(cause="error", retryable=False)`` —
-  the same response either way (AC-E4-06 again), distinguished only in the audit record. This is
-  a genuine design choice the contract's shape forces, not a `ToolFailure` in the usual
-  store-failed sense; flagged for the architect's conformance note.
-- **The create tool enforces permission invariants only, never policy** (ADR-3):
+  never receives data, or an outcome, whose access or filing was not recorded. A call that itself
+  fails at the store is not audited: there was no completed action to record, only an
+  infrastructure failure the caller already sees as a ``ToolFailure``.
+- **No customer parameter anywhere:** no tool method accepts a customer id. The signed-in
+  customer is fixed when the port is built, listings filter by that customer in SQL, and the
+  transaction and case resolvers check that a referenced row belongs to that customer before
+  anything is returned or changed.
+- **``evaluate_dispute`` has no not-found return in its failure type.** Its contract offers
+  ``PolicyDecision | ToolFailure | None``; a transaction reference that does not exist or belongs
+  to another customer answers ``None``, the same response either way, distinguished only in the
+  audit record. ``ToolFailure`` is reserved for what the store itself could not do.
+- **The create tool enforces permission invariants only, never policy:**
   ``confirmation_required``, ``confirmation_mismatch``, ``idempotency_conflict``,
   ``duplicate_open_case`` and ``session_cap_reached`` are all this tool can verify itself; a
-  request the policy would refuse is fail-closed instead on ``decision_missing`` (no decision was
-  passed at all), never re-evaluated. ``PolicyDecision`` carries ``transaction_ref`` and
-  ``category`` (added in this slice) precisely so ``confirmation_mismatch`` (AC-E4-14) can compare
-  a filing call against what was actually decided, without trusting the caller and without
-  re-running the policy.
+  request carrying no decision is refused with ``decision_missing``, and a request the policy
+  would refuse is never re-evaluated here. ``PolicyDecision`` carries ``transaction_ref`` and
+  ``category`` precisely so ``confirmation_mismatch`` can compare a filing call against what was
+  actually decided, without trusting the caller and without re-running the policy.
 - **Idempotency: a proactive check for the ordinary sequential replay, the unique constraint for
-  the true race** (AC-E4-15). A lookup by ``(customer_id, idempotency_key)`` before the insert
-  handles a call repeated in sequence, including the case where an earlier call's own case is now
-  the "open case" a naive duplicate-open-case check would otherwise wrongly refuse; the insert
-  itself still relies on ``cases_customer_idempotency_key_unique`` (migration 0001) and
-  ``cases_transaction_id_open_unique`` (migration 0004) to resolve two calls arriving at the same
-  moment, exactly as a check-then-insert without that fallback could not.
-- **Never trusts caller-stated fields** (AC-E4-13): the transaction is re-resolved from the store
-  inside ``create_dispute_case`` itself, exactly as ``evaluate_dispute`` does, and the amount,
-  currency and provenance stored on the case row come from that fresh read, never from
-  ``request`` or from the (possibly stale) ``decision`` object.
-- **A ``duplicate_open_case`` refusal names the case it collided with** (AC-E4-16):
+  the true race.** A lookup by ``(customer_id, idempotency_key)`` before the insert handles a
+  call repeated in sequence, including the case where an earlier call's own case is now the
+  "open case" a naive duplicate-open-case check would otherwise wrongly refuse; the insert itself
+  still relies on the ``cases_customer_idempotency_key_unique`` and
+  ``cases_transaction_id_open_unique`` constraints to resolve two calls arriving at the same
+  moment, which a check-then-insert without that fallback could not.
+- **Never trusts caller-stated fields:** the transaction is re-resolved from the store inside
+  ``create_dispute_case`` itself, exactly as ``evaluate_dispute`` does, and the amount, currency
+  and provenance stored on the case row come from that fresh read, never from ``request`` or from
+  the (possibly stale) ``decision`` object.
+- **A ``duplicate_open_case`` refusal names the case it collided with:**
   ``CreateDisputeCaseResult.existing_case_number`` is looked up fresh, both on the proactive path
   (``_creation_limit_refusal``) and on the store-level race (``_insert_case``'s
-  ``UniqueViolation`` handler) — never trusted from an earlier read.
-- **A replay is its own audit record, not only a log line** (AC-E4-15): ``_replay_or_conflict``
-  writes ``AuditAction.CASE_CREATION_REPLAYED``, a compatible addition after this contract froze,
-  the same way ``TRANSACTION_PROBED``/``CASE_PROBED`` were — so a trace built from audit records
-  alone accounts for every filing call the customer actually made, including a repeat.
+  ``UniqueViolation`` handler), never trusted from an earlier read.
+- **A replay is its own audit record, not only a log line:** ``_replay_or_conflict`` writes
+  ``AuditAction.CASE_CREATION_REPLAYED``, so a trace built from audit records alone accounts for
+  every filing call the customer actually made, including a repeat.
 
 Runtime Contract
------------------
+----------------
 ``PostgresToolPort(dsn, audit, policy, *, customer_id, session_id, trace_id, domain_date, now,
 language, case_create_session_cap)`` implements ``contracts.service_v1.tools.ToolPort``.
 ``language`` and ``case_create_session_cap`` are bound at construction like every other
 session-scoped fact this class holds: ``CreateDisputeCaseRequest`` (``contracts.service_v1.tools``)
 has no field for either, since a case's language is a fact of the session filing it, not of one
 call, and the cap is a permission invariant this tool enforces itself, not caller-supplied data.
+``clamp_merchant(value)``, which fits a merchant to ``MERCHANT_MAX_LENGTH``, is shared with
+``app.persistence.ticket_detail``.
 
 Limitations
 -----------
-One connection per call, matching this codebase's other persistence modules; no pooling yet
-(see ``app.persistence.audit``'s own Limitations). ``risk_score`` is always ``None``: risk routing
-is switched off in the shipped policy, and wiring the real risk-features lookup is out of scope
-here, flagged in the pull request for a decision on whether it needs its own slice.
-``description`` on every ``TransactionFact`` is always ``None``: the serving store carries no
-separate description column, only ``merchant_name``. The case-insert transaction and the audit
-write are two separate store connections, not one atomic transaction (matching
-``app.persistence.audit``'s own one-connection-per-call design): a process crash in the narrow
-window after the audit write commits but before the case insert's own connection commits could
-leave an audit record for a case that does not exist; there is no cross-connection two-phase
-commit in this codebase to close that window.
+One connection per call, matching the other persistence modules; there is no pooling (see
+``app.persistence.audit``). ``risk_score`` is always ``None``: risk routing is switched off in the
+shipped policy and no risk-features lookup is wired in here. ``description`` on every
+``TransactionFact`` is always ``None``: the serving store carries no separate description column,
+only ``merchant_name``. The case-insert transaction and the audit write are two separate store
+connections, not one atomic transaction (matching ``app.persistence.audit``'s
+one-connection-per-call design): a process crash in the narrow window after the audit write
+commits but before the case insert's own connection commits could leave an audit record for a
+case that does not exist; there is no cross-connection two-phase commit to close that window.
 """
 
 from __future__ import annotations
@@ -149,17 +146,17 @@ logger = logging.getLogger(__name__)
 _CONNECT_TIMEOUT_SECONDS = 5
 Clock = Callable[[], datetime]
 
-# Open-case statuses per CaseStatus (cases.py); a resolved or rejected case is not "open".
+# Statuses of a case that is still open (``CaseStatus``); a resolved or rejected case is not.
 _OPEN_CASE_STATUSES = (CaseStatus.OPEN.value, CaseStatus.IN_REVIEW.value)
 
-# Named at the store (migration 0004); read here to tell a lost idempotency race from a lost
+# Constraint names as declared in the store; read here to tell a lost idempotency race from a lost
 # duplicate-open-case race without guessing at a generic unique-violation's own message text.
 _IDEMPOTENCY_CONSTRAINT = "cases_customer_idempotency_key_unique"
 _OPEN_CASE_CONSTRAINT = "cases_transaction_id_open_unique"
 
 # Both contracts.service_v1.tools.TransactionFact.merchant and its distinct, same-named sibling
 # contracts.service_v1.envelope.TransactionFact.merchant share this bound; the store's own column
-# (migration 0001, VARCHAR(150)) is wider, so a stored value can exceed either contract's shape.
+# (VARCHAR(150)) is wider, so a stored value can exceed either contract's shape.
 # Shared with app.persistence.ticket_detail, the only other module that re-hydrates this field
 # from the same table straight into a TransactionFact of its own.
 MERCHANT_MAX_LENGTH = 80
@@ -169,15 +166,13 @@ def clamp_merchant(value: str | None) -> str | None:
     """A stored ``merchant_name`` fit to either ``TransactionFact.merchant``'s own bound.
 
     Truncates a value over the contract's length, the same repair
-    ``app.conversation.llm_understanding``'s ``_LENGTH_REPAIRS`` already applies to a model's own
+    ``app.conversation.llm_understanding``'s ``_LENGTH_REPAIRS`` applies to a model's own
     overlong guess at this same field; merchant text is inert descriptive data to every reader of
     it (never a policy input, never an instruction channel), so shortening it changes nothing
     about correctness or safety, only how much of it a customer sees. A blank or whitespace-only
     value normalizes to ``None`` (absent), matching the contract's own "absent, not empty" rule.
     A truncation logs a warning naming only the lengths involved and the request id, never the
-    value, so a future data-profiling pass has real evidence of how often a stored merchant name
-    actually exceeds the contract's bound, and the line still carries the request identifier
-    every operational log line in this codebase does (``SECURITY.md``).
+    value, so there is evidence of how often a stored merchant name exceeds the contract's bound.
     """
     if value is None:
         return None
@@ -186,8 +181,7 @@ def clamp_merchant(value: str | None) -> str | None:
         return None
     if len(stripped) > MERCHANT_MAX_LENGTH:
         # The value itself is never logged (it may be long for any reason, injected or not; PII
-        # minimization applies regardless) — only that a clamp fired and by how much, so a future
-        # data-profiling pass has real evidence of how often this happens.
+        # minimization applies regardless), only that a clamp fired and by how much.
         logger.warning(
             "merchant_name_truncated original_length=%d kept_length=%d request_id=%s",
             len(stripped),
@@ -198,7 +192,9 @@ def clamp_merchant(value: str | None) -> str | None:
 
 
 def _new_case_number(domain_date: date) -> str:
-    """A short, readable case number: what a customer quotes on the phone (E4-F3)."""
+    """A short, readable case number (``CASE-YYYYMMDD-<hex>``): what a customer quotes on the
+    phone. The hex suffix is chosen so that, joined to the date digits, it cannot look card-shaped.
+    """
     date_digits = domain_date.strftime("%Y%m%d")
     return f"CASE-{date_digits}-{safe_hex_suffix(preceding_digits=len(date_digits))}"
 
@@ -254,7 +250,11 @@ class _ResolvedCase:
 
 @dataclass(frozen=True, slots=True)
 class _ExistingCase:
-    """The case already on file for a customer's idempotency key, if any."""
+    """The case already on file for a customer's idempotency key, if any.
+
+    Holds only what a replay needs to compare against the new request: the case number, its
+    transaction and its category.
+    """
 
     case_number: str
     transaction_id: str
@@ -278,6 +278,14 @@ class PostgresToolPort:
         language: Lang,
         case_create_session_cap: int,
     ) -> None:
+        """Bind the session's customer and the facts every call is audited under.
+
+        ``audit`` receives one record per completed call; ``policy`` is the loaded policy a fresh
+        evaluation runs against; ``domain_date`` is the domain calendar's date for the whole
+        session and ``now`` the injected clock for audit and case timestamps; ``language`` is
+        stored on each case this session files and ``case_create_session_cap`` bounds how many
+        cases it may file.
+        """
         self._dsn = dsn
         self._audit = audit
         self._policy = policy
@@ -318,11 +326,11 @@ class PostgresToolPort:
 
     def _log_failure(self, event: str) -> None:
         """A store-failure log line, correlated to its conversation trace and its HTTP request
-        (SECURITY.md: every operational log line carries both)."""
+        (every operational log line carries both)."""
         logger.warning("%s trace_id=%s request_id=%s", event, self._trace_id, current_request_id())
 
     def _log_replay(self, case_number: str, idempotency_key: str) -> None:
-        """A replayed filing call (AC-E4-15), for immediate operational grep alongside its own
+        """A replayed filing call, for immediate operational grep alongside its own
         ``case_creation_replayed`` audit record (``_replay_or_conflict``)."""
         logger.info(
             "case_replay trace_id=%s request_id=%s session_id=%s case_number=%s idempotency_key=%s",
@@ -338,10 +346,13 @@ class PostgresToolPort:
     # -------------------------------------------------------------------------------------
 
     def _disclosed_amount(self, amount_usd: Decimal | None, provenance: str) -> DisclosedAmount:
+        """A USD amount (or none) paired with how the figure was obtained."""
         money = None if amount_usd is None else Money(amount=amount_usd, currency="USD")
         return DisclosedAmount(money=money, provenance=ContractAmountProvenance(provenance))
 
     def _transaction_fact(self, row: _ResolvedTransaction) -> TransactionFact:
+        """The tool contract's ``TransactionFact`` for a resolved row (``description`` is
+        always ``None``: the store has no such column)."""
         return TransactionFact(
             ref=row.transaction_id,
             occurred_on=row.transaction_date.date(),
@@ -353,7 +364,13 @@ class PostgresToolPort:
         )
 
     def list_transactions(self, filters: TransactionFilters) -> TransactionPage | ToolFailure:
-        """The session customer's own transactions matching ``filters``, most recent first."""
+        """The session customer's own transactions matching ``filters``, most recent first.
+
+        At most five items are returned; ``total_count`` carries the number of matches before that
+        cut. The query is scoped to the session customer in SQL. A store failure is logged and
+        answered as ``ToolFailure`` without an audit record; otherwise the page is audited
+        (``transactions_listed``) before it is returned.
+        """
         try:
             with (
                 psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
@@ -443,7 +460,13 @@ class PostgresToolPort:
         )
 
     def get_transaction(self, ref: str) -> TransactionFact | ToolFailure | None:
-        """The session customer's own transaction ``ref``, or ``None`` if there is no match."""
+        """The session customer's own transaction ``ref``, or ``None`` if there is no match.
+
+        A reference that does not exist and one that belongs to another customer both answer
+        ``None``; the audit record tells them apart (``transaction_viewed`` with a ``null``
+        result versus ``transaction_probed``). A store failure answers ``ToolFailure`` and is not
+        audited.
+        """
         try:
             resolved = self._resolve_transaction(ref)
         except psycopg.Error:
@@ -464,6 +487,7 @@ class PostgresToolPort:
     # -------------------------------------------------------------------------------------
 
     def _case_record(self, row: _ResolvedCase) -> CaseRecord:
+        """The shared ``CaseRecord`` contract for a resolved case row."""
         return CaseRecord(
             case_number=row.case_number,
             status=CaseStatus(row.status),
@@ -479,7 +503,11 @@ class PostgresToolPort:
         )
 
     def list_dispute_cases(self) -> tuple[CaseRecord, ...] | ToolFailure:
-        """Every dispute case the session customer has filed."""
+        """Every dispute case the session customer has filed, most recently created first.
+
+        Scoped to the session customer in SQL and audited (``cases_listed``) before it is
+        returned; a store failure answers ``ToolFailure`` and is not audited.
+        """
         try:
             with (
                 psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
@@ -561,7 +589,12 @@ class PostgresToolPort:
         )
 
     def get_case(self, case_number: str) -> CaseRecord | ToolFailure | None:
-        """The session customer's own case ``case_number``, or ``None`` if there is no match."""
+        """The session customer's own case ``case_number``, or ``None`` if there is no match.
+
+        A case that does not exist and one that belongs to another customer both answer ``None``;
+        the audit record tells them apart (``case_viewed`` with a ``null`` result versus
+        ``case_probed``). A store failure answers ``ToolFailure`` and is not audited.
+        """
         try:
             resolved = self._resolve_case(case_number)
         except psycopg.Error:
@@ -596,9 +629,8 @@ class PostgresToolPort:
         return row[0] if row is not None else None
 
     def _is_repeat_complainer(self) -> bool:
-        """This session's own customer's point-in-time repeat-complainer flag (ADR-15), as the
-        seed carried it: never recomputed here from ``complaints``, which this store's own scope
-        does not read."""
+        """This session's own customer's point-in-time repeat-complainer flag, as the seed carried
+        it: never recomputed here from complaint records, which this module does not read."""
         with (
             psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
             conn.cursor() as cur,
@@ -616,9 +648,14 @@ class PostgresToolPort:
         """The policy decision for ``request``, computed fresh; no side effect.
 
         A ``transaction_ref`` that does not exist or belongs to another customer answers with
-        the same ``None`` either way (AC-E4-06); see the module's Design Principles. ``None`` is a
-        normal matchless result, never a ``ToolFailure`` — reserved for what the store itself
+        the same ``None`` either way; see the module's Design Principles. ``None`` is a normal
+        matchless result, never a ``ToolFailure``, which is reserved for what the store itself
         could not do.
+
+        The request is built from the freshly resolved row (amount unknown when its provenance
+        says so, NLU confidence fixed at 1.0, no risk score) and evaluated against the loaded
+        policy on the session's domain date. The decision is audited, with its reason code and
+        policy version, before it is returned.
         """
         try:
             resolved = self._resolve_transaction(request.transaction_ref)
@@ -629,8 +666,8 @@ class PostgresToolPort:
         # Resolved but not owned by this session's customer, and resolved to nothing at all,
         # must cost the same number of store round-trips: a query run only for an owned
         # transaction is a timing side-channel that tells a caller a foreign reference exists,
-        # even though the response body is identical either way (AC-E4-06, issue #73). That
-        # symmetry rests on the shared code path above, not on which value each branch returns.
+        # even though the response body is identical either way. That symmetry rests on the shared
+        # code path above, not on which value each branch returns.
         if resolved is None:
             self._write_audit(AuditAction.TRANSACTION_VIEWED, None)
             return None
@@ -673,7 +710,7 @@ class PostgresToolPort:
         return decision
 
     # -------------------------------------------------------------------------------------
-    # Case creation (ADR-3): permission invariants only, never policy.
+    # Case creation: permission invariants only, never policy.
     # -------------------------------------------------------------------------------------
 
     def _refuse(
@@ -683,7 +720,11 @@ class PostgresToolPort:
         *,
         existing_case_number: str | None = None,
     ) -> CreateDisputeCaseResult:
-        """Audit and return a permission refusal; ``AuditSink.record`` raising still propagates."""
+        """Audit and return a permission refusal; ``AuditSink.record`` raising still propagates.
+
+        The audit record (``case_creation_refused``) carries the decision's reason code and policy
+        version. ``existing_case_number`` is set only for a duplicate-open-case refusal.
+        """
         result = CreateDisputeCaseResult(
             created=False, refusal=refusal, existing_case_number=existing_case_number
         )
@@ -717,7 +758,12 @@ class PostgresToolPort:
         request: CreateDisputeCaseRequest,
         decision: PolicyDecision,
     ) -> CreateDisputeCaseResult:
-        """The same key with the same payload replays; a different payload is a real conflict."""
+        """The same key with the same payload replays; a different payload is a real conflict.
+
+        A replay (same transaction and category) returns the original case number as created and
+        is audited as ``case_creation_replayed``; a different payload is refused with
+        ``idempotency_conflict``.
+        """
         if (
             existing.transaction_id == request.transaction_ref
             and existing.category == request.category.value
@@ -749,12 +795,15 @@ class PostgresToolPort:
     def create_dispute_case(
         self, request: CreateDisputeCaseRequest
     ) -> CreateDisputeCaseResult | ToolFailure:
-        """File a case, or refuse for a permission reason; never a policy reason (ADR-3).
+        """File a case, or refuse for a permission reason; never a policy reason.
 
-        A ``ToolFailure`` covers what neither party to the decision controls: the store cannot be
-        reached, or the audit record for the filing cannot be written. Either fails the filing
-        closed — no case is created uncounted, and the customer is told it could not be
-        completed, never that it succeeded (AC-E4-19).
+        Checks run in order: the request's own permission invariants (decision present, confirmed,
+        matching), a replay by idempotency key, the freshly re-resolved owned transaction, the
+        duplicate-open-case and session-cap limits, then the insert. A ``ToolFailure`` covers
+        a store error (the store cannot be reached, or a statement fails) and fails the filing
+        closed: no case is created uncounted, and the customer is told it could not be
+        completed, never that it succeeded. A failure raised by the audit sink that is not a
+        store error is not converted: it propagates, and the uncommitted insert is rolled back.
         """
         validated = self._validate_permission(request)
         if isinstance(validated, CreateDisputeCaseResult):
@@ -831,7 +880,10 @@ class PostgresToolPort:
     def _creation_limit_refusal(
         self, transaction_ref: str, decision: PolicyDecision
     ) -> CreateDisputeCaseResult | ToolFailure | None:
-        """A refusal for the duplicate-open-case or session-cap invariant; ``None`` to proceed."""
+        """A refusal for the duplicate-open-case or session-cap invariant; ``None`` to proceed.
+
+        A store failure while checking either limit answers ``ToolFailure`` (fail closed).
+        """
         try:
             open_case_number = self._open_case_number_for(transaction_ref)
         except psycopg.Error:
@@ -860,7 +912,15 @@ class PostgresToolPort:
         resolved: _ResolvedTransaction,
         decision: PolicyDecision,
     ) -> CreateDisputeCaseResult | ToolFailure:
-        """Insert the case row and its creation audit record (AC-E4-19's fail-closed insert)."""
+        """Insert the case row and its creation audit record, failing closed.
+
+        The case number, amount, currency, provenance and dates come from the freshly resolved
+        transaction and the session, never from the request. The audit record is written while
+        the insert is still uncommitted, so an error raised by the audit write rolls the insert
+        back. A lost race on the store's unique constraints is reclassified: the idempotency
+        constraint becomes a replay or conflict, the open-case constraint a duplicate-open-case
+        refusal naming the winning case. Any other store error answers ``ToolFailure``.
+        """
         case_number = _new_case_number(self._domain_date)
         unknown = ContractAmountProvenance.UNKNOWN.value
         amount_usd = None if resolved.amount_usd_provenance == unknown else resolved.amount_usd
@@ -906,11 +966,11 @@ class PostgresToolPort:
                     },
                 )
                 # The audit sink commits on its own, separate connection (app.persistence.audit),
-                # not this one — but it is still called before this ``with`` block exits: a
-                # failure here propagates and rolls this (still uncommitted) case insert back, so
-                # a *raised exception* on the audit write creates no case (AC-E4-19). This is not
-                # a single atomic transaction across both connections; see the module's
-                # Limitations for the separate, narrower crash-window gap that leaves open.
+                # not this one, but it is still called before this ``with`` block exits: a failure
+                # here propagates and rolls this (still uncommitted) case insert back, so a
+                # *raised exception* on the audit write creates no case. This is not a single
+                # atomic transaction across both connections; see the module's Limitations for
+                # the separate, narrower crash-window gap that leaves open.
                 record = self._case_record(
                     _ResolvedCase(
                         owned=True,

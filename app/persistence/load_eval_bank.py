@@ -1,65 +1,64 @@
 """
 Evaluation Bank Loader
-========================
+======================
 
 Overview
 --------
 Loads ``data/gold/eval_bank``'s frozen scenario rows into the serving store's ``customers``,
 ``products`` and ``transactions`` tables, additively alongside an already-loaded operational seed
-(``app.persistence.load_seed``) — never truncating, since a full evaluation run needs both sources
-present in the store at once (``evals.golden.adversarial``'s own design: a golden-set case grounds
-on ``ops_seed`` or ``eval_bank``, whichever its condition needs).
+(``app.persistence.load_seed``) and never truncating, since a full evaluation run needs both
+sources present in the store at once (a golden-set case grounds on the operational seed or on
+``eval_bank``, whichever its condition needs).
 
 Scope
 -----
-In: reading ``eval_bank``'s Parquet files and manifest, upserting ``customers``/``products`` by
-primary key, inserting a transaction only when its ``customer_id`` and ``product_id`` both already
-resolve in the store after that upsert. A transaction scenario authored with a deliberately
-dangling reference (``pipelines.eval_bank``'s own "orphan" scenario) is quarantined — skipped,
-logged and counted — never inserted with a relaxed or placeholder foreign key, so the store's
-referential integrity is never weakened for one fixture row's sake. The command line
-``python -m app.persistence.load_eval_bank``.
+In: reading ``eval_bank``'s Parquet files and manifest, upserting ``customers``, ``products`` and
+``transactions`` by primary key, inserting a transaction only when its ``customer_id`` and
+``product_id`` both already resolve in the store after the customer and product upsert. A
+transaction scenario authored with a deliberately dangling reference (``pipelines.eval_bank``'s
+"orphan" scenario) is quarantined (skipped, logged and counted), never inserted with a relaxed or
+placeholder foreign key, so the store's referential integrity is never weakened for one fixture
+row's sake. The command line ``python -m app.persistence.load_eval_bank``.
 Out: loading the operational seed itself (``app.persistence.load_seed``, which must already have
-run against this database — this loader is additive and assumes the tables it writes to already
+run against this database: this loader is additive and assumes the tables it writes to already
 exist and, for a full run, already carry the seed); building ``eval_bank``'s own Parquet output
 (``pipelines.eval_bank``); which ``eval_bank`` customer an orphan-anchored golden-set case
-authenticates as (``evals.golden.adversarial``'s own ``seed_ref`` choice).
+authenticates as (a choice made by the golden-set definitions in ``evals.golden.adversarial``).
 
 Design Principles
-------------------
-- **Additive, not a second truncate.** ``app.persistence.load_seed`` already owns the one
-  full-reset entry point for the store; this loader only ever inserts or upserts on top of
-  whatever is already there, so running it after ``load_seed`` never discards the seed's own rows,
-  and running it more than once is idempotent — ``customers``/``products`` upsert by primary key;
-  a transaction already present is left untouched, never duplicated or errored on.
+-----------------
+- **Additive, not a second truncate.** ``app.persistence.load_seed`` owns the one full-reset
+  entry point for the store; this loader only ever inserts or upserts on top of whatever is
+  already there, so running it after ``load_seed`` never discards the seed's own rows, and
+  running it more than once is idempotent: every table upserts by primary key, so a row already
+  present is overwritten with the same values rather than duplicated or errored on.
 - **A dangling reference is quarantined, never given a relaxed or placeholder foreign key.** A
-  transaction row whose ``customer_id`` or ``product_id`` does not resolve in the store — checked
+  transaction row whose ``customer_id`` or ``product_id`` does not resolve in the store (checked
   after this loader's own ``customers``/``products`` upsert has run, so both real seed rows and
-  eval_bank's own rows count — is skipped rather than inserted, the same rule
-  ``plan/docs/data-plan.md`` already states for any source's orphan foreign keys. A golden-set
-  case that needs to describe such a transaction authenticates as a real ``eval_bank`` customer
-  who does not own it instead; it never authenticates as the dangling row's own declared owner,
-  because doing so would mint that owner for real and make the "row" genuinely findable, silently
-  contradicting the case's own premise (design ruling, architect consultation 2026-09-29).
+  eval_bank's own rows count) is skipped rather than inserted. A golden-set case that needs to
+  describe such a transaction authenticates as a real ``eval_bank`` customer who does not own it
+  instead; it never authenticates as the dangling row's own declared owner, because doing so
+  would mint that owner for real and make the "row" genuinely findable, silently contradicting
+  the case's own premise.
 - **Digest-verified before anything loads.** The same discipline ``app.persistence.load_seed``
-  already applies to ``ops_seed``'s own output: a gold directory whose Parquet files changed since
+  applies to the operational seed's output: a gold directory whose Parquet files changed since
   the manifest was written is refused, not silently loaded as if it still matched.
-- **No clock.** This loader has nothing to do with a reference date — ``eval_bank``'s own manifest
-  carries none (``pipelines.eval_bank``'s scope: every scenario's date is a fixed literal), and
-  ``ops_meta.data_as_of`` stays exactly what ``load_seed`` already wrote from the operational seed.
+- **No clock.** This loader has nothing to do with a reference date: ``eval_bank``'s manifest
+  carries none (every scenario's date is a fixed literal), and ``ops_meta.data_as_of`` stays
+  exactly what ``load_seed`` wrote from the operational seed.
 
 Runtime Contract
------------------
+----------------
 ``load_eval_bank(dsn, gold_dir) -> EvalBankLoadResult``
 The command line ``python -m app.persistence.load_eval_bank``.
 
 Limitations
 -----------
 Assumes the migrations have already been applied and, for a full evaluation run, that
-``app.persistence.load_seed`` has already loaded the operational seed into the same database —
+``app.persistence.load_seed`` has already loaded the operational seed into the same database;
 running this loader alone against an empty store loads only ``eval_bank``'s own real customer and
 product, and quarantines every transaction scenario that references anything else. Nothing
-enforces that ordering beyond this docstring and the Makefile target sequencing them.
+enforces that ordering beyond the order in which the build targets run the two loaders.
 """
 
 from __future__ import annotations
@@ -94,7 +93,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class EvalBankLoadResult:
-    """What the load wrote, and what it refused to."""
+    """What the load wrote, and what it refused to: row counts per table (transactions counts
+    only those inserted or updated) and the ids of the quarantined transactions."""
 
     rows: dict[str, int]
     quarantined: tuple[str, ...]
@@ -201,6 +201,16 @@ def _upsert(
 def load_eval_bank(dsn: str, gold_dir: Path) -> EvalBankLoadResult:
     """Load the eval bank additively into an already-migrated (and, for a full run, already
     seeded) serving store.
+
+    Digests are verified and every Parquet file read before the database is touched. Customers
+    and products are upserted first; each transaction is then checked against the store and
+    quarantined (logged, counted, not written) when its customer or product does not resolve;
+    the rest are upserted. Everything commits in one transaction.
+
+    Returns
+    -------
+    EvalBankLoadResult
+        Rows written per table and the ids of the quarantined transactions.
 
     Raises
     ------

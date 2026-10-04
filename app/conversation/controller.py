@@ -68,11 +68,13 @@ Design Principles
 Runtime Contract
 ----------------
 ``DialogueController(understanding, store, tool_port, retriever, policy, outbox, *, domain_date,
-now, model_renderer=None, turn_log=None)`` with ``handle_turn(request: TurnRequest, *, principal:
-Principal) -> TurnResponse``. ``HandoffOutbox`` (protocol): the port this module writes a handoff
-through. ``model_renderer`` is ``None`` by default (the fixed-wording template path only); passing
-an ``LlmRenderer`` lets eligible replies render through the model path instead, verified, with the
-template as its own deterministic fallback (``app.conversation.reply.render_reply``).
+now, max_turns, model_renderer=None, turn_log=None)`` with ``handle_turn(request: TurnRequest, *,
+principal: Principal) -> TurnResponse``. ``max_turns`` is the most customer turns a session may
+apply; the next one is answered with a handoff and no understanding call. ``HandoffOutbox``
+(protocol): the port this module writes a handoff through. ``model_renderer`` is ``None`` by
+default (the fixed-wording template path only); passing an ``LlmRenderer`` lets eligible replies
+render through the model path instead, verified, with the template as its own deterministic
+fallback (``app.conversation.reply.render_reply``).
 ``DialogueTurnLog`` (protocol): the port this module records the console's own audit timeline
 through (ADR-17); ``turn_log`` is ``None`` by default (nothing is recorded) and is never consulted
 on a replayed turn, only on a turn this call genuinely advances.
@@ -80,11 +82,13 @@ on a replayed turn, only on a turn this call genuinely advances.
 Limitations
 -----------
 A single-match search result is presented with ``PRESENT_ONE`` and the customer's yes (or a
-reason, which implies it) selects it; a no asks for the transaction again; an unclear answer asks
-again within the clarification budget. The question stays pending across a reply to an unrelated
+reason, which implies it) selects it; a no asks for the transaction again; naming a different
+merchant, amount, card or date searches for that instead; an unclear answer asks again within the
+clarification budget. The question stays pending across a reply to an unrelated
 message (small talk, a policy question, a list request), as the reason and confirmation questions
-do, so the customer's yes after such a reply still selects the presented transaction; nothing is
-written until the filing confirmation. Two or more matches ask for more detail rather than
+do, so the customer's yes after such a reply still selects the presented transaction. The
+unrelated reply itself files nothing; a case is filed only once the policy's confirmation
+requirement for the category is met. Two or more matches ask for more detail rather than
 presenting a numbered list — the same v1 scope decision already made for slot collection, since
 neither a pending-candidate field nor a multi-candidate list exists in ``DialogueState`` yet. A
 session identifies and evaluates at most one transaction/category pair: nothing here resets
@@ -108,6 +112,7 @@ from __future__ import annotations
 # Standard libraries
 import hashlib  # Deterministic idempotency key derived from the turn id
 import logging  # Progress events, never print
+import unicodedata  # Accent-insensitive merchant comparison
 from collections.abc import Callable  # Type of one route's handler
 from datetime import date  # Domain date the controller was built with
 from decimal import Decimal  # Money is never a float
@@ -251,15 +256,23 @@ def _idempotency_key(turn_id: str) -> str:
     return hashlib.sha256(turn_id.encode("utf-8")).hexdigest()[:32]
 
 
+def _fold(text: str) -> str:
+    """``text`` without accents and case, so "cafe" and "Café" compare equal."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+
+
 def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -> bool:
     """Whether ``fact`` could be what the customer described in ``hint``.
 
     Every part of ``hint`` that was given must agree; a part the source data cannot answer (an
-    absent merchant and description, an unknown amount) never matches a hint that names it.
+    absent merchant and description, an unknown amount) never matches a hint that names it. The
+    merchant is compared ignoring accents and case, in both directions: a customer who types
+    "cafe" finds "Café Sol", and one who types "São Paulo" finds "SAO PAULO".
     """
     if hint.merchant is not None:
         label = fact.merchant or fact.description
-        if label is None or hint.merchant.lower() not in label.lower():
+        if label is None or _fold(hint.merchant) not in _fold(label):
             return False
     money = fact.amount.money
     if hint.amount is not None and (money is None or money.amount != hint.amount):
@@ -293,6 +306,7 @@ class DialogueController:
         outbox: HandoffOutbox,
         domain_date: date,
         now: Clock,
+        max_turns: int,
         model_renderer: LlmRenderer | None = None,
         turn_log: DialogueTurnLog | None = None,
     ) -> None:
@@ -304,6 +318,7 @@ class DialogueController:
         self._outbox = outbox
         self._domain_date = domain_date
         self._now = now
+        self._max_turns = max_turns
         self._model_renderer = model_renderer
         self._turn_log = turn_log
         # Set once per call, at the top of handle_turn: every private helper below reads the
@@ -333,6 +348,9 @@ class DialogueController:
         if current is not None and current.last_turn_id == request.turn_id:
             return self._respond(current, self._replay_envelope(current))
 
+        if current is not None and current.turns_applied >= self._max_turns:
+            return self._cap_reached(current)
+
         try:
             state, expected_version, result, accounting = self._start_turn(current, request)
         except UnderstandingUnavailable:
@@ -361,6 +379,57 @@ class DialogueController:
             ) from conflict
 
         return self._respond(saved, envelope, state_before=state_before)
+
+    def _cap_reached(self, current: DialogueState) -> TurnResponse:
+        """Answer a turn the session's turn cap refuses, without calling the model.
+
+        A session that already has a handoff ticket gets that same ticket again and nothing is
+        written, so a customer who keeps typing neither mints tickets nor advances the state. A
+        session without one is handed to a person through the same idempotent save as any other
+        handoff turn, carrying the case number it had already filed, if any. Its summary line is
+        the generic low-understanding one; the ``turn_cap`` action record is what identifies it.
+
+        Two concurrent requests at the cap on a session with no ticket can each record a packet
+        before the save decides the winner (the outbox is idempotent per turn id, not per
+        session), so the loser's packet stays in the queue unreferenced by the session. This is
+        the same ordering every handoff turn has.
+        """
+        request = self._request
+        assert request is not None  # noqa: S101 - set at the top of handle_turn
+        logger.warning(
+            "dialogue_turn_cap_reached session_id=%s turns_applied=%d max_turns=%d request_id=%s",
+            current.session_id,
+            current.turns_applied,
+            self._max_turns,
+            current_request_id(),
+        )
+        if current.last_ticket_ref is not None:
+            return self._respond(current, self._ticket_envelope(current))
+        new_state, envelope = self._handoff(
+            current,
+            trigger=HandoffTrigger.LOW_UNDERSTANDING,
+            reason_codes=(),
+            template=TemplateId.HANDOFF_REVIEW,
+            actions=(ActionRecord(action="turn_cap", result="reached"),),
+            existing_case_number=current.last_case_number,
+        )
+        try:
+            saved = self._store.save(
+                new_state,
+                expected_version=current.version,
+                turn_id=request.turn_id,
+                now=self._now(),
+            )
+        except DuplicateTurn as duplicate:
+            return self._respond(duplicate.state, self._replay_envelope(duplicate.state))
+        except Conflict as conflict:
+            raise ProblemError(
+                ErrorCode.TURN_CONFLICT,
+                409,
+                "The conversation moved on",
+                "Fetch the current state and try again.",
+            ) from conflict
+        return self._respond(saved, envelope, state_before=current.phase)
 
     def _handoff_from_turn(
         self, current: DialogueState | None, *, expected_version: int
@@ -531,7 +600,10 @@ class DialogueController:
             state = state.model_copy(update={"category": result.category})
 
         if state.pending_slot is Slot.TRANSACTION_CHOICE:
-            state = state.with_slot_filled()
+            if self._names_another_transaction(state, result.transaction):
+                state = state.model_copy(update={"selected_ref": None, "pending_slot": None})
+            else:
+                state = state.with_slot_filled()
 
         slot = required_slot(result, state)
         if slot is Slot.TRANSACTION:
@@ -543,6 +615,26 @@ class DialogueController:
 
         assert state.category is not None  # noqa: S101 - guaranteed by required_slot above
         return self._evaluate_and_present(state, state.selected_ref, state.category)
+
+    def _names_another_transaction(self, state: DialogueState, hint: TransactionHint) -> bool:
+        """Whether ``hint`` describes something other than the transaction just presented.
+
+        A hint that names nothing, or only matches the presented transaction, is the customer
+        going ahead with it. A hint that names a different merchant, amount, card or date means
+        they rejected the one shown and are pointing at another. When the presented transaction
+        cannot be read back, the hint is searched for afresh rather than assumed to match.
+        """
+        if hint.is_empty:
+            return False
+        assert state.selected_ref is not None  # noqa: S101 - set whenever this slot is pending
+        selected = dispatch(
+            self._tool_port, tool_contracts.Tool.GET_TRANSACTION, state.selected_ref
+        )
+        if isinstance(selected, ToolFailure) or selected is None:
+            return True
+        if hint.date_on is not None and hint.date_on != selected.occurred_on:
+            return True
+        return not _matches_hint(selected, hint)
 
     def _handle_list_transactions(
         self, state: DialogueState, _result: NluResult
@@ -1036,11 +1128,26 @@ class DialogueController:
     # Replay of a duplicate turn
     # -------------------------------------------------------------------------------------
 
+    def _ticket_envelope(self, state: DialogueState) -> RenderEnvelope:
+        """The handoff reply for the ticket ``state`` already holds."""
+        facts = DisputeFacts(ticket_ref=state.last_ticket_ref, category=state.category)
+        return self._envelope(
+            state,
+            Intent.HANDOFF,
+            TemplateId.HANDOFF_REVIEW,
+            facts=facts,
+            decisions=(_escalate_decision(self._policy),),
+            end_session=True,
+        )
+
     def _replay_envelope(self, state: DialogueState) -> RenderEnvelope:
         """The reply for a turn id already applied to ``state`` — no further side effect.
 
         A filed case is read back fresh (its status may have moved on since); a handoff is
         rendered directly from its stored ticket; a pending clarification is a pure re-render.
+        The ticket takes precedence over a case when the session is handed off or filed no case,
+        so a session holding both replays its handoff, which is the latest outcome but not
+        necessarily the one the replayed turn id originally produced.
         ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
         cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
         clears the pending slot and leaves no case or ticket behind, so it can never be confused
@@ -1053,6 +1160,11 @@ class DialogueController:
         farewell, which touches no state at all) has no such decision to protect and no tool call
         that is not already safe to repeat, so it is recomputed exactly as the original turn was.
         """
+        if state.last_ticket_ref is not None and (
+            state.phase is ConversationPhase.HANDED_OFF or state.last_case_number is None
+        ):
+            return self._ticket_envelope(state)
+
         if state.last_case_number is not None:
             case = dispatch(self._tool_port, tool_contracts.Tool.GET_CASE, state.last_case_number)
             if isinstance(case, ToolFailure) or case is None:
@@ -1065,18 +1177,6 @@ class DialogueController:
             )
             return self._envelope(
                 state, Intent.FILING_RESULT, TemplateId.FILING_RESULT, facts=facts
-            )
-
-        if state.last_ticket_ref is not None:
-            facts = DisputeFacts(ticket_ref=state.last_ticket_ref, category=state.category)
-            decisions = (_escalate_decision(self._policy),)
-            return self._envelope(
-                state,
-                Intent.HANDOFF,
-                TemplateId.HANDOFF_REVIEW,
-                facts=facts,
-                decisions=decisions,
-                end_session=True,
             )
 
         if state.pending_slot is not None:

@@ -2,17 +2,18 @@
 Layering and Scope Fitness Tests
 ==================================
 
-Component: ``contracts.service_v1.tools``, ``.cases`` and ``.audit`` — the contract files this
-stream owns. Hermetic: static analysis of the source, no interpreter spawned and no import
-executed beyond what the test module itself already imports for the model-level checks.
+Component: ``contracts.service_v1.tools``, ``.cases`` and ``.audit`` — the tool-side contract
+files, which stand apart from the conversation contracts. Hermetic: static analysis of the
+source, no interpreter spawned and no import executed beyond what the test module itself already
+imports for the model-level checks.
 
 Protects two rules that no code review catches reliably by eye:
 - **Layering.** A contract module is declarative data plus a port interface; it depends on
-  nothing that reads configuration, touches a network or a database, or belongs to the other
-  stream's contract files. An import outside the allowed set is a dependency this slice never
-  reviewed and the freeze rule (streams.md) does not let a later slice add quietly.
-- **Scope.** No tool request or filter can express a customer other than the session's own
-  (AC-E4-07): the check runs once, generically, over every model these modules define, so a new
+  nothing that reads configuration, touches a network or a database, or belongs to the
+  conversation contract files. An import outside the allowed set is a dependency nobody has
+  reviewed, and a released contract must not gain one quietly.
+- **Scope.** No tool request or filter can express a customer other than the session's own:
+  the check runs once, generically, over every model these modules define, so a new
   model added later without a matching test still cannot smuggle a ``customer_id`` field in.
 """
 
@@ -64,6 +65,19 @@ def _is_stdlib(module: str) -> bool:
 
 
 def _check_layering(filename: str) -> None:
+    """Fail when ``filename`` imports anything outside the standard library and its allowed set.
+
+    Parameters
+    ----------
+    filename : str
+        A key of ``_ALLOWED_LOCAL``: the module file inside the contract package to inspect.
+
+    Raises
+    ------
+    AssertionError
+        The file imports a module that is neither standard library, an allowed third-party
+        package nor one of its allowed local modules; the message names the import.
+    """
     imported = _imported_roots((_PACKAGE / filename).read_text(encoding="utf-8"))
     allowed_local = _ALLOWED_LOCAL[filename]
     for module in imported:
@@ -94,8 +108,8 @@ def test_audit_depends_on_nothing_outside_its_allowed_set() -> None:
     _check_layering("audit.py")
 
 
-def test_no_contract_file_imports_the_other_streams_contracts() -> None:
-    """None of the five conversation-contract files are named by any import in this stream's own."""
+def test_no_tool_contract_file_imports_the_conversation_contracts() -> None:
+    """None of the five conversation-contract files is named by an import in a tool-side file."""
     forbidden = {
         "contracts.service_v1.envelope",
         "contracts.service_v1.nlu",
@@ -120,7 +134,7 @@ def _contract_models(module: ModuleType) -> list[type[BaseModel]]:
 
 
 def test_no_contract_model_can_express_a_customer_identifier() -> None:
-    """AC-E4-07, checked generically: the session supplies the customer, never a request field.
+    """The session supplies the customer, never a request field, checked over every model.
 
     A model added to any of these three modules without its own dedicated test still cannot
     smuggle a ``customer_id`` in, because this scan covers every model the modules define.

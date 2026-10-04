@@ -25,7 +25,7 @@ Design Principles
 Runtime Contract
 ----------------
 ``cost_usd(model, input_tokens, output_tokens) -> Decimal`` raises ``KeyError`` for an unpriced
-model id.
+model id; ``is_priced(model) -> bool`` says whether an id is priced.
 """
 
 from __future__ import annotations
@@ -40,6 +40,11 @@ _PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
     "claude-haiku-4-5-20251001": (Decimal("1"), Decimal("5")),
     "claude-sonnet-5": (Decimal("2"), Decimal("10")),
 }
+
+
+def is_priced(model: str) -> bool:
+    """Whether ``model`` is one of the ids the price table holds."""
+    return model in _PRICE_PER_MILLION_TOKENS
 
 
 def cost_usd(model: str, input_tokens: int, output_tokens: int) -> Decimal:
