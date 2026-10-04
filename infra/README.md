@@ -114,10 +114,10 @@ written the same way, via `infra/scripts/put-secret.sh`:
 
 ## What is deliberately not here
 
-- **Any step the deploy workflow performs.** The maintainer runs the account provisioning scripts
-  (`01`–`04`, `11`) once, by hand, in the order in [`deployment-runbook.md`](deployment-runbook.md);
-  the deploy workflow is what invokes the deploy, smoke test, hardening check and, when enabled,
-  Metabase scripts.
+- **Re-running the workflow's steps by hand.** The deploy workflow invokes the deploy, smoke test,
+  hardening check, teardown and, when enabled, Metabase scripts. The maintainer runs the account
+  provisioning scripts (`01`–`04`, `11`) and `put-secret.sh` by hand, in the order in
+  [`deployment-runbook.md`](deployment-runbook.md).
 - **The actual secret values** — the demonstration sign-in access codes, the agent
   session-signing key, the Metabase administrator credentials: created under the same
   `/transaction-disputes/prod/*` SSM prefix, the same way, when each is first needed — never in
