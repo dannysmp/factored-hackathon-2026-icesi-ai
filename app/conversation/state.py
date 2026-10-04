@@ -114,13 +114,15 @@ class DialogueState(BaseModel):
         )
 
     def with_clarification(self, slot: Slot) -> DialogueState:
-        """Ask for ``slot`` again.
+        """Ask for ``slot``.
 
-        The attempt count carries over when it is the same slot already pending, and starts at 1
-        when a different slot becomes the blocker (a filled slot is never re-asked with a stale
-        count from something else).
+        The count is of answers that left the question unsettled. It grows by one when the slot
+        is the one already pending (the customer was asked and did not answer it), and starts at 0
+        when a different slot becomes the blocker: a question asked for the first time has not yet
+        been answered badly, and a filled slot is never re-asked with a stale count from something
+        else.
         """
-        attempts = self.clarification_attempts + 1 if slot == self.pending_slot else 1
+        attempts = self.clarification_attempts + 1 if slot == self.pending_slot else 0
         return self.model_copy(
             update={
                 "phase": ConversationPhase.CLARIFYING,

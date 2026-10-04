@@ -315,6 +315,7 @@ class DialogueController:
         # every method signature. Safe because one instance ever handles exactly one turn.
         self._request: TurnRequest | None = None
         self._principal: Principal | None = None
+        self._handoff_reason: ReasonCode | None = None
 
     # -------------------------------------------------------------------------------------
     # Entry point
@@ -764,7 +765,12 @@ class DialogueController:
     def _handle_unroutable(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
-        """``choice`` and ``correction`` share ``unclear``'s fallback (see Limitations)."""
+        """``choice`` and ``correction`` share ``unclear``'s fallback (see Limitations), except
+        when the transaction is what was just asked for and the message describes one: the model
+        reads each message on its own, so a plain answer to that question can come back under any
+        of these intents, and the description is the answer."""
+        if state.pending_slot is Slot.TRANSACTION and not result.transaction.is_empty:
+            return self._handle_file_dispute(state, result)
         return self._fallback(state, result)
 
     # -------------------------------------------------------------------------------------
@@ -780,7 +786,7 @@ class DialogueController:
         return state, self._envelope(state, Intent.CLARIFY, TemplateId.GREETING)
 
     def _ask(self, state: DialogueState, slot: Slot) -> tuple[DialogueState, RenderEnvelope]:
-        """Ask again for ``slot``, or escalate once the clarification budget is spent."""
+        """Ask for ``slot``, or escalate once the clarification budget is spent."""
         new_state = state.with_clarification(slot)
         if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
             return self._handoff(
@@ -1083,6 +1089,7 @@ class DialogueController:
                 new_state, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
             )
 
+        self._handoff_reason = reason_codes[0] if reason_codes else None
         new_state = state.with_handed_off(packet.ticket_ref)
         decisions = (_escalate_decision(self._policy),) if template in _ROUTED_HANDOFFS else ()
         facts = DisputeFacts(ticket_ref=packet.ticket_ref, category=category)
@@ -1253,8 +1260,9 @@ class DialogueController:
         """Record this turn's history for the console's timeline (ADR-17); never on a replay,
         never affecting the reply already computed above.
 
-        ``reason_code`` is not yet populated (a disclosed gap): the domain ``ReasonCode`` behind a
-        policy decision is not currently threaded onto ``Decision`` for this to read.
+        ``reason_code`` is the first reason code of the handoff this turn registered, and ``None``
+        for a turn that did not hand off: the domain ``ReasonCode`` behind a policy decision is not
+        threaded onto ``Decision``, so only handoffs name theirs.
         """
         if self._turn_log is None:
             return
@@ -1267,7 +1275,7 @@ class DialogueController:
             state_before=state_before.value,
             state_after=state.phase.value,
             render_mode=rendered.render_mode,
-            reason_code=None,
+            reason_code=self._handoff_reason,
             policy_version=envelope.decisions[0].policy_version if envelope.decisions else None,
         )
         try:

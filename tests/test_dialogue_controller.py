@@ -722,14 +722,17 @@ def test_no_match_states_not_found(policy: Policy, retriever: LexicalRetriever) 
     assert store.get(_SESSION_ID).selected_ref is None  # type: ignore[union-attr]
 
 
-def test_multiple_matches_ask_for_detail_then_escalate_at_the_budget(
+def test_multiple_matches_ask_for_detail_twice_then_escalate(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
+    """The customer is asked to narrow the search the policy's budget number of times; the answer
+    to the last of those that still matches several transactions is what sends the request on."""
     store = InMemoryDialogueStore()
     outbox = FakeHandoffOutbox()
     port = FakeToolPort(transactions=(_transaction("TX-1"), _transaction("TX-2")))
+    responses = []
 
-    for i in range(1, policy.routing.clarification_budget + 1):
+    for i in range(1, policy.routing.clarification_budget + 2):
         controller, _ = _controller(
             _file_dispute(transaction=TransactionHint(merchant="Amazon")),
             store=store,
@@ -738,10 +741,11 @@ def test_multiple_matches_ask_for_detail_then_escalate_at_the_budget(
             outbox=outbox,
             retriever=retriever,
         )
-        response = controller.handle_turn(_turn(f"turn-{i:04d}"), principal=_principal())
+        responses.append(controller.handle_turn(_turn(f"turn-{i:04d}"), principal=_principal()))
 
-    assert response.end_session
-    assert outbox.packets
+    assert [response.end_session for response in responses] == [False, False, True]
+    assert all(response.next_expected is Slot.TRANSACTION for response in responses[:-1])
+    assert len(outbox.packets) == 1
     assert outbox.packets[0].trigger.value == "low_understanding"
 
 
@@ -1207,6 +1211,168 @@ def test_replaying_an_ineligible_turn_never_re_evaluates_or_files(
 
 
 # -----------------------------------------------------------------------------
+# The question about which transaction, and how many answers it is given
+# -----------------------------------------------------------------------------
+
+
+def test_the_transaction_question_is_asked_twice_before_a_person_is_involved(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    first = dialogue.say(_file_dispute())
+    assert first.next_expected is Slot.TRANSACTION
+    assert not first.end_session
+
+    second = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert second.next_expected is Slot.TRANSACTION
+    assert not second.end_session
+    assert dialogue.outbox.packets == []
+
+    third = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert third.end_session
+    assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        _plain(NluIntent.CORRECTION, transaction=TransactionHint(merchant="Amazon")),
+        _plain(NluIntent.UNCLEAR, transaction=TransactionHint(merchant="Amazon")),
+        _plain(NluIntent.CHOICE, choice=1, transaction=TransactionHint(merchant="Amazon")),
+    ],
+    ids=["correction", "unclear", "choice"],
+)
+def test_a_described_transaction_answers_the_question_whatever_intent_the_model_gave(
+    policy: Policy, retriever: LexicalRetriever, answer: NluResult
+) -> None:
+    """The model reads each message on its own, so a plain answer to "which transaction?" can come
+    back as a correction, a choice or unclear; the description it carries is still the answer."""
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute())
+
+    presented = dialogue.say(answer)
+
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    assert not presented.end_session
+    assert dialogue.outbox.packets == []
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-1"
+
+
+def test_an_unroutable_answer_describing_nothing_is_still_asked_again(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute())
+
+    again = dialogue.say(_plain(NluIntent.CORRECTION))
+
+    assert again.next_expected is Slot.TRANSACTION
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref is None
+    assert state.clarification_attempts == 1
+
+
+@pytest.mark.parametrize(
+    ("language", "first_message", "second_message", "reading", "transaction"),
+    [
+        (
+            "en",
+            "Hi, there's a charge on my card I don't recognize.",
+            "It was at Cine Premium on June 3rd, about 1,914,215 COP.",
+            {
+                "merchant": "Cine Premium",
+                "date_expression": "June 3rd",
+                "amount": "1,914,215",
+                "currency": "COP",
+            },
+            ("Cine Premium", date(2026, 6, 3), Decimal("1914215"), "COP"),
+        ),
+        (
+            "pt",
+            "Quero contestar uma compra",
+            "Foi na Farmacia Salud, no dia 21 de abril, cerca de 99.948,89 ARS.",
+            {
+                "merchant": "Farmacia Salud",
+                "date_expression": "21 de abril",
+                "amount": "99.948,89",
+                "currency": "ARS",
+            },
+            ("Farmacia Salud", date(2026, 4, 21), Decimal("99948.89"), "ARS"),
+        ),
+    ],
+)
+@pytest.mark.parametrize("intent", ["file_dispute", "correction", "unclear"])
+def test_the_live_second_message_presents_the_transaction_under_any_intent_the_model_gives(
+    policy: Policy,
+    retriever: LexicalRetriever,
+    *,
+    language: str,
+    first_message: str,
+    second_message: str,
+    reading: dict[str, str],
+    transaction: tuple[str, date, Decimal, str],
+    intent: str,
+) -> None:
+    """The two conversations that were sent to a person on the customer's first answer: the
+    customer's own wording, read as the model might label it, ends on the transaction presented."""
+    merchant, occurred_on, amount, currency = transaction
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    port = FakeToolPort(
+        transactions=(
+            _transaction(
+                "TX-WANTED",
+                merchant=merchant,
+                occurred_on=occurred_on,
+                amount=amount,
+                currency=currency,
+            ),
+        )
+    )
+    llm = FakeLlm(
+        responses=[
+            {
+                "intent": "file_dispute",
+                "confidence": 0.9,
+                "language": language,
+                "mentions_second_dispute": False,
+            },
+            {
+                "intent": intent,
+                "confidence": 0.9,
+                "language": language,
+                "mentions_second_dispute": False,
+                **reading,
+            },
+        ]
+    )
+    controller = DialogueController(
+        LlmNlu(llm, model="claude-haiku-4-5-20251001"),
+        store=store,
+        tool_port=port,
+        retriever=retriever,
+        policy=policy,
+        outbox=outbox,
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+        max_turns=30,
+    )
+
+    asked = controller.handle_turn(_turn("turn-0001", first_message), principal=_principal())
+    assert asked.next_expected is Slot.TRANSACTION
+
+    presented = controller.handle_turn(_turn("turn-0002", second_message), principal=_principal())
+
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    assert not presented.end_session
+    assert outbox.packets == []
+
+
+# -----------------------------------------------------------------------------
 # The console's own turn history (ADR-17)
 # -----------------------------------------------------------------------------
 
@@ -1239,6 +1405,31 @@ def test_a_fresh_turn_advance_records_its_own_history(
     assert entry.state_after == "started"
     assert entry.render_mode == "template"
     assert entry.reason_code is None
+
+
+def test_a_hand_off_turn_records_the_reason_code_it_was_routed_with(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    turn_log = FakeDialogueTurnLog()
+    understandings = [_file_dispute(), _plain(NluIntent.UNCLEAR), _plain(NluIntent.UNCLEAR)]
+    for turn, understanding in enumerate(understandings, start=1):
+        controller, _ = _controller(
+            understanding,
+            store=store,
+            tool_port=FakeToolPort(),
+            policy=policy,
+            outbox=FakeHandoffOutbox(),
+            retriever=retriever,
+            turn_log=turn_log,
+        )
+        controller.handle_turn(_turn(f"turn-{turn:04d}"), principal=_principal())
+
+    assert [entry.reason_code for entry, _, _ in turn_log.entries] == [
+        None,
+        None,
+        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,
+    ]
 
 
 def test_no_turn_log_configured_records_nothing_and_never_fails(
