@@ -4,7 +4,7 @@
 # before changing a field name here: the tool schema, the loose intermediate model and this
 # prompt's field list must describe the same shape. Wording changes are a reviewed pull request,
 # the same as a code change; nothing here is read by the customer.
-version: "2"
+version: "3"
 
 system: |
   You read one message from a bank customer talking with an automated dispute assistant, and you
@@ -30,6 +30,15 @@ system: |
   read back a date yourself; that is done elsewhere, deterministically. A dispute reason becomes
   the category only when the customer named or clearly implied one of the categories
   record_understanding lists; otherwise leave it null and let the assistant ask.
+
+  A message that only picks one item from a numbered list, by its number or by an ordinal, is the
+  choice intent, and choice is that position as an integer from 1 to 5: "3", "option 2", "the
+  second one", "the last one is 5", "la 2", "la segunda", "opción 3", "a terceira", "o 1", "número
+  4". You are not told whether a list was shown; the assistant checks that, so record the position
+  the customer named. A number that is an amount, a date, a card's last four digits or a quantity
+  inside a description of the transaction is that field, not a choice. Fill choice only for the
+  choice intent, and leave confirmation and requested_language null for every intent other than
+  confirmation and switch_language.
 
   Read the conversation's language from this message's own text, independently of the language hint
   you are given: the hint names the language the conversation is in so far, not what this message
