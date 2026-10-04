@@ -649,7 +649,7 @@ def test_generation_details_are_not_part_of_the_readable_text(policy: Policy) ->
             "pt",
             "- Contestação por fraude: 180 dias.",
             "- É uma contestação por fraude.",
-            "ele é encaminhado para análise de um atendente nestes casos:",
+            "um atendente o analisa nestes casos:",
         ),
     ],
 )
@@ -678,16 +678,16 @@ def test_the_human_step_is_always_the_advisor_term(
     assert forbidden not in text.lower()
 
 
-def test_portuguese_reason_rows_name_the_case_as_the_subject_of_the_referral(
+def test_portuguese_reason_rows_name_the_advisor_as_the_subject_of_the_review(
     policy: Policy,
 ) -> None:
-    """A feminine or neutral subject is never followed by a masculine verb about another noun."""
+    """Every routing reason states the same sentence, with the advisor as its subject."""
     rows = [
         line for line in _document(policy, "pt").splitlines() if line.startswith("| `escalate_")
     ]
 
     assert len(rows) == 6
-    assert all("O caso é encaminhado" in row for row in rows)
+    assert all(row.endswith("| Um atendente analisa este pedido. |") for row in rows)
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
