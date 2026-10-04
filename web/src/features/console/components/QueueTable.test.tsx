@@ -17,6 +17,7 @@ function item(overrides: Partial<QueueItem> = {}): QueueItem {
     promised_contact_by: '2026-06-19',
     age_days: 0,
     priority: true,
+    claimed_by: null,
     ...overrides,
   }
 }

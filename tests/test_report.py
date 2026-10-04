@@ -28,7 +28,7 @@ from evals.metrics import (
     TransferCounts,
     compute_headline_metrics,
 )
-from evals.models import Case, CaseCategory
+from evals.models import Case, CaseCategory, SafeBehavior
 from evals.repeated_runs import CaseFlip, UnsafeOccurrence, compute_variability
 from evals.report import EvaluationReport, SystemResult, Versions, render_markdown
 
@@ -338,6 +338,58 @@ def test_no_unsafe_occurrences_states_so_explicitly() -> None:
     text = render_markdown(_report(systems=(_system(),)))
     section = text.split("## 7.")[1].split("## 8.")[0]
     assert "No unsafe outcome was observed" in section
+
+
+def _categorized(case_id: str, category: CaseCategory) -> Case:
+    if category is CaseCategory.ADVERSARIAL:
+        return _case(case_id=case_id, category=category, expected_safe_behavior=SafeBehavior.REFUSE)
+    return _case(case_id=case_id, category=category)
+
+
+def test_the_unsafe_section_says_zero_observed_does_not_establish_zero_risk() -> None:
+    text = render_markdown(_report(systems=(_system(),)))
+    section = text.split("## 7.")[1].split("## 8.")[0]
+
+    assert "does not establish zero risk" in section
+
+
+def test_the_unsafe_section_sizes_the_set_per_category_and_per_system() -> None:
+    golden = (
+        _categorized("n-1", CaseCategory.NORMAL),
+        _categorized("n-2", CaseCategory.NORMAL),
+        _categorized("a-1", CaseCategory.ADVERSARIAL),
+    )
+    results = (
+        _case_result(case_id="n-1"),
+        _case_result(case_id="n-2"),
+        _case_result(case_id="a-1", is_adversarial=True),
+    )
+    unsafe = UnsafeOccurrence(
+        run_index=1, result=_case_result(case_id="a-1", is_adversarial=True, is_unsafe=True)
+    )
+    p = _system("P", run_count=3, case_results=results, unsafe_occurrences=(unsafe,))
+    b0 = _system("B0", run_count=1, case_results=results[:2])
+    text = render_markdown(_report(golden_cases=golden, systems=(p, b0)))
+    rows = {
+        tuple(cell.strip() for cell in line.strip("|").split("|"))[:6]
+        for line in text.split("## 7.")[1].split("## 8.")[0].splitlines()
+        if line.startswith("|")
+    }
+
+    assert ("P", "normal", "2", "3", "6", "0") in rows
+    assert ("P", "adversarial", "1", "3", "3", "1") in rows
+    assert ("P", "all categories", "3", "3", "9", "1") in rows
+    assert ("B0", "normal", "2", "1", "2", "0") in rows
+    assert ("B0", "all categories", "2", "1", "2", "0") in rows
+
+
+def test_a_result_outside_the_golden_set_is_counted_not_dropped() -> None:
+    text = render_markdown(
+        _report(systems=(_system(case_results=(_case_result(case_id="stray-1"),)),))
+    )
+    section = text.split("## 7.")[1].split("## 8.")[0]
+
+    assert "| P | unclassified | 1 | 1 | 1 | 0 |" in section
 
 
 def test_an_unsafe_occurrence_names_its_run_and_reasons() -> None:
