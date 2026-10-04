@@ -38,7 +38,7 @@ describe('TurnForm', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  it('stays focusable and editable-in-place while a reply is awaited, instead of being disabled', () => {
+  it('stays focusable and read-only while a reply is awaited, instead of being disabled', () => {
     render(<TurnForm onSubmit={vi.fn()} busy lang="en" />)
     const input = screen.getByLabelText('Your message')
 
@@ -87,19 +87,55 @@ describe('TurnForm', () => {
 
     fireEvent.change(input, { target: { value: 'x'.repeat(1850) } })
 
-    const hint = screen.getByText('Characters left: 150')
+    const hint = screen.getByText('Characters left: 150', { selector: 'span:not([role])' })
     expect(input).toHaveAttribute('aria-describedby', hint.id)
 
     fireEvent.change(input, { target: { value: 'x'.repeat(1800) } })
-    expect(screen.getByText('Characters left: 200')).toBeInTheDocument()
+    expect(screen.getAllByText('Characters left: 200')).toHaveLength(2)
     fireEvent.change(input, { target: { value: 'x'.repeat(1799) } })
     expect(screen.queryByText(/Characters left/)).not.toBeInTheDocument()
+  })
+
+  it('tells a screen reader at 200, 100 and 0 characters left, and not in between', () => {
+    render(<TurnForm onSubmit={vi.fn()} busy={false} lang="en" />)
+    const input = screen.getByLabelText('Your message')
+    const announcer = screen.getByRole('status')
+    expect(announcer).toBeEmptyDOMElement()
+
+    fireEvent.change(input, { target: { value: 'x'.repeat(1799) } })
+    expect(announcer).toBeEmptyDOMElement()
+    fireEvent.change(input, { target: { value: 'x'.repeat(1800) } })
+    expect(announcer).toHaveTextContent('Characters left: 200')
+    fireEvent.change(input, { target: { value: 'x'.repeat(1850) } })
+    expect(announcer).toHaveTextContent('Characters left: 200')
+    fireEvent.change(input, { target: { value: 'x'.repeat(1900) } })
+    expect(announcer).toHaveTextContent('Characters left: 100')
+    fireEvent.change(input, { target: { value: 'x'.repeat(2000) } })
+    expect(announcer).toHaveTextContent('Characters left: 0')
+    fireEvent.change(input, { target: { value: 'x'.repeat(10) } })
+    expect(announcer).toBeEmptyDOMElement()
+  })
+
+  it('speaks the announcement in the conversation’s language', () => {
+    render(<TurnForm onSubmit={vi.fn()} busy={false} lang="es" />)
+
+    fireEvent.change(screen.getByLabelText('Su mensaje'), { target: { value: 'x'.repeat(2000) } })
+
+    expect(screen.getByRole('status')).toHaveTextContent('Caracteres restantes: 0')
+  })
+
+  it('asks a phone keyboard for a send key and does not offer the browser’s own suggestions', () => {
+    render(<TurnForm onSubmit={vi.fn()} busy={false} lang="en" />)
+    const input = screen.getByLabelText('Your message')
+
+    expect(input).toHaveAttribute('enterkeyhint', 'send')
+    expect(input).toHaveAttribute('autocomplete', 'off')
   })
 
   it('has no automatically detectable accessibility violations, with the hint showing', async () => {
     const { container } = render(<TurnForm onSubmit={vi.fn()} busy={false} lang="pt" />)
     fireEvent.change(screen.getByLabelText('Sua mensagem'), { target: { value: 'x'.repeat(1900) } })
-    expect(screen.getByText('Caracteres restantes: 100')).toBeInTheDocument()
+    expect(screen.getAllByText('Caracteres restantes: 100')).toHaveLength(2)
     expect(await axe(container)).toHaveNoViolations()
   })
 })

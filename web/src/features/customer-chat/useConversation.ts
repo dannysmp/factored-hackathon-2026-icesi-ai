@@ -17,7 +17,7 @@ export interface Message {
   text: string
   /** What was sent to the endpoint when that differs from the words shown, such as a list number. */
   sent?: string
-  /** The customer's message never reached the assistant; `retry` sends it again. */
+  /** The customer's message may not have reached the assistant; `retry` sends it again. */
   failed?: boolean
   /** The id the turn endpoint treats as the identity of this message, so a resend cannot advance the conversation twice. */
   turnId?: string
@@ -37,8 +37,10 @@ export interface Conversation extends ConversationState {
   /**
    * Send the customer's text; a no-op once the conversation has ended or is already loading.
    * `shown` is what the transcript displays when that differs from what is sent, such as the
-   * full description of a listed option that is sent as its number. A message that failed earlier is dropped from the transcript: the customer chose to say
-   * something else, and it never reached the assistant.
+   * full description of a listed option that is sent as its number.
+   *
+   * A message that failed earlier is dropped from the transcript: the customer chose to say
+   * something else, and it may not have reached the assistant.
    */
   send: (text: string, shown?: string) => void
   /**

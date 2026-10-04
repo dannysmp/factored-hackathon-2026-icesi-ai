@@ -122,6 +122,54 @@ describe('ChatFeature around a turn', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('puts the focus on the new Retry when a resend fails again', async () => {
+    const user = userEvent.setup()
+    const { client, sent } = controlledClient(() => Promise.reject(new Error('network is down')))
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    await typeAndSend(user, 'the Tienda Sol one')
+
+    await user.click(await screen.findByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => {
+      expect(sent).toHaveLength(2)
+      expect(screen.getByRole('button', { name: 'Retry' })).toHaveFocus()
+    })
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => {
+      expect(sent).toHaveLength(3)
+      expect(screen.getByRole('button', { name: 'Retry' })).toHaveFocus()
+    })
+  })
+
+  it('does not take the focus when a send fails while it is elsewhere', async () => {
+    const user = userEvent.setup()
+    let fail: (error: Error) => void = () => undefined
+    const { client } = controlledClient(
+      () =>
+        new Promise<TurnResponse>((_resolve, reject) => {
+          fail = reject
+        }),
+    )
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <ChatFeature client={client} lang="en" />
+      </>,
+    )
+    await findMessage(OPENING.reply)
+    await typeAndSend(user, 'the Tienda Sol one')
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' })
+    elsewhere.focus()
+
+    act(() => {
+      fail(new Error('network is down'))
+    })
+
+    await screen.findByRole('alert')
+    expect(elsewhere).toHaveFocus()
+  })
+
   it('returns the keyboard to the message field after a pressed option disappears with the reply', async () => {
     const user = userEvent.setup()
     const options = turn(2, 'Which of these?', {
