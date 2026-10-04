@@ -63,6 +63,7 @@ from contracts.service_v1.handoff import HandoffPacket, HandoffTrigger
 from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult, TransactionHint
 from contracts.service_v1.tools import (
     CreateDisputeCaseResult,
+    EvaluateDisputeRequest,
     ProductLabel,
     ToolFailure,
     ToolRefusalCode,
@@ -213,6 +214,7 @@ class FakeToolPort:
     get_case_result: object = _UNSET
     get_transaction_result: object = _UNSET
     create_calls: int = 0
+    evaluate_requests: list[EvaluateDisputeRequest] = field(default_factory=list)
 
     def list_transactions(self, filters: TransactionFilters) -> TransactionPage | ToolFailure:
         if self.list_transactions_result is not None:
@@ -240,8 +242,11 @@ class FakeToolPort:
             return self.get_case_result  # type: ignore[return-value]
         return next((c for c in self.cases if c.case_number == case_number), None)
 
-    def evaluate_dispute(self, request: object) -> PolicyDecision | ToolFailure | None:
+    def evaluate_dispute(
+        self, request: EvaluateDisputeRequest
+    ) -> PolicyDecision | ToolFailure | None:
         assert self.evaluate_result is not _UNSET, "evaluate_result was never configured"
+        self.evaluate_requests.append(request)
         return self.evaluate_result  # type: ignore[return-value]
 
     def create_dispute_case(self, request: object) -> CreateDisputeCaseResult | ToolFailure:
@@ -1223,29 +1228,134 @@ def test_two_changes_in_a_row_hand_off_once_the_clarification_budget_is_spent(
     assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
 
 
+def _awaiting_filing_confirmation_of_two(policy: Policy, retriever: LexicalRetriever) -> _Dialogue:
+    port = FakeToolPort(
+        transactions=(_transaction(), _transaction("TX-2", merchant="Netflix")),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    return dialogue
+
+
+@pytest.mark.parametrize("through", ["confirmation", "file_dispute"])
 def test_a_different_reason_at_the_filing_question_evaluates_again_under_that_reason(
-    policy: Policy, retriever: LexicalRetriever
+    policy: Policy, retriever: LexicalRetriever, through: str
 ) -> None:
     dialogue, _ = _awaiting_filing_confirmation(policy, retriever)
-    changed = NluResult(
-        intent=NluIntent.CONFIRMATION,
-        confidence=0.9,
-        language="es",
-        confirmation=ConfirmationAnswer.YES_WITH_CHANGE,
-        category=DisputeCategory.DUPLICATE_CHARGE,
-    )
+    if through == "confirmation":
+        changed = NluResult(
+            intent=NluIntent.CONFIRMATION,
+            confidence=0.9,
+            language="es",
+            confirmation=ConfirmationAnswer.YES_WITH_CHANGE,
+            category=DisputeCategory.DUPLICATE_CHARGE,
+        )
+    else:
+        changed = _file_dispute(category=DisputeCategory.DUPLICATE_CHARGE)
 
     response = dialogue.say(changed)
 
     assert response.next_expected is Slot.CONFIRMATION
+    assert "cargo duplicado" in response.reply
     assert not response.end_session
     assert dialogue.outbox.packets == []
+    assert dialogue.port.evaluate_requests[-1].category is DisputeCategory.DUPLICATE_CHARGE
+    assert dialogue.port.evaluate_requests[-1].transaction_ref == "TX-1"
     state = dialogue.store.get(_SESSION_ID)
     assert state is not None
     assert state.category is DisputeCategory.DUPLICATE_CHARGE
     assert state.selected_ref == "TX-1"
     assert state.clarification_attempts == 0
     assert dialogue.port.create_calls == 0
+
+
+def test_a_different_transaction_at_the_filing_question_is_presented_for_confirmation(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _awaiting_filing_confirmation_of_two(policy, retriever)
+
+    response = dialogue.say(_file_dispute(transaction=TransactionHint(merchant="Netflix")))
+
+    assert response.next_expected is Slot.TRANSACTION_CHOICE
+    assert "Netflix" in response.reply
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-2"
+    assert state.category is DisputeCategory.UNRECOGNIZED_CHARGE
+    assert dialogue.port.create_calls == 0
+
+    confirmed = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert confirmed.next_expected is Slot.CONFIRMATION
+    assert dialogue.port.evaluate_requests[-1].transaction_ref == "TX-2"
+    assert dialogue.port.evaluate_requests[-1].category is DisputeCategory.UNRECOGNIZED_CHARGE
+    assert dialogue.port.create_calls == 0
+
+
+def test_a_different_transaction_and_reason_together_carry_both_to_the_new_transaction(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _awaiting_filing_confirmation_of_two(policy, retriever)
+
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Netflix"),
+            category=DisputeCategory.DUPLICATE_CHARGE,
+        )
+    )
+    confirmed = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert confirmed.next_expected is Slot.CONFIRMATION
+    assert dialogue.port.evaluate_requests[-1].transaction_ref == "TX-2"
+    assert dialogue.port.evaluate_requests[-1].category is DisputeCategory.DUPLICATE_CHARGE
+
+
+def test_a_description_that_changes_nothing_at_the_filing_question_counts_against_the_budget(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue, _ = _awaiting_filing_confirmation(policy, retriever)
+    repeat = _file_dispute(
+        transaction=TransactionHint(merchant="Amazon"),
+        category=DisputeCategory.UNRECOGNIZED_CHARGE,
+    )
+
+    first = dialogue.say(repeat)
+
+    assert first.next_expected is Slot.CONFIRMATION
+    assert not first.end_session
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.clarification_attempts == 1
+    assert len(dialogue.port.evaluate_requests) == 1
+
+    second = dialogue.say(repeat)
+
+    assert second.end_session
+    assert len(dialogue.outbox.packets) == 1
+    assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
+    assert dialogue.port.create_calls == 0
+
+
+def test_a_change_then_a_description_that_changes_nothing_hands_off_at_the_budget(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue, _ = _awaiting_filing_confirmation(policy, retriever)
+
+    asked = dialogue.say(_confirmation(ConfirmationAnswer.YES_WITH_CHANGE))
+    handed_off = dialogue.say(_file_dispute(transaction=TransactionHint(merchant="Amazon")))
+
+    assert "motivo" in asked.reply
+    assert handed_off.end_session
+    assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
 
 
 def test_the_same_reason_at_the_filing_question_is_still_a_change_to_ask_about(
@@ -1268,14 +1378,67 @@ def test_the_same_reason_at_the_filing_question_is_still_a_change_to_ask_about(
     assert state.clarification_attempts == 1
 
 
-def test_a_correction_with_no_open_question_falls_back(
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [
+        ("es", "No logré identificar qué desea cambiar"),
+        ("pt", "Não consegui identificar o que você quer alterar"),
+        ("en", "I did not catch what you want to change"),
+    ],
+)
+def test_the_change_question_is_asked_in_the_customers_language(
+    policy: Policy, retriever: LexicalRetriever, lang: str, expected: str
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(
+        _file_dispute(transaction=TransactionHint(merchant="Amazon")).model_copy(
+            update={"language": lang}
+        )
+    )
+
+    response = dialogue.say(
+        _confirmation(ConfirmationAnswer.YES_WITH_CHANGE).model_copy(update={"language": lang})
+    )
+
+    assert expected in response.reply
+
+
+def _reply_to_after_asking(
+    policy: Policy, retriever: LexicalRetriever, pending: Slot, answer: NluResult
+) -> TurnResponse:
+    dialogue = _Dialogue(policy, retriever)
+    if pending is Slot.REASON:
+        dialogue.present_amazon()
+        asked = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    else:
+        asked = dialogue.say(_file_dispute())
+    assert asked.next_expected is pending
+    return dialogue.say(answer)
+
+
+@pytest.mark.parametrize("pending", [Slot.REASON, Slot.TRANSACTION])
+def test_a_correction_at_a_question_that_is_not_a_change_target_reads_like_an_unclear_reply(
+    policy: Policy, retriever: LexicalRetriever, pending: Slot
+) -> None:
+    unclear = _reply_to_after_asking(policy, retriever, pending, _plain(NluIntent.UNCLEAR))
+    correction = _reply_to_after_asking(policy, retriever, pending, _plain(NluIntent.CORRECTION))
+
+    assert correction.reply == unclear.reply
+    assert correction.next_expected == unclear.next_expected
+    assert correction.end_session == unclear.end_session
+    assert "transacción" not in correction.reply or "motivo" not in correction.reply
+
+
+def test_a_correction_with_no_open_question_falls_back_to_the_greeting(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
     dialogue = _Dialogue(policy, retriever)
+    greeting = dialogue.say(_plain(NluIntent.SMALL_TALK))
 
     response = dialogue.say(_plain(NluIntent.CORRECTION))
 
-    assert "transacción" not in response.reply or "motivo" not in response.reply
+    assert response.reply == greeting.reply
+    assert response.next_expected is None
     assert not response.end_session
     assert dialogue.outbox.packets == []
 

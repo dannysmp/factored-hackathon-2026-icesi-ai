@@ -89,7 +89,10 @@ clarification budget.
 A yes that carries a change, or a correction, while the transaction or the filing is awaiting an
 answer is not repeated back: the customer is asked which part to change, the transaction or the
 reason. A different reason stated at the filing question re-evaluates the dispute under that reason
-and asks for confirmation of the result.
+and asks for confirmation of the result. A different transaction described there goes back to
+presenting that transaction for confirmation, keeping the reason unless the message states another.
+A description that changes neither repeats the filing question and counts against the clarification
+budget.
 
 The question stays pending across a reply to an unrelated
 message (small talk, a policy question, a list request), as the reason and confirmation questions
@@ -607,6 +610,9 @@ class DialogueController:
     def _handle_file_dispute(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        if state.pending_slot is Slot.CONFIRMATION:
+            return self._handle_restated_dispute(state, result)
+
         if result.category is not None and state.category is None:
             state = state.model_copy(update={"category": result.category})
 
@@ -626,6 +632,26 @@ class DialogueController:
 
         assert state.category is not None  # noqa: S101 - guaranteed by required_slot above
         return self._evaluate_and_present(state, state.selected_ref, state.category)
+
+    def _handle_restated_dispute(
+        self, state: DialogueState, result: NluResult
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """The customer described a dispute while the filing question is open.
+
+        A message naming a different transaction goes back to finding that transaction, keeping
+        the reason unless the message states another. A message stating a different reason is
+        evaluated afresh under it. A message that changes neither is a repeat of the question and
+        counts against the clarification budget.
+        """
+        if self._names_another_transaction(state, result.transaction):
+            category = result.category if result.category is not None else state.category
+            reopened = state.model_copy(
+                update={"selected_ref": None, "pending_slot": None, "category": category}
+            )
+            return self._resolve_transaction(reopened, result.transaction)
+        if result.category is not None and result.category is not state.category:
+            return self._handle_change(state, result)
+        return self._ask(state, Slot.CONFIRMATION)
 
     def _names_another_transaction(self, state: DialogueState, hint: TransactionHint) -> bool:
         """Whether ``hint`` describes something other than the transaction just presented.

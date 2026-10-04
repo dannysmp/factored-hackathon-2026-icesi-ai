@@ -322,14 +322,11 @@ def _clarify_confirmation(e: RenderEnvelope) -> str:
 def _clarify_change(e: RenderEnvelope) -> str:
     return {
         "es": "No logré identificar qué desea cambiar. Dígame qué parte es: la transacción o "
-        "el motivo de la disputa. Si todo está bien, responda sí; si no desea continuar, "
-        "responda no.",
+        "el motivo de la disputa. Si todo está bien, responda sí.",
         "pt": "Não consegui identificar o que você quer alterar. Diga qual parte é: a transação "
-        "ou o motivo da contestação. Se estiver tudo certo, responda sim; se não quiser "
-        "continuar, responda não.",
+        "ou o motivo da contestação. Se estiver tudo certo, responda sim.",
         "en": "I did not catch what you want to change. Tell me which part it is: the "
-        "transaction or the reason for the dispute. If everything is right, answer yes; if "
-        "you do not want to continue, answer no.",
+        "transaction or the reason for the dispute. If everything is right, answer yes.",
     }[e.lang]
 
 
