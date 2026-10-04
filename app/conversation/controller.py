@@ -95,10 +95,10 @@ session works on one transaction and reason at a time: the selected pair is kept
 until the dispute ends (a case filed, or the filing cancelled, ineligible or refused as a
 duplicate), which clears it so the customer's next dispute starts from its own transaction and
 reason; a no to the transaction presented, or a different transaction named while one awaits a
-yes, replaces the transaction instead. A policy question asked after a dispute has ended is
-answered without a reason, so a figure that depends on one is declined with an offer of an
-advisor. The handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's
-first name yet.
+yes, replaces the transaction instead. A dispute that ends in a handoff keeps its pair. A policy
+question asked after a dispute has ended without a handoff is answered without a reason, so a
+figure that depends on one is declined with an offer of an advisor. The handoff packet's
+``first_name`` is a placeholder: no tool exposes the customer's first name yet.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
