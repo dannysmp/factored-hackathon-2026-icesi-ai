@@ -589,6 +589,63 @@ def test_raters_who_disagree_with_each_other_are_called_out_below_the_threshold(
     assert "not settled" not in high
 
 
+def _lean_detail(first_higher: int, second_higher: int) -> tuple[DimensionDetail, ...]:
+    pair = PairDetail(
+        compared=50, weighted_kappa=0.1, first_higher=first_higher, second_higher=second_higher
+    )
+    return (
+        DimensionDetail(
+            dimension="grounding", rater_to_rater=pair, rater1_to_judge=pair, rater2_to_judge=pair
+        ),
+    )
+
+
+def test_a_judge_that_scores_lower_in_nearly_every_difference_is_called_an_offset() -> None:
+    section = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=19, second_higher=0)
+    )
+
+    assert "the judge scores lower than Rater 1 in 19 of the 19 cases where they differ" in section
+    assert "the judge scores lower than Rater 2 in 19 of the 19" in section
+
+
+def test_a_judge_that_scores_higher_in_nearly_every_difference_is_called_an_offset() -> None:
+    section = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=1, second_higher=9)
+    )
+
+    assert "the judge scores higher than Rater 1 in 9 of the 10 cases where they differ" in section
+
+
+def test_a_mixed_or_small_set_of_differences_is_not_called_an_offset() -> None:
+    mixed = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=10, second_higher=8)
+    )
+    few = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=4, second_higher=0)
+    )
+
+    assert "systematic offset" not in mixed
+    assert "systematic offset" not in few
+
+
+def test_the_lean_threshold_is_inclusive_at_five_differences_and_eighty_percent() -> None:
+    at_bar = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=4, second_higher=1)
+    )
+    below_bar = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=7, second_higher=2)
+    )
+
+    higher_at_bar = judge_validation_section(
+        (_agreement_at(0.9, 0.5, True),), "human", _lean_detail(first_higher=1, second_higher=4)
+    )
+
+    assert "4 of the 5 cases" in at_bar
+    assert "scores higher than Rater 1 in 4 of the 5" in higher_at_bar
+    assert "systematic offset" not in below_bar  # 7 of 9 is 78%
+
+
 def test_the_facts_limitation_states_how_many_rows_had_no_facts() -> None:
     section = judge_validation_section(_agreement(), "human", _detail(), facts_coverage=(46, 50))
 

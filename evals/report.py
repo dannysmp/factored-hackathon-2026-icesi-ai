@@ -672,12 +672,37 @@ def _direction_table(detail: tuple[DimensionDetail, ...]) -> str:
     )
 
 
+#: A judge-versus-rater gap is called one-sided from this many differences, when at least this
+#: share of them run the same way.
+_LEAN_MIN_DIFFERENCES = 5
+_LEAN_SHARE = 0.8
+
+
+def _judge_lean(dimension: str, label: str, pair: PairDetail) -> str | None:
+    """A sentence when the judge differs from a rater almost always in the same direction."""
+    differences = pair.first_higher + pair.second_higher
+    if differences < _LEAN_MIN_DIFFERENCES:
+        return None
+    if pair.second_higher / differences >= _LEAN_SHARE:
+        direction, count = "higher", pair.second_higher
+    elif pair.first_higher / differences >= _LEAN_SHARE:
+        direction, count = "lower", pair.first_higher
+    else:
+        return None
+    return (
+        f"  On {dimension} the judge scores {direction} than {label} in {count} of the "
+        f"{differences} cases where they differ, a systematic offset rather than scattered "
+        "disagreement."
+    )
+
+
 def _validation_decision(
     agreement: tuple[DimensionAgreement, ...],
     detail: tuple[DimensionDetail, ...] | None,
 ) -> str:
     threshold = f"{DEMOTION_THRESHOLD:.0%}"
     lines = []
+    by_dimension = {entry.dimension: entry for entry in detail or ()}
     for entry in agreement:
         if entry.demoted:
             lines.append(
@@ -690,6 +715,14 @@ def _validation_decision(
                 f"- **{entry.dimension}: judge-scored.** The judge agrees with both raters at "
                 f"{threshold} or more."
             )
+        pairs = by_dimension.get(entry.dimension)
+        for label, pair in (
+            ("Rater 1", pairs.rater1_to_judge if pairs else None),
+            ("Rater 2", pairs.rater2_to_judge if pairs else None),
+        ):
+            lean = _judge_lean(entry.dimension, label, pair) if pair else None
+            if lean:
+                lines.append(lean)
         if entry.rater_to_rater != NOT_DEFINED and entry.rater_to_rater < DEMOTION_THRESHOLD:
             lines.append(
                 f"  The two raters agree with each other on {entry.dimension} in "
