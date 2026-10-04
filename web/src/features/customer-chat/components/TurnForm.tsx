@@ -45,9 +45,11 @@ export function TurnForm({
   const t = useT(lang)
   const remaining = MAX_TURN_TEXT_LENGTH - text.length
   const showHint = remaining <= HINT_THRESHOLD
-  const step = announceStep(remaining)
+  const [announcedCount, setAnnouncedCount] = useState<number | null>(null)
   const announcement =
-    step === null ? '' : t('chat.charactersLeft').replace('{count}', String(step))
+    announcedCount === null
+      ? ''
+      : t('chat.charactersLeft').replace('{count}', String(announcedCount))
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault()
@@ -57,6 +59,7 @@ export function TurnForm({
     }
     onSubmit(trimmed)
     setText('')
+    setAnnouncedCount(null)
     inputRef?.current?.focus()
   }
 
@@ -80,7 +83,13 @@ export function TurnForm({
           autoComplete="off"
           enterKeyHint="send"
           onChange={(event) => {
-            setText(event.target.value)
+            const next = event.target.value
+            const nextRemaining = MAX_TURN_TEXT_LENGTH - next.length
+            // Announce the true count, and only when a new step is reached, so typing is not narrated.
+            if (announceStep(nextRemaining) !== announceStep(remaining)) {
+              setAnnouncedCount(announceStep(nextRemaining) === null ? null : nextRemaining)
+            }
+            setText(next)
           }}
         />
         {showHint && (
