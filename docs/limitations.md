@@ -28,9 +28,9 @@ results still to come say so and name the command that completes them.
   representative of real customers. Every case states its own provenance (observed, team-generated
   or injected) so a reader never has to guess it.
 - **The golden set has no case that expects a denial of an ineligible filing.** An independent
-  rater confirmed the labels of all 135 cases, but none of them declares an ineligible outcome:
-  the evaluation does not exercise the eight ineligibility reason codes, which only the policy
-  engine's own tests cover. See "Golden-set adjudication" in `evals/README.md`.
+  rater reviewed all 135 cases and changed none of their labels, but none of them declares an
+  ineligible outcome: the evaluation does not exercise the eight ineligibility reason codes,
+  which only the policy engine's own tests cover. See "Golden-set adjudication" in `evals/README.md`.
 
 ## Machine learning
 

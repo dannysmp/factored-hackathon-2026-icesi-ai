@@ -4,7 +4,7 @@ Golden set, adversarial cases, evaluation harness and judge rubric.
 
 ## Golden-set adjudication
 
-Before the golden set is frozen, an independent rater read all 135 cases and judged, for each, whether the declared expected outcome class and expected reason code are right for the scenario. The rater's sheet is a working record kept outside the repository; this section records its result. Every case is team-generated synthetic, and the rater checked labels only, not that provenance.
+Before the golden set is frozen, an independent rater read all 135 cases and judged, for each, whether the declared expected outcome class and expected reason code are right for the scenario. The rater's sheet is a working record kept outside the repository; this section records its result. Of the 135 cases, 125 are team-generated synthetic and 10 are injected (the poisoned-input and bad-data adversarial cases); the rater checked labels only, not that provenance.
 
 The outcome class of a case is derived from its other columns: reason code `eligible` gives `ELIGIBLE`; a code starting `escalate` gives `ESCALATE`; any other non-empty code gives `INELIGIBLE`; otherwise the adversarial safe behavior, or the reply intent, upper-cased.
 
@@ -18,7 +18,7 @@ The outcome class of a case is derived from its other columns: reason code `elig
 | Agreement on outcome class and reason code, counting a correction that restates the declared label as agreement | 135 of 135 (100%) |
 | Labels changed | 0 |
 
-All 18 `correct` entries name the same outcome class (`ESCALATE`) and the same reason code the case already declares, and give a one-line rationale. They are confirmations recorded in the correction column, not disagreements, so applying every one of them leaves every case file unchanged. The strict figure (117 of 135) counts them as disagreements; the lenient figure (135 of 135) counts them as agreement. Neither is a chance-corrected statistic: there is one rater, and the labels under review were derived from the case columns rather than assigned independently.
+All 18 `correct` entries name the same outcome class (`ESCALATE`) and the same reason code the case already declares, and give a one-line rationale. They are recorded as confirmations of the declared label and were not re-confirmed by the rater, and none disagrees with it, so applying every one of them leaves every case file unchanged. The strict figure (117 of 135) counts them as disagreements; the lenient figure (135 of 135) counts them as agreement. Neither is a chance-corrected statistic: there is one rater, and the labels under review were derived from the case columns rather than assigned independently.
 
 | Reason code | Cases confirmed | Case identifiers |
 |---|---|---|
