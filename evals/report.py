@@ -163,6 +163,11 @@ class EvaluationReport:
     16-case CI-smoke subset, run before the full adversarial set's loader lands) — empty for a
     full-golden-set run. Rendered as a prominent callout, never silently inferred from a case
     count this module has no independent way to call "full" or "partial"."""
+    judge_call_count: int = 0
+    """Calls the live judge made while producing this report; zero when it was not run."""
+    judge_cost_usd: float | None = None
+    """What those calls cost. Evaluation tooling, reported on its own line in the judge-scored
+    section and never added to any system's cost; ``None`` when a call went to an unpriced model."""
 
 
 def _count(value: int) -> str:
@@ -223,11 +228,50 @@ def _versions_section(versions: Versions) -> str:
     return _table(["Field", "Value"], rows)
 
 
+def _cost_sample_cell(result: SystemResult, attempted: Sequence[CaseResult]) -> str:
+    """The last run's count of attempted cases with a measured cost, stated against the cost
+    figure's own basis: that figure averages every run and is undefined when any run is."""
+    measured = sum(1 for r in attempted if r.cost_usd is not None)
+    cell = f"{_count(measured)} of {_count(len(attempted))}"
+    cost_cell = result.variability.cost_per_attempted_case.mean
+    if result.run_count > 1 and cost_cell == NOT_DEFINED and measured:
+        return f"{cell} (cost is not defined in at least one other run)"
+    return cell
+
+
+def _sample_size_rows(results: Sequence[SystemResult]) -> list[list[str]]:
+    """The sample behind the table, per system. Runs is the number of runs the figures average;
+    every other row counts the last run's cases, the only run whose per-case results are kept."""
+    in_scope = [[r for r in result.case_results if not r.is_adversarial] for result in results]
+    attempted = [[r for r in cases if r.automation_attempted] for cases in in_scope]
+    return [
+        ["Runs", *(_count(result.run_count) for result in results), "count"],
+        [
+            "Cases (adversarial included)",
+            *(_count(len(result.case_results)) for result in results),
+            "count, last run",
+        ],
+        [
+            "In-scope cases (denominator of safe resolution, attempted share and containment)",
+            *(_count(len(cases)) for cases in in_scope),
+            "count, last run",
+        ],
+        [
+            "Attempted cases with a measured cost",
+            *(
+                _cost_sample_cell(result, cases)
+                for result, cases in zip(results, attempted, strict=True)
+            ),
+            "count, last run",
+        ],
+    ]
+
+
 def _headline_table(systems: tuple[SystemResult, ...]) -> str:
     by_system = {result.system: result for result in systems}
     present = [s for s in ("P", "B0", "B1") if s in by_system]
     headers = ["Metric", *present, "Basis"]
-    rows = []
+    rows = _sample_size_rows([by_system[s] for s in present])
     for label, accessor in _HEADLINE_METRICS:
         row = [label]
         for system in present:
@@ -250,9 +294,20 @@ def _judge_dimension_mean(values: Sequence[int]) -> str:
     return f"{sum(values) / len(values):.3f}"
 
 
-def _judge_scored_quality_section(systems: tuple[SystemResult, ...]) -> str:
+def _judge_cost_line(report: EvaluationReport) -> str:
+    """The judge's own spend, kept apart from every system's cost: it is evaluation tooling."""
+    cost = NOT_DEFINED if report.judge_cost_usd is None else f"{report.judge_cost_usd:.4f}"
+    return (
+        f"Judge calls: {_count(report.judge_call_count)}; judge cost: {cost} USD. This is "
+        "evaluation tooling cost, reported here only and never included in any system's cost "
+        "above."
+    )
+
+
+def _judge_scored_quality_section(report: EvaluationReport) -> str:
     """Aggregate scores the live judge gave a system's own last run — not the judge-vs-human
     agreement of the Judge validation section below, a different question entirely."""
+    systems = report.systems
     judged = [result for result in systems if result.judge_verdicts]
     not_judged = [result.system for result in systems if not result.judge_verdicts]
     if not judged:
@@ -290,7 +345,7 @@ def _judge_scored_quality_section(systems: tuple[SystemResult, ...]) -> str:
         if not_judged
         else ""
     )
-    return f"{table}{note}"
+    return f"{table}{note}\n\n{_judge_cost_line(report)}"
 
 
 def _repeated_run_section(systems: tuple[SystemResult, ...]) -> str:
@@ -402,10 +457,15 @@ def _limitations_section(report: EvaluationReport) -> str:
         "example a business-savings projection from cost inputs) is computed by this slice.",
         "- The failure gallery reports which deterministic check failed, not a deeper root-cause "
         "classification.",
-        "- Cost per attempted case and cost per successful automated resolution are always "
-        '"not defined": `evals.scoring.score_case` never populates a `CaseResult`\'s `cost_usd` '
-        "(per-case cost accounting is a later increment's job); a system's real spend is only "
-        "computable from its own structured logs, not from this report.",
+        "- A case's cost is the model spend measured for its run: for the proposed system, the "
+        "priced understanding calls its turns logged; for B1, every priced call it made. B0 makes "
+        "no model call (keyword classifier), so its model cost is zero by construction. Reply "
+        "rendering through the model (`MODEL_RENDERER_ENABLED`) logs no cost and is not counted. "
+        "A case whose spend could not be measured is left out of the cost denominators "
+        "(the sample-size rows of the headline table state how many remain), never counted as "
+        "zero. A model call the application could not use (a failed or unusable understanding "
+        "call) is not priced and is not counted. The judge's own cost is reported separately in "
+        "the judge-scored section.",
         f"- Reference date: {report.reference_date} (source: {report.reference_date_source}, "
         f"bank time zone: {report.bank_timezone}).",
     ]
@@ -438,7 +498,7 @@ def render_markdown(report: EvaluationReport) -> str:
         "## 1. Workload\n\n" + _workload_section(report.golden_cases),
         "## 2. Versions\n\n" + _versions_section(report.versions),
         "## 3. Headline metrics\n\n" + _headline_table(report.systems),
-        "## 4. Judge-scored quality\n\n" + _judge_scored_quality_section(report.systems),
+        "## 4. Judge-scored quality\n\n" + _judge_scored_quality_section(report),
         "## 5. Repeated-run variability\n\n" + _repeated_run_section(report.systems),
         "## 6. Failure gallery\n\n" + _failure_gallery(report.systems),
         "## 7. Unsafe outcomes\n\n" + _unsafe_outcomes_section(report.systems),

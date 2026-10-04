@@ -109,6 +109,7 @@ from app.persistence.ops_meta import read_data_as_of
 from app.retrieval.lexical import LexicalRetriever
 from app.security.sessions import Clock
 from app.security.sessions import utc_now as _real_clock
+from evals.cost import CostTrackingLlm, TurnCostLedger
 from evals.golden.case_sheet import ALL_CASES
 from evals.golden.judge_validation_sample import (
     JUDGE_VERDICTS as _SYNTHETIC_JUDGE_VERDICTS,
@@ -193,16 +194,23 @@ def _run_p(
     dsn = settings.require_database_url().get_secret_value()
     test_login_key = _require_test_login_key(settings)
     client = TestClient(create_app(settings))
-    return run_http_cases(
-        client, dsn, cases, test_login_key=test_login_key, capture_transcripts=capture_transcripts
-    )
+    with TurnCostLedger() as ledger:
+        return run_http_cases(
+            client,
+            dsn,
+            cases,
+            test_login_key=test_login_key,
+            capture_transcripts=capture_transcripts,
+            cost_ledger=ledger,
+        )
 
 
 def _run_b0(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]:
     dsn = settings.require_database_url().get_secret_value()
     test_login_key = _require_test_login_key(settings)
     client = TestClient(build_b0_app(settings))
-    return run_http_cases(client, dsn, cases, test_login_key=test_login_key)
+    with TurnCostLedger() as ledger:
+        return run_http_cases(client, dsn, cases, test_login_key=test_login_key, cost_ledger=ledger)
 
 
 def _run_b1(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]:
@@ -314,9 +322,8 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
     """
     cases = _select_cases(smoke=smoke)
     calendar = _resolve_calendar(settings, clock=_real_clock)
-    judge = LlmJudge(
-        AnthropicLlmClient(settings.require_anthropic_key()), model=settings.judge_model
-    )
+    judge_client = CostTrackingLlm(AnthropicLlmClient(settings.require_anthropic_key()))
+    judge = LlmJudge(judge_client, model=settings.judge_model)
     all_runs: dict[str, list[tuple[CaseResult, ...]]] = {}
     for system in _SYSTEMS:
         run_count = _RUN_COUNTS[system]
@@ -360,6 +367,8 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
         systems=systems,
         judge_validation=agreement,
         judge_validation_provenance=_SYNTHETIC_JUDGE_VALIDATION_PROVENANCE,
+        judge_call_count=judge_client.call_count,
+        judge_cost_usd=judge_client.total_cost_usd,
         reference_date=calendar.reference_date.isoformat(),
         reference_date_source=calendar.origin.value,
         bank_timezone=_BANK_TIMEZONE_LABEL,

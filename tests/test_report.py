@@ -26,6 +26,7 @@ from evals.metrics import (
     LatencyMetrics,
     Metric,
     TransferCounts,
+    compute_headline_metrics,
 )
 from evals.models import Case, CaseCategory
 from evals.repeated_runs import CaseFlip, UnsafeOccurrence, compute_variability
@@ -473,11 +474,129 @@ def test_limitations_names_pending_h4_only_when_not_human() -> None:
     assert "pending the real H4" not in human.split("## 10.")[1]
 
 
-def test_limitations_explains_why_cost_per_case_is_always_not_defined() -> None:
-    """Unconditional, unlike the H4/scope-note bullets: cost_usd is never populated regardless of
-    which systems or provenance a report carries."""
+def test_limitations_states_what_a_cases_cost_covers_and_that_unknown_is_not_zero() -> None:
     text = render_markdown(_report())
     section = text.split("## 10.")[1]
 
-    assert "cost_usd" in section
-    assert "never populates" in section
+    assert "no model call" in section
+    assert "never counted as zero" in section
+    assert "never populates" not in section
+
+
+# -----------------------------------------------------------------------------
+# Sample sizes and cost — what stands behind every number in the headline table
+# -----------------------------------------------------------------------------
+
+
+_IN_SCOPE_LABEL = "In-scope cases (denominator of safe resolution, attempted share and containment)"
+
+
+def _sample_rows(text: str) -> dict[str, str]:
+    section = text.split("## 3.")[1].split("## 4.", maxsplit=1)[0]
+    return {
+        line[1:].split("|", 1)[0].strip(): line
+        for line in section.splitlines()
+        if line.startswith("|")
+    }
+
+
+def test_the_headline_table_states_runs_cases_and_denominators_per_system() -> None:
+    cases = (
+        *(_case_result(case_id=f"n-{i}") for i in range(4)),
+        _case_result(case_id="adv-1", is_adversarial=True),
+    )
+    p = _system("P", run_count=3, case_results=cases)
+    b0 = _system("B0", run_count=1, case_results=cases[:2])
+    rows = _sample_rows(render_markdown(_report(systems=(p, b0))))
+
+    assert rows["Runs"].split("|")[2:4] == [" 3 ", " 1 "]
+    assert rows["Cases (adversarial included)"].split("|")[2:4] == [" 5 ", " 2 "]
+    assert rows[_IN_SCOPE_LABEL].split("|")[2:4] == [" 4 ", " 2 "]
+
+
+def test_the_cost_sample_counts_attempted_cases_with_a_measured_cost() -> None:
+    cases = (
+        _case_result(case_id="n-1", cost_usd=0.01),
+        _case_result(case_id="n-2", cost_usd=None),
+        _case_result(case_id="n-3", cost_usd=0.0),
+        _case_result(case_id="n-4", cost_usd=0.02, automation_attempted=False),
+    )
+    rows = _sample_rows(render_markdown(_report(systems=(_system("P", case_results=cases),))))
+
+    assert rows["Attempted cases with a measured cost"].split("|")[2] == " 2 of 3 "
+
+
+def _system_from_runs(runs: list[tuple[CaseResult, ...]]) -> SystemResult:
+    metrics = [compute_headline_metrics(run) for run in runs]
+    return SystemResult(
+        system="P",
+        run_count=len(runs),
+        variability=compute_variability(metrics),
+        case_results=runs[-1],
+        flips=(),
+        judge_verdicts=(),
+    )
+
+
+def test_a_cost_row_never_reads_as_contradicting_an_undefined_cost_figure() -> None:
+    unmeasured = (_case_result(case_id="n-1", cost_usd=None), _case_result(case_id="n-2"))
+    measured = (
+        _case_result(case_id="n-1", cost_usd=0.01),
+        _case_result(case_id="n-2", cost_usd=0.02),
+    )
+    system = _system_from_runs([unmeasured, measured, measured])
+    text = render_markdown(_report(systems=(system,)))
+    section = text.split("## 3.")[1].split("## 4.", maxsplit=1)[0]
+    rows = _sample_rows(text)
+
+    assert "| Cost per attempted case (USD) | not defined" in section
+    cell = rows["Attempted cases with a measured cost"].split("|")[2].strip()
+    assert cell.startswith("2 of 2")
+    assert "not defined in at least one other run" in cell
+
+
+def test_the_cost_row_is_plain_when_the_cost_figure_is_defined() -> None:
+    measured = (_case_result(case_id="n-1", cost_usd=0.01),)
+    system = _system_from_runs([measured, measured, measured])
+    rows = _sample_rows(render_markdown(_report(systems=(system,))))
+
+    assert rows["Attempted cases with a measured cost"].split("|")[2] == " 1 of 1 "
+
+
+def test_the_in_scope_label_names_only_the_rates_it_is_the_denominator_of() -> None:
+    cases = (_case_result(case_id="n-1"), _case_result(case_id="adv-1", is_adversarial=True))
+    rows = _sample_rows(render_markdown(_report(systems=(_system_from_runs([cases]),))))
+
+    label = _IN_SCOPE_LABEL
+    assert label in rows
+    assert "unsafe" not in label.lower()
+    assert "escalation" not in label.lower()
+    assert rows[label].split("|")[-2].strip() == "count, last run"
+
+
+def test_the_judge_cost_is_reported_on_its_own_line_apart_from_every_system() -> None:
+    verdict = _judge_verdict()
+    text = render_markdown(
+        _report(
+            systems=(_system("P", judge_verdicts=(verdict,)),),
+            judge_call_count=7,
+            judge_cost_usd=0.1234,
+        )
+    )
+
+    judge_section = text.split("## 4.")[1].split("## 5.")[0]
+    assert "Judge calls: 7; judge cost: 0.1234 USD" in judge_section
+    assert "never included in any system's cost" in judge_section
+    assert "0.1234" not in text.split("## 4.")[0]
+
+
+def test_an_unmeasurable_judge_cost_reads_not_defined() -> None:
+    text = render_markdown(
+        _report(
+            systems=(_system("P", judge_verdicts=(_judge_verdict(),)),),
+            judge_call_count=2,
+            judge_cost_usd=None,
+        )
+    )
+
+    assert "judge cost: not defined USD" in text.split("## 4.")[1].split("## 5.")[0]
