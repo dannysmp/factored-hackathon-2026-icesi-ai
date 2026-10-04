@@ -154,15 +154,15 @@ Two limits protect the monthly spend. No script creates them and the repository 
 account="$(aws sts get-caller-identity --query Account --output text)"
 aws budgets describe-budgets --account-id "$account" --query 'Budgets[].[BudgetName,BudgetLimit.Amount,TimeUnit]' --output text
 aws budgets describe-notifications-for-budget --account-id "$account" --budget-name "<name from the first command>" \
-  --query 'Notifications[].[NotificationType,ComparisonOperator,Threshold]' --output text
+  --query 'Notifications[].[NotificationType,ComparisonOperator,ThresholdType,Threshold]' --output text
 ```
 
-**Spend limit on the model provider.** In the Claude Console, open *Settings*, then *Limits*, and set the monthly spend limit of the workspace that owns the production key, with a notification below it. The intended values are a limit of US$20 and a notification at US$17. This limit lives in the provider's organization, so nothing the repository or the AWS account holds can read it back: the screen is the only check.
+**Spend limit on the model provider.** In the Claude Console, open the organization's spend limit and notification settings (under *Settings*, then *Limits*; the screen names can differ by account) and set the monthly spend limit of the organization that owns the production key, with a notification below it and the automatic top-up the account offers. The values in force are a monthly limit of US$100, a notification at US$80 and an automatic reload of US$20 whenever the balance falls to US$5. They are set by the maintainer and are not verified from the repository: this limit lives in the provider's organization, so nothing the repository or the AWS account holds can read it back, and the screen is the only check. The monthly limit is the only ceiling on the model spend, because the automatic reload keeps the balance topped up until it is reached.
 
 | Control | Last checked | Role | What was seen |
 |---|---|---|---|
 | AWS monthly cost alert | 2026-10-04 | Programmer, read-only commands above | One monthly cost budget of US$50 with notifications at 50 %, 80 % and 100 % of actual spend and at 100 % of forecast spend |
-| Model provider spend limit | | | |
+| Model provider spend limit | 2026-10-04 | Maintainer, reported; not read back by the programmer | Monthly limit of US$100, notification at US$80, automatic reload of US$20 when the balance falls to US$5. Not verifiable from the repository |
 
 ## Run record
 
