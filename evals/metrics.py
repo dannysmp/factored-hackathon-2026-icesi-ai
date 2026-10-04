@@ -49,7 +49,9 @@ categories it is not given. This module does nothing special for a case the runn
 resolve, run or score (``CaseResult.error`` set): its safe-default fields count it as attempted
 nowhere and correct nowhere, so it lowers every rate's numerator without inflating any
 denominator's meaning — naming and surfacing *which* cases errored, and why, is the runner's and
-the report's own job, not this pure-function engine's.
+the report's own job, not this pure-function engine's. ``reply_text`` and ``facts_and_sources`` are
+opaque to every formula here: they exist for a judge or a human rater to read, not for this module
+to score, and ``compute_headline_metrics`` never inspects either.
 """
 
 from __future__ import annotations
@@ -115,6 +117,14 @@ class CaseResult:
     latency_seconds: float | None = None
     cost_usd: float | None = None
     error: str | None = None
+    reply_text: str | None = None
+    """Every reply the run produced, joined in order and PAN-masked. ``None`` unless the caller
+    opted into capture (``evals.runner.runner.run_cases``'s own ``capture_transcripts`` flag) —
+    every other run leaves this unset, exactly as before this field existed."""
+    facts_and_sources: str | None = None
+    """The grounding text (``evals.facts.assemble_facts_and_sources``) the reply is checked
+    against, PAN-masked. Set together with ``reply_text``, by the same opt-in capture step, never
+    independently."""
 
 
 @dataclass(frozen=True, slots=True)

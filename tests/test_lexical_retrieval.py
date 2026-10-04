@@ -69,6 +69,8 @@ def test_tokenize_returns_nothing_for_text_with_no_content_word() -> None:
         ("en", "what is the deadline to file a dispute?", "filing-windows"),
         ("es", "¿cuándo un asesor revisa mi caso?", "human-review"),
         ("pt", "quando um atendente analisa meu pedido?", "human-review"),
+        ("pt", "preciso informar o comerciante?", "evidence"),
+        ("pt", "e se eu tentei falar com o comerciante?", "evidence"),
         ("es", "no reconozco esto, es fraude", "fraud-claims"),
         ("es", "¿qué necesito tener listo para reclamar?", "evidence"),
         ("en", "when will I get a first response?", "response-time"),

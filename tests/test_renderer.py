@@ -331,6 +331,16 @@ def test_every_template_id_has_a_working_renderer(lang: str) -> None:
         assert rendered.reply.strip()
 
 
+def test_portuguese_replies_keep_their_fixed_wording_faults_out() -> None:
+    """No uncontracted "em a"/"por a", no sentence-initial clitic, no "a um atendente"."""
+    envelopes = _every_template_envelope("pt")
+
+    for template_id, envelope in envelopes.items():
+        reply = render(envelope).reply
+        for fragment in ("em a ", "por a ", "Conte-me", "avise-me", " a um atendente"):
+            assert fragment not in reply, (template_id, fragment)
+
+
 def test_render_refuses_a_non_template_envelope() -> None:
     """Model-mode envelopes are the model renderer's job, not this one's."""
     envelope = RenderEnvelope(
@@ -387,7 +397,7 @@ def test_a_transaction_without_an_amount_states_it_plainly_in_every_language(
     ("lang", "expected_phrase"),
     [
         ("es", "en Tienda Sol"),
-        ("pt", "em Tienda Sol"),
+        ("pt", "em Tienda Sol no dia 12 de junho de 2026"),
         ("en", "at Tienda Sol"),
     ],
 )

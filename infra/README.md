@@ -24,6 +24,8 @@ is or reconciled, never duplicated) and refuses to run against any profile or re
 `transaction-disputes` in `us-east-1`. Run them in numeric order; `02` and `03` do not depend on
 each other, but `04` needs `03`'s instance profile to exist.
 
+The ordered procedure for a maintainer standing the system up in an empty account, setting the demonstration access codes and verifying the result is in [`deployment-runbook.md`](deployment-runbook.md).
+
 ## The deploy pipeline
 
 `.github/workflows/deploy.yml`, triggered manually (`workflow_dispatch`) against `main`: builds
@@ -112,8 +114,10 @@ written the same way, via `infra/scripts/put-secret.sh`:
 
 ## What is deliberately not here
 
-- **Running the scripts against AWS by hand.** They are prepared and reviewed here; the deploy
-  workflow is what actually invokes them.
+- **Any step the deploy workflow performs.** The maintainer runs the account provisioning scripts
+  (`01`–`04`, `11`) once, by hand, in the order in [`deployment-runbook.md`](deployment-runbook.md);
+  the deploy workflow is what invokes the deploy, smoke test, hardening check and, when enabled,
+  Metabase scripts.
 - **The actual secret values** — the demonstration sign-in access codes, the agent
   session-signing key, the Metabase administrator credentials: created under the same
   `/transaction-disputes/prod/*` SSM prefix, the same way, when each is first needed — never in
