@@ -374,13 +374,20 @@ def _to_nlu_result(extraction: _ModelExtraction, *, reference_date: date) -> Nlu
     )
 
 
-def _cleaned_optional_fields(repaired: dict[str, object]) -> None:
-    """Read an empty, blank or "null" optional field as absent, and tidy the codes."""
+def _clean_optional_fields_in_place(repaired: dict[str, object]) -> None:
+    """Read an empty, blank or "null" optional field as absent, and tidy the codes.
+
+    A number sent where text belongs (a merchant, a last-four value) is read as its text. A
+    merchant is absent only when blank: "None" or "Null" can be a real merchant's name.
+    """
     for key in _OPTIONAL_FIELDS:
         value = repaired.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and key != "amount":
+            value = str(value)
         if isinstance(value, str):
             cleaned = "".join(" " if unicodedata.category(c) == "Cc" else c for c in value).strip()
-            repaired[key] = None if cleaned.lower() in _ABSENT_WORDS else cleaned
+            absent = not cleaned if key == "merchant" else cleaned.lower() in _ABSENT_WORDS
+            repaired[key] = None if absent else cleaned
     currency = repaired.get("currency")
     if isinstance(currency, str):
         repaired["currency"] = currency.upper() if _CURRENCY_FORM.match(currency.upper()) else None
@@ -389,9 +396,9 @@ def _cleaned_optional_fields(repaired: dict[str, object]) -> None:
         repaired["product_last4"] = None
 
 
-def _slots_matched_to_intent(repaired: dict[str, object]) -> None:
+def _match_slots_to_intent_in_place(repaired: dict[str, object]) -> None:
     """Drop a slot reported under an intent that does not read it; read an intent reported without
-    its slot as ``unclear``."""
+    its slot as ``unclear`` with no confidence, as for any result with nothing usable in it."""
     intent = repaired.get("intent")
     for slot, owner in _SLOT_OWNER.items():
         if repaired.get(slot) is not None and intent != owner:
@@ -399,6 +406,7 @@ def _slots_matched_to_intent(repaired: dict[str, object]) -> None:
     for slot, owner in _SLOT_OWNER.items():
         if repaired.get(slot) is None and intent == owner:
             repaired["intent"] = NluIntent.UNCLEAR.value
+            repaired["confidence"] = 0.0
 
 
 def _repaired(raw: Mapping[str, object]) -> dict[str, object]:
@@ -410,7 +418,7 @@ def _repaired(raw: Mapping[str, object]) -> dict[str, object]:
     it. A violation no field can be dropped to resolve falls back to unusable understanding.
     """
     repaired = dict(raw)
-    _cleaned_optional_fields(repaired)
+    _clean_optional_fields_in_place(repaired)
     for key, limit in _LENGTH_REPAIRS:
         value = repaired.get(key)
         if isinstance(value, str) and len(value) > limit:
@@ -424,7 +432,7 @@ def _repaired(raw: Mapping[str, object]) -> dict[str, object]:
     choice = repaired.get("choice")
     if isinstance(choice, int) and not (_MIN_CHOICE <= choice <= _MAX_CHOICE):
         repaired["choice"] = None
-    _slots_matched_to_intent(repaired)
+    _match_slots_to_intent_in_place(repaired)
     return repaired
 
 

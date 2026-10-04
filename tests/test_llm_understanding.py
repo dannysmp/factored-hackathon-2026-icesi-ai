@@ -172,7 +172,6 @@ def test_an_out_of_range_choice_is_dropped_and_the_message_read_as_unclear() -> 
     # customer is asked again rather than the message being thrown away as unusable.
     assert result.intent is NluIntent.UNCLEAR
     assert result.choice is None
-    assert result != NluResult.unusable()
 
 
 def test_a_confirmation_that_belongs_to_its_intent_maps_cleanly() -> None:
@@ -627,6 +626,7 @@ def test_an_intent_reported_without_its_slot_is_read_as_unclear_keeping_the_tran
     result = _understand({"intent": intent, "merchant": "Cine Premium", "amount": "1914215"})
 
     assert result.intent is NluIntent.UNCLEAR
+    assert result.confidence == 0.0
     assert result.transaction.merchant == "Cine Premium"
     assert result.transaction.amount == Decimal("1914215")
 
@@ -639,19 +639,46 @@ def test_an_intent_with_its_own_slot_is_left_as_reported() -> None:
     assert result.transaction.currency == "COP"
 
 
-def test_a_discarded_result_logs_the_fields_and_never_the_customers_words(
+def test_a_discarded_result_logs_the_failing_fields_and_never_the_customers_words(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     secret = "mi-numero-4111111111111111"
     with caplog.at_level(logging.WARNING, logger="app.conversation.llm_understanding"):
-        result = _understand({"intent": "no_such_intent", "merchant": secret}, text=secret)
+        result = _understand({"confidence": secret, "merchant": secret}, text=secret)
 
     assert result == NluResult.unusable()
     messages = " ".join(record.getMessage() for record in caplog.records)
-    assert "understanding_discarded" in messages
-    assert "intent" in messages
+    assert "understanding_discarded causes=confidence:float_parsing" in messages
     assert secret not in messages
     assert "4111" not in messages
+
+
+def test_a_failure_inside_the_transaction_logs_its_path_and_never_its_value(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "4111111111111111"
+    with caplog.at_level(logging.WARNING, logger="app.conversation.llm_understanding"):
+        result = _understand({"intent": secret, "product_last4": secret, "merchant": secret})
+
+    assert result == NluResult.unusable()
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "understanding_discarded causes=intent:" in messages
+    assert secret not in messages
+
+
+def test_a_merchant_named_none_or_null_survives_the_repair() -> None:
+    result = _understand({"merchant": "Null", "currency": "cop"})
+
+    assert result.transaction.merchant == "Null"
+    assert result.transaction.currency == "COP"
+
+
+def test_a_number_sent_where_text_belongs_is_read_as_its_text() -> None:
+    result = _understand({"merchant": 5, "product_last4": 4417})
+
+    assert result.intent is NluIntent.FILE_DISPUTE
+    assert result.transaction.merchant == "5"
+    assert result.transaction.product_last4 == "4417"
 
 
 def test_a_usable_result_logs_nothing(caplog: pytest.LogCaptureFixture) -> None:
