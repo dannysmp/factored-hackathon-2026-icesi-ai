@@ -84,9 +84,9 @@ Every decision carries one of these reasons.
 | `transaction_date_in_future` | The transaction date is in the future. |
 | `filing_window_expired` | The deadline to file this dispute has passed. |
 | `duplicate_open_case` | A dispute is already open for this transaction. |
-| `escalate_fraud_claim` | A person reviews the request. |
-| `escalate_low_nlu_confidence` | A person reviews the request. |
-| `escalate_repeat_complainer` | A person reviews the request. |
-| `escalate_amount_above_threshold` | A person reviews the request. |
-| `escalate_amount_unknown` | A person reviews the request. |
-| `escalate_risk_score` | A person reviews the request. |
+| `escalate_fraud_claim` | A person reviews this request. |
+| `escalate_low_nlu_confidence` | A person reviews this request. |
+| `escalate_repeat_complainer` | A person reviews this request. |
+| `escalate_amount_above_threshold` | A person reviews this request. |
+| `escalate_amount_unknown` | A person reviews this request. |
+| `escalate_risk_score` | A person reviews this request. |

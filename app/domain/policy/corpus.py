@@ -195,7 +195,7 @@ _ES = Messages(
     ),
     human_fraud="- Es un reporte de fraude.",
     human_confidence=(
-        "- El sistema no pudo determinar con suficiente claridad qué solicita el cliente."
+        "- El sistema no puede determinar con suficiente claridad qué solicita el cliente."
     ),
     human_criteria="- Se aplican otros criterios de revisión del banco.",
     fraud=(
@@ -205,8 +205,8 @@ _ES = Messages(
         "el motivo por el que la solicitud no cumple las reglas."
     ),
     codes_intro=(
-        "Cada decisión lleva uno de estos motivos. Para cada motivo que requiere revisión por "
-        "un asesor, se muestra el mensaje: “Un asesor revisa esta solicitud.”"
+        "Cada decisión lleva uno de estos motivos. En esta tabla, cada motivo que requiere "
+        "revisión de un asesor se describe con la frase: “Un asesor revisa esta solicitud.”"
     ),
     codes_header=("Motivo", "Significado"),
     categories={
@@ -572,12 +572,12 @@ _EN = Messages(
         ReasonCode.TRANSACTION_DATE_IN_FUTURE: "The transaction date is in the future.",
         ReasonCode.FILING_WINDOW_EXPIRED: "The deadline to file this dispute has passed.",
         ReasonCode.DUPLICATE_OPEN_CASE: "A dispute is already open for this transaction.",
-        ReasonCode.ESCALATE_FRAUD_CLAIM: "A person reviews the request.",
-        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: "A person reviews the request.",
-        ReasonCode.ESCALATE_REPEAT_COMPLAINER: "A person reviews the request.",
-        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: "A person reviews the request.",
-        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: "A person reviews the request.",
-        ReasonCode.ESCALATE_RISK_SCORE: "A person reviews the request.",
+        ReasonCode.ESCALATE_FRAUD_CLAIM: "A person reviews this request.",
+        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: "A person reviews this request.",
+        ReasonCode.ESCALATE_REPEAT_COMPLAINER: "A person reviews this request.",
+        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: "A person reviews this request.",
+        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: "A person reviews this request.",
+        ReasonCode.ESCALATE_RISK_SCORE: "A person reviews this request.",
     },
     and_word="and",
     or_word="or",
