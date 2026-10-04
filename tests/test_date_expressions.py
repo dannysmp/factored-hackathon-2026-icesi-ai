@@ -206,3 +206,63 @@ def test_a_numeric_date_with_no_year_matching_the_reference_date_resolves() -> N
     result = resolve("18/06", language="es", reference_date=_REFERENCE_DATE)
 
     assert result == (_REFERENCE_DATE, DateSource.NUMERIC)
+
+
+@pytest.mark.parametrize(
+    ("expression", "language", "expected_date"),
+    [
+        ("June 3rd", "en", date(2026, 6, 3)),
+        ("on June 3", "en", date(2026, 6, 3)),
+        ("3 June", "en", date(2026, 6, 3)),
+        ("the 3rd of June", "en", date(2026, 6, 3)),
+        ("Jun. 3", "en", date(2026, 6, 3)),
+        ("sept 9", "en", date(2025, 9, 9)),
+        ("3 de junio", "es", date(2026, 6, 3)),
+        ("el 3 de junio", "es", date(2026, 6, 3)),
+        ("21 de abril", "es", date(2026, 4, 21)),
+        ("dia 21 de abril", "pt", date(2026, 4, 21)),
+        ("21 de março", "pt", date(2026, 3, 21)),
+        ("3 de junho", "pt", date(2026, 6, 3)),
+    ],
+)
+def test_a_month_and_day_phrase_without_a_year_resolves_as_a_partial_date(
+    expression: str, language: Lang, expected_date: date
+) -> None:
+    result = resolve(expression, language=language, reference_date=_REFERENCE_DATE)
+
+    assert result == (expected_date, DateSource.PARTIAL)
+
+
+@pytest.mark.parametrize(
+    ("expression", "language", "expected_date"),
+    [
+        ("June 3rd, 2025", "en", date(2025, 6, 3)),
+        ("3 June 2025", "en", date(2025, 6, 3)),
+        ("el 3 de junio de 2025", "es", date(2025, 6, 3)),
+        ("3 de junho de 2025", "pt", date(2025, 6, 3)),
+    ],
+)
+def test_a_month_and_day_phrase_with_a_year_resolves_as_an_absolute_date(
+    expression: str, language: Lang, expected_date: date
+) -> None:
+    result = resolve(expression, language=language, reference_date=_REFERENCE_DATE)
+
+    assert result == (expected_date, DateSource.ABSOLUTE)
+
+
+def test_a_month_and_day_phrase_later_in_the_year_names_the_previous_year() -> None:
+    """A customer cannot have transacted in the future, so "December 25" spoken in June is the
+    December before."""
+    result = resolve("December 25", language="en", reference_date=_REFERENCE_DATE)
+
+    assert result == (date(2025, 12, 25), DateSource.PARTIAL)
+
+
+@pytest.mark.parametrize(
+    ("expression", "language"),
+    [("June 31", "en"), ("31 de abril", "es"), ("30 de fevereiro", "pt"), ("June 3 2025 5", "en")],
+)
+def test_a_month_and_day_phrase_naming_a_day_that_does_not_exist_resolves_to_nothing(
+    expression: str, language: Lang
+) -> None:
+    assert resolve(expression, language=language, reference_date=_REFERENCE_DATE) is None

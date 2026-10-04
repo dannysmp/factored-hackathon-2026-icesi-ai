@@ -5,15 +5,15 @@ Transaction Date Expression Resolution
 Overview
 --------
 Resolves the customer's own words for when a transaction happened ("ayer", "el lunes", "dia 3",
-"03/04") into an absolute date and the ``DateSource`` that names how it was expressed (AC-E5-16).
-Purely deterministic: no model call, no wall clock — the reference date is always the caller's own
-input, the domain calendar's reference date, never ``date.today()``.
+"3 de junio", "03/04") into an absolute date and the ``DateSource`` that names how it was
+expressed (AC-E5-16). Purely deterministic: no model call, no wall clock — the reference date is
+always the caller's own input, the domain calendar's reference date, never ``date.today()``.
 
 Scope
 -----
 In: matching a closed, curated vocabulary of relative day terms, weekday names and day-of-month
-phrases per language, and a numeric day-first date pattern; resolving each against the reference
-date the caller supplies.
+phrases and month-and-day phrases ("June 3rd", "3 de junio", "21 de abril") per language, and a
+numeric day-first date pattern; resolving each against the reference date the caller supplies.
 Out: recognizing that a message mentions a date at all (the model's own job, recorded as
 ``date_expression``); confirming a resolved date in words before it is used (a later, separate
 controller-slice concern per AC-E5-16 and issue #106's own stated scope).
@@ -91,6 +91,99 @@ _DAY_OF_MONTH: dict[Lang, re.Pattern[str]] = {
     "en": re.compile(r"^(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)$"),
 }
 
+# Month number per language's accent-folded, lowercased name; abbreviations a customer commonly
+# types are included alongside the full names.
+_MONTHS: dict[Lang, dict[str, int]] = {
+    "es": {
+        "enero": 1,
+        "febrero": 2,
+        "marzo": 3,
+        "abril": 4,
+        "mayo": 5,
+        "junio": 6,
+        "julio": 7,
+        "agosto": 8,
+        "septiembre": 9,
+        "setiembre": 9,
+        "octubre": 10,
+        "noviembre": 11,
+        "diciembre": 12,
+    },
+    "pt": {
+        "janeiro": 1,
+        "fevereiro": 2,
+        "marco": 3,
+        "abril": 4,
+        "maio": 5,
+        "junho": 6,
+        "julho": 7,
+        "agosto": 8,
+        "setembro": 9,
+        "outubro": 10,
+        "novembro": 11,
+        "dezembro": 12,
+    },
+    "en": {
+        "january": 1,
+        "jan": 1,
+        "february": 2,
+        "feb": 2,
+        "march": 3,
+        "mar": 3,
+        "april": 4,
+        "apr": 4,
+        "may": 5,
+        "june": 6,
+        "jun": 6,
+        "july": 7,
+        "jul": 7,
+        "august": 8,
+        "aug": 8,
+        "september": 9,
+        "sept": 9,
+        "sep": 9,
+        "october": 10,
+        "oct": 10,
+        "november": 11,
+        "nov": 11,
+        "december": 12,
+        "dec": 12,
+    },
+}
+
+
+def _month_alternation(language: Lang) -> str:
+    return "|".join(sorted(_MONTHS[language], key=len, reverse=True))
+
+
+# A month-and-day phrase, per language, with the day and month as named groups and an optional
+# four-digit year: "3 de junio" / "el 3 de junio de 2026" (es), "dia 21 de abril" (pt),
+# "June 3rd" / "3rd of June" / "the 3rd of June, 2026" (en).
+_MONTH_DAY: dict[Lang, tuple[re.Pattern[str], ...]] = {
+    "es": (
+        re.compile(
+            rf"^(?:el\s+)?(?:dia\s+)?(?P<day>\d{{1,2}})\s+de\s+(?P<month>{_month_alternation('es')})"
+            r"(?:\s+(?:de|del)\s+(?P<year>\d{4}))?$"
+        ),
+    ),
+    "pt": (
+        re.compile(
+            rf"^(?:o\s+)?(?:dia\s+)?(?P<day>\d{{1,2}})\s+de\s+(?P<month>{_month_alternation('pt')})"
+            r"(?:\s+de\s+(?P<year>\d{4}))?$"
+        ),
+    ),
+    "en": (
+        re.compile(
+            rf"^(?:on\s+)?(?:the\s+)?(?P<month>{_month_alternation('en')})\.?\s+(?P<day>\d{{1,2}})"
+            r"(?:st|nd|rd|th)?(?:,?\s+(?P<year>\d{4}))?$"
+        ),
+        re.compile(
+            rf"^(?:on\s+)?(?:the\s+)?(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?"
+            rf"(?P<month>{_month_alternation('en')})\.?(?:,?\s+(?P<year>\d{{4}}))?$"
+        ),
+    ),
+}
+
 # Day first, in every language, per AC-E5-16 — never the customer's own language's usual
 # convention. An optional two- or four-digit year; without one, the reference date's own year.
 _NUMERIC = re.compile(r"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?$")
@@ -161,6 +254,38 @@ def _resolve_year(day: int, month: int, year: int | None, reference_date: date) 
     return candidate
 
 
+def _resolve_day_of_month(
+    folded: str, language: Lang, reference_date: date
+) -> tuple[date, DateSource] | None:
+    """The date a bare day-of-month phrase names, as its most recent occurrence."""
+    day_of_month = _DAY_OF_MONTH[language].match(folded)
+    if day_of_month is None:
+        return None
+    resolved = _most_recent_day_of_month(reference_date, int(day_of_month.group(1)))
+    return (resolved, DateSource.PARTIAL) if resolved is not None else None
+
+
+def _resolve_month_day(
+    folded: str, language: Lang, reference_date: date
+) -> tuple[date, DateSource] | None:
+    """The date a month-and-day phrase names, with its year when the phrase states one."""
+    for pattern in _MONTH_DAY[language]:
+        month_day = pattern.match(folded)
+        if month_day is None:
+            continue
+        year_text = month_day.group("year")
+        resolved = _resolve_year(
+            int(month_day.group("day")),
+            _MONTHS[language][month_day.group("month")],
+            int(year_text) if year_text is not None else None,
+            reference_date,
+        )
+        if resolved is None:
+            return None
+        return resolved, DateSource.ABSOLUTE if year_text is not None else DateSource.PARTIAL
+    return None
+
+
 def resolve(
     expression: str, *, language: Lang | None, reference_date: date
 ) -> tuple[date, DateSource] | None:
@@ -188,9 +313,6 @@ def resolve(
     if weekday is not None:
         return _most_recent_weekday(reference_date, weekday), DateSource.RELATIVE
 
-    day_of_month = _DAY_OF_MONTH[language].match(folded)
-    if day_of_month is not None:
-        resolved = _most_recent_day_of_month(reference_date, int(day_of_month.group(1)))
-        return (resolved, DateSource.PARTIAL) if resolved is not None else None
-
-    return None
+    return _resolve_month_day(folded, language, reference_date) or _resolve_day_of_month(
+        folded, language, reference_date
+    )
