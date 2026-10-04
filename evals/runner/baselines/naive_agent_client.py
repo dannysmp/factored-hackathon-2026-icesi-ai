@@ -33,6 +33,11 @@ Design Principles
   crossing this module's boundary — reusing the exact exception types
   ``app.llm.client`` already defines, since the failure taxonomy is a property of calling the
   provider, not of the forced-tool shape ``LlmClient`` itself adds on top.
+- **A request too large for the provider is its own, narrower rejection.**
+  ``NaiveAgentRequestTooLarge`` subclasses ``LlmRequestRejected`` so every existing handler still
+  treats it as a rejection, but a caller that sequences a batch can tell it apart from the
+  account-level causes (bad credentials, no model access): it is driven by one case's own
+  conversation and does not recur for the next case.
 - **The model id is pinned to the same reviewed allow-list every caller uses.** B1 is still a
   system variant this project runs cost-tracked, reviewed calls against; it does not get a
   looser model policy than P's own.
@@ -83,8 +88,17 @@ _NON_RETRYABLE_STATUS_ERRORS = (
     anthropic.PermissionDeniedError,
     anthropic.NotFoundError,
     anthropic.UnprocessableEntityError,
-    anthropic.RequestTooLargeError,
 )
+
+
+class NaiveAgentRequestTooLarge(LlmRequestRejected):
+    """The request exceeded the provider's byte limit (HTTP 413).
+
+    A rejected request like any other, so it is never retried, but unlike a credential or access
+    problem it is driven by one case's own accumulated conversation, not the account: the next
+    case's request is unaffected. Callers that sequence a batch record it against the case instead
+    of stopping the run.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +167,8 @@ class NaiveAgentClient:
         ------
         LlmUnavailable
             A timeout, connection failure, rate limit or server error; safe to retry.
+        NaiveAgentRequestTooLarge
+            The request exceeded the provider's byte limit; a case-scoped ``LlmRequestRejected``.
         LlmRequestRejected
             The provider rejected the request itself; not safe to retry as-is.
         """
@@ -172,6 +188,10 @@ class NaiveAgentClient:
             )
         except _RETRYABLE_PROVIDER_ERRORS as error:
             raise LlmUnavailable(f"Anthropic call failed: {type(error).__name__}") from error
+        except anthropic.RequestTooLargeError as error:
+            raise NaiveAgentRequestTooLarge(
+                f"Anthropic call failed: status {error.status_code}"
+            ) from error
         except _NON_RETRYABLE_STATUS_ERRORS as error:
             raise LlmRequestRejected(
                 f"Anthropic call failed: status {error.status_code}"
