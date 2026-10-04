@@ -59,13 +59,14 @@ class _PricedLlm:
 
     input_tokens: int = 1_000_000
     output_tokens: int = 0
+    reported_model: str | None = None
     calls: int = 0
 
     def complete(self, request: CompletionRequest) -> CompletionResult:
         self.calls += 1
         return CompletionResult(
             tool_input={"text": "hola"},
-            model=request.model,
+            model=self.reported_model or request.model,
             prompt_version=request.prompt_version,
             input_tokens=self.input_tokens,
             output_tokens=self.output_tokens,
@@ -158,6 +159,60 @@ def test_the_limit_resets_when_the_operating_day_rolls_over() -> None:
     _gate(inner, ledger, now=after_midnight).complete(_REQUEST)
 
     assert inner.calls == 1
+
+
+def test_a_response_model_id_outside_the_price_table_is_still_charged() -> None:
+    """A provider reporting a dated alias of the requested model must not turn the guard off."""
+    inner = _PricedLlm(input_tokens=5_000_000, reported_model="claude-sonnet-5-20260901")
+    ledger = _Ledger()
+    gate = _gate(inner, ledger)
+
+    gate.complete(_REQUEST)
+
+    assert ledger.totals == {date(2026, 6, 18): Decimal("10")}
+    with pytest.raises(LlmSpendLimitReached):
+        gate.complete(_REQUEST)
+    assert inner.calls == 1
+
+
+def test_a_priced_response_model_id_is_the_one_charged() -> None:
+    inner = _PricedLlm(reported_model="claude-haiku-4-5-20251001")
+    ledger = _Ledger()
+
+    _gate(inner, ledger).complete(_REQUEST)
+
+    assert ledger.totals == {date(2026, 6, 18): Decimal("1")}
+
+
+@pytest.mark.parametrize(
+    ("instant", "operating_day"),
+    [
+        (datetime(2026, 6, 19, 4, 59, 59, 999999, tzinfo=UTC), date(2026, 6, 18)),
+        (datetime(2026, 6, 19, 5, 0, 0, tzinfo=UTC), date(2026, 6, 19)),
+    ],
+)
+def test_the_operating_day_turns_over_at_exactly_bogota_midnight(
+    instant: datetime, operating_day: date
+) -> None:
+    inner, ledger = _PricedLlm(), _Ledger()
+
+    _gate(inner, ledger, now=instant).complete(_REQUEST)
+
+    assert list(ledger.totals) == [operating_day]
+
+
+@pytest.mark.parametrize(("recorded", "served"), [("9.999999", True), ("10", False)])
+def test_the_limit_is_exact_to_the_last_recorded_digit(recorded: str, served: bool) -> None:
+    inner = _PricedLlm()
+    ledger = _Ledger(totals={date(2026, 6, 18): Decimal(recorded)})
+
+    if served:
+        _gate(inner, ledger).complete(_REQUEST)
+        assert inner.calls == 1
+    else:
+        with pytest.raises(LlmSpendLimitReached):
+            _gate(inner, ledger).complete(_REQUEST)
+        assert inner.calls == 0
 
 
 def test_a_tripped_breaker_is_an_unavailable_provider_to_every_caller() -> None:

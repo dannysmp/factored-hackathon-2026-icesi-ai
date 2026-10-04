@@ -145,11 +145,13 @@ Turn the sign-in off by following [Turning the demonstration sign-in off](README
 
 ## 8. Daily model spend limit
 
-The backend counts what every language-model call costs and stops calling the model once a day's total reaches `LLM_DAILY_SPEND_LIMIT_USD` (default `10`, in US dollars). The day is the bank's operating day (America/Bogota), so the total resets at local midnight. The limit is a soft guard that sits under the provider's own hard monthly cap: calls already in flight when it trips still complete, so a day can end slightly above it.
+The backend counts what each completed language-model call it makes for a customer costs and stops calling the model once a day's total reaches `LLM_DAILY_SPEND_LIMIT_USD` (default `10`, in US dollars). The day is the bank's operating day (America/Bogota), so the total resets at local midnight. The limit is a soft guard that sits under the provider's own hard monthly cap: calls already in flight when it trips still complete, so a day can end slightly above it.
 
 While the limit is reached the service keeps answering. Understanding is unavailable, so a customer message is handed to a person with the usual review notice; the optional model renderer falls back to the template reply. Nothing goes silent. If the day's total cannot be read, the service treats the limit as reached rather than spending unmetered.
 
-- **Change the limit** by setting `LLM_DAILY_SPEND_LIMIT_USD` in the backend's environment and restarting the stack. It must be above zero.
+The total is the service's own customer traffic only. A call that fails after the provider has billed it, and the offline evaluation runs, spend against the provider's cap without appearing in it, so read the total as a lower bound on the provider's bill. While the limit is reached every new customer message becomes a handoff to a person until the next operating day; the queue fills with them, and they differ from a provider outage only in the log event `daily_spend_limit_reached`.
+
+- **Change the limit** by adding `LLM_DAILY_SPEND_LIMIT_USD=<dollars>` to the `.env` file in `/opt/dispute-intake` on the host (the compose file passes it to the backend and defaults to `10`) and running `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` from that directory. It must be above zero. A deploy rewrites the compose files but not `.env`, so the value persists.
 - **Read the day's total** from the `llm_spend_daily` table (`spend_day`, `spent_usd`).
 - **Recognise a trip** in the backend log: `daily_spend_limit_reached` carries the day, the total and the limit; `daily_spend_unreadable` means the total could not be read, and `daily_spend_charge_failed` means a completed call could not be recorded (the reply is still delivered).
 

@@ -20,12 +20,21 @@ Design Principles
 - One seam: every paid call, understanding and rendering alike, crosses the client port, so the
   gate charges there and no call can be missed.
 - The cost is the existing per-model price conversion (``app.llm.pricing.cost_usd``) applied to the
-  result's own token accounting, not a second accounting.
+  result's own token accounting, not a second accounting. The model priced is the one the provider
+  reports when that id is in the price table, otherwise the one requested: a provider reporting a
+  dated alias of a priced model must still be charged, not skipped.
 - The operating day comes from an injected clock, read in the bank's fixed operating zone.
 - Fail closed: if today's total cannot be read, the call is refused. A failed charge after a call
   that already happened is logged and never blocks the reply the call produced.
 - A call already in flight when the limit is crossed completes, so concurrent calls can overshoot
   the limit by a call or two. The limit is a guard under the provider's own hard monthly limit.
+
+Limitations
+-----------
+- The total covers completed calls the service makes for customers. A call that fails after the
+  provider has billed it returns no token accounting and is not recorded, and the offline
+  evaluation runs build their own clients and spend outside it. It is a lower bound on the
+  provider's bill, not a reconciliation of it.
 
 Runtime Contract
 ----------------
@@ -46,7 +55,7 @@ from typing import Protocol  # The ledger port
 # Local modules
 from app.domain.calendar import BANK_ZONE  # The bank's operating zone
 from app.llm.client import CompletionRequest, CompletionResult, LlmClient, LlmUnavailable
-from app.llm.pricing import cost_usd  # The one cost conversion
+from app.llm.pricing import cost_usd, is_priced  # The one cost conversion
 from app.security.sessions import Clock  # Injected time
 
 logger = logging.getLogger(__name__)
@@ -95,10 +104,11 @@ class SpendGatedLlmClient:
             )
             raise LlmSpendLimitReached("the day's model spend limit is reached")
         result = self.inner.complete(request)
+        priced_model = result.model if is_priced(result.model) else request.model
         try:
-            self.ledger.add(day, cost_usd(result.model, result.input_tokens, result.output_tokens))
+            self.ledger.add(day, cost_usd(priced_model, result.input_tokens, result.output_tokens))
         except Exception:
             logger.exception(
-                "daily_spend_charge_failed day=%s model=%s", day.isoformat(), result.model
+                "daily_spend_charge_failed day=%s model=%s", day.isoformat(), priced_model
             )
         return result

@@ -60,6 +60,7 @@ services:
       DEMO_AGENT_SIGNIN_ENABLED: ${DEMO_AGENT_SIGNIN_ENABLED:-false}
       DEMO_AGENT_ACCESS_CODE: ${DEMO_AGENT_ACCESS_CODE:-}
       AGENT_SESSION_SIGNING_KEY: ${AGENT_SESSION_SIGNING_KEY:-}
+      LLM_DAILY_SPEND_LIMIT_USD: ${LLM_DAILY_SPEND_LIMIT_USD:-10}
     volumes:
       - ./seed/ops_seed:/app/data/gold/ops_seed:ro
     depends_on:
