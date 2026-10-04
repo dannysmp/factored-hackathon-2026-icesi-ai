@@ -62,7 +62,9 @@ its own error message — not a deeper root-cause classification beyond that. ``
 carries only those flags, and building a richer taxonomy is not this slice's own scope. The
 failure gallery draws from ``case_results`` alone, the last run only; the Unsafe outcomes section
 is the one that reports every unsafe result from every repeated run, each tagged with which of
-the harness's own checks fired (``unsafe_reasons``) and its run's number.
+the harness's own checks fired (``unsafe_reasons``) and its run's number. That section also
+states that zero observed unsafe outcomes does not establish zero risk and sizes the set per
+golden-set category; a category's case-runs are its last-run case count times the run count.
 Repeated-run variability and the flip list are rendered only for a ``SystemResult`` whose
 ``run_count`` is greater than one (P, by the plan's own execution protocol); B0 and B1 report a
 single run and show no range, by construction, not because their own results are omitted.
@@ -71,6 +73,7 @@ single run and show no range, by construction, not because their own results are
 from __future__ import annotations
 
 # Standard libraries
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -397,9 +400,64 @@ def _failure_gallery(systems: tuple[SystemResult, ...]) -> str:
     return _table(["System", "Case", "Failure class", "Expected vs observed"], rows)
 
 
-def _unsafe_outcomes_section(systems: tuple[SystemResult, ...]) -> str:
+_UNSAFE_CAVEAT = (
+    "Zero observed unsafe outcomes in a set this small does not establish zero risk: it means "
+    "none occurred in the case-runs counted below, no more. The sizes below are the denominators "
+    "of every unsafe-outcome rate in this report."
+)
+
+
+def _unsafe_sizing_rows(
+    systems: tuple[SystemResult, ...], golden_cases: tuple[Case, ...]
+) -> list[list[str]]:
+    """Per system and golden-set category: the case-runs observed and the unsafe ones among them.
+
+    A system's case-runs for a category are the cases its last run held in that category times its
+    run count; every run of a system executes the same case set. A result whose case is not in
+    ``golden_cases`` is counted under "unclassified" rather than dropped.
+    """
+    category_of = {case.case_id: case.category.value for case in golden_cases}
     rows = []
     for result in systems:
+        cases_per_category = Counter(
+            category_of.get(r.case_id, "unclassified") for r in result.case_results
+        )
+        unsafe_per_category = Counter(
+            category_of.get(o.result.case_id, "unclassified") for o in result.unsafe_occurrences
+        )
+        ordered = [c.value for c in CaseCategory if c.value in cases_per_category]
+        ordered += sorted(set(cases_per_category) - set(ordered))
+        for category in ordered:
+            rows.append(
+                [
+                    result.system,
+                    category,
+                    _count(cases_per_category[category]),
+                    _count(result.run_count),
+                    _count(cases_per_category[category] * result.run_count),
+                    _count(unsafe_per_category[category]),
+                ]
+            )
+        rows.append(
+            [
+                result.system,
+                "all categories",
+                _count(len(result.case_results)),
+                _count(result.run_count),
+                _count(len(result.case_results) * result.run_count),
+                _count(len(result.unsafe_occurrences)),
+            ]
+        )
+    return rows
+
+
+def _unsafe_outcomes_section(report: EvaluationReport) -> str:
+    sizing = _table(
+        ["System", "Category", "Cases per run", "Runs", "Case-runs observed", "Unsafe observed"],
+        _unsafe_sizing_rows(report.systems, report.golden_cases),
+    )
+    rows = []
+    for result in report.systems:
         for occurrence in result.unsafe_occurrences:
             case_result = occurrence.result
             reasons = ", ".join(case_result.unsafe_reasons) or "unspecified"
@@ -409,9 +467,13 @@ def _unsafe_outcomes_section(systems: tuple[SystemResult, ...]) -> str:
                 f"observed_escalation={case_result.observed_escalation}"
             )
             rows.append([result.system, run_label, case_result.case_id, reasons, detail])
-    if not rows:
-        return "No unsafe outcome was observed in any run."
-    return _table(["System", "Run", "Case", "Unsafe reason(s)", "Expected vs observed"], rows)
+    if rows:
+        occurrences = _table(
+            ["System", "Run", "Case", "Unsafe reason(s)", "Expected vs observed"], rows
+        )
+    else:
+        occurrences = "No unsafe outcome was observed in any run."
+    return f"{_UNSAFE_CAVEAT}\n\n{sizing}\n\n{occurrences}"
 
 
 def judge_validation_section(
@@ -501,7 +563,7 @@ def render_markdown(report: EvaluationReport) -> str:
         "## 4. Judge-scored quality\n\n" + _judge_scored_quality_section(report),
         "## 5. Repeated-run variability\n\n" + _repeated_run_section(report.systems),
         "## 6. Failure gallery\n\n" + _failure_gallery(report.systems),
-        "## 7. Unsafe outcomes\n\n" + _unsafe_outcomes_section(report.systems),
+        "## 7. Unsafe outcomes\n\n" + _unsafe_outcomes_section(report),
         "## 8. Judge validation\n\n"
         + judge_validation_section(report.judge_validation, report.judge_validation_provenance),
         "## 9. Learned components\n\n" + _LEARNED_COMPONENT_SECTION,
