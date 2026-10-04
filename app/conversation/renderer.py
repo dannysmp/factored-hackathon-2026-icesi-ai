@@ -321,7 +321,7 @@ def _clarify_confirmation(e: RenderEnvelope) -> str:
 
 def _language_offer(e: RenderEnvelope) -> str:
     return {
-        "es": "Hola, puedo ayudarle con su disputa. No estoy segura de si prefiere continuar "
+        "es": "Hola, puedo ayudarle con su disputa. No sé si prefiere continuar "
         "en español o portugués; continuaré en español, avíseme si prefiere otro idioma. / "
         "Olá, posso ajudar com sua contestação. Vou continuar em espanhol; avise-me se "
         "preferir português.",
