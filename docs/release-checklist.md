@@ -23,7 +23,7 @@ This checklist states each obligation of a release and names the evidence a revi
 | The demonstration notice and the data reference date are visible on every screen | The rehearsal checklist | [ ] |
 | The console is shown as a read-only viewer | The rehearsal checklist | [ ] |
 | A push to the main branch deploys and passes the smoke test | The pipeline run | [ ] |
-| The stack is reproduced from a clean account with the written commands, then torn down | The two clean-account run records | [ ] |
+| The stack is reproduced from a clean account with the written commands, then torn down | The two clean-account run records, following the [deployment runbook](../infra/deployment-runbook.md) | [ ] |
 | No long-lived cloud key exists in the repository or the pipeline | The pipeline configuration; the scan report | [ ] |
 | The demonstration sign-in can be switched off, and the switch has been tried | [The runbook entry](../infra/README.md#turning-the-demonstration-sign-in-off), with the date of the trial | [ ] |
 

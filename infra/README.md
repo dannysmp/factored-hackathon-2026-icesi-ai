@@ -24,6 +24,8 @@ is or reconciled, never duplicated) and refuses to run against any profile or re
 `transaction-disputes` in `us-east-1`. Run them in numeric order; `02` and `03` do not depend on
 each other, but `04` needs `03`'s instance profile to exist.
 
+The ordered procedure for a maintainer standing the system up in an empty account, setting the demonstration access codes and verifying the result is in [`deployment-runbook.md`](deployment-runbook.md).
+
 ## The deploy pipeline
 
 `.github/workflows/deploy.yml`, triggered manually (`workflow_dispatch`) against `main`: builds
