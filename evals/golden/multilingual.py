@@ -229,3 +229,8 @@ _ACCENT_FLAVORED_CASES = (
 
 #: All 10 multilingual cases: es/pt code-switching, then en/es, then accent-flavored Spanish.
 CASES: tuple[Case, ...] = _ES_PT_CASES + _EN_ES_CASES + _ACCENT_FLAVORED_CASES
+
+#: The ids of the accent-flavored cases, for slicing results by regional phrasing.
+ACCENT_FLAVORED_CASE_IDS: frozenset[str] = frozenset(
+    case.case_id for case in _ACCENT_FLAVORED_CASES
+)

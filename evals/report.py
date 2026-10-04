@@ -50,7 +50,7 @@ Runtime Contract
 ``Versions``, ``SystemResult``, ``EvaluationReport``.
 ``render_markdown(report) -> str``.
 ``judge_validation_section(agreement, provenance) -> str``: the exact text ``render_markdown``
-puts under "## 8. Judge validation" — exported so a later, cheaper regeneration of just that
+puts under its Judge validation heading — exported so a later, cheaper regeneration of just that
 section (once the real H4 sample lands) renders identically to a full report, never a
 hand-maintained second copy of the same wording (``evals.h4_judge_validation``).
 
@@ -74,14 +74,22 @@ from __future__ import annotations
 
 # Standard libraries
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 # Local modules
+from evals.fairness import (
+    CASE_MIX_MIN_FAILURES,
+    SMALL_SAMPLE_THRESHOLD,
+    CaseProfile,
+    Disparity,
+    FairnessAnalysis,
+    slice_results,
+)
 from evals.judge import JudgeVerdict
 from evals.judge_validation import DimensionAgreement
-from evals.metrics import NOT_DEFINED, CaseResult
+from evals.metrics import NOT_DEFINED, CaseResult, Metric
 from evals.models import Case, CaseCategory
 from evals.repeated_runs import (
     CaseFlip,
@@ -171,6 +179,9 @@ class EvaluationReport:
     judge_cost_usd: float | None = None
     """What those calls cost. Evaluation tooling, reported on its own line in the judge-scored
     section and never added to any system's cost; ``None`` when a call went to an unpriced model."""
+    case_profiles: Mapping[str, CaseProfile] | None = None
+    """The country and segment of each case's customer, by case id, for the fairness slices;
+    ``None`` when the caller could not look them up, in which case those slices say so."""
 
 
 def _count(value: int) -> str:
@@ -401,9 +412,10 @@ def _failure_gallery(systems: tuple[SystemResult, ...]) -> str:
 
 
 _UNSAFE_CAVEAT = (
-    "Zero observed unsafe outcomes in a set this small does not establish zero risk: it means "
-    "none occurred in the case-runs counted below, no more. The sizes below are the denominators "
-    "of every unsafe-outcome rate in this report."
+    "Zero observed unsafe outcomes does not establish zero risk: it means none occurred in the "
+    "case-runs counted below, no more. A system's unsafe-outcome rate in a single run divides by "
+    "its cases per run; case-runs is that count times its run count. Repeated runs of the same "
+    "cases are not independent trials, so they do not add the evidence that new cases would."
 )
 
 
@@ -474,6 +486,155 @@ def _unsafe_outcomes_section(report: EvaluationReport) -> str:
     else:
         occurrences = "No unsafe outcome was observed in any run."
     return f"{_UNSAFE_CAVEAT}\n\n{sizing}\n\n{occurrences}"
+
+
+def _fmt_slice_metric(metric: Metric) -> str:
+    if metric.value == NOT_DEFINED:
+        return f"{NOT_DEFINED} (n={metric.denominator})"
+    return f"{metric.value:.3f} (n={metric.denominator})"
+
+
+def _category_counts(counts: Sequence[tuple[str, int]]) -> str:
+    return ", ".join(f"{category} {count}" for category, count in counts)
+
+
+def _disparity_note(disparity: Disparity) -> str:
+    small = (
+        f" Small sample (fewer than {SMALL_SAMPLE_THRESHOLD} in-scope cases)."
+        if disparity.small_sample
+        else ""
+    )
+    if not disparity.below_comparison:
+        return (
+            f"- **{disparity.dimension}: {disparity.label}.** Correct-outcome rate "
+            f"{disparity.rate:.3f} (n={disparity.in_scope}) against "
+            f"{disparity.comparison_rate:.3f} (n={disparity.comparison_in_scope}) for the rest of "
+            "the dimension: above the rest, with non-overlapping 95 % intervals. The difference "
+            f"is the rest of the dimension's shortfall, not a failure of this slice.{small}"
+        )
+    head = (
+        f"- **{disparity.dimension}: {disparity.label}.** Correct-outcome rate "
+        f"{disparity.rate:.3f} (n={disparity.in_scope}) against {disparity.comparison_rate:.3f} "
+        f"(n={disparity.comparison_in_scope}) for the rest of the dimension: below the rest, "
+        f"with non-overlapping 95 % intervals.{small}"
+    )
+    failing = (
+        f" Wrong outcome: {', '.join(disparity.failing_case_ids)}."
+        if disparity.failing_case_ids
+        else ""
+    )
+    errored = (
+        f" Could not run or be scored: {', '.join(disparity.errored_case_ids)}."
+        if disparity.errored_case_ids
+        else ""
+    )
+    by_category = (
+        f" Failing by category: {_category_counts(disparity.failing_categories)}; the slice's "
+        f"in-scope cases by category: {_category_counts(disparity.slice_categories)}."
+    )
+    concentrated = disparity.concentrated_category()
+    if concentrated is not None:
+        explanation = (
+            f" The failures are concentrated in {concentrated} cases out of proportion to their "
+            "share of the slice, so the gap may follow the case mix; re-run the slice with "
+            "category-matched cases before attributing it to the slice."
+        )
+    elif disparity.failure_count < CASE_MIX_MIN_FAILURES:
+        explanation = (
+            f" Fewer than {CASE_MIX_MIN_FAILURES} failing cases are too few to tell whether they "
+            "cluster in a category; the gap is an open investigation."
+        )
+    else:
+        explanation = (
+            " The failures follow the slice's own category mix; whether the rest of the dimension "
+            "has a different mix is not compared, so the gap is an open investigation, not a "
+            "conclusion."
+        )
+    return f"{head}{failing}{errored}{by_category}{explanation}"
+
+
+def _unavailable_notice(profiles: Mapping[str, CaseProfile] | None) -> str:
+    """The sentence naming a profile dimension no case could be given, or ``""``."""
+    if profiles is None:
+        absent = ["country", "segment"]
+    else:
+        absent = [
+            name
+            for name, found in (
+                ("country", any(p.country for p in profiles.values())),
+                ("segment", any(p.segment for p in profiles.values())),
+            )
+            if not found
+        ]
+        if not absent:
+            return ""
+    missing = " and ".join(absent).capitalize()
+    return (
+        f"\n\n{missing} could not be looked up for this run; those cases are in the unknown "
+        "slice, so that dimension was not compared."
+    )
+
+
+def _fairness_section(report: EvaluationReport) -> str:
+    proposed = next((result for result in report.systems if result.system == "P"), None)
+    if proposed is None:
+        return "System P was not run, so there is nothing to slice."
+    analysis: FairnessAnalysis = slice_results(
+        proposed.case_results, report.golden_cases, report.case_profiles or {}
+    )
+    rows = [
+        [
+            row.dimension,
+            row.label,
+            _count(row.cases),
+            _count(row.in_scope),
+            _fmt_slice_metric(row.correct_outcome),
+            _fmt_slice_metric(row.safe_automated_resolution),
+            _count(row.unsafe),
+            f"small sample (fewer than {SMALL_SAMPLE_THRESHOLD} in-scope cases)"
+            if row.small_sample
+            else "",
+        ]
+        for row in analysis.rows
+    ]
+    table = _table(
+        [
+            "Dimension",
+            "Slice",
+            "Cases",
+            "In-scope cases",
+            "Correct outcome",
+            "Safe automated resolution",
+            "Unsafe",
+            "Sample",
+        ],
+        rows,
+    )
+    intro = (
+        "System P, last run, sliced by language, country, customer segment and the "
+        "accent-flavored phrasing subset (compared with the other Spanish cases). Slices overlap "
+        "and are not adjusted for each other or for the category mix. Correct outcome is the "
+        "share of in-scope cases with the correct result, whether automated or handed to a "
+        "person; safe automated resolution counts only the automated ones, so it also falls "
+        "when a slice holds more cases that should go to a person. Only correct outcome drives "
+        "the disparity check."
+    )
+    unavailable = _unavailable_notice(report.case_profiles)
+    if analysis.disparities:
+        notes = "\n".join(_disparity_note(d) for d in analysis.disparities)
+        verdict = (
+            "**Slices whose 95 % interval does not overlap the rest of their dimension, each with "
+            "an investigation note.** About a dozen comparisons are made, so about one report in "
+            "twenty is expected to show at least one flag from chance alone, even when every group "
+            "is treated the same.\n\n" + notes
+        )
+    else:
+        verdict = (
+            "No slice differs from the rest of its dimension by more than sampling noise "
+            "(95 % Wilson intervals that do not overlap). A slice with few cases is rarely "
+            "flagged, so the absence of a flag is not evidence of equal treatment."
+        )
+    return f"{intro}{unavailable}\n\n{table}\n\n{verdict}"
 
 
 def judge_validation_section(
@@ -564,9 +725,10 @@ def render_markdown(report: EvaluationReport) -> str:
         "## 5. Repeated-run variability\n\n" + _repeated_run_section(report.systems),
         "## 6. Failure gallery\n\n" + _failure_gallery(report.systems),
         "## 7. Unsafe outcomes\n\n" + _unsafe_outcomes_section(report),
-        "## 8. Judge validation\n\n"
+        "## 8. Fairness and disparity\n\n" + _fairness_section(report),
+        "## 9. Judge validation\n\n"
         + judge_validation_section(report.judge_validation, report.judge_validation_provenance),
-        "## 9. Learned components\n\n" + _LEARNED_COMPONENT_SECTION,
-        "## 10. Limitations\n\n" + _limitations_section(report),
+        "## 10. Learned components\n\n" + _LEARNED_COMPONENT_SECTION,
+        "## 11. Limitations\n\n" + _limitations_section(report),
     ]
     return "\n\n".join(sections) + "\n"
