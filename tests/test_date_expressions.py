@@ -223,6 +223,14 @@ def test_a_numeric_date_with_no_year_matching_the_reference_date_resolves() -> N
         ("dia 21 de abril", "pt", date(2026, 4, 21)),
         ("21 de março", "pt", date(2026, 3, 21)),
         ("3 de junho", "pt", date(2026, 6, 3)),
+        ("no dia 21 de abril", "pt", date(2026, 4, 21)),
+        ("em 21 de abril", "pt", date(2026, 4, 21)),
+        ("en el dia 3 de junio", "es", date(2026, 6, 3)),
+        ("en el 3 de junio", "es", date(2026, 6, 3)),
+        ("in June 3rd", "en", date(2026, 6, 3)),
+        ("on June the 3rd", "en", date(2026, 6, 3)),
+        ("MAY 3", "en", date(2026, 5, 3)),
+        ("mar 3", "en", date(2026, 3, 3)),
     ],
 )
 def test_a_month_and_day_phrase_without_a_year_resolves_as_a_partial_date(
@@ -260,9 +268,52 @@ def test_a_month_and_day_phrase_later_in_the_year_names_the_previous_year() -> N
 
 @pytest.mark.parametrize(
     ("expression", "language"),
-    [("June 31", "en"), ("31 de abril", "es"), ("30 de fevereiro", "pt"), ("June 3 2025 5", "en")],
+    [
+        ("June 31", "en"),
+        ("31 de abril", "es"),
+        ("30 de fevereiro", "pt"),
+        ("June 0", "en"),
+        ("32 de maio", "pt"),
+    ],
 )
 def test_a_month_and_day_phrase_naming_a_day_that_does_not_exist_resolves_to_nothing(
     expression: str, language: Lang
 ) -> None:
     assert resolve(expression, language=language, reference_date=_REFERENCE_DATE) is None
+
+
+@pytest.mark.parametrize(
+    ("expression", "language"),
+    [
+        ("June 3 2025 5", "en"),
+        ("June 3 0025", "en"),
+        ("June 3 1850", "en"),
+        ("3 de marzo de 0026", "es"),
+        ("el 3 de junio, creo", "es"),
+        ("I may 3", "en"),
+        ("21 de abril", "en"),
+        ("3 de mar", "es"),
+    ],
+)
+def test_a_phrase_that_is_not_a_month_and_day_resolves_to_nothing(
+    expression: str, language: Lang
+) -> None:
+    """Only the whole expression is matched: trailing words, a year outside the plausible range
+    and a month name from another language are not read as a date."""
+    assert resolve(expression, language=language, reference_date=_REFERENCE_DATE) is None
+
+
+def test_a_month_and_day_phrase_in_january_names_the_previous_year_for_a_later_month() -> None:
+    result = resolve("3 de dezembro", language="pt", reference_date=date(2026, 1, 10))
+
+    assert result == (date(2025, 12, 3), DateSource.PARTIAL)
+
+
+def test_the_leap_day_resolves_only_in_a_year_that_has_one() -> None:
+    """With no year stated, the reference date's own year is used: in a year with no 29 February
+    the phrase names no date rather than the one in an earlier leap year."""
+    assert resolve("Feb 29", language="en", reference_date=date(2026, 6, 18)) is None
+    assert resolve("Feb 29", language="en", reference_date=date(2024, 6, 18)) == (
+        date(2024, 2, 29),
+        DateSource.PARTIAL,
+    )

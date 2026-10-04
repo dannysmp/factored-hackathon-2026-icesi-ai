@@ -153,33 +153,38 @@ _MONTHS: dict[Lang, dict[str, int]] = {
 
 
 def _month_alternation(language: Lang) -> str:
+    """The language's month names as a regular-expression alternation, longest first so a full
+    name is never cut short by one of its own abbreviations."""
     return "|".join(sorted(_MONTHS[language], key=len, reverse=True))
 
 
 # A month-and-day phrase, per language, with the day and month as named groups and an optional
-# four-digit year: "3 de junio" / "el 3 de junio de 2026" (es), "dia 21 de abril" (pt),
-# "June 3rd" / "3rd of June" / "the 3rd of June, 2026" (en).
+# four-digit year: "3 de junio" / "el 3 de junio de 2026" (es), "dia 21 de abril" / "no dia 21 de
+# abril" (pt), "June 3rd" / "3rd of June" / "on the 3rd of June, 2026" (en). A leading preposition
+# and article are accepted because the model may report the customer's phrase as spoken.
+_YEAR = r"(?P<year>(?:19|20)\d{2})"
 _MONTH_DAY: dict[Lang, tuple[re.Pattern[str], ...]] = {
     "es": (
         re.compile(
-            rf"^(?:el\s+)?(?:dia\s+)?(?P<day>\d{{1,2}})\s+de\s+(?P<month>{_month_alternation('es')})"
-            r"(?:\s+(?:de|del)\s+(?P<year>\d{4}))?$"
+            r"^(?:(?:en\s+)?el\s+)?(?:dia\s+)?(?P<day>\d{1,2})\s+de\s+"
+            rf"(?P<month>{_month_alternation('es')})(?:\s+(?:de|del)\s+{_YEAR})?$"
         ),
     ),
     "pt": (
         re.compile(
-            rf"^(?:o\s+)?(?:dia\s+)?(?P<day>\d{{1,2}})\s+de\s+(?P<month>{_month_alternation('pt')})"
-            r"(?:\s+de\s+(?P<year>\d{4}))?$"
+            r"^(?:(?:no|em|em\s+o|o)\s+)?(?:dia\s+)?(?P<day>\d{1,2})\s+de\s+"
+            rf"(?P<month>{_month_alternation('pt')})(?:\s+de\s+{_YEAR})?$"
         ),
     ),
     "en": (
         re.compile(
-            rf"^(?:on\s+)?(?:the\s+)?(?P<month>{_month_alternation('en')})\.?\s+(?P<day>\d{{1,2}})"
-            r"(?:st|nd|rd|th)?(?:,?\s+(?P<year>\d{4}))?$"
+            r"^(?:(?:on|in)\s+)?(?:the\s+)?"
+            rf"(?P<month>{_month_alternation('en')})\.?\s+(?:the\s+)?(?P<day>\d{{1,2}})"
+            rf"(?:st|nd|rd|th)?(?:,?\s+{_YEAR})?$"
         ),
         re.compile(
-            rf"^(?:on\s+)?(?:the\s+)?(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?"
-            rf"(?P<month>{_month_alternation('en')})\.?(?:,?\s+(?P<year>\d{{4}}))?$"
+            r"^(?:(?:on|in)\s+)?(?:the\s+)?(?P<day>\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?"
+            rf"(?P<month>{_month_alternation('en')})\.?(?:,?\s+{_YEAR})?$"
         ),
     ),
 }
