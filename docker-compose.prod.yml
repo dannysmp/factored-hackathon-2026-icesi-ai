@@ -12,7 +12,7 @@
 #   `POSTGRES_PASSWORD` (read from SSM Parameter Store by the deploy step,
 #   never written to disk here) and `HOST_NAME` (the sslip.io address, or a
 #   real domain later).
-#   `POSTGRES_PASSWORD` has no `:-` default here, deliberately (issue #149):
+#   `POSTGRES_PASSWORD` has no `:-` default here, deliberately:
 #   the base compose file's own `POSTGRES_PASSWORD:-dispute_intake` default
 #   exists only so plain local development works with nothing SSM-backed
 #   exported; a deployed stack must never silently fall through to that
@@ -20,15 +20,13 @@
 #   environment, exactly like the two secrets above it — `05-deploy.sh`
 #   fails before ever running `docker compose up` if the SSM parameter
 #   doesn't exist, rather than deploying with a hardcoded default password.
-#   `DATA_AS_OF_DATE` defaults to the evaluation period's own reference date:
-#   the deployed database starts empty, with no `ops_meta` seed row
-#   for the domain calendar to fall back on, and the service refuses to start
-#   rather than guess the real date. An explicit ISO date still wins over
-#   this default, so a run against a seeded
-#   database can still override it.
-#   The demo sign-in variables all default empty/false: a smoke
-#   deployment that never created the access codes in SSM gets a backend with
-#   sign-in disabled, exactly as if sign-in were not configured. The deploy
+#   `DATA_AS_OF_DATE` defaults to the evaluation period's own reference date: the
+#   deployed database starts empty, with no `ops_meta` seed row for the domain
+#   calendar to fall back on, and the service refuses to start rather than guess
+#   the real date. An explicit ISO date still wins over this default, so a run
+#   against a seeded database can still override it.
+#   The demo sign-in variables all default empty/false: a smoke deployment that
+#   never created the access codes in SSM gets a backend with sign-in disabled, exactly as if sign-in were not configured. The deploy
 #   step (05-deploy.sh) derives `DEMO_SIGNIN_ENABLED`/`DEMO_AGENT_SIGNIN_ENABLED`
 #   from whether the corresponding SSM parameters exist, not from a separate
 #   toggle — creating the access codes is what turns sign-in on.

@@ -7,7 +7,7 @@
 #   from the design-token palette and pairing it with a text card naming its
 #   business question (the open-source edition's own theming surface — full
 #   native theming, logo, app name, instance-wide colors, is Enterprise-only;
-#   see docs/limitations.md). A separate, later script than
+#   see docs/limitations.md). A separate script from
 #   08-deploy-metabase.sh on purpose: that script's own stated job is
 #   narrowly "admin claimed before Caddy sees it," not dashboard content, and
 #   folding this into it would risk re-running dashboard-content logic every

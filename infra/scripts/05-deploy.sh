@@ -18,7 +18,7 @@
 #   — this script and the CI role that calls it never see any of their
 #   values, matching PII/secret minimization.
 #   `postgres-password` is mandatory, the same way anthropic-api-key and
-#   session-signing-key already are (issue #149: the base compose file's own
+#   session-signing-key already are (the base compose file's own
 #   `POSTGRES_PASSWORD:-dispute_intake` default exists only for local
 #   development with nothing SSM-backed exported; a deployed stack must never
 #   fall through to it, so this script fails loudly, before ever running
