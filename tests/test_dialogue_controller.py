@@ -52,7 +52,13 @@ from contracts.service_v1.api import TurnRequest, TurnResponse
 from contracts.service_v1.cases import AmountProvenance, CaseRecord, CaseStatus, DisclosedAmount
 from contracts.service_v1.cases import Money as CaseMoney
 from contracts.service_v1.console import TimelineEntry
-from contracts.service_v1.envelope import CUSTOMER_REASON_OF, CustomerReason, Intent, Slot
+from contracts.service_v1.envelope import (
+    CUSTOMER_REASON_OF,
+    CustomerReason,
+    DateSource,
+    Intent,
+    Slot,
+)
 from contracts.service_v1.handoff import HandoffPacket, HandoffTrigger
 from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult, TransactionHint
 from contracts.service_v1.tools import (
@@ -2856,3 +2862,218 @@ def test_reaching_the_cap_is_logged_with_the_counts_and_no_message_text(
     assert "turns_applied=3" in logged[0]
     assert "max_turns=3" in logged[0]
     assert _turn("turn-0004").text not in logged[0]
+
+
+# -----------------------------------------------------------------------------
+# A different transaction named while one is awaiting confirmation
+# -----------------------------------------------------------------------------
+
+
+def _two_transaction_controller(
+    results: list[NluResult],
+    *,
+    store: InMemoryDialogueStore,
+    policy: Policy,
+    retriever: LexicalRetriever,
+    port: FakeToolPort | None = None,
+) -> DialogueController:
+    return DialogueController(
+        SequencedNlu(results),
+        store=store,
+        tool_port=port
+        or FakeToolPort(
+            transactions=(
+                _transaction("TX-1", merchant="Amazon", amount=Decimal("100.00")),
+                _transaction(
+                    "TX-2",
+                    merchant="Netflix",
+                    amount=Decimal("15.99"),
+                    occurred_on=date(2026, 6, 10),
+                    last4="9876",
+                ),
+            )
+        ),
+        retriever=retriever,
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+        max_turns=30,
+    )
+
+
+def _second_turn_after_naming_then_naming_again(
+    first: TransactionHint,
+    second: TransactionHint,
+    *,
+    policy: Policy,
+    retriever: LexicalRetriever,
+    port: FakeToolPort | None = None,
+) -> tuple[str | None, TurnResponse]:
+    store = InMemoryDialogueStore()
+    controller = _two_transaction_controller(
+        [_file_dispute(transaction=first), _file_dispute(transaction=second)],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+        port=port,
+    )
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+    reply = controller.handle_turn(_turn("turn-0002", "segunda"), principal=_principal())
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    return state.selected_ref, reply
+
+
+def _selected_after_naming_then_naming_again(
+    first: TransactionHint,
+    second: TransactionHint,
+    *,
+    policy: Policy,
+    retriever: LexicalRetriever,
+    port: FakeToolPort | None = None,
+) -> tuple[str | None, str]:
+    selected, reply = _second_turn_after_naming_then_naming_again(
+        first, second, policy=policy, retriever=retriever, port=port
+    )
+    return selected, reply.reply
+
+
+def test_naming_a_different_merchant_while_one_is_presented_presents_that_one(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(merchant="Netflix"),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected == "TX-2"
+    assert "Netflix" in reply
+    assert "15,99" in reply
+
+
+def test_naming_a_different_amount_while_one_is_presented_presents_that_one(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, _ = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(amount=Decimal("15.99")),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected == "TX-2"
+
+
+def test_naming_a_different_date_while_one_is_presented_presents_that_one(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, _ = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(date_on=date(2026, 6, 10), date_source=DateSource.ABSOLUTE),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected == "TX-2"
+
+
+@pytest.mark.parametrize(
+    "second",
+    [
+        TransactionHint(),
+        TransactionHint(merchant="amazon"),
+        TransactionHint(merchant="Amazon", amount=Decimal("100.00"), currency="USD"),
+        TransactionHint(date_on=_DOMAIN_DATE, date_source=DateSource.ABSOLUTE),
+    ],
+    ids=["nothing", "same-merchant", "same-merchant-and-amount", "same-date"],
+)
+def test_repeating_what_is_presented_keeps_it_selected(
+    second: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"), second, policy=policy, retriever=retriever
+    )
+
+    assert selected == "TX-1"
+    assert "Netflix" not in reply
+
+
+def test_naming_something_that_matches_nothing_does_not_confirm_the_presented_one(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, _ = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(merchant="Spotify"),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected is None
+
+
+@pytest.mark.parametrize(
+    "unreadable",
+    [ToolFailure(tool=ToolName.GET_TRANSACTION, cause="error"), None],
+    ids=["tool-failure", "no-longer-found"],
+)
+def test_an_unreadable_presented_transaction_is_searched_for_again(
+    unreadable: ToolFailure | None, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction("TX-1", merchant="Amazon"),),
+        get_transaction_result=unreadable,
+    )
+    selected, response = _second_turn_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(merchant="Amazon"),
+        policy=policy,
+        retriever=retriever,
+        port=port,
+    )
+
+    assert selected == "TX-1"
+    assert response.next_expected is Slot.TRANSACTION_CHOICE
+
+
+@pytest.mark.parametrize(
+    "second",
+    [
+        TransactionHint(product_last4="9999"),
+        TransactionHint(amount=Decimal("100.00"), currency="EUR"),
+        TransactionHint(date_on=date(2026, 6, 10), date_source=DateSource.PARTIAL),
+        TransactionHint(date_on=date(2026, 6, 10), date_source=DateSource.RELATIVE),
+    ],
+    ids=["other-card", "same-amount-other-currency", "partial-date", "relative-date"],
+)
+def test_naming_another_card_currency_or_date_does_not_confirm_the_presented_one(
+    second: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    _, response = _second_turn_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"), second, policy=policy, retriever=retriever
+    )
+
+    assert response.next_expected is not Slot.REASON
+
+
+@pytest.mark.parametrize(
+    "second",
+    [
+        TransactionHint(product_last4="1234"),
+        TransactionHint(amount=Decimal("100.00"), currency="USD"),
+        TransactionHint(date_on=_DOMAIN_DATE, date_source=DateSource.PARTIAL),
+        TransactionHint(date_on=_DOMAIN_DATE, date_source=DateSource.RELATIVE),
+    ],
+    ids=["same-card", "same-amount-and-currency", "same-partial-date", "same-relative-date"],
+)
+def test_naming_the_presented_card_amount_or_date_goes_ahead_with_it(
+    second: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, response = _second_turn_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"), second, policy=policy, retriever=retriever
+    )
+
+    assert selected == "TX-1"
+    assert response.next_expected is Slot.REASON
