@@ -202,7 +202,7 @@ def test_a_policy_answer_case_that_also_filed_includes_both(dsn: str) -> None:
 
 
 # -----------------------------------------------------------------------------
-# attach_masked_transcript — the CR-18 capture capability
+# attach_masked_transcript — the transcript capture capability
 # -----------------------------------------------------------------------------
 
 

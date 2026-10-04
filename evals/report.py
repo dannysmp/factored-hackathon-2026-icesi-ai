@@ -282,8 +282,7 @@ def _judge_scored_quality_section(systems: tuple[SystemResult, ...]) -> str:
     note = (
         f"\n\n{', '.join(not_judged)} carried no judge verdicts in this report: a system's own "
         "run is judge-scored only when it is in scope for judge-sourced report metrics (today, "
-        "the proposed system alone — the same reasoning CR-18 applies to H4's own validation "
-        "scope)."
+        "the proposed system alone — the same scope H4's own human validation uses)."
         if not_judged
         else ""
     )

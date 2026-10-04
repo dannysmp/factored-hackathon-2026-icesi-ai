@@ -17,7 +17,8 @@ runs either way; ``SMOKE=1`` stays available as a deliberately narrower, faster 
 check, and the written report's own ``scope_note`` discloses the narrowing whenever it is used,
 rather than silently under-reporting. ``--full`` additionally scores P's last run with the live
 judge (``_JUDGED_SYSTEMS``), feeding the report's own judge-scored-quality section — B0 and B1
-carry no judge verdicts, by the same reasoning CR-18 already applies to H4's own validation scope.
+carry no judge verdicts, for the same reason H4's own human validation is scoped to the proposed
+system alone.
 
 Scope
 -----
@@ -147,10 +148,10 @@ _BANK_TIMEZONE_LABEL = "America/Bogota (UTC-5)"
 # requirement), 1 for a baseline (there is nothing to average or flip across a single run).
 _RUN_COUNTS = {"P": 3, "B0": 1, "B1": 1}
 
-# The systems the live judge scores in a full report: P only. Matches CR-18's own reasoning for
-# scoping H4's human validation to P (B0 is structurally verified already and needs no judge to
-# trust; B1 is a safety comparison baseline, not a system the judge's reliability is demonstrated
-# against) — the same reasoning applies to judge-sourced report metrics generally, not only to H4.
+# The systems the live judge scores in a full report: P only, the same scope H4's own human
+# validation uses (B0 is structurally verified already and needs no judge to trust; B1 is a
+# safety comparison baseline, not a system the judge's reliability is demonstrated against) — the
+# same reasoning applies to judge-sourced report metrics generally, not only to human validation.
 _JUDGED_SYSTEMS: frozenset[str] = frozenset({"P"})
 
 
