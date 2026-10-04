@@ -12,7 +12,8 @@ Scope
 In: translating one ``CompletionRequest`` into an Anthropic API call and its response into a
 ``CompletionResult``.
 Out: bounded retries and circuit breaking, which ``app.reliability.retry.RetriedLlmClient`` adds
-around this adapter — the adapter itself makes exactly one attempt per call and raises on failure.
+around this adapter. The adapter adds no retry of its own and raises on failure; the SDK keeps its
+default transport retries for connection errors and rate-limit or server responses.
 Building the request's system and user text is the caller's job, through ``app.llm.prompts`` and
 ``app.llm.masking``; this module never sees raw customer text.
 
