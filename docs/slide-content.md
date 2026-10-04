@@ -32,7 +32,7 @@ file itself.
 - Three deliberate right-sizing trade-offs, each with a written trigger to move up a tier (the full
   set is the technology evolution matrix in the architecture document):
   - **Policy retrieval (ADR-16):** lexical BM25 with an abstention floor, not embeddings — the
-    corpus is about 21 chunks; embeddings are added only if measured recall falls below 0.95.
+    corpus is nine sections in each of the three languages; embeddings are added only if measured recall falls below 0.95.
   - **LLM access (ADR-7):** the Anthropic API with one managed secret, not Bedrock — moves to
     Bedrock the moment the account has model access, removing the last long-lived model key.
   - **Analytics (ADR-9):** DuckDB over partitioned Parquet, not a managed warehouse — moves to
@@ -77,13 +77,13 @@ file itself.
 - The first full run against the complete 135-case golden set has now executed, scoring all three
   systems against the live model; its safe/unsafe outcome classification is read directly off each
   run's own recorded outcome and is final, independent of the human-rated sample still due. The
-  judge's own quality and correctness scores stay provisional until that sample lands, and the
-  recorded report artifact (`reports/evaluation.md`) is still pending write-up — this slide states
-  that plainly rather than showing a number from an unwritten report.
-- What is measured today, independent of the report's own write-up: the deterministic checks that
-  do not need the harness to run — authorization tests, the confirmation and verification tests,
-  and the reason-code coverage of the policy engine itself, all passing in the test suite this
-  release ships with.
+  judge's own quality and correctness scores stay provisional until that sample lands. The
+  evaluation report (`reports/evaluation.md`) records the run with sample sizes for all three
+  systems; its judge-validation section reports no agreement rate until the real sample is
+  scored, and this slide states that plainly rather than showing a synthetic sample's numbers.
+- Independent of the harness, the deterministic checks run in the test suite this release ships
+  with: authorization tests, the confirmation and verification tests, and the reason-code coverage
+  of the policy engine itself.
 
 ## Slide 5 — Limitations and the route to operation
 
