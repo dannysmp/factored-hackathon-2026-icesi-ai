@@ -613,7 +613,7 @@ def test_a_message_that_says_nothing_reliable_about_the_language_does_not_switch
 
 
 def test_the_controller_passes_its_own_domain_date_as_the_understanding_reference_date() -> None:
-    """AC-E5-16: a customer-stated transaction date is resolved against the domain calendar's own
+    """A customer-stated transaction date is resolved against the domain calendar's own
     reference date, never the wall clock — proven by reading back exactly what the controller
     itself passed into ``understand``, not by trusting it silently matches."""
     store = InMemoryDialogueStore()
@@ -1207,7 +1207,7 @@ def test_replaying_an_ineligible_turn_never_re_evaluates_or_files(
 
 
 # -----------------------------------------------------------------------------
-# The console's own turn history (ADR-17)
+# The console's own turn history
 # -----------------------------------------------------------------------------
 
 
@@ -2053,7 +2053,7 @@ def test_get_transaction_failure_while_presenting_confirmation_hands_off(
 def test_a_matchless_evaluate_dispute_result_hands_off_on_first_evaluation(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
-    """None (AC-E4-06: the reference stopped resolving, or stopped being this customer's own,
+    """None (the reference stopped resolving, or stopped being this customer's own,
     between an earlier read and this evaluation) is routed through the same fail-closed handoff
     as a genuine ToolFailure, never re-interpreted as an ineligible or eligible decision."""
     store = InMemoryDialogueStore()

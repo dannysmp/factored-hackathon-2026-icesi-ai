@@ -5,13 +5,13 @@ Dialogue Store
 Overview
 --------
 Where dialogue state lives between turns, keyed by session id. A new login starts a new
-conversation (AC-E5-60): the store is asked for state by the session id a sign-in issued, and a
-new sign-in issues a new one, so a prior conversation's state is never resumed under it.
+conversation: the store is asked for state by the session id a sign-in issued, and a new sign-in
+issues a new one, so a prior conversation's state is never resumed under it.
 
 Scope
 -----
-In: the ``DialogueStore`` port and an in-memory implementation, used until the Postgres
-conversation store lands.
+In: the ``DialogueStore`` port and an in-memory implementation, used by tests and by deployments
+without a database (``app.persistence.dialogue_store`` is the durable implementation).
 Out: the state model (``state``) and issuing session ids (the session service).
 
 Design Principles
@@ -22,7 +22,7 @@ Design Principles
 - Turn idempotency: the store remembers the last turn id it saved a state for and refuses to
   advance the state again for a repeated one, handing back the state that turn already produced.
 - In-memory only: state does not survive a process restart, and this implementation is never
-  pointed at real customer data; it exists for tests and until the durable store lands.
+  pointed at real customer data; it exists for tests and for runs without a database.
 
 Runtime Contract
 ----------------
@@ -48,6 +48,7 @@ class DuplicateTurn(Exception):
     """The turn id was already applied; carries the state that turn produced."""
 
     def __init__(self, state: DialogueState) -> None:
+        """Carry ``state``, the result the repeated turn already produced."""
         super().__init__(f"turn already applied for session {state.session_id}")
         self.state = state
 
@@ -78,6 +79,7 @@ class InMemoryDialogueStore:
     """A process-local ``DialogueStore``; state is lost on restart."""
 
     def __init__(self) -> None:
+        """Start with no sessions and the lock that serializes access to them."""
         self._states: dict[str, DialogueState] = {}
         self._lock = Lock()
 

@@ -6,8 +6,8 @@ Overview
 --------
 Assembles the structured packet a person receives when a conversation is handed over
 (``contracts.service_v1.handoff.HandoffPacket``). Pure: every fact the packet needs is a parameter,
-never read from a store or the clock here, so the controller (a later change) decides what to pass
-and this module cannot silently disagree with it about what happened.
+never read from a store or the clock here, so the controller decides what to pass (as a
+``HandoffContent``) and this module cannot silently disagree with it about what happened.
 
 Scope
 -----
@@ -63,14 +63,21 @@ from contracts.service_v1.handoff import (  # The packet this module builds
     OpenQuestion,
 )
 
+# A masked identifier is this prefix, then the last four alphanumeric characters of the source.
 _MASK_PREFIX = "****"
 _MASK_VISIBLE_CHARS = 4
+# The contract requires at least two visible characters, so a shorter tail is left-padded.
 _MASK_MIN_VISIBLE_CHARS = 2
 
 
 @dataclass(frozen=True, slots=True)
 class HandoffContent:
-    """Everything ``build_packet`` needs except the ticket reference, which the outbox mints."""
+    """Everything ``build_packet`` needs except the ticket reference, which the outbox mints.
+
+    Mirrors ``build_packet``'s parameters one to one, so the outbox can pass it through unchanged.
+    ``customer_id`` is the authenticated session's identifier; it is masked by ``build_packet`` and
+    never appears in a packet in full.
+    """
 
     reference_date: date
     created_at: UtcDatetime
@@ -128,7 +135,12 @@ def build_packet(
     risk: RiskEvidence | None = None,
     open_questions: tuple[OpenQuestion, ...] = (),
 ) -> HandoffPacket:
-    """The packet for one handoff; every part beyond the required ones may be empty."""
+    """The packet for one handoff; every part beyond the required ones may be empty.
+
+    Parameters are the fields of ``HandoffContent`` plus ``ticket_ref``. ``customer_id`` becomes
+    the masked label through ``mask_customer_id``, and ``needs_language_routing`` is set whenever
+    ``language`` is not Spanish, so a person who speaks the customer's language picks it up.
+    """
     return HandoffPacket(
         ticket_ref=ticket_ref,
         reference_date=reference_date,

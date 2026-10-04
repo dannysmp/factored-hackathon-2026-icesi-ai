@@ -6,7 +6,7 @@ Overview
 --------
 The structured state one conversation keeps between turns: identifiers, the slots collected so
 far, the pending filing, the clarification count and the language. No raw message text is ever
-part of it (AC-E5-57): the customer's own words are read once by the understanding step and never
+part of it: the customer's own words are read once by the understanding step and never
 stored here.
 
 Scope
@@ -14,16 +14,16 @@ Scope
 In: the state model and its pure transitions (asking for a slot again, a slot being filled).
 Out: storing it (``store``), understanding a message (``understanding``) and rendering a reply
 (``renderer``); the tool-calling steps of locating a transaction and filing a dispute, which need
-the scoped tools of the service layer and are wired in a later change.
+the scoped tools of the service layer and belong to the dialogue controller.
 
 Design Principles
 -----------------
 - Structured state only, masked, the same shape discipline as the envelope's own facts.
 - The clarification counter is one integer bound to whichever slot is currently pending; asking
   again for the same slot increments it, asking for a different one resets it to 1, and filling
-  the pending slot resets it to zero. This is the missing-slot guard the architecture describes:
-  it counts consecutive attempts on one element, whatever the reported confidence.
-- A new login starts a new conversation (AC-E5-60): this model carries no notion of "resume", and
+  the pending slot resets it to zero. It is the missing-slot guard's counter: it counts
+  consecutive attempts on one element, whatever the reported confidence.
+- A new login starts a new conversation: this model carries no notion of "resume", and
   the store is what would have to go out of its way to look up a stale session by a new one's id,
   which it never does.
 - Optimistic concurrency: a state carries the version it was read at; the store turns a stale
@@ -33,9 +33,12 @@ Design Principles
 
 Runtime Contract
 ----------------
-``DialogueState`` with ``with_clarification(slot)``, ``with_slot_filled()``, ``with_case_filed(
-case_number)`` and ``with_handed_off(ticket_ref)``, plus ``is_opening``, which is true while no
-dispute step has been taken yet. ``ConversationPhase`` names where the conversation stands.
+``DialogueState`` with ``with_clarification(slot)``, ``with_slot_filled()``,
+``with_language(lang)``, ``with_phase(phase)``, ``with_case_filed(case_number)`` and
+``with_handed_off(ticket_ref)``, plus ``is_opening``, which is true while no dispute step has
+been taken yet, and ``turns_applied``, the number of customer turns the session has applied
+(equal to ``version``; the dialogue controller compares it with its turn cap).
+``ConversationPhase`` names where the conversation stands.
 
 Limitations
 -----------
@@ -60,7 +63,13 @@ from contracts.service_v1.envelope import Lang, Slot  # Shared vocabulary
 
 
 class ConversationPhase(StrEnum):
-    """Where the conversation stands, between turns."""
+    """Where the conversation stands, between turns.
+
+    ``STARTED`` until a dispute step is taken, ``CLARIFYING`` while a slot is being asked for,
+    ``CONFIRMING`` while the customer is asked to confirm a filing, ``CLOSED`` once a filing
+    decision was reached (filed, refused or declined), ``HANDED_OFF`` once a person has the
+    conversation, and ``ABANDONED`` when a handoff could not be registered.
+    """
 
     STARTED = "started"
     CLARIFYING = "clarifying"
@@ -71,7 +80,13 @@ class ConversationPhase(StrEnum):
 
 
 class DialogueState(BaseModel):
-    """The structured state of one conversation, keyed by its session id."""
+    """The structured state of one conversation, keyed by its session id.
+
+    Immutable and masked: it holds identifiers, the slots collected so far and the language, never
+    the customer's text. ``version`` is the optimistic-concurrency token the store advances on every
+    saved turn; ``last_turn_id``, ``last_case_number`` and ``last_ticket_ref`` let a repeated turn
+    be answered from the state alone.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

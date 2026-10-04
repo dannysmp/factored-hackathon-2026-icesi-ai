@@ -21,13 +21,20 @@ Design Principles
   and the result says so, so the caller can offer the other language in both languages.
 - Once a language is set, it changes only on an explicit request, or on two consecutive messages
   read in another language — never on one.
-- Pure function: no state is read or written here; the caller carries the streak forward as part
-  of the dialogue state and stores whatever this function returns.
+- Pure function: no state is read or written here; the caller carries the streak forward and
+  stores whatever this function returns.
 
 Runtime Contract
 ----------------
 ``resolve_language(current, detected, explicit_switch_to, consecutive_off_language) ->
 LanguageResolution``. ``LanguageResolution`` has ``lang``, ``streak`` and ``ambiguous``.
+
+Limitations
+-----------
+The dialogue controller does not call this function: it keeps the language on ``DialogueState``
+and moves it once, while the conversation is still in its opening (``DialogueState.is_opening``),
+or on an explicit request. This module states the stricter two-message rule as a pure, tested
+decision for a caller that carries a streak.
 """
 
 from __future__ import annotations

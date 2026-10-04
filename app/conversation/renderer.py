@@ -5,27 +5,26 @@ Template Renderer
 Overview
 --------
 Turns a ``RenderEnvelope`` into the reply text, the persistent reference-date line and, for a
-demonstration session, its notice — the fixed-wording path the architecture calls the template
-renderer. Every number, date and name a template states is interpolated directly from ``facts``,
-``decisions`` or ``sources`` by this module's own code: there is no free-form generation here for
-a value to be invented from, so grounding is a property of the code, not something checked at
-render time.
+demonstration session, its notice — the fixed-wording template renderer. Every number, date and
+name a template states is interpolated directly from ``facts``, ``decisions`` or ``sources`` by
+this module's own code: there is no free-form generation here for a value to be invented from, so
+grounding is a property of the code, not something checked at render time.
 
 Scope
 -----
 In: the fixed-wording texts per language, the date and amount formatting rules, ``render()``.
-Out: the model renderer (a later change, for wording ``render_mode="model"`` does not cover) and
-its grounding check, which belongs to the output verifier that grounds free-form model output;
-the dialogue controller, which decides which template applies.
+Out: the model renderer (``app.conversation.model_renderer``), the choice between the two paths
+(``app.conversation.reply``) and the grounding check on model output
+(``app.conversation.verifier``); the dialogue controller, which decides which template applies.
 
 Design Principles
 -----------------
 - Every ``TemplateId`` has exactly one renderer function, keyed by a table checked for
   completeness against the enumeration, so an addition to the contract fails here until this
   module is updated too.
-- Dates are always absolute and carry the year, in words, in the reply language (AC-E5-47); the
-  reference-date line is computed once and returned alongside the reply, never inside it, so
-  every turn can show it regardless of intent (AC-E5-48).
+- Dates are always absolute and carry the year, in words, in the reply language; the reference-date
+  line is computed once and returned alongside the reply, never inside it, so every turn can show
+  it regardless of intent.
 - Money is written with the reply language's separators, computed by this module's own
   ``format_money``/``format_date``, never composed from a value the caller passed as text.
 - One to four short sentences per reply, one question at a time, matching the product's shared
@@ -42,9 +41,8 @@ a second, independently maintained copy.
 Limitations
 -----------
 The wording here is a first version, not yet reviewed by a fluent native speaker of Spanish or
-Portuguese (an open item the plan already records). Combining an ambiguous first message's best
-guess with the offer to switch languages in one reply is the dialogue controller's job; this
-module renders the offer as its own text.
+Portuguese. Combining an ambiguous first message's best guess with the offer to switch languages
+in one reply is the dialogue controller's job; this module renders the offer as its own text.
 """
 
 from __future__ import annotations
@@ -114,12 +112,14 @@ _MONTHS: dict[Lang, tuple[str, ...]] = {
     ),
 }
 
+# Number formatting conventions per language: Spanish groups with a no-break space, Portuguese
+# with a period and English with a comma; the decimal mark is the comma or period that remains.
 _THOUSANDS_SEPARATOR: dict[Lang, str] = {"es": chr(0xA0), "pt": ".", "en": ","}
 _DECIMAL_SEPARATOR: dict[Lang, str] = {"es": ",", "pt": ",", "en": "."}
 
 
 def format_date(value: date, lang: Lang) -> str:
-    """``value`` in words, absolute and carrying the year (AC-E5-47)."""
+    """``value`` written in words in ``lang``, absolute and carrying the year."""
     month = _MONTHS[lang][value.month - 1]
     if lang == "en":
         return f"{month} {value.day}, {value.year}"
@@ -140,7 +140,7 @@ def format_money(money: Money, lang: Lang) -> str:
 
 
 def reference_date_line(domain_date: date, lang: Lang) -> str:
-    """The persistent line every reply carries, in the reply language (AC-E5-48)."""
+    """The persistent line every reply carries: the data's reference date, in the reply language."""
     prefix = {
         "es": "Fecha de referencia de los datos",
         "pt": "Data de referência dos dados",
@@ -150,7 +150,7 @@ def reference_date_line(domain_date: date, lang: Lang) -> str:
 
 
 def demo_notice(lang: Lang) -> str:
-    """The notice a demonstration session shows in the reply language (AC-E5-49)."""
+    """The notice a demonstration session shows, stating the data is synthetic, in ``lang``."""
     return {
         "es": "Esta es una sesión de demostración con datos sintéticos.",
         "pt": "Esta é uma sessão de demonstração com dados sintéticos.",
@@ -158,8 +158,8 @@ def demo_notice(lang: Lang) -> str:
     }[lang]
 
 
-# A synthetic, team-generated placeholder for the channels the system redirects to; the plan
-# leaves the real destinations as an open question for the maintainer before release.
+# Synthetic placeholders for the channels the system redirects to; a real deployment replaces them
+# with the bank's actual destinations.
 _APP_CHANNEL: dict[Lang, str] = {
     "es": "la sección de tarjetas de la aplicación del banco",
     "pt": "a seção de cartões do aplicativo do banco",
@@ -257,8 +257,8 @@ class RenderedReply:
     ``render_mode`` names which path actually produced ``reply`` — ``render()`` itself always
     returns ``"template"``; ``app.conversation.reply.render_reply`` sets ``"model"`` only when a
     model-rendered candidate was accepted, and falls back to ``"template"`` otherwise. This is the
-    console's own record of how a reply was produced (ADR-17's timeline), not a grounding check —
-    that already happened before this value exists.
+    console's own record of how a reply was produced, not a grounding check — that already
+    happened before this value exists.
     """
 
     reply: str
@@ -272,6 +272,7 @@ class RenderedReply:
 
 
 def _greeting(e: RenderEnvelope) -> str:
+    """The greeting that offers disputing a charge, checking a dispute or explaining the policy."""
     return {
         "es": "Hola, puedo ayudarle a disputar un cargo, consultar una disputa o explicarle la "
         "política. Cuénteme qué transacción quiere revisar.",
@@ -283,6 +284,7 @@ def _greeting(e: RenderEnvelope) -> str:
 
 
 def _clarify_transaction(e: RenderEnvelope) -> str:
+    """Ask for the merchant, amount or date that identifies the charge."""
     return {
         "es": "¿Podría decirme el comercio, el monto o la fecha del cargo que quiere disputar?",
         "pt": "Você poderia me dizer o estabelecimento, o valor ou a data da cobrança que quer "
@@ -293,6 +295,7 @@ def _clarify_transaction(e: RenderEnvelope) -> str:
 
 
 def _clarify_reason(e: RenderEnvelope) -> str:
+    """Ask for the dispute reason and list the categories the customer can choose from."""
     return {
         "es": "¿Cuál es el motivo? Puede ser un cargo no reconocido, un cargo duplicado, un "
         "monto incorrecto, un servicio no recibido o un fraude.",
@@ -304,6 +307,7 @@ def _clarify_reason(e: RenderEnvelope) -> str:
 
 
 def _clarify_choice(e: RenderEnvelope) -> str:
+    """Ask which of several presented options is the right one."""
     return {
         "es": "Encontré varias coincidencias. ¿Cuál de las opciones es la correcta?",
         "pt": "Encontrei mais de uma correspondência. Qual das opções é a correta?",
@@ -312,6 +316,7 @@ def _clarify_choice(e: RenderEnvelope) -> str:
 
 
 def _clarify_confirmation(e: RenderEnvelope) -> str:
+    """Ask for a yes or no to filing the dispute."""
     return {
         "es": "¿Confirma que desea presentar la disputa? Responda sí o no.",
         "pt": "Você confirma que quer apresentar a contestação? Responda sim ou não.",
@@ -320,6 +325,11 @@ def _clarify_confirmation(e: RenderEnvelope) -> str:
 
 
 def _language_offer(e: RenderEnvelope) -> str:
+    """The trilingual offer shown when the first message gives no usable language signal.
+
+    The Spanish and Portuguese texts say the conversation continues in Spanish and offer the other
+    languages, each written in all three; the English text is a plain one-line greeting.
+    """
     return {
         "es": "Hola, puedo ayudarle con su disputa. No sé si prefiere continuar "
         "en español o portugués; continuaré en español, avíseme si prefiere otro idioma. / "
@@ -335,10 +345,12 @@ def _language_offer(e: RenderEnvelope) -> str:
     }[e.lang]
 
 
+# The preposition that introduces a merchant's name in each language ("en", "em", "at").
 _MERCHANT_PREPOSITION: dict[Lang, str] = {"es": "en", "pt": "em", "en": "at"}
 
 
 def _present_one(e: RenderEnvelope) -> str:
+    """Present the single transaction found (amount, merchant, date) and ask if it is the one."""
     transaction = e.facts.transactions[0]
     merchant = (
         f" {_MERCHANT_PREPOSITION[e.lang]} {transaction.merchant}" if transaction.merchant else ""
@@ -365,6 +377,7 @@ def _present_one(e: RenderEnvelope) -> str:
 
 
 def _present_list(e: RenderEnvelope) -> str:
+    """Introduce a list of transactions that might match and ask which one the customer means."""
     return {
         "es": "Encontré varias transacciones que podrían coincidir. Elija el número de la que "
         "quiere disputar.",
@@ -376,6 +389,7 @@ def _present_list(e: RenderEnvelope) -> str:
 
 
 def _present_narrow(e: RenderEnvelope) -> str:
+    """Say there are too many matches to list and ask for more detail."""
     return {
         "es": "Encontré demasiadas coincidencias para mostrarlas. ¿Podría darme más detalles, "
         "como el comercio o la fecha exacta?",
@@ -387,6 +401,7 @@ def _present_narrow(e: RenderEnvelope) -> str:
 
 
 def _not_found(e: RenderEnvelope) -> str:
+    """Say no transaction matched and offer a wider date range or a person."""
     return {
         "es": "No encontré ninguna transacción con esos datos. Puedo ampliar el rango de "
         "fechas o pasarla con un asesor.",
@@ -403,6 +418,11 @@ def _english_article(noun_phrase: str) -> str:
 
 
 def _confirm_filing(e: RenderEnvelope) -> str:
+    """State the dispute about to be filed and ask for the customer's confirmation.
+
+    Names the category, the amount and the date of the selected transaction, all from ``facts``, and
+    says a person reviews the case and no outcome is guaranteed.
+    """
     facts = e.facts
     transaction = next(t for t in facts.transactions if t.ref == facts.selected_ref)
     category = CATEGORY_NAMES[e.lang][facts.category] if facts.category else ""
@@ -431,6 +451,7 @@ def _confirm_filing(e: RenderEnvelope) -> str:
 
 
 def _filing_result(e: RenderEnvelope) -> str:
+    """State the filed case number and, when known, the date a first response is expected."""
     case = e.facts.cases[0]
     expected = case.expected_response_on
     when = (
@@ -451,6 +472,7 @@ def _filing_result(e: RenderEnvelope) -> str:
 
 
 def _filing_unverified(e: RenderEnvelope) -> str:
+    """Say the filing could not be confirmed and that a person will verify it."""
     return {
         "es": "No pude confirmar que la disputa quedó registrada correctamente. La estoy "
         "pasando a un asesor para que lo verifique.",
@@ -462,6 +484,7 @@ def _filing_unverified(e: RenderEnvelope) -> str:
 
 
 def _filing_cancelled(e: RenderEnvelope) -> str:
+    """Acknowledge that the customer declined and nothing was filed."""
     return {
         "es": "De acuerdo, no presenté la disputa.",
         "pt": "Tudo bem, não apresentei a contestação.",
@@ -470,11 +493,13 @@ def _filing_cancelled(e: RenderEnvelope) -> str:
 
 
 def _ineligible(e: RenderEnvelope) -> str:
+    """State the plain-language reason the ineligible decision gives."""
     decision = next(d for d in e.decisions if d.outcome is Outcome.INELIGIBLE)
     return INELIGIBLE_TEXT[e.lang][decision.customer_reason]
 
 
 def _dispute_status(e: RenderEnvelope) -> str:
+    """List the customer's recent cases with their status and filing date, one per line."""
     lines = [
         {
             "es": f"Caso {case.case_number}: {case.status}, presentado el "
@@ -495,6 +520,7 @@ def _dispute_status(e: RenderEnvelope) -> str:
 
 
 def _no_case_found(e: RenderEnvelope) -> str:
+    """Say no case was found on the customer's account."""
     return {
         "es": "No encontré ningún caso con esos datos en su cuenta.",
         "pt": "Não encontrei nenhum caso com esses dados na sua conta.",
@@ -503,6 +529,7 @@ def _no_case_found(e: RenderEnvelope) -> str:
 
 
 def _policy_answer(e: RenderEnvelope) -> str:
+    """Quote the retrieved policy section by title together with the values it states."""
     title = e.sources[0].title_for(e.lang)
     values = ", ".join(f"{v.name}: {v.value}" for v in e.facts.policy_values)
     parts = {
@@ -514,6 +541,7 @@ def _policy_answer(e: RenderEnvelope) -> str:
 
 
 def _abstain_policy(e: RenderEnvelope) -> str:
+    """Say the information is not available, give no figure, and offer a person."""
     return {
         "es": "No tengo esa información y no puedo darle una cifra al respecto. Puedo "
         "pasarla con un asesor.",
@@ -525,6 +553,7 @@ def _abstain_policy(e: RenderEnvelope) -> str:
 
 
 def _refuse_unsupported(e: RenderEnvelope) -> str:
+    """Refuse an unsupported action and point to the bank's own channel or a person."""
     channel = _APP_CHANNEL[e.lang]
     return {
         "es": f"Eso no lo puedo hacer aquí. Puedo ayudarle a disputar una transacción, "
@@ -539,6 +568,7 @@ def _refuse_unsupported(e: RenderEnvelope) -> str:
 
 
 def _refuse_reversal(e: RenderEnvelope) -> str:
+    """Explain that the bank decides the dispute; no refund or date is promised."""
     return {
         "es": "Yo presento la disputa y el banco decide; no puedo garantizar un reembolso ni "
         "una fecha. ¿Quiere que la presente si es elegible?",
@@ -550,6 +580,10 @@ def _refuse_reversal(e: RenderEnvelope) -> str:
 
 
 def _handoff_review(e: RenderEnvelope) -> str:
+    """Tell the customer a person must review the request and give the ticket reference.
+
+    The contact-within-hours sentence is included only when ``facts`` carries that figure.
+    """
     hours = e.facts.contact_within_hours
     ticket = e.facts.ticket_ref
     contact = (
@@ -569,6 +603,11 @@ def _handoff_review(e: RenderEnvelope) -> str:
 
 
 def _handoff_fraud(e: RenderEnvelope) -> str:
+    """Tell the customer a person handles a possible fraud right away, with no promised outcome.
+
+    States the ticket reference, and the contact-within-hours sentence only when ``facts`` carries
+    it.
+    """
     hours = e.facts.contact_within_hours
     ticket = e.facts.ticket_ref
     contact = (
@@ -591,6 +630,7 @@ def _handoff_fraud(e: RenderEnvelope) -> str:
 
 
 def _handoff_card_loss(e: RenderEnvelope) -> str:
+    """Say a card cannot be blocked here, point to the emergency line and note the handoff."""
     channel = _URGENT_CHANNEL[e.lang]
     return {
         "es": f"No puedo bloquear una tarjeta desde aquí. Hágalo de inmediato en {channel}. "
@@ -603,6 +643,7 @@ def _handoff_card_loss(e: RenderEnvelope) -> str:
 
 
 def _handoff_requested(e: RenderEnvelope) -> str:
+    """Confirm the customer is being connected to a person."""
     return {
         "es": "Le paso con un asesor ahora mismo. No hace falta que repita los detalles.",
         "pt": "Vou encaminhar você para um atendente agora mesmo. Você não precisa repetir os "
@@ -612,6 +653,7 @@ def _handoff_requested(e: RenderEnvelope) -> str:
 
 
 def _handoff_not_registered(e: RenderEnvelope) -> str:
+    """Say the request could not be registered and point the customer to the emergency line."""
     channel = _URGENT_CHANNEL[e.lang]
     return {
         "es": f"No pude registrar su solicitud en este momento. Por favor contacte al banco "
@@ -623,6 +665,7 @@ def _handoff_not_registered(e: RenderEnvelope) -> str:
 
 
 def _restart_after_pending(e: RenderEnvelope) -> str:
+    """Say the earlier session expired with nothing filed and start over."""
     return {
         "es": "Su sesión anterior expiró y no se presentó nada. Empecemos de nuevo: ¿qué "
         "transacción quiere revisar?",
@@ -634,6 +677,7 @@ def _restart_after_pending(e: RenderEnvelope) -> str:
 
 
 def _farewell(e: RenderEnvelope) -> str:
+    """Close the conversation politely."""
     return {
         "es": "Gracias por escribir. Que tenga un buen día.",
         "pt": "Agradeço o contato. Tenha um bom dia.",
@@ -641,8 +685,10 @@ def _farewell(e: RenderEnvelope) -> str:
     }[e.lang]
 
 
+# One template's renderer: reads only the envelope and returns the reply text.
 _Renderer = Callable[[RenderEnvelope], str]
 
+# Exactly one renderer per template, checked for completeness by the tests.
 _RENDERERS: dict[TemplateId, _Renderer] = {
     TemplateId.GREETING: _greeting,
     TemplateId.CLARIFY_TRANSACTION: _clarify_transaction,
