@@ -184,14 +184,14 @@ _ENUM_REPAIRS: Mapping[str, frozenset[str]] = {
 
 
 # A figure is read only when it is exactly: an optional currency (a symbol, or one of the ISO 4217
-# codes the bank's customers write, in either case, or "U$S" as Rioplatense Spanish writes dollars),
+# codes the bank's customers write, in either ASCII case, or "U$S" as Rioplatense Spanish writes dollars),
 # a number whose marks are digit groups and separators, and an optional currency. Anything else (a
 # sign, a percentage, an exponent, words, a code outside this list, digit runs split by text) is
 # not an amount and is never repaired into one.
 _CURRENCY_CODES = (
     "ARS|BOB|BRL|CLP|COP|CRC|CUP|DOP|EUR|GBP|GTQ|HNL|JPY|MXN|NIO|PAB|PEN|PYG|USD|UYU|VES"
 )
-_CURRENCY = rf"(?:(?i:(?:{_CURRENCY_CODES})\$?|U\$S|US\$)|R\$|\$|€|£|¥)"
+_CURRENCY = rf"(?:(?ai:(?:{_CURRENCY_CODES})\$?|U\$S|US\$)|R\$|\$|€|£|¥)"
 _SPACING = " \u00a0\u202f"
 _AMOUNT_TEXT = re.compile(
     rf"(?:{_CURRENCY}[{_SPACING}]*)?"
