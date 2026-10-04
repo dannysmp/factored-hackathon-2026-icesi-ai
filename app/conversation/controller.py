@@ -91,10 +91,11 @@ requirement for the category is met. A list request shows the customer's most re
 transactions as numbered options and keeps their references, in order, in ``offered_refs``; a
 later number selects the transaction shown at that position, and its question about the reason or
 the filing follows. Two or more matches for a described transaction ask for more detail rather
-than presenting a numbered list. A session identifies and evaluates at most one
-transaction/category pair at a time: while a case is still unfiled, a number from a list just
-shown, or a different transaction named by description, replaces the selection, but a session
-that has filed a case, been handed to a person or been closed never selects another, so a
+than presenting a numbered list. A session identifies and evaluates at most one transaction/category
+pair at a time: while a case is still unfiled, a number from a list just shown replaces the
+selection, whereas a transaction described in words is searched for only while none is selected
+(before the first, or after a no) and describing another while one is selected does not change it. A
+session that has filed a case, been handed to a person or been closed never selects another, so a
 second, different dispute needs a new session. The handoff packet's ``first_name`` is a
 placeholder: no tool exposes the customer's first name yet. A duplicate turn's handoff replay
 always uses the generic reviewing wording, which may differ from the original trigger-specific

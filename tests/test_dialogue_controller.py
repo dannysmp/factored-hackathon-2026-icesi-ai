@@ -1849,6 +1849,29 @@ def test_a_number_sent_after_the_conversation_is_handed_off_selects_nothing(
     assert state.offered_refs == ()
 
 
+def test_a_number_never_selects_from_a_stored_list_once_the_conversation_is_final(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+    listed = dialogue.store.get(_SESSION_ID)
+    assert listed is not None
+    assert len(listed.offered_refs) == 3
+    dialogue.store.save(
+        listed.model_copy(update={"phase": ConversationPhase.CLOSED}),
+        expected_version=listed.version,
+        turn_id="turn-seed",
+        now=_now(),
+    )
+
+    dialogue.say(_plain(NluIntent.CHOICE, choice=2))
+
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.phase is ConversationPhase.CLOSED
+    assert state.selected_ref is None
+
+
 def test_a_number_sent_after_the_filing_is_cancelled_selects_nothing(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:

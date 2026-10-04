@@ -41,7 +41,8 @@ Limitations
 -----------
 ``offered_refs`` holds the references of the transactions shown in the last list, in the order
 shown, so a numbered choice from that list resolves to the transaction the customer saw; it is
-empty until a list is shown and again once a transaction is selected.
+empty until a list is shown, and again once a transaction is selected, the pending question is
+answered, or the conversation reaches a final phase.
 
 ``last_case_number``/``last_ticket_ref`` exist so a repeated turn id can be answered from the
 state alone (no cached reply text is stored, per the store's own idempotent-replay design): the
