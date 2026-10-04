@@ -48,7 +48,7 @@ Runtime Contract
 ``render_markdown(report) -> str``.
 ``judge_validation_section(agreement, provenance, detail=None, facts_coverage=None) -> str``: the
 exact text ``render_markdown`` puts under its Judge validation heading — exported so a cheaper
-regeneration of just that section (once the real human sample lands) renders identically to a
+regeneration of just that section (once the real human sample is available) renders identically to a
 full report, never a hand-maintained second copy of the same wording
 (``evals.h4_judge_validation``).
 
@@ -174,9 +174,9 @@ class EvaluationReport:
     bank_timezone: str
     scope_note: str = ""
     """Set by the caller when ``golden_cases`` is a subset of the full golden set (for example the
-    16-case CI-smoke subset, run before the full adversarial set's loader lands) — empty for a
-    full-golden-set run. Rendered as a prominent callout, never silently inferred from a case
-    count this module has no independent way to call "full" or "partial"."""
+    16-case CI-smoke subset) — empty for a full-golden-set run. Rendered as a prominent callout,
+    never silently inferred from a case count this module has no independent way to call "full" or
+    "partial"."""
     judge_call_count: int = 0
     """Calls the live judge made while producing this report; zero when it was not run."""
     judge_cost_usd: float | None = None

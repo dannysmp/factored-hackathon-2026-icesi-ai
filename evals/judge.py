@@ -4,11 +4,11 @@ LLM Judge
 
 Overview
 --------
-Scores one finished case transcript against the LLM judge's rubric: grounding, language quality,
-and clarification quality (when the case asked a clarifying question). The rubric is the same one,
-word for word, that the two human raters receive when they
-double-score the same held-out sample, so the report's judge-vs-human agreement check
-compares like against like; the rubric is committed and versioned.
+Scores one finished case transcript against the LLM judge's rubric: grounding, language quality, and
+clarification quality (when the case asked a clarifying question). The rubric is the same one, word
+for word, that the two human raters receive when they double-score the same held-out sample, so the
+report's judge-vs-human agreement check compares like against like; the rubric is committed and
+versioned.
 
 Scope
 -----

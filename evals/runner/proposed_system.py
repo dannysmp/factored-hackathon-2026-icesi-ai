@@ -13,10 +13,10 @@ Scope
 -----
 In: minting the session for one case's resolved customer, sending its scripted turns in order,
 timing each call, and assembling the result into a ``RunTranscript``.
-Out: resolving which customer a case's ``seed_ref`` names (``evals.runner.seed_resolution``,
-already built); scoring the transcript (``evals.scoring``, already built); building the HTTP
-client or the app itself (the caller's job — this module takes a ready client, so the same code
-drives a real deployed instance or an in-process ASGI transport without caring which).
+Out: resolving which customer a case's ``seed_ref`` names (``evals.runner.seed_resolution``);
+scoring the transcript (``evals.scoring``); building the HTTP client or the app itself (the caller's
+job — this module takes a ready client, so the same code drives a real deployed instance or an
+in-process ASGI transport without caring which).
 
 Design Principles
 -----------------
@@ -24,10 +24,10 @@ Design Principles
   turns endpoint into the process — no envelope, no internal state — for the same reason the
   scorer doesn't: crossing that boundary from outside would mean the runner is testing something
   a real client could never actually observe.
-- **One deterministic, unique ``turn_id`` per call, derived from the case.** ``turn_id`` exists so
-  a retried request never advances a conversation twice (AC of the turns contract); deriving it
-  from the case id and the turn's position keeps every case's run reproducible and makes a replay
-  of the same case produce the same request stream.
+- **One deterministic, unique ``turn_id`` per call, derived from the case.** ``turn_id`` exists so a
+  retried request never advances a conversation twice (the turns contract's guarantee); deriving it
+  from the case id and the turn's position keeps every case's run reproducible and makes a replay of
+  the same case produce the same request stream.
 - **A non-2xx response is a runner failure, not a silently-absorbed one.** A case's scripted turn
   is expected to succeed at the HTTP level (a 4xx here means the harness itself is malformed, not
   that the case under test failed); ``httpx.Response.raise_for_status`` surfaces that immediately

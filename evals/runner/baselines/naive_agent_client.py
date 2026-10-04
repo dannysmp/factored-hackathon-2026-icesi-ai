@@ -38,9 +38,8 @@ Design Principles
   treats it as a rejection, but a caller that sequences a batch can tell it apart from the
   account-level causes (bad credentials, no model access): it is driven by one case's own
   conversation and does not recur for the next case.
-- **The model id is pinned to the same reviewed allow-list every caller uses.** B1 is still a
-  system variant this project runs cost-tracked, reviewed calls against; it does not get a
-  looser model policy than P's own.
+- **The model id is pinned to the same allow-list every caller uses.** B1 is still a system variant
+  this project runs cost-tracked calls against; it does not get a looser model policy than P's own.
 
 Runtime Contract
 -----------------
@@ -68,7 +67,7 @@ import anthropic  # The provider SDK, used only behind this adapter
 from pydantic import SecretStr  # The API key, handed in already resolved
 
 # Local modules
-from app.config import ALLOWED_MODELS  # The reviewed model-id allow-list, shared with P and B0
+from app.config import ALLOWED_MODELS  # The model-id allow-list, shared with P and B0
 from app.llm.client import (  # Reused: the failure taxonomy is provider-level, not LlmClient-only
     LlmRequestRejected,
     LlmUnavailable,
@@ -135,8 +134,8 @@ class NaiveAgentClient:
         api_key : SecretStr
             The Anthropic API key, already resolved by the caller.
         model : str
-            Must be a member of ``app.config.ALLOWED_MODELS``; the same reviewed allow-list every
-            other caller in this project is pinned to.
+            Must be a member of ``app.config.ALLOWED_MODELS``; the same allow-list every other
+            caller in this project is pinned to.
         client : anthropic.Anthropic | None
             An existing SDK client to use instead of constructing one; tests inject a stub here so
             no test call reaches the network.

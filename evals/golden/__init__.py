@@ -20,7 +20,7 @@ Design Principles
 -------------------
 Importing this package has no side effects and touches no file outside itself. Each category
 module exports a `CASES: tuple[Case, ...]` constant; nothing here decides how many categories
-exist beyond what has already landed.
+exist.
 """
 
 from __future__ import annotations

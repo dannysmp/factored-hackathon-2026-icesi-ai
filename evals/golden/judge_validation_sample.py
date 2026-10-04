@@ -1,16 +1,15 @@
 """
 Judge Validation Sample — Synthetic Placeholder
-======================================================
+===============================================
 
 Overview
 --------
 A synthetic stand-in for the 50-case judge-validation sample the judge rubric asks two human raters
 to double-score, shaped exactly like the two sheets they will return (``H4-case-sheet-Rater1.csv``,
 ``H4-case-sheet-Rater2.csv``), plus a synthetic stand-in for the automated judge's own verdicts on
-the same 50 cases. The real sheets arrive only after the system is built; this fixture exists so
-``evals.judge_validation``'s agreement computation, and the report generator's judge-validation
-section, are real, tested code today, not a stub waiting on the human sample to find out whether
-they work.
+the same 50 cases. This fixture exists so ``evals.judge_validation``'s agreement computation, and
+the report generator's judge-validation section, are real, tested code today, not a stub waiting on
+the human sample to find out whether they work.
 
 Scope
 -----
@@ -25,7 +24,7 @@ Design Principles
 - **Provenance is stated, never inferred**, the same rule ``evals.models.Case`` already applies to
   the golden set: ``PROVENANCE`` names this sample as ``"team_generated_synthetic"``, and the
   report generator refuses to present this sample's agreement numbers as the real ≥50-case human
-  validation the plan requires unless the sample it is given carries a different provenance.
+  validation unless the sample it is given carries a different provenance.
 - **The sample exercises all three of this module's own decision branches, not just the happy
   path** (the same "a vacuous test looks identical until mutation-tested" discipline
   ``evals.judge_validation``'s own tests already apply):

@@ -64,7 +64,7 @@ case skipped filing (a case row is never created for one, so there is nothing to
 fraud-claim case is marked not applicable rather than checked against the residual risk it
 actually represents (the engine can never resolve one to ``Outcome.ELIGIBLE``, so its mere
 existence as a filed case is itself the defect class this oracle exists to catch); closing this
-gap, and recomputing the amount-threshold escalation from ``CaseRecord.amount`` now that it is
+gap, and recomputing the amount-threshold escalation from ``CaseRecord.amount`` since it is
 known to be stored, both belong with the live-system integration this module does not attempt
 yet. Trusts the caller's ``transactions_by_ref`` mapping; verifying that mapping's own provenance
 against ``data/gold/ops_seed`` or ``data/gold/eval_bank`` is the caller's responsibility.

@@ -24,7 +24,7 @@ Design Principles
   (`evals/golden/cases/<category>.csv`), so no two category groups can conflict on the same
   generated file. Only this module itself is shared, and adding a category only ever needs one
   import and one `CATEGORY_CASES` entry, never a change to the render or check functions.
-- **`ALL_CASES` is ordered by the mix table, not by when a category was added.** Derived by
+- **`ALL_CASES` is ordered by the mix table, not by import order.** Derived by
   iterating `CaseCategory`'s own declaration order (the mix table's row order: normal, ambiguous,
   unsupported, human-required, multilingual, adversarial) and looking up each category in
   `CATEGORY_CASES`, so the combined tuple's order never depends on the order categories were added.
@@ -45,7 +45,7 @@ every case, in `CaseCategory`'s declared order. ``render_case_sheet(cases) -> st
 
 Limitations
 -----------
-All six categories now exist; `ALL_CASES` holds the golden set's full 135 cases.
+All six categories exist; `ALL_CASES` holds the golden set's full 135 cases.
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ CATEGORY_CASES: dict[CaseCategory, tuple[Case, ...]] = {
 }
 
 #: Every authored case, in `CaseCategory`'s declared order (the golden set's mix-table row
-#: order), not the order category groups were delivered in.
+#: order), not the order the categories are imported in.
 ALL_CASES: tuple[Case, ...] = tuple(
     case for category in CaseCategory for case in CATEGORY_CASES.get(category, ())
 )

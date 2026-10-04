@@ -4,8 +4,8 @@ Case Sheet Export
 
 Overview
 --------
-Produces the real ``H4-case-sheet.csv`` the judge rubric asks two
-human raters to double-score: a stratified 50-case sample of the golden set, with each row's
+Produces the real ``H4-case-sheet.csv`` that the judge rubric asks two human raters to double-score:
+a stratified 50-case sample of the golden set, with each row's
 ``system_replies``/``facts_and_sources`` filled from a real, captured run
 (``CaseResult.reply_text``/``facts_and_sources``, ``evals.facts.attach_masked_transcript``'s own
 opt-in output). Fills, for the two blank columns, whatever synthetic stand-in a caller was using

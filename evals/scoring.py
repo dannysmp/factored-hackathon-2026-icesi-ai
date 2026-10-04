@@ -139,8 +139,7 @@ figure per case, not one per turn. ``_dialogue_state_matches`` grounds a ``CONFI
 transaction and category, but not its reason code: every such case today declares
 ``expected_reason_code=ReasonCode.ELIGIBLE``, and ``dialogue_state`` carries no reason-code column
 to verify it against before a case is actually filed — a genuine, still-disclosed gap distinct
-from the one this module now closes, not something a future change should assume was already
-covered here.
+from the one this module closes, not something to assume is covered here.
 """
 
 from __future__ import annotations

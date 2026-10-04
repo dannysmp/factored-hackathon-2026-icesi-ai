@@ -22,7 +22,7 @@ Design Principles
 - **A fixed, explicit list, not a prefix match.** ``evals.golden.adversarial``'s case ids already
   group by subtype (``adv-injection-*``, ``adv-poisoned-*``, ``adv-unauthorized-*``), but naming
   the 16 ids directly here means a case added later under the same prefix does not silently grow
-  — or shrink — what the smoke job runs without a reviewed decision to add it to this list too.
+  — or shrink — what the smoke job runs without being added to this list too.
 - **Fails loudly if the golden set changes underneath it.** ``smoke_cases`` raises if any id in
   ``SMOKE_CASE_IDS`` no longer resolves, rather than silently running fewer cases than the CI job
   is meant to cover.

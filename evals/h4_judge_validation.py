@@ -33,7 +33,7 @@ Design Principles
   other).
 - **Every refusal happens before the first paid judge call.** Sheet integrity, rater roles and
   the report's shape are all checked up front.
-- **One judge call per case, never a batch call.** ``evals.judge.LlmJudge.score`` is already built
+- **One judge call per case, never a batch call.** ``evals.judge.LlmJudge.score`` is built
   for exactly one transcript at a time; this module does not add a second call shape for a sample
   this small (50 cases).
 - **A row with no ``clarification`` score (the rubric's own ``NA`` convention) becomes ``None``,
