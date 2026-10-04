@@ -7,10 +7,10 @@ Overview
 Turns one full harness run's already-computed results — P's three repeated runs, B0's and B1's
 single runs, the live judge's own verdicts over P's last run, and the H4 judge-validation sample's
 agreement — into ``reports/evaluation.md``, the single generated artifact
-``plan/docs/evaluation-plan.md``'s Report section names. The first full ``make evaluate`` this
-slice enables is exactly this: every piece this module reads was built by an earlier slice (the
-runner, the metrics engine, the judge, the judge-validation agreement computation); this module
-only assembles and renders what they already produced. The judge-scored-quality section (a
+``plan/docs/evaluation-plan.md``'s Report section names. The full ``make evaluate`` run this
+module renders is exactly that: every piece it reads was already built elsewhere (the runner, the
+metrics engine, the judge, the judge-validation agreement computation); this module only
+assembles and renders what they already produced. The judge-scored-quality section (a
 system's own live-judge verdicts) and the judge-validation section (the judge's agreement with
 human raters) answer two different questions from two different data sources and are never
 conflated.

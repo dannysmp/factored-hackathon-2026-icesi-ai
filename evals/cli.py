@@ -288,7 +288,7 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
     """Run every system variant the plan's execution protocol calls for, and assemble the report.
 
     P runs three times, B0 and B1 once each (``_RUN_COUNTS``); the judge-validation
-    (agreement-with-human) section reads this slice's own synthetic placeholder sample until the
+    (agreement-with-human) section reads its own synthetic placeholder sample until the
     real H4 sheets replace it (see ``evals.golden.judge_validation_sample``) — a separate question
     from the judge-scored-quality section, which scores P's own last run directly with the live
     judge (``_JUDGED_SYSTEMS``).
