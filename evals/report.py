@@ -696,6 +696,25 @@ def _judge_lean(dimension: str, label: str, pair: PairDetail) -> str | None:
     )
 
 
+def _demotion_reason(entry: DimensionAgreement, threshold: str) -> str:
+    """Why a dimension was demoted: a rate below the bar, or no pair to compute one from."""
+    undefined = [
+        label
+        for label, value in (
+            ("Rater 1", entry.rater1_to_judge),
+            ("Rater 2", entry.rater2_to_judge),
+        )
+        if value == NOT_DEFINED
+    ]
+    if undefined:
+        return (
+            f"No case was scored by both {' and '.join(undefined)} and the judge, so the "
+            "judge's agreement is not defined, and an agreement that cannot be measured does "
+            "not validate the judge."
+        )
+    return f"The judge's agreement with at least one rater is below {threshold}."
+
+
 def _validation_decision(
     agreement: tuple[DimensionAgreement, ...],
     detail: tuple[DimensionDetail, ...] | None,
@@ -706,9 +725,10 @@ def _validation_decision(
     for entry in agreement:
         if entry.demoted:
             lines.append(
-                f"- **{entry.dimension}: human-only.** The judge's agreement with at least one "
-                f"rater is below {threshold}, so this report states no judge score for it; the "
-                "two raters' scores stand in its place."
+                f"- **{entry.dimension}: not validated.** {_demotion_reason(entry, threshold)} "
+                "The judge's mean for it in the judge-scored quality section is the judge's own "
+                "output, not a validated measure of quality; the raters' per-case scores are "
+                "in the cases file written beside this report."
             )
         else:
             lines.append(
@@ -726,16 +746,16 @@ def _validation_decision(
         if entry.rater_to_rater != NOT_DEFINED and entry.rater_to_rater < DEMOTION_THRESHOLD:
             lines.append(
                 f"  The two raters agree with each other on {entry.dimension} in "
-                f"{entry.rater_to_rater:.0%} of cases, below the same bar, so human-only scoring "
-                "of it is itself not settled and a single rater's score is not a reference."
+                f"{entry.rater_to_rater:.0%} of cases, below the same bar, so the raters' "
+                "scores are themselves not settled and a single rater's score is not a reference."
             )
     reading = (
         "Agreement is the share of cases scored identically. The weighted kappa is the "
         "quadratic-weighted Cohen's kappa over the 0 to 2 scale: it is near zero whenever one "
         "side gives almost the same score to every case, however often the two sides match, so "
         "it is read with the pair count and the direction table, not alone. "
-        "Clarification is scored only for the cases the rubric asks the question about, which is "
-        "why its pair count is far smaller."
+        "Clarification is scored only for the cases the rubric asks the question about, so its "
+        "pair count is the number of those cases, shown in its row."
     )
     return "**Decision per dimension**\n\n" + "\n".join(lines) + "\n\n" + reading
 
@@ -782,7 +802,7 @@ def judge_validation_section(
                 _agreement_cell(entry.rater_to_rater, pairs.rater_to_rater if pairs else None),
                 _agreement_cell(entry.rater1_to_judge, pairs.rater1_to_judge if pairs else None),
                 _agreement_cell(entry.rater2_to_judge, pairs.rater2_to_judge if pairs else None),
-                "yes (human-only in this report)" if entry.demoted else "no",
+                "yes (judge score not validated)" if entry.demoted else "no",
             ]
         )
     table = _table(
@@ -792,7 +812,7 @@ def judge_validation_section(
     if detail is not None:
         parts.append(_direction_table(detail))
         parts.append(_validation_decision(agreement, detail))
-    if facts_coverage is not None:
+    if facts_coverage is not None and facts_coverage[0] > 0:
         parts.append(_facts_coverage_note(facts_coverage))
     return "\n\n".join(parts)
 

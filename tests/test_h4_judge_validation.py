@@ -12,6 +12,7 @@ from __future__ import annotations
 # Standard libraries
 import logging
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -293,7 +294,7 @@ def test_apply_real_judge_validation_replaces_the_validation_and_drops_the_stale
     assert "Pending H4" not in after_text
     assert "pending the real H4 human sample" not in after_text
     assert "Judge-validation sample provenance: `human`." in after_text
-    assert "yes (human-only in this report)" in after_text  # language_quality's own demotion
+    assert "yes (judge score not validated)" in after_text  # language_quality's own demotion
 
     # Every other section is untouched: the same "after" text, rendered directly from a report
     # that already carried the real agreement and human provenance, matches exactly.
@@ -607,7 +608,7 @@ def test_the_patched_section_carries_the_decision_direction_table_and_facts_limi
     )
 
     assert "Decision per dimension" in patched
-    assert "language_quality: human-only" in patched
+    assert "language_quality: not validated" in patched
     assert "Judge higher / lower than Rater 1" in patched
     assert "46 of the 50 sheet rows" in patched
 
@@ -695,3 +696,23 @@ def test_case_scores_csv_puts_each_source_in_its_own_column() -> None:
     line = case_scores_csv([row_1], [row_2], [verdict]).splitlines()[1]
 
     assert line == "J-01,es,normal,0,1,2,1,2,0,2,0,1"
+
+
+def test_a_demoted_dimension_claims_only_what_the_whole_report_does_with_the_judge_score() -> None:
+    rater1 = load_rater_sheet(_RATER_1_CSV)
+    rater2 = load_rater_sheet(_RATER_2_CSV)
+    verdicts = score_with_judge(rater1, LlmJudge(FakeLlm(_JUDGE_RESPONSES), model=_MODEL))
+    scores_1, scores_2 = _as_rater_scores(rater1), _as_rater_scores(rater2)
+    agreement = compute_agreement(scores_1, scores_2, verdicts)
+    detail = compute_detail(scores_1, scores_2, verdicts)
+    base = _minimal_report()
+    judged = replace(base.systems[0], judge_verdicts=verdicts)
+    report = replace(base, systems=(judged,))
+
+    patched = apply_real_judge_validation(render_markdown(report), agreement, detail)
+
+    judged_section = patched.split("## 4.")[1].split("## 5.")[0]
+    assert "| P |" in judged_section
+    assert "states no judge score" not in patched
+    assert "scores stand in its place" not in patched
+    assert "not a validated measure of quality" in patched

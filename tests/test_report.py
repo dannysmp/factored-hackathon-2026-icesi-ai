@@ -21,6 +21,7 @@ from evals.fairness import CaseProfile
 from evals.judge import JudgeVerdict
 from evals.judge_validation import DimensionAgreement, DimensionDetail, PairDetail
 from evals.metrics import (
+    NOT_DEFINED,
     CaseResult,
     CostMetrics,
     HeadlineMetrics,
@@ -521,7 +522,7 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
     )
     section = text.split("## 9.")[1].split("## 10.")[0]
 
-    assert "human-only" in section
+    assert "judge score not validated" in section
 
 
 def _detail(first_higher: int = 0, second_higher: int = 3) -> tuple[DimensionDetail, ...]:
@@ -571,14 +572,14 @@ def test_a_kappa_that_is_not_defined_is_stated_not_hidden() -> None:
     assert "kappa not defined" in judge_validation_section(_agreement(), "human", detail)
 
 
-def test_a_demoted_dimension_is_stated_human_only_and_a_kept_one_judge_scored() -> None:
+def test_a_demoted_dimension_is_stated_not_validated_and_a_kept_one_judge_scored() -> None:
     demoted = judge_validation_section((_agreement_at(0.9, 0.5, True),), "human", _detail())
     kept = judge_validation_section((_agreement_at(0.9, 0.9, False),), "human", _detail())
 
-    assert "grounding: human-only" in demoted
+    assert "grounding: not validated" in demoted
     assert "grounding: judge-scored" not in demoted
     assert "grounding: judge-scored" in kept
-    assert "human-only.**" not in kept
+    assert "not validated.**" not in kept
 
 
 def test_raters_who_disagree_with_each_other_are_called_out_below_the_threshold() -> None:
@@ -984,3 +985,45 @@ def test_the_fairness_section_without_a_proposed_system_has_nothing_to_slice() -
     section = _fairness_text(_report(systems=(_system("B0"),)))
 
     assert "System P was not run" in section
+
+
+def test_a_dimension_with_no_comparable_pair_is_not_said_to_be_below_the_bar() -> None:
+    undefined = DimensionAgreement(
+        dimension="clarification",
+        rater_to_rater=NOT_DEFINED,
+        rater1_to_judge=NOT_DEFINED,
+        rater2_to_judge=NOT_DEFINED,
+        demoted=True,
+    )
+
+    empty = PairDetail(compared=0, weighted_kappa=NOT_DEFINED, first_higher=0, second_higher=0)
+    detail = (
+        DimensionDetail(
+            dimension="clarification",
+            rater_to_rater=empty,
+            rater1_to_judge=empty,
+            rater2_to_judge=empty,
+        ),
+    )
+
+    section = judge_validation_section((undefined,), "human", detail)
+    line = next(row for row in section.splitlines() if "clarification: not validated" in row)
+
+    assert "below 80%" not in line
+    assert "agreement is not defined" in line
+    assert "Rater 1 and Rater 2" in line
+
+
+def test_no_facts_note_is_rendered_when_every_sheet_row_carried_facts() -> None:
+    assert "facts column" not in judge_validation_section(
+        _agreement(), "human", _detail(), facts_coverage=(0, 50)
+    )
+    assert "facts column" in judge_validation_section(
+        _agreement(), "human", _detail(), facts_coverage=(1, 50)
+    )
+
+
+def test_clarification_pair_count_wording_makes_no_size_claim() -> None:
+    section = judge_validation_section((_agreement_at(0.9, 0.9, False),), "human", _detail())
+
+    assert "far smaller" not in section

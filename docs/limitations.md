@@ -63,7 +63,8 @@ results still to come say so and name the command that completes them.
   judge and patches that section and the matching limitations line of that report with rater-to-rater
   and rater-to-judge agreement per dimension, each with its pair count and weighted kappa, the
   direction of the differences and the decision per dimension, and writes every case's scores to
-  `reports/judge-validation-cases.csv`; this bullet is to be rewritten with those figures,
+  `reports/judge-validation-cases.csv`, a local working file that is not tracked in the repository;
+  this bullet is to be rewritten with those figures,
   and with any dimension the judge is demoted on, at the same time. The written analysis of where
   the raters and the judge disagree is a person's job and is not generated.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get

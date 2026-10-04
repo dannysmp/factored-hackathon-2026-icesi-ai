@@ -194,6 +194,10 @@ def test_weighted_kappa_is_zero_when_one_side_never_varies() -> None:
     assert _grounding_kappa([0, 1, 2], [1, 1, 1]) == pytest.approx(0.0)
 
 
+def test_weighted_kappa_is_zero_when_both_sides_are_constant_at_different_scores() -> None:
+    assert _grounding_kappa([0, 0, 0, 0], [2, 2, 2, 2]) == pytest.approx(0.0)
+
+
 def test_weighted_kappa_is_not_defined_when_both_sides_give_one_score() -> None:
     assert _grounding_kappa([2, 2, 2], [2, 2, 2]) == "not defined"
 
