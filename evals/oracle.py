@@ -5,13 +5,11 @@ Independent Case-Row Oracle
 Overview
 --------
 Recomputes the dispute-policy engine's eligibility gates against every stored case row, from the
-transaction the case cites and the case's own domain date, and flags a row the engine would not
-have made eligible today. ``plan/docs/architecture.md`` states the guarantee this checks: "an
-independent oracle in the evaluation recomputes the policy engine on every stored case row, from
-the trusted transaction and the reference date... and asserts that no case exists that the engine
-would not have made eligible, except through the controller." One implementation serves both a
-direct check that every filed case stays eligible and, later, an evaluation harness comparing
-what different system variants filed against the same policy.
+transaction the case cites and the case's own domain date, and flags a row the engine would not have
+made eligible today. The guarantee this checks: recomputed from the trusted transaction and the
+reference date, no case exists that the engine would not have made eligible, except through the
+controller. One implementation serves both a direct check that every filed case stays eligible and,
+later, an evaluation harness comparing what different system variants filed against the same policy.
 
 Scope
 -----

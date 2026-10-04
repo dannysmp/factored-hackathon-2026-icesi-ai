@@ -4,22 +4,22 @@ Naive Agent LLM Client
 
 Overview
 --------
-A narrow Anthropic SDK wrapper for the B1 baseline the evaluation plan names: "naive LLM agent:
-same model + tools in one prompt; no policy engine, no verifier, no output checks." B1 needs the
-model to freely choose whether to call a tool, call several in sequence, or just reply in text —
-the opposite of what ``app.llm.client.LlmClient`` is built for (ADR-2's decide-then-render
-grounding forces exactly one tool per call, by design). This module is a separate, narrow adapter
-for exactly that different call shape; it does not implement ``LlmClient`` and is never reached
-from any request path this service serves to a customer.
+A narrow Anthropic SDK wrapper for the B1 baseline, a "naive LLM agent: same model + tools in one
+prompt; no policy engine, no verifier, no output checks." B1 needs the model to freely choose
+whether to call a tool, call several in sequence, or just reply in text — the opposite of what
+``app.llm.client.LlmClient`` is built for (the decide-then-render grounding forces exactly one tool
+per call, by design). This module is a separate, narrow adapter for exactly that different call
+shape; it does not implement ``LlmClient`` and is never reached from any request path this service
+serves to a customer.
 
 Scope
 -----
 In: ``NaiveAgentClient``, one open-tool-choice call to the Anthropic API, and the turn it returns
 (text said, tool calls made, if any).
-Out: the conversation loop that drives multiple turns, decides when to stop, and dispatches a
-called tool against the real ``ToolPort`` (a following increment); the tool schemas themselves
-(the same following increment, since they depend on the seven tools B1 exposes); scoring a B1 run
-(``evals.scoring``, already built, reused unchanged once B1 produces a ``RunTranscript``).
+Out: the conversation loop that drives multiple turns, decides when to stop, and dispatches a called
+tool against the real ``ToolPort`` (``evals.runner.baselines.b1``); the tool schemas themselves
+(``evals.runner.baselines.b1_tools``, since they depend on the seven tools B1 exposes); scoring a B1
+run (``evals.scoring``, reused unchanged once B1 produces a ``RunTranscript``).
 
 Design Principles
 -----------------
@@ -49,10 +49,10 @@ Runtime Contract
 
 Limitations
 -----------
-Returns one turn; looping until the model stops calling tools, and dispatching a called tool
-against a real, session-scoped ``ToolPort``, is the following increment's job (see Scope). No tool
-schema is defined here — this module knows nothing about what tools exist, only how to place a
-list of them in front of the model and read back what it did.
+Returns one turn; looping until the model stops calling tools, and dispatching a called tool against
+a real, session-scoped ``ToolPort``, is ``evals.runner.baselines.b1``'s job (see Scope). No tool
+schema is defined here — this module knows nothing about what tools exist, only how to place a list
+of them in front of the model and read back what it did.
 """
 
 from __future__ import annotations
@@ -175,8 +175,8 @@ class NaiveAgentClient:
         started = time.monotonic()
         try:
             # The SDK's own parameter types are precise TypedDicts this thin wrapper does not
-            # re-declare; the caller (the B1 loop, a following increment) builds messages and
-            # tools already shaped to the API's own contract.
+            # re-declare; the caller (the B1 loop) builds messages and tools already shaped to the
+            # API's own contract.
             response = self._client.messages.create(
                 model=self._model,
                 system=system,

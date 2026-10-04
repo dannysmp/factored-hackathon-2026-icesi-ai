@@ -8,17 +8,16 @@ Two modes, both accepting ``--smoke`` to narrow the case set to
 ``evals.runner.smoke.smoke_cases()`` (16 cases) instead of the full golden set,
 ``evals.golden.case_sheet.ALL_CASES`` (135 cases, including all 32 adversarial cases).
 ``make evaluate SYSTEM={P|B0|B1} [SMOKE=1]``: runs one system variant once and logs the resulting
-headline metrics (unchanged from every earlier increment, including the CI-gating smoke job).
-``make evaluate FULL=1 [SMOKE=1]``: runs every system variant (P three times, B0 and B1 once each,
-the plan's own execution protocol) and writes the full ``reports/evaluation.md`` — the first
-increment able to produce the plan's single generated report artifact end to end. The full
-135-case golden set (every ``expected_intent`` it declares, including all 32 adversarial cases)
-runs either way; ``SMOKE=1`` stays available as a deliberately narrower, faster scope for a quick
-check, and the written report's own ``scope_note`` discloses the narrowing whenever it is used,
-rather than silently under-reporting. ``--full`` additionally scores P's last run with the live
-judge (``_JUDGED_SYSTEMS``), feeding the report's own judge-scored-quality section — B0 and B1
-carry no judge verdicts, for the same reason H4's own human validation is scoped to the proposed
-system alone.
+headline metrics, the run the CI-gating smoke job gates on.
+``make evaluate FULL=1 [SMOKE=1]``: runs every system variant (P three times, B0 and B1 once each)
+and writes the full ``reports/evaluation.md``, the single generated report. The full 135-case golden
+set (every ``expected_intent`` it declares, including all 32 adversarial cases) runs either way;
+``SMOKE=1`` stays available as a deliberately narrower, faster scope for a quick check, and the
+written report's own ``scope_note`` discloses the narrowing whenever it is used, rather than
+silently under-reporting. ``--full`` additionally scores P's last run with the live judge
+(``_JUDGED_SYSTEMS``), feeding the report's own judge-scored-quality section — B0 and B1 carry no
+judge verdicts, for the same reason H4's own human validation is scoped to the proposed system
+alone.
 
 Scope
 -----
@@ -39,9 +38,9 @@ Design Principles
 -----------------
 - **P and B0 drive over the real HTTP surface, in process.** Both are built with
   ``app.main.create_app`` (B0 via ``evals.runner.baselines.b0.build_b0_app``, which additionally
-  forces a stubbed LLM) and driven through ``starlette.testclient.TestClient``, the same shape
-  every already-reviewed integration test in this slice already uses — never a real network
-  socket, never a second, unreviewed HTTP client construction path.
+  forces a stubbed LLM) and driven through ``starlette.testclient.TestClient``, the same shape every
+  integration test already uses — never a real network socket, never a second, separate HTTP
+  client construction path.
 - **B1 never touches the HTTP surface at all.** Its own batch runner
   (``evals.runner.baselines.b1.run_cases``) builds a real ``NaiveAgentClient`` against a real
   Anthropic key; there is no stub path for B1's own model call, since B1 exists specifically to
@@ -53,15 +52,15 @@ Design Principles
   ``build_b0_app`` forces ``llm_provider`` — would mean a CLI invocation could silently expose a
   public, no-password login path an operator's own configuration never asked for; this module
   fails loudly instead, naming the two settings to set.
-- **The model id B1 calls with is ``settings.nlu_model``.** The evaluation plan's "same model"
-  wording does not distinguish, for a single unified agent role, between P's two configured
-  models (understanding vs. rendering); B1's defining behavior is deciding which tool to call
-  next, the closer analogue of the understanding role, so this module names that one. Disclosed
-  here, not hidden, in case a later increment judges differently — see
-  ``evals.runner.baselines.b1``'s own Limitations, which names this exact open question.
+- **The model id B1 calls with is ``settings.nlu_model``.** B1 is specified to use the "same model"
+  as P, which does not distinguish, for a single unified agent role, between P's two configured
+  models (understanding vs. rendering); B1's defining behavior is deciding which tool to call next,
+  the closer analogue of the understanding role, so this module names that one. Disclosed here, not
+  hidden, in case a different choice proves better — see ``evals.runner.baselines.b1``'s own
+  Limitations, which names this exact open question.
 - **The exit code is the enforcement mechanism, not a separate check.** A batch with any
   ``CaseResult.is_unsafe`` exits ``1`` — the literal mechanism behind "a regression that turns any
-  adversarial case unsafe blocks merge" (``plan/docs/evaluation-plan.md``'s CI wiring section).
+  adversarial case unsafe blocks merge".
 - **A judge call that cannot complete aborts ``--full``, not just that one case.** ``evals.judge``
   already documents this as deliberate ("a judge call has no customer waiting on it: any
   ``LlmError`` propagates to the caller"); this module does not add a swallow-and-continue around
@@ -152,8 +151,8 @@ _SILVER_DIR = Path(__file__).resolve().parents[1] / "data" / "silver"
 # change since 1993.
 _BANK_TIMEZONE_LABEL = "America/Bogota (UTC-5)"
 
-# How many times each system runs for a full report: 3 for P (the plan's own repeated-run
-# requirement), 1 for a baseline (there is nothing to average or flip across a single run).
+# How many times each system runs for a full report: 3 for P (repeated runs expose run-to-run
+# variability), 1 for a baseline (there is nothing to average or flip across a single run).
 _RUN_COUNTS = {"P": 3, "B0": 1, "B1": 1}
 
 # The systems the live judge scores in a full report: P only, the same scope H4's own human
@@ -300,7 +299,7 @@ def _build_system_result(
 
 
 def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationReport, bool]:
-    """Run every system variant the plan's execution protocol calls for, and assemble the report.
+    """Run every system variant a full report covers, and assemble the report.
 
     P runs three times, B0 and B1 once each (``_RUN_COUNTS``); the judge-validation
     (agreement-with-human) section reads its own synthetic placeholder sample until the
@@ -457,11 +456,11 @@ def _log_report(system: str, results: Sequence[CaseResult], metrics: HeadlineMet
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the evaluation harness; return the process exit code.
 
-    Either ``--system {P,B0,B1} [--smoke]`` (one variant, one run, logged as before — unchanged
-    from every earlier increment, including the CI-gating smoke job) or ``--full [--smoke]
-    [--report PATH]`` (every variant, P three times, written as ``reports/evaluation.md``).
-    ``--full --smoke`` narrows the full run to the 16-case CI-smoke subset too, for a faster check;
-    the written report discloses the narrowing in its own ``scope_note``.
+    Either ``--system {P,B0,B1} [--smoke]`` (one variant, one run, logged, as the CI-gating smoke
+    job does) or ``--full [--smoke] [--report PATH]`` (every variant, P three times, written as
+    ``reports/evaluation.md``). ``--full --smoke`` narrows the full run to the 16-case CI-smoke
+    subset too, for a faster check; the written report discloses the narrowing in its own
+    ``scope_note``.
     """
     parser = argparse.ArgumentParser(description="Run the evaluation harness.")
     parser.add_argument("--system", choices=_SYSTEMS)

@@ -4,11 +4,11 @@ Judge Validation (H4)
 
 Overview
 --------
-Computes the per-dimension agreement ``plan/docs/evaluation-plan.md``'s Judge validation section
-and ``plan/product/human-tasks/H4-judge-rubric.md`` both name: between the two human raters, and
-between each rater and the automated judge, over the same stratified sample of cases. A dimension
-whose agreement with the judge falls below the committed 80% threshold is demoted to human-only
-scoring for the final report — this module decides that, the report generator only renders it.
+Computes the per-dimension agreement ``plan/product/human-tasks/H4-judge-rubric.md`` names: between
+the two human raters, and between each rater and the automated judge, over the same stratified
+sample of cases. A dimension whose agreement with the judge falls below the committed 80% threshold
+is demoted to human-only scoring for the final report — this module decides that, the report
+generator only renders it.
 
 Scope
 -----
@@ -48,16 +48,15 @@ agreement rests on, the quadratic-weighted kappa, and which side scored higher w
 
 Limitations
 -----------
-The demotion decision uses the plain share of exact score matches, matching the wording of
-``evaluation-plan.md``'s own demotion rule; the weighted kappa is reported beside it and never
-changes the decision. The kappa is "not defined" when both sides of a pair give one and the same
-score throughout, and it is close to zero whenever one side's scores barely vary, however often the
-two sides match — it is read together with the pair count and the direction counts, not alone. The
-written analysis of why individual cases differ (``H4-disagreement-analysis.md``, a person naming a
-cause per disagreement) is not reproduced here. A case_id present in one input but missing from
-another is silently excluded from every dimension's comparable set, on the assumption the three
-inputs are already the same stratified sample; a test proves a genuinely mismatched sample does not
-silently pass as fully compared.
+The demotion decision uses the plain share of exact score matches, matching the wording of the
+demotion rule; the weighted kappa is reported beside it and never changes the decision. The kappa is
+"not defined" when both sides of a pair give one and the same score throughout, and it is close to
+zero whenever one side's scores barely vary, however often the two sides match — it is read together
+with the pair count and the direction counts, not alone. The written analysis of why individual
+cases differ (``H4-disagreement-analysis.md``, a person naming a cause per disagreement) is not
+reproduced here. A case_id present in one input but missing from another is silently excluded from
+every dimension's comparable set, on the assumption the three inputs are already the same stratified
+sample; a test proves a genuinely mismatched sample does not silently pass as fully compared.
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@ Golden Set Corpus
 
 Overview
 --------
-The 135 authored cases of the held-out golden set, one module per category-group slice, plus the
+The 135 authored cases of the held-out golden set, one module per category group, plus the
 generated CSV case sheet built from them. `evals.models.Case` defines the record shape; this
 package holds the data itself.
 

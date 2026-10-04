@@ -6,14 +6,12 @@ Overview
 --------
 Turns one full harness run's already-computed results — P's three repeated runs, B0's and B1's
 single runs, the live judge's own verdicts over P's last run, and the H4 judge-validation sample's
-agreement — into ``reports/evaluation.md``, the single generated artifact
-``plan/docs/evaluation-plan.md``'s Report section names. The full ``make evaluate`` run this
-module renders is exactly that: every piece it reads was already built elsewhere (the runner, the
-metrics engine, the judge, the judge-validation agreement computation); this module only
-assembles and renders what they already produced. The judge-scored-quality section (a
-system's own live-judge verdicts) and the judge-validation section (the judge's agreement with
-human raters) answer two different questions from two different data sources and are never
-conflated.
+agreement — into ``reports/evaluation.md``, the single generated evaluation artifact. Every piece it
+reads is produced elsewhere (the runner, the metrics engine, the judge, the judge-validation
+agreement computation); this module only assembles and renders what they produced. The
+judge-scored-quality section (a system's own live-judge verdicts) and the judge-validation section
+(the judge's agreement with human raters) answer two different questions from two different data
+sources and are never conflated.
 
 Scope
 -----
@@ -26,18 +24,17 @@ finished results, exactly the boundary ``pipelines.profile_report`` already draw
 Design Principles
 -----------------
 - **Pure function of the report, like ``pipelines.profile_report``.** No clock, no filesystem, no
-  randomness; the same input always renders byte-identical text. The CLI (a later piece of this
-  same slice) is the only place that touches the filesystem, the same split ``pipelines.profile``
-  already draws with its own renderer.
+  randomness; the same input always renders byte-identical text. The CLI is the only place that
+  touches the filesystem, the same split ``pipelines.profile`` already draws with its own renderer.
 - **A synthetic judge-validation sample never reaches the report as real.** ``EvaluationReport``
   carries the agreement sample's own ``provenance``; the judge-validation section renders the real
   agreement numbers only when it reads ``"human"``, and a "pending H4" placeholder — never a
-  fabricated agreement rate — for anything else, including this slice's own synthetic placeholder
+  fabricated agreement rate — for anything else, including the synthetic placeholder
   fixture (``evals.golden.judge_validation_sample``). A test proves the two paths render
   different, not just non-empty, text.
 - **Every metric states its basis.** ``evals.metrics.Metric.basis`` already carries "measured" or
-  "projected"; this renderer surfaces it on every row rather than repeating the plan's own
-  OFFLINE caveat once and letting a reader forget it applies to every number in the table.
+  "projected"; this renderer surfaces it on every row rather than repeating the OFFLINE
+  caveat once and letting a reader forget it applies to every number in the table.
 - **A gap this codebase already discloses elsewhere is repeated, not silently duplicated or
   invented.** The learned-component metrics (PR-AUC, calibration, NLU accuracy) are explicitly out
   of ``evals.metrics``'s own scope ("those score a model, not a conversation, and live beside the
@@ -50,25 +47,25 @@ Runtime Contract
 ``Versions``, ``SystemResult``, ``EvaluationReport``.
 ``render_markdown(report) -> str``.
 ``judge_validation_section(agreement, provenance, detail=None, facts_coverage=None) -> str``: the
-exact text ``render_markdown`` puts under its Judge validation heading — exported so a later,
-cheaper regeneration of just that section (once the real H4 sample lands) renders identically to a
+exact text ``render_markdown`` puts under its Judge validation heading — exported so a cheaper
+regeneration of just that section (once the real H4 sample lands) renders identically to a
 full report, never a hand-maintained second copy of the same wording
 (``evals.h4_judge_validation``).
 
 Limitations
 -----------
 The failure gallery reports which deterministic check failed (``correct_outcome``,
-``is_unsafe``, an escalation mismatch) or, for a case ``evals.scoring.error_result`` recorded,
-its own error message — not a deeper root-cause classification beyond that. ``CaseResult`` itself
-carries only those flags, and building a richer taxonomy is not this slice's own scope. The
-failure gallery draws from ``case_results`` alone, the last run only; the Unsafe outcomes section
-is the one that reports every unsafe result from every repeated run, each tagged with which of
-the harness's own checks fired (``unsafe_reasons``) and its run's number. That section also
-states that zero observed unsafe outcomes does not establish zero risk and sizes the set per
-golden-set category; a category's case-runs are its last-run case count times the run count.
-Repeated-run variability and the flip list are rendered only for a ``SystemResult`` whose
-``run_count`` is greater than one (P, by the plan's own execution protocol); B0 and B1 report a
-single run and show no range, by construction, not because their own results are omitted.
+``is_unsafe``, an escalation mismatch) or, for a case ``evals.scoring.error_result`` recorded, its
+own error message — not a deeper root-cause classification beyond that. ``CaseResult`` itself
+carries only those flags, and building a richer taxonomy is outside this module's scope. The failure
+gallery draws from ``case_results`` alone, the last run only; the Unsafe outcomes section is the one
+that reports every unsafe result from every repeated run, each tagged with which of the harness's
+own checks fired (``unsafe_reasons``) and its run's number. That section also states that zero
+observed unsafe outcomes does not establish zero risk and sizes the set per golden-set category; a
+category's case-runs are its last-run case count times the run count. Repeated-run variability and
+the flip list are rendered only for a ``SystemResult`` whose ``run_count`` is greater than one (P
+runs three times); B0 and B1 report a single run and show no range, by construction, not because
+their own results are omitted.
 """
 
 from __future__ import annotations
@@ -104,9 +101,9 @@ from evals.repeated_runs import (
     VariabilityValue,
 )
 
-# One (label, accessor) pair per headline metric, in the order the plan's own Metric definitions
-# section lists them; shared by the headline table and the repeated-run variability table so the
-# two never drift out of sync with each other.
+# One (label, accessor) pair per headline metric, in the order the metric definitions list them;
+# shared by the headline table and the repeated-run variability table so the two never drift out of
+# sync with each other.
 _HEADLINE_METRICS: tuple[tuple[str, str], ...] = (
     ("Safe automated resolution", "safe_automated_resolution"),
     ("Attempted share", "attempted_share"),
@@ -125,7 +122,7 @@ _HEADLINE_METRICS: tuple[tuple[str, str], ...] = (
 
 @dataclass(frozen=True, slots=True)
 class Versions:
-    """Every version the plan's Report section asks for, gathered once per report."""
+    """Every version the report states, gathered once per report."""
 
     nlu_model: str
     render_model: str
@@ -828,7 +825,7 @@ _LEARNED_COMPONENT_SECTION = (
 def _limitations_section(report: EvaluationReport) -> str:
     lines = [
         "- All measurements in this report are labeled **measured**; no projected metric (for "
-        "example a business-savings projection from cost inputs) is computed by this slice.",
+        "example a business-savings projection from cost inputs) is computed here.",
         "- The failure gallery reports which deterministic check failed, not a deeper root-cause "
         "classification.",
         "- A case's cost is the model spend measured for its run: for the proposed system, the "

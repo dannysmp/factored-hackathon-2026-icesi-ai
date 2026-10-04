@@ -20,16 +20,14 @@ Out: the cases themselves (one module per category); running or scoring a case.
 
 Design Principles
 -------------------
-- **One file per category group, never a shared one.** Each category-group pull request touches
-  only its own file (`evals/golden/cases/<category>.csv`); no two category groups' pull requests
-  can conflict on the same generated file, even when their branches stack. Only this module
-  itself is shared, and adding a category only ever needs one import and one `CATEGORY_CASES`
-  entry, never a change to the render or check functions.
-- **`ALL_CASES` is ordered by the mix table, not by delivery.** Derived by iterating
-  `CaseCategory`'s own declaration order (`plan/docs/evaluation-plan.md`'s row order: normal,
-  ambiguous, unsupported, human-required, multilingual, adversarial) and looking up each
-  category in `CATEGORY_CASES`, so the combined tuple's order never depends on which category
-  group's pull request happened to land first.
+- **One file per category group, never a shared one.** Each category group owns its own file
+  (`evals/golden/cases/<category>.csv`), so no two category groups can conflict on the same
+  generated file. Only this module itself is shared, and adding a category only ever needs one
+  import and one `CATEGORY_CASES` entry, never a change to the render or check functions.
+- **`ALL_CASES` is ordered by the mix table, not by when a category was added.** Derived by
+  iterating `CaseCategory`'s own declaration order (the mix table's row order: normal, ambiguous,
+  unsupported, human-required, multilingual, adversarial) and looking up each category in
+  `CATEGORY_CASES`, so the combined tuple's order never depends on the order categories were added.
 - Mirrors `app.domain.policy.corpus` and `pipelines.policy_corpus`: a pure render function, a
   write step that only touches a file when its content changed, and a check step (stray-file
   detection copied from `pipelines.policy_corpus.check_corpus`'s own pattern) that a test and CI

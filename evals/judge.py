@@ -4,12 +4,11 @@ LLM Judge
 
 Overview
 --------
-Scores one finished case transcript against the rubric ``plan/docs/evaluation-plan.md``'s Scoring
-section names for the LLM judge: grounding, language quality, and clarification quality (when the
-case asked a clarifying question). The rubric is the same one, word for word, that
-``plan/product/human-tasks/H4-judge-rubric.md`` gives the two human raters who double-score the
-same held-out sample (H4), so the report's judge-vs-human agreement check compares like against
-like, per ``evaluation-plan.md``'s own "rubric committed, versioned" requirement.
+Scores one finished case transcript against the LLM judge's rubric: grounding, language quality,
+and clarification quality (when the case asked a clarifying question). The rubric is the same one,
+word for word, that ``plan/product/human-tasks/H4-judge-rubric.md`` gives the two human raters who
+double-score the same held-out sample (H4), so the report's judge-vs-human agreement check
+compares like against like; the rubric is committed and versioned.
 
 Scope
 -----
@@ -19,8 +18,7 @@ caller assembles.
 Out: assembling ``facts_and_sources`` itself (the caller's job — see this module's Limitations);
 comparing a verdict against a human rater's score or computing agreement
 (``evals.judge_validation``); running a case in the first place (``evals.runner``); turning many
-verdicts into the report's judge-validation section (the report generator, a later piece of this
-same slice).
+verdicts into the report's judge-validation section (the report generator).
 
 Design Principles
 -----------------
@@ -50,11 +48,11 @@ user_turns, system_replies, facts_and_sources) -> JudgeVerdict`` raises ``LlmErr
 Limitations
 -----------
 ``facts_and_sources`` is a plain string this module trusts the caller to have assembled; this
-module has no opinion on whether it came from a store query, a golden-set case's own authored
-facts, or a human-filled H4 sheet column, and does not itself reopen the customer-facing API's
-envelope boundary (ADR-2) to find out. A call that raises aborts scoring that one case; there is no
-retry or partial-credit path here, the same choice the rest of this harness already makes for a
-case it cannot run to completion.
+module has no opinion on whether it came from a store query, a golden-set case's own authored facts,
+or a human-filled H4 sheet column, and does not itself reopen the customer-facing API's envelope
+boundary to find out. A call that raises aborts scoring that one case; there is no retry or
+partial-credit path here, the same choice the rest of this harness already makes for a case it
+cannot run to completion.
 """
 
 from __future__ import annotations
