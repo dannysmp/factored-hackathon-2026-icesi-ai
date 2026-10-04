@@ -15,7 +15,9 @@ Scope
 -----
 In: the three routes (customer sign-in, agent sign-in, and the read-only persona directory both
 pickers use), their request and response shapes, and wiring the access-code check, the persona
-lookup, the issuance limits and the sign-in audit together in the required order. The two
+lookup, the issuance limits and the sign-in audit together: the access code is compared first,
+then the persona is looked up, the issuance reservations are taken, and the attempt is audited
+before a token is returned. The two
 sign-in brokers share every helper below but are never the same route or the same access code, so
 a leaked customer code leaves the console protected. The persona directory
 carries no access code of its own — it mints no session and reveals nothing beyond a slug, a

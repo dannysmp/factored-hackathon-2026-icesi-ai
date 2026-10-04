@@ -244,8 +244,8 @@ def test_the_queue_route_refuses_a_customer_session() -> None:
 
 
 def test_the_queue_route_never_touches_the_audit_sink() -> None:
-    """Only the packet and the timeline are audited; listing the queue is not itself an
-    agent's read of one ticket's own material."""
+    """The route audits a ticket's packet and timeline reads itself; listing the queue is not an
+    agent's read of one ticket's own material, so it records nothing here."""
     audit = _FakeAudit()
     client = _client(
         principal=_AGENT, queue=_FakeQueue(), ticket_detail=_FakeTicketDetail(), audit=audit
@@ -572,7 +572,7 @@ def test_the_status_route_refuses_a_customer_session() -> None:
 
 
 # -----------------------------------------------------------------------------
-# The not-yet-implemented audit stub every composition root injects until it's real
+# The fail-closed audit sink for a composition with no real one
 # -----------------------------------------------------------------------------
 
 
