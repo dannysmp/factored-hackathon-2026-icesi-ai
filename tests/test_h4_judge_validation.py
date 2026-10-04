@@ -265,7 +265,7 @@ def _minimal_report(**overrides: Any) -> EvaluationReport:
     return EvaluationReport(**{**defaults, **overrides})
 
 
-def test_apply_real_judge_validation_replaces_the_validation_section_and_drops_the_stale_bullet() -> None:
+def test_apply_real_judge_validation_replaces_the_validation_and_drops_the_stale_bullet() -> None:
     before_report = _minimal_report()
     before_text = render_markdown(before_report)
     assert "Pending H4" in before_text

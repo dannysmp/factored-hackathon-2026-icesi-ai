@@ -96,6 +96,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 # Third-party libraries
+import duckdb
+import psycopg
 from starlette.testclient import TestClient
 
 # Local modules
@@ -110,6 +112,7 @@ from app.retrieval.lexical import LexicalRetriever
 from app.security.sessions import Clock
 from app.security.sessions import utc_now as _real_clock
 from evals.cost import CostTrackingLlm, TurnCostLedger
+from evals.fairness import CaseProfile
 from evals.golden.case_sheet import ALL_CASES
 from evals.golden.judge_validation_sample import (
     JUDGE_VERDICTS as _SYNTHETIC_JUDGE_VERDICTS,
@@ -127,6 +130,7 @@ from evals.judge import JudgeVerdict, LlmJudge
 from evals.judge_validation import compute_agreement
 from evals.metrics import NOT_DEFINED, CaseResult, HeadlineMetrics, Metric, compute_headline_metrics
 from evals.models import Case
+from evals.profiles import load_case_profiles
 from evals.repeated_runs import compute_variability, flipped_cases, unsafe_occurrences
 from evals.report import EvaluationReport, SystemResult, Versions, render_markdown
 from evals.runner.baselines.b0 import build_b0_app
@@ -139,6 +143,9 @@ from pipelines.silver import git_version
 logger = logging.getLogger(__name__)
 
 _SYSTEMS = ("P", "B0", "B1")
+
+#: Where the data pipeline writes its cleaned tables; the customer segment is read from there.
+_SILVER_DIR = Path("data/silver")
 
 # The bank's operating zone (app.domain.calendar.BANK_ZONE): a fixed UTC-5 offset, stated here as
 # the descriptive label the report's own text carries, since Bogotá has had no daylight-saving
@@ -364,6 +371,7 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
     report = EvaluationReport(
         versions=versions,
         golden_cases=tuple(cases),
+        case_profiles=_load_profiles(settings, cases),
         systems=systems,
         judge_validation=agreement,
         judge_validation_provenance=_SYNTHETIC_JUDGE_VALIDATION_PROVENANCE,
@@ -375,6 +383,21 @@ def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationRepo
         scope_note=scope_note,
     )
     return report, unsafe
+
+
+def _load_profiles(settings: Settings, cases: Sequence[Case]) -> dict[str, CaseProfile] | None:
+    """Each case's customer country and segment, or ``None`` when the lookup cannot run.
+
+    The fairness section states that the profiles were unavailable instead of failing a run whose
+    systems have already been scored.
+    """
+    try:
+        return load_case_profiles(
+            settings.require_database_url().get_secret_value(), cases, silver_dir=_SILVER_DIR
+        )
+    except (psycopg.Error, duckdb.Error, ConfigError):
+        logger.exception("case_profiles_unavailable")
+        return None
 
 
 def _log_errored_cases(system: str, results: Sequence[CaseResult]) -> None:

@@ -17,6 +17,7 @@ import pytest
 # Local modules
 from app.domain.policy.models import DisputeCategory
 from contracts.service_v1.envelope import Intent
+from evals.fairness import CaseProfile
 from evals.judge import JudgeVerdict
 from evals.judge_validation import DimensionAgreement
 from evals.metrics import (
@@ -28,7 +29,7 @@ from evals.metrics import (
     TransferCounts,
     compute_headline_metrics,
 )
-from evals.models import Case, CaseCategory
+from evals.models import Case, CaseCategory, SafeBehavior
 from evals.repeated_runs import CaseFlip, UnsafeOccurrence, compute_variability
 from evals.report import EvaluationReport, SystemResult, Versions, render_markdown
 
@@ -190,6 +191,7 @@ def test_render_includes_every_top_level_section() -> None:
         "## 5. Repeated-run variability",
         "## 6. Failure gallery",
         "## 7. Unsafe outcomes",
+        "## 8. Fairness and disparity",
         "## 9. Judge validation",
         "## 10. Learned components",
         "## 11. Limitations",
@@ -340,6 +342,66 @@ def test_no_unsafe_occurrences_states_so_explicitly() -> None:
     assert "No unsafe outcome was observed" in section
 
 
+def _categorized(case_id: str, category: CaseCategory) -> Case:
+    if category is CaseCategory.ADVERSARIAL:
+        return _case(case_id=case_id, category=category, expected_safe_behavior=SafeBehavior.REFUSE)
+    return _case(case_id=case_id, category=category)
+
+
+def test_the_unsafe_section_says_zero_observed_does_not_establish_zero_risk() -> None:
+    text = render_markdown(_report(systems=(_system(),)))
+    section = text.split("## 7.")[1].split("## 8.")[0]
+
+    assert "does not establish zero risk" in section
+
+
+def test_the_unsafe_caveat_does_not_call_the_sizes_the_denominator_of_every_rate() -> None:
+    section = render_markdown(_report()).split("## 7.")[1].split("## 8.")[0]
+
+    assert "denominators of every" not in section
+    assert "not independent trials" in section
+    assert "in a set this small" not in section
+
+
+def test_the_unsafe_section_sizes_the_set_per_category_and_per_system() -> None:
+    golden = (
+        _categorized("n-1", CaseCategory.NORMAL),
+        _categorized("n-2", CaseCategory.NORMAL),
+        _categorized("a-1", CaseCategory.ADVERSARIAL),
+    )
+    results = (
+        _case_result(case_id="n-1"),
+        _case_result(case_id="n-2"),
+        _case_result(case_id="a-1", is_adversarial=True),
+    )
+    unsafe = UnsafeOccurrence(
+        run_index=1, result=_case_result(case_id="a-1", is_adversarial=True, is_unsafe=True)
+    )
+    p = _system("P", run_count=3, case_results=results, unsafe_occurrences=(unsafe,))
+    b0 = _system("B0", run_count=1, case_results=results[:2])
+    text = render_markdown(_report(golden_cases=golden, systems=(p, b0)))
+    rows = {
+        tuple(cell.strip() for cell in line.strip("|").split("|"))[:6]
+        for line in text.split("## 7.")[1].split("## 8.")[0].splitlines()
+        if line.startswith("|")
+    }
+
+    assert ("P", "normal", "2", "3", "6", "0") in rows
+    assert ("P", "adversarial", "1", "3", "3", "1") in rows
+    assert ("P", "all categories", "3", "3", "9", "1") in rows
+    assert ("B0", "normal", "2", "1", "2", "0") in rows
+    assert ("B0", "all categories", "2", "1", "2", "0") in rows
+
+
+def test_a_result_outside_the_golden_set_is_counted_not_dropped() -> None:
+    text = render_markdown(
+        _report(systems=(_system(case_results=(_case_result(case_id="stray-1"),)),))
+    )
+    section = text.split("## 7.")[1].split("## 8.")[0]
+
+    assert "| P | unclassified | 1 | 1 | 1 | 0 |" in section
+
+
 def test_an_unsafe_occurrence_names_its_run_and_reasons() -> None:
     unsafe = _case_result(
         case_id="hr-fraud-en-01",
@@ -357,6 +419,7 @@ def test_an_unsafe_occurrence_names_its_run_and_reasons() -> None:
     assert "hr-fraud-en-01" in section
     assert "unbacked_handoff" in section
     assert "| P | 1 |" in section
+    assert "does not establish zero risk" in section
 
 
 def test_every_unsafe_run_is_listed_even_when_only_one_survives_to_case_results() -> None:
@@ -600,3 +663,58 @@ def test_an_unmeasurable_judge_cost_reads_not_defined() -> None:
     )
 
     assert "judge cost: not defined USD" in text.split("## 4.")[1].split("## 5.")[0]
+
+
+# -----------------------------------------------------------------------------
+# Fairness and disparity section
+# -----------------------------------------------------------------------------
+
+
+def _fairness_text(report: EvaluationReport) -> str:
+    return render_markdown(report).split("## 8.")[1].split("## 9.")[0]
+
+
+def test_the_fairness_section_slices_the_proposed_system_and_states_each_size() -> None:
+    results = (_case_result(),)
+    profiles = {"norm-es-001": CaseProfile(country="MX", segment="Plus")}
+    section = _fairness_text(
+        _report(systems=(_system(case_results=results),), case_profiles=profiles)
+    )
+
+    assert "| language | es | 1 | 1 | 1.000 (n=1) |" in section
+    assert "| country | MX | 1 | 1 |" in section
+    assert "| segment | Plus | 1 | 1 |" in section
+    assert "small sample (fewer than 30 in-scope cases)" in section
+    assert "not evidence of equal treatment" in section
+
+
+def test_the_fairness_section_says_when_profiles_could_not_be_looked_up() -> None:
+    section = _fairness_text(_report(systems=(_system(case_results=(_case_result(),)),)))
+
+    assert "could not be looked up" in section
+    assert "| country | unknown | 1 |" in section
+
+
+def test_the_fairness_section_names_a_flagged_slice_with_its_failing_cases() -> None:
+    golden = tuple(_case(case_id=f"e-{i}", lang="es") for i in range(60)) + tuple(
+        _case(case_id=f"p-{i}", lang="pt") for i in range(60)
+    )
+    results = tuple(_case_result(case_id=f"e-{i}") for i in range(60)) + tuple(
+        _case_result(case_id=f"p-{i}", correct_outcome=i >= 30) for i in range(60)
+    )
+    section = _fairness_text(
+        _report(golden_cases=golden, systems=(_system(case_results=results),), case_profiles={})
+    )
+
+    assert "Disparities beyond sampling noise" in section
+    assert "**language: pt.**" in section
+    assert "p-0" in section
+    assert "category-matched cases" in section
+    assert "**language: es.**" in section
+    assert "has no failing case" in section
+
+
+def test_the_fairness_section_without_a_proposed_system_has_nothing_to_slice() -> None:
+    section = _fairness_text(_report(systems=(_system("B0"),)))
+
+    assert "System P was not run" in section

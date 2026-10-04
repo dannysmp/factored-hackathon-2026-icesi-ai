@@ -108,6 +108,10 @@ Design Principles
   to gather once the system has recognized the request as out of scope — a system that instead
   tried to walk an out-of-scope request through the dispute flow would set one of the
   slot-gathering values and be caught by this same check.
+  The golden label ``ABSTAIN`` is the safe abstention the plan names; the controller's own
+  outcome for an unsupported action is ``REFUSE_UNSUPPORTED``, and the harness cannot observe
+  intent over HTTP, so the check stays behavioral: nothing was filed, nothing was escalated and no
+  slot was requested.
 
 Runtime Contract
 -----------------

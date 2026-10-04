@@ -30,6 +30,7 @@ from app.domain.policy.models import DisputeCategory
 from app.persistence.migrate import apply_migrations
 from contracts.service_v1.envelope import Intent
 from evals.cli import _fmt, _require_test_login_key, _select_cases, main
+from evals.fairness import CaseProfile
 from evals.golden.case_sheet import ALL_CASES
 from evals.judge import JudgeVerdict, LlmJudge
 from evals.metrics import NOT_DEFINED, CaseResult, Metric
@@ -194,8 +195,10 @@ def _patch_full_report_dependencies(
         render_model="claude-sonnet-5",
         judge_model="claude-sonnet-5",
         require_anthropic_key=lambda: SecretStr("sk-test-unused"),
+        require_database_url=lambda: SecretStr("postgresql://unused"),
     )
     monkeypatch.setattr(evals.cli, "load_settings", lambda: fake_settings)
+    monkeypatch.setattr(evals.cli, "load_case_profiles", lambda dsn, cases, *, silver_dir: {})
     monkeypatch.setattr(evals.cli, "AnthropicLlmClient", _CapturedAnthropicLlmClient)
     monkeypatch.setattr(
         evals.cli,
@@ -353,6 +356,58 @@ def test_full_writes_the_report_and_exits_0_when_nothing_is_unsafe(
     assert "# Evaluation Report" in text
     assert "2026-06-18" in text
     assert "Scope." not in text  # a full-golden-set run carries no scope_note
+
+
+def test_full_gives_the_report_each_cases_customer_profile(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_full_report_dependencies(
+        monkeypatch,
+        p_runs=[(_full_result("c1"),)] * 3,
+        b0_run=(_full_result("c1"),),
+        b1_run=(_full_result("c1"),),
+    )
+    seen: dict[str, object] = {}
+
+    def _profiles(dsn: str, cases: Sequence[Case], *, silver_dir: Path) -> dict[str, CaseProfile]:
+        seen["dsn"] = dsn
+        seen["silver_dir"] = silver_dir
+        return {"c1": CaseProfile(country="MX", segment="Plus")}
+
+    monkeypatch.setattr(evals.cli, "load_case_profiles", _profiles)
+    report_path = tmp_path / "evaluation.md"
+
+    assert main(["--full", "--report", str(report_path)]) == 0
+
+    text = report_path.read_text(encoding="utf-8")
+    assert seen["dsn"] == "postgresql://unused"
+    assert seen["silver_dir"] == Path("data/silver")
+    assert "| country | MX | 1 |" in text
+    assert "| segment | Plus | 1 |" in text
+    assert "could not be looked up" not in text
+
+
+def test_full_still_writes_the_report_when_the_profile_lookup_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_full_report_dependencies(
+        monkeypatch,
+        p_runs=[(_full_result("c1"),)] * 3,
+        b0_run=(_full_result("c1"),),
+        b1_run=(_full_result("c1"),),
+    )
+
+    def _unreachable(
+        dsn: str, cases: Sequence[Case], *, silver_dir: Path
+    ) -> dict[str, CaseProfile]:
+        raise psycopg.OperationalError("store unreachable")
+
+    monkeypatch.setattr(evals.cli, "load_case_profiles", _unreachable)
+    report_path = tmp_path / "evaluation.md"
+
+    assert main(["--full", "--report", str(report_path)]) == 0
+
+    assert "could not be looked up" in report_path.read_text(encoding="utf-8")
 
 
 def test_full_smoke_narrows_the_case_set_and_discloses_it_in_the_report(
