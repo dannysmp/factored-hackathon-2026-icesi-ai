@@ -331,6 +331,25 @@ def test_every_template_id_has_a_working_renderer(lang: str) -> None:
         assert rendered.reply.strip()
 
 
+@pytest.mark.parametrize(
+    ("lang", "asked_for", "person"),
+    [
+        ("es", ("comercio", "monto exacto", "fecha"), "asesor"),
+        ("pt", ("estabelecimento", "valor exato", "data"), "atendente"),
+        ("en", ("merchant", "exact amount", "date"), "person"),
+    ],
+)
+def test_not_found_asks_for_details_the_customer_can_give_and_offers_a_person(
+    lang: str, asked_for: tuple[str, ...], person: str
+) -> None:
+    """The reply names what to say next and never offers an action the assistant cannot take."""
+    reply = render(_every_template_envelope(lang)[TemplateId.NOT_FOUND]).reply
+
+    assert all(detail in reply for detail in asked_for)
+    assert person in reply
+    assert not any(offer in reply for offer in ("widen", "ampliar"))
+
+
 def test_the_spanish_language_offer_does_not_speak_in_a_gendered_first_person() -> None:
     """The assistant has no gender, so the Spanish offer must not say it is "segura"."""
     envelope = _envelope(template_id=TemplateId.LANGUAGE_OFFER)
