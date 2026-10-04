@@ -71,6 +71,7 @@ class TurnCostLedger(logging.Handler):
         self._previous_level: int | None = None
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Add a ``turn_completed`` line's cost to its session; any other record is ignored."""
         match = _TURN_COMPLETED.match(record.getMessage())
         if match is None:
             return
@@ -84,6 +85,7 @@ class TurnCostLedger(logging.Handler):
             self._costs[session] = None if cost is None or known is None else known + cost
 
     def __enter__(self) -> TurnCostLedger:
+        """Start capturing the controller's lines, at INFO, remembering the logger's own level."""
         controller_logger = logging.getLogger(_CONTROLLER_LOGGER)
         self._previous_level = controller_logger.level
         controller_logger.setLevel(logging.INFO)
@@ -96,6 +98,7 @@ class TurnCostLedger(logging.Handler):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """Stop capturing and put the controller logger's level back."""
         controller_logger = logging.getLogger(_CONTROLLER_LOGGER)
         controller_logger.removeHandler(self)
         if self._previous_level is not None:
@@ -122,6 +125,7 @@ class CostTrackingLlm(LlmClient):
         return None if self._total is None else float(self._total)
 
     def complete(self, request: CompletionRequest) -> CompletionResult:
+        """Forward the call, then count it and add its priced cost to the running total."""
         result = self._inner.complete(request)
         self.call_count += 1
         try:

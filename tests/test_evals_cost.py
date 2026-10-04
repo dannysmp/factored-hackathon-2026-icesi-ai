@@ -10,10 +10,14 @@ from __future__ import annotations
 
 # Standard libraries
 import logging
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 # Local modules
+from app.conversation.controller import DialogueController
+from app.conversation.understanding import TurnAccounting
 from app.llm.client import CompletionRequest, CompletionResult
+from app.llm.pricing import cost_usd
 from evals.cost import CostTrackingLlm, TurnCostLedger
 
 _CONTROLLER_LOGGER = "app.conversation.controller"
@@ -128,3 +132,38 @@ def test_one_unpriced_call_makes_the_total_unknown_for_good() -> None:
 
     assert client.call_count == 3
     assert client.total_cost_usd is None
+
+
+def _log_through_the_controller(session_id: str, accounting: TurnAccounting | None) -> None:
+    state = SimpleNamespace(session_id=session_id, last_case_number=None)
+    method = cast(Any, DialogueController._log_turn_completed)
+    method(SimpleNamespace(), state, accounting)
+
+
+def test_the_ledger_reads_the_line_the_controller_really_writes() -> None:
+    priced = TurnAccounting(
+        model="claude-haiku-4-5-20251001",
+        prompt_version="1",
+        input_tokens=1000,
+        output_tokens=100,
+        latency_ms=12.0,
+    )
+    unpriced = TurnAccounting(
+        model="a-model-with-no-price",
+        prompt_version="1",
+        input_tokens=1,
+        output_tokens=1,
+        latency_ms=1.0,
+    )
+
+    with TurnCostLedger() as ledger:
+        _log_through_the_controller("sess-priced", priced)
+        _log_through_the_controller("sess-priced", priced)
+        _log_through_the_controller("sess-keyword", None)
+        _log_through_the_controller("sess-unpriced", unpriced)
+
+    one_call = cost_usd(priced.model, priced.input_tokens, priced.output_tokens)
+    assert ledger.cost_for("sess-priced") == float(one_call * 2)
+    assert (ledger.cost_for("sess-priced") or 0) > 0
+    assert ledger.cost_for("sess-keyword") == 0.0
+    assert ledger.cost_for("sess-unpriced") is None

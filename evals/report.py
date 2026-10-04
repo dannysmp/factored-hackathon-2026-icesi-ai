@@ -228,30 +228,41 @@ def _versions_section(versions: Versions) -> str:
     return _table(["Field", "Value"], rows)
 
 
+def _cost_sample_cell(result: SystemResult, attempted: Sequence[CaseResult]) -> str:
+    """The last run's count of attempted cases with a measured cost, stated against the cost
+    figure's own basis: that figure averages every run and is undefined when any run is."""
+    measured = sum(1 for r in attempted if r.cost_usd is not None)
+    cell = f"{_count(measured)} of {_count(len(attempted))}"
+    cost_cell = result.variability.cost_per_attempted_case.mean
+    if result.run_count > 1 and cost_cell == NOT_DEFINED and measured:
+        return f"{cell} (cost is not defined in at least one other run)"
+    return cell
+
+
 def _sample_size_rows(results: Sequence[SystemResult]) -> list[list[str]]:
-    """The sample behind every number in the table, per system: how many runs, how many cases
-    each run held, which of those the rates are shares of, and how many have a measured cost."""
+    """The sample behind the table, per system. Runs is the number of runs the figures average;
+    every other row counts the last run's cases, the only run whose per-case results are kept."""
     in_scope = [[r for r in result.case_results if not r.is_adversarial] for result in results]
     attempted = [[r for r in cases if r.automation_attempted] for cases in in_scope]
     return [
         ["Runs", *(_count(result.run_count) for result in results), "count"],
         [
-            "Cases per run (adversarial included)",
+            "Cases (adversarial included)",
             *(_count(len(result.case_results)) for result in results),
-            "count",
+            "count, last run",
         ],
         [
-            "In-scope cases (denominator of the rates)",
+            "In-scope cases (denominator of safe resolution, attempted share and containment)",
             *(_count(len(cases)) for cases in in_scope),
-            "count",
+            "count, last run",
         ],
         [
             "Attempted cases with a measured cost",
             *(
-                f"{_count(sum(1 for r in cases if r.cost_usd is not None))} of {_count(len(cases))}"
-                for cases in attempted
+                _cost_sample_cell(result, cases)
+                for result, cases in zip(results, attempted, strict=True)
             ),
-            "count",
+            "count, last run",
         ],
     ]
 
@@ -452,7 +463,9 @@ def _limitations_section(report: EvaluationReport) -> str:
         "rendering through the model (`MODEL_RENDERER_ENABLED`) logs no cost and is not counted. "
         "A case whose spend could not be measured is left out of the cost denominators "
         "(the sample-size rows of the headline table state how many remain), never counted as "
-        "zero. The judge's own cost is reported separately in the judge-scored section.",
+        "zero. A model call the application could not use (a failed or unusable understanding "
+        "call) is not priced and is not counted. The judge's own cost is reported separately in "
+        "the judge-scored section.",
         f"- Reference date: {report.reference_date} (source: {report.reference_date_source}, "
         f"bank time zone: {report.bank_timezone}).",
     ]
