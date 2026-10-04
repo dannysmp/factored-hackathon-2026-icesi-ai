@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 
 # Every template eligible for model rendering. Deliberately excludes: NO_CASE_FOUND and
 # HANDOFF_NOT_REGISTERED (the contract itself permits building a model-mode envelope for either
-# state from facts alone, but nothing here elects to render one through the model yet — an explicit
+# state from facts alone, but nothing here elects to render one through the model — an explicit
 # scope choice, not a contract-level impossibility); HANDOFF_CARD_LOSS, HANDOFF_REQUESTED and
 # FILING_UNVERIFIED (their wording carries safety-relevant or procedural content a generic
 # model-rendered sentence can't distinguish from HANDOFF_REVIEW's own, since RenderEnvelope carries

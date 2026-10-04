@@ -75,7 +75,7 @@ class HandoffContent:
     """Everything ``build_packet`` needs except the ticket reference, which the outbox mints.
 
     Mirrors ``build_packet``'s parameters one to one, so the outbox can pass it through unchanged.
-    ``customer_id`` is the authenticated session's identifier; it is masked by ``build_packet`` and
+    ``customer_id`` is the authenticated customer's identifier; it is masked by ``build_packet`` and
     never appears in a packet in full.
     """
 

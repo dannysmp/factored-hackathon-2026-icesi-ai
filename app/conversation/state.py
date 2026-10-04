@@ -42,8 +42,8 @@ been taken yet, and ``turns_applied``, the number of customer turns the session 
 
 Limitations
 -----------
-``last_case_number``/``last_ticket_ref`` exist so a repeated turn id can be answered from the
-state alone (no cached reply text is stored, per the store's own idempotent-replay design): the
+``last_case_number``/``last_ticket_ref`` hold the identifier a repeated turn id needs to be
+answered again (no cached reply text is stored, per the store's own idempotent-replay design): the
 caller re-derives the reply from the current record behind the identifier, never from a snapshot
 taken when it was first written.
 """
@@ -84,8 +84,8 @@ class DialogueState(BaseModel):
 
     Immutable and masked: it holds identifiers, the slots collected so far and the language, never
     the customer's text. ``version`` is the optimistic-concurrency token the store advances on every
-    saved turn; ``last_turn_id``, ``last_case_number`` and ``last_ticket_ref`` let a repeated turn
-    be answered from the state alone.
+    saved turn; ``last_turn_id``, ``last_case_number`` and ``last_ticket_ref`` hold what a repeated
+    turn needs to be answered again.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

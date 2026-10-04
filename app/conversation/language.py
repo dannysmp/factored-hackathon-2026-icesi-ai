@@ -33,8 +33,9 @@ Limitations
 -----------
 The dialogue controller does not call this function: it keeps the language on ``DialogueState``
 and moves it once, while the conversation is still in its opening (``DialogueState.is_opening``),
-or on an explicit request. This module states the stricter two-message rule as a pure, tested
-decision for a caller that carries a streak.
+or on an explicit request. This module states the two-message rule (one off-language message does
+not switch the language; a second consecutive one does) as a pure, tested decision for a caller
+that carries a streak.
 """
 
 from __future__ import annotations

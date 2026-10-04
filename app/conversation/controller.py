@@ -17,8 +17,8 @@ policy evaluation, filing and its read-back verification, and escalation to a pe
 Out: understanding a message (``app.conversation.understanding``), storing state
 (``app.conversation.store``/``app.persistence.dialogue_store``), the tools themselves
 (``app.tools``, ``app.persistence.reads``), rendering fixed wording
-(``app.conversation.renderer``), the turns endpoint and its body-size cap (``app.api.turns`` and
-the session middleware).
+(``app.conversation.renderer``), the turns endpoint (``app.api.turns``) and the request body-size
+cap (``app.security.middleware.BodySizeLimitMiddleware``).
 
 Design Principles
 -----------------
@@ -91,10 +91,10 @@ do, so the customer's yes after such a reply still selects the presented transac
 unrelated reply itself files nothing; a case is filed only once the policy's confirmation
 requirement for the category is met. Two or more matches ask for more detail rather than
 presenting a numbered list — the same v1 scope decision already made for slot collection, since
-neither a pending-candidate field nor a multi-candidate list exists in ``DialogueState`` yet. A
+``DialogueState`` has no pending-candidate field and no multi-candidate list. A
 session identifies and evaluates at most one transaction/category pair: nothing here resets
 ``selected_ref``/``category`` once set, so a second, different dispute needs a new session. The
-handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name yet.
+handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
@@ -175,7 +175,7 @@ logger = logging.getLogger(__name__)
 _UNKNOWN_FIRST_NAME = "Customer"
 
 # Handoff templates whose reply states a routed (escalate) decision; the others (card loss, a
-# person requested, an unregistered handoff) carry no decision.
+# person requested, an unregistered handoff, an unverified filing) carry no decision.
 _ROUTED_HANDOFFS = frozenset({TemplateId.HANDOFF_REVIEW, TemplateId.HANDOFF_FRAUD})
 
 # The facts of an envelope that states none.
@@ -374,7 +374,7 @@ class DialogueController:
         answered without redoing anything unsafe; a session at its turn cap is answered with a
         handoff and no model call; otherwise the message is understood, the outcome is decided and
         acted on (``_advance``), the cost line is logged, and the new state is saved with
-        optimistic concurrency before the reply is rendered from the saved state. An unreachable
+        optimistic concurrency, and the reply is rendered after the save. An unreachable
         understanding dependency becomes a handoff rather than a clarification attempt. A save
         that loses a race on the same turn id answers with the winner's result.
 
@@ -1370,8 +1370,8 @@ class DialogueController:
 
         Rendering goes through ``render_reply`` (templates, or the verified model path when a model
         renderer was injected). When ``state_before`` is given the turn's history is recorded;
-        replays pass ``None`` and record nothing. The handoff ticket is included only on a handoff
-        reply.
+        a turn that passes no ``state_before`` (a replay, or a repeated turn-cap answer) records
+        nothing. The handoff ticket is included only on a handoff reply.
         """
         rendered: RenderedReply = render_reply(envelope, model_renderer=self._model_renderer)
         request = self._request
@@ -1405,7 +1405,7 @@ class DialogueController:
 
         ``reason_code`` is always ``None`` in the entry: the domain ``ReasonCode`` behind a policy
         decision is not carried on ``Decision``, so there is nothing for this to read. A failed
-        write is logged as a warning and swallowed.
+        database write is logged as a warning and swallowed; any other error propagates.
         """
         if self._turn_log is None:
             return

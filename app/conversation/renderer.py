@@ -40,8 +40,8 @@ a second, independently maintained copy.
 
 Limitations
 -----------
-The wording here is a first version, not yet reviewed by a fluent native speaker of Spanish or
-Portuguese. Combining an ambiguous first message's best guess with the offer to switch languages
+The wording is fixed text per language, and a test renders every template in all three
+languages. Combining an ambiguous first message's best guess with the offer to switch languages
 in one reply is the dialogue controller's job; this module renders the offer as its own text.
 """
 

@@ -14,9 +14,10 @@ refusal cannot be model-rendered at all (``contracts.service_v1.envelope``'s own
 Scope
 -----
 In: ``verify()`` — the one function this module exports, and the private substitution/scan it runs.
-Out: producing ``CandidateReply`` (the LLM adapter) and ``SlotValues`` (the dialogue controller,
-from the same envelope this call receives) are both someone else's job; this module only checks
-what it is handed against what the envelope allows.
+Out: producing ``CandidateReply`` (the LLM adapter) and ``SlotValues``
+(``app.conversation.slot_values``, called by ``app.conversation.reply.render_reply`` on the same
+envelope this call receives) are both someone else's job; this module only checks what it is
+handed against what the envelope allows.
 
 Design Principles
 -----------------

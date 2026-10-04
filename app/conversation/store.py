@@ -10,8 +10,9 @@ issues a new one, so a prior conversation's state is never resumed under it.
 
 Scope
 -----
-In: the ``DialogueStore`` port and an in-memory implementation, used by tests and by deployments
-without a database (``app.persistence.dialogue_store`` is the durable implementation).
+In: the ``DialogueStore`` port and an in-memory implementation, a process-local test double.
+The application runs ``app.persistence.dialogue_store.PostgresDialogueStore``, the durable
+implementation.
 Out: the state model (``state``) and issuing session ids (the session service).
 
 Design Principles
@@ -22,7 +23,7 @@ Design Principles
 - Turn idempotency: the store remembers the last turn id it saved a state for and refuses to
   advance the state again for a repeated one, handing back the state that turn already produced.
 - In-memory only: state does not survive a process restart, and this implementation is never
-  pointed at real customer data; it exists for tests and for runs without a database.
+  pointed at real customer data; it exists for tests.
 
 Runtime Contract
 ----------------
