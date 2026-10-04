@@ -220,7 +220,7 @@ def test_choose_threshold_picks_the_lowest_threshold_meeting_the_floor_and_cap()
     # 100 rows, 10 positives. Scores 0.9 catch 5 positives with no false positive (precision 1.0,
     # share 5%); scores 0.5 catch all 10 positives with 10 false positives (precision 0.5, share
     # 20%, over the 5% cap). Only the higher threshold satisfies both, so it must be the one chosen
-    # even though the pre-registration favours the lowest -- the lower one fails the cap.
+    # even though the rule favours the lowest -- the lower one fails the cap.
     label = np.array([True] * 5 + [False] * 15 + [True] * 5 + [False] * 75)
     scores = np.array([0.9] * 5 + [0.1] * 15 + [0.5] * 5 + [0.1] * 75)
     chosen = choose_threshold(label, scores, floor=0.9, cap=0.05)
@@ -256,7 +256,7 @@ def test_decide_routing_enables_when_precision_and_interval_both_clear() -> None
 
 
 def test_decide_routing_disables_when_precision_misses_the_floor() -> None:
-    """AC-E6-05's first failure mode: the validation result does not hold on test."""
+    """First failure mode: the validation result does not hold on test."""
     interval = BootstrapInterval(point=0.005, lower=0.001, upper=0.02)
     enabled, rationale = _decide_routing(0.005, interval, test_prevalence=0.001, floor=0.01)
     assert enabled is False
@@ -264,7 +264,7 @@ def test_decide_routing_disables_when_precision_misses_the_floor() -> None:
 
 
 def test_decide_routing_disables_when_the_interval_does_not_clear_prevalence() -> None:
-    """AC-E6-05's other failure mode: precision meets the floor but the bootstrap interval does
+    """Other failure mode: precision meets the floor but the bootstrap interval does
     not distinguish it from chance -- the branch a mart-and-silver fixture cannot cheaply force."""
     interval = BootstrapInterval(point=0.02, lower=0.005, upper=0.05)
     enabled, rationale = _decide_routing(0.02, interval, test_prevalence=0.01, floor=0.01)
@@ -338,7 +338,7 @@ def test_a_clearly_separating_feature_can_enable_routing(tmp_path: Path) -> None
 
 
 def test_a_threshold_that_worked_on_validation_can_fail_on_test(tmp_path: Path) -> None:
-    """AC-E6-05: a validation threshold is not shipped just because it worked on validation."""
+    """A validation threshold is not shipped just because it worked on validation."""
     rows: list[dict[str, Any]] = []
     customer_of: dict[str, str] = {}
     counter = 0
