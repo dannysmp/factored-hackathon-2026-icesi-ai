@@ -81,7 +81,10 @@ Limitations
 -----------
 A single-match search result is presented with ``PRESENT_ONE`` and the customer's yes (or a
 reason, which implies it) selects it; a no asks for the transaction again; an unclear answer asks
-again within the clarification budget. Two or more matches ask for more detail rather than
+again within the clarification budget. The question stays pending across a reply to an unrelated
+message (small talk, a policy question, a list request), as the reason and confirmation questions
+do, so the customer's yes after such a reply still selects the presented transaction; nothing is
+written until the filing confirmation. Two or more matches ask for more detail rather than
 presenting a numbered list — the same v1 scope decision already made for slot collection, since
 neither a pending-candidate field nor a multi-candidate list exists in ``DialogueState`` yet. A
 session identifies and evaluates at most one transaction/category pair: nothing here resets

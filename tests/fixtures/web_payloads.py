@@ -59,13 +59,18 @@ _TODAY = date(2026, 6, 18)
 
 
 def _item(
-    ticket_ref: str, trigger: HandoffTrigger, *, claimed_by: str | None, priority: bool
+    ticket_ref: str,
+    trigger: HandoffTrigger,
+    *,
+    claimed_by: str | None,
+    priority: bool,
+    category: DisputeCategory | None = DisputeCategory.UNRECOGNIZED_CHARGE,
 ) -> QueueItem:
     return QueueItem(
         ticket_ref=ticket_ref,
         trigger=trigger,
         language="pt",
-        category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        category=category,
         status=TicketStatus.IN_REVIEW if claimed_by else TicketStatus.OPEN,
         created_at=_CREATED,
         reference_date=_TODAY,
@@ -122,6 +127,34 @@ def _packet(item: QueueItem) -> HandoffPacket:
     )
 
 
+def _sparse_packet(item: QueueItem) -> HandoffPacket:
+    """The packet with every optional element absent: what an early escalation produces."""
+    return HandoffPacket(
+        ticket_ref=item.ticket_ref,
+        reference_date=item.reference_date,
+        created_at=item.created_at,
+        language=item.language,
+        needs_language_routing=True,
+        trigger=item.trigger,
+        customer=CustomerLabel(first_name="Ana", masked_id="****34"),
+        category=None,
+        request_summary="The customer asked for help.",
+        verified_facts=(
+            TransactionFact(
+                ref="TX-2",
+                occurred_on=_TODAY,
+                merchant=None,
+                amount=None,
+                product=ProductLabel(name="Visa Gold", last4="1234"),
+                status=TransactionStatus.APPROVED,
+            ),
+        ),
+        evidence=Evidence(
+            reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,), policy_version="2"
+        ),
+    )
+
+
 def build_payloads() -> dict[str, object]:
     """Every payload keyed by the web schema that parses it."""
     unclaimed = _item(
@@ -147,6 +180,16 @@ def build_payloads() -> dict[str, object]:
         ),
         notes=(Note(agent_id="AGT-1", note_text="Called the customer back.", created_at=_CREATED),),
     )
+    sparse_item = _item(
+        "T-20260618-CCCCCCCC",
+        HandoffTrigger.LOW_UNDERSTANDING,
+        claimed_by=None,
+        priority=False,
+        category=None,
+    )
+    sparse_detail = TicketDetail(
+        item=sparse_item, packet=_sparse_packet(sparse_item), timeline=(), notes=()
+    )
     turn = TurnResponse(
         turn_id="turn-0001",
         conversation_id="conv-1",
@@ -167,6 +210,7 @@ def build_payloads() -> dict[str, object]:
             items=(unclaimed, claimed),
         ),
         "TicketDetail": detail,
+        "TicketDetailSparse": sparse_detail,
         "TurnResponse": turn,
         "DemoPersonaDirectory": DemoPersonaDirectory(
             personas=(

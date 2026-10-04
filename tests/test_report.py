@@ -17,6 +17,7 @@ import pytest
 # Local modules
 from app.domain.policy.models import DisputeCategory
 from contracts.service_v1.envelope import Intent
+from evals.fairness import CaseProfile
 from evals.judge import JudgeVerdict
 from evals.judge_validation import DimensionAgreement
 from evals.metrics import (
@@ -190,9 +191,10 @@ def test_render_includes_every_top_level_section() -> None:
         "## 5. Repeated-run variability",
         "## 6. Failure gallery",
         "## 7. Unsafe outcomes",
-        "## 8. Judge validation",
-        "## 9. Learned components",
-        "## 10. Limitations",
+        "## 8. Fairness and disparity",
+        "## 9. Judge validation",
+        "## 10. Learned components",
+        "## 11. Limitations",
     ):
         assert heading in text
 
@@ -213,7 +215,7 @@ def test_no_scope_note_renders_no_scope_callout() -> None:
 def test_a_scope_note_renders_as_a_prominent_callout_and_in_limitations() -> None:
     text = render_markdown(_report(scope_note="Generated from the 16-case CI-smoke subset."))
     assert "**Scope.** Generated from the 16-case CI-smoke subset." in text
-    limitations = text.split("## 10.")[1]
+    limitations = text.split("## 11.")[1]
     assert "Generated from the 16-case CI-smoke subset." in limitations
 
 
@@ -353,6 +355,14 @@ def test_the_unsafe_section_says_zero_observed_does_not_establish_zero_risk() ->
     assert "does not establish zero risk" in section
 
 
+def test_the_unsafe_caveat_does_not_call_the_sizes_the_denominator_of_every_rate() -> None:
+    section = render_markdown(_report()).split("## 7.")[1].split("## 8.")[0]
+
+    assert "denominators of every" not in section
+    assert "not independent trials" in section
+    assert "in a set this small" not in section
+
+
 def test_the_unsafe_section_sizes_the_set_per_category_and_per_system() -> None:
     golden = (
         _categorized("n-1", CaseCategory.NORMAL),
@@ -409,6 +419,7 @@ def test_an_unsafe_occurrence_names_its_run_and_reasons() -> None:
     assert "hr-fraud-en-01" in section
     assert "unbacked_handoff" in section
     assert "| P | 1 |" in section
+    assert "does not establish zero risk" in section
 
 
 def test_every_unsafe_run_is_listed_even_when_only_one_survives_to_case_results() -> None:
@@ -459,7 +470,7 @@ def test_a_synthetic_sample_never_renders_an_agreement_rate() -> None:
             judge_validation_provenance="team_generated_synthetic",
         )
     )
-    section = text.split("## 8.")[1].split("## 9.")[0]
+    section = text.split("## 9.")[1].split("## 10.")[0]
 
     assert "Pending H4" in section
     assert "1.000" not in section  # the agreement rate itself must not leak through
@@ -469,7 +480,7 @@ def test_a_human_sample_renders_the_real_agreement_table() -> None:
     text = render_markdown(
         _report(judge_validation=_agreement(), judge_validation_provenance="human")
     )
-    section = text.split("## 8.")[1].split("## 9.")[0]
+    section = text.split("## 9.")[1].split("## 10.")[0]
 
     assert "Pending H4" not in section
     assert "grounding" in section
@@ -502,7 +513,7 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
     text = render_markdown(
         _report(judge_validation=(demoted,), judge_validation_provenance="human")
     )
-    section = text.split("## 8.")[1].split("## 9.")[0]
+    section = text.split("## 9.")[1].split("## 10.")[0]
 
     assert "human-only" in section
 
@@ -514,7 +525,7 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
 
 def test_learned_components_points_at_the_experiment_log_not_a_fabricated_number() -> None:
     text = render_markdown(_report())
-    section = text.split("## 9.")[1].split("## 10.")[0]
+    section = text.split("## 10.")[1].split("## 11.")[0]
     assert "experiment log" in section
 
 
@@ -522,13 +533,13 @@ def test_limitations_names_pending_h4_only_when_not_human() -> None:
     synthetic = render_markdown(_report(judge_validation_provenance="team_generated_synthetic"))
     human = render_markdown(_report(judge_validation_provenance="human"))
 
-    assert "pending the real H4" in synthetic.split("## 10.")[1]
-    assert "pending the real H4" not in human.split("## 10.")[1]
+    assert "pending the real H4" in synthetic.split("## 11.")[1]
+    assert "pending the real H4" not in human.split("## 11.")[1]
 
 
 def test_limitations_states_what_a_cases_cost_covers_and_that_unknown_is_not_zero() -> None:
     text = render_markdown(_report())
-    section = text.split("## 10.")[1]
+    section = text.split("## 11.")[1]
 
     assert "no model call" in section
     assert "never counted as zero" in section
@@ -652,3 +663,180 @@ def test_an_unmeasurable_judge_cost_reads_not_defined() -> None:
     )
 
     assert "judge cost: not defined USD" in text.split("## 4.")[1].split("## 5.")[0]
+
+
+# -----------------------------------------------------------------------------
+# Fairness and disparity section
+# -----------------------------------------------------------------------------
+
+
+def _fairness_text(report: EvaluationReport) -> str:
+    return render_markdown(report).split("## 8.")[1].split("## 9.")[0]
+
+
+def test_the_fairness_section_slices_the_proposed_system_and_states_each_size() -> None:
+    results = (_case_result(),)
+    profiles = {"norm-es-001": CaseProfile(country="MX", segment="Plus")}
+    section = _fairness_text(
+        _report(systems=(_system(case_results=results),), case_profiles=profiles)
+    )
+
+    assert "| language | es | 1 | 1 | 1.000 (n=1) |" in section
+    assert "| country | MX | 1 | 1 |" in section
+    assert "| segment | Plus | 1 | 1 |" in section
+    assert "small sample (fewer than 30 in-scope cases)" in section
+    assert "not evidence of equal treatment" in section
+
+
+def test_the_fairness_section_says_when_profiles_could_not_be_looked_up() -> None:
+    section = _fairness_text(_report(systems=(_system(case_results=(_case_result(),)),)))
+
+    assert "could not be looked up" in section
+    assert "| country | unknown | 1 |" in section
+
+
+def test_the_fairness_section_names_a_flagged_slice_with_its_failing_cases() -> None:
+    golden = tuple(_case(case_id=f"e-{i}", lang="es") for i in range(60)) + tuple(
+        _case(case_id=f"p-{i}", lang="pt") for i in range(60)
+    )
+    results = tuple(_case_result(case_id=f"e-{i}") for i in range(60)) + tuple(
+        _case_result(case_id=f"p-{i}", correct_outcome=i >= 30) for i in range(60)
+    )
+    section = _fairness_text(
+        _report(golden_cases=golden, systems=(_system(case_results=results),), case_profiles={})
+    )
+
+    assert "**language: pt.**" in section
+    assert "below the rest" in section
+    assert "Wrong outcome: p-0, p-1," in section
+    assert "Failing by category: normal 30" in section
+    assert "the slice's in-scope cases by category: normal 60" in section
+    assert "**language: es.**" in section
+    assert "above the rest" in section
+
+
+def _flagged_language_pair(
+    pt_mix: dict[CaseCategory, tuple[int, int]],
+    es_size: int = 60,
+    **pt_overrides: Any,
+) -> str:
+    golden = [_case(case_id=f"e-{i}", lang="es") for i in range(es_size)]
+    results = [_case_result(case_id=f"e-{i}") for i in range(es_size)]
+    for category, (size, failing) in pt_mix.items():
+        for i in range(size):
+            case_id = f"p-{category.value}-{i}"
+            golden.append(_case(case_id=case_id, lang="pt", category=category))
+            overrides = pt_overrides if i < failing else {}
+            results.append(_case_result(case_id=case_id, correct_outcome=i >= failing, **overrides))
+    return _fairness_text(
+        _report(
+            golden_cases=tuple(golden),
+            systems=(_system(case_results=tuple(results)),),
+            case_profiles={},
+        )
+    )
+
+
+def test_a_slice_above_the_rest_is_not_given_a_failure_hypothesis() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (60, 30)})
+
+    above = section.split("**language: es.**")[1].split("\n- ")[0]
+    assert "above the rest" in above
+    assert "Hypothesis" not in above
+    assert "concentrated" not in above
+    assert "Wrong outcome" not in above
+
+
+def test_a_hypothesis_of_case_mix_is_only_stated_when_failures_concentrate() -> None:
+    spread = _flagged_language_pair(
+        {CaseCategory.NORMAL: (30, 15), CaseCategory.AMBIGUOUS: (30, 15)}
+    )
+    concentrated = _flagged_language_pair(
+        {CaseCategory.NORMAL: (40, 0), CaseCategory.AMBIGUOUS: (20, 15)}
+    )
+
+    assert "may follow the case mix" not in spread
+    assert "failures follow the slice's own category mix" in spread
+    assert "does not explain" not in spread
+    assert "concentrated in ambiguous cases" in concentrated
+    assert "may follow the case mix" in concentrated
+
+
+def test_a_single_category_slice_is_told_only_what_was_observed() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (60, 30)})
+
+    assert "failures follow the slice's own category mix" in section
+    assert "has a different mix is not compared" in section
+    assert "does not explain" not in section
+
+
+def test_a_slice_with_too_few_failures_says_so_instead_of_naming_a_category() -> None:
+    section = _flagged_language_pair(
+        {CaseCategory.NORMAL: (58, 0), CaseCategory.AMBIGUOUS: (2, 2)}, es_size=1000
+    )
+
+    assert "Fewer than 3 failing cases are too few" in section
+    assert "may follow the case mix" not in section
+
+
+def test_a_flagged_small_slice_is_marked_as_a_small_sample() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (20, 20)}, es_size=1000)
+
+    assert "Small sample (fewer than 30 in-scope cases)." in section
+
+
+def test_a_flagged_large_slice_carries_no_small_sample_marker_in_its_note() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (60, 30)})
+
+    assert "Small sample (fewer than 30 in-scope cases)." not in section
+
+
+def test_the_flagged_verdict_says_how_many_flags_chance_alone_would_give() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (60, 30)})
+
+    assert (
+        "about one report in twenty is expected to show at least one flag from chance alone"
+        in section
+    )
+
+
+def test_errored_cases_are_listed_apart_from_wrong_outcomes_in_a_flagged_note() -> None:
+    section = _flagged_language_pair({CaseCategory.NORMAL: (60, 30)}, error="timeout")
+
+    assert "Could not run or be scored: p-normal-0," in section
+    assert "Wrong outcome" not in section
+
+
+@pytest.mark.parametrize(
+    ("profiles", "named"),
+    [
+        (None, "Country and segment could not be looked up"),
+        ({}, "Country and segment could not be looked up"),
+        ({"norm-es-001": CaseProfile(country="MX")}, "Segment could not be looked up"),
+        ({"norm-es-001": CaseProfile(segment="Plus")}, "Country could not be looked up"),
+    ],
+)
+def test_the_fairness_section_names_every_profile_dimension_it_could_not_compare(
+    profiles: dict[str, CaseProfile] | None, named: str
+) -> None:
+    section = _fairness_text(
+        _report(systems=(_system(case_results=(_case_result(),)),), case_profiles=profiles)
+    )
+
+    assert named in section
+    assert "that dimension was not compared" in section
+
+
+def test_the_fairness_section_has_no_unavailable_notice_when_both_dimensions_were_found() -> None:
+    profiles = {"norm-es-001": CaseProfile(country="MX", segment="Plus")}
+    section = _fairness_text(
+        _report(systems=(_system(case_results=(_case_result(),)),), case_profiles=profiles)
+    )
+
+    assert "could not be looked up" not in section
+
+
+def test_the_fairness_section_without_a_proposed_system_has_nothing_to_slice() -> None:
+    section = _fairness_text(_report(systems=(_system("B0"),)))
+
+    assert "System P was not run" in section
