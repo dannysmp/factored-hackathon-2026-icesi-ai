@@ -589,7 +589,10 @@ class DialogueController:
             state = state.model_copy(update={"category": result.category})
 
         if state.pending_slot is Slot.TRANSACTION_CHOICE:
-            state = state.with_slot_filled()
+            if self._names_another_transaction(state, result.transaction):
+                state = state.model_copy(update={"selected_ref": None, "pending_slot": None})
+            else:
+                state = state.with_slot_filled()
 
         slot = required_slot(result, state)
         if slot is Slot.TRANSACTION:
@@ -601,6 +604,26 @@ class DialogueController:
 
         assert state.category is not None  # noqa: S101 - guaranteed by required_slot above
         return self._evaluate_and_present(state, state.selected_ref, state.category)
+
+    def _names_another_transaction(self, state: DialogueState, hint: TransactionHint) -> bool:
+        """Whether ``hint`` describes something other than the transaction just presented.
+
+        A hint that names nothing, or only matches the presented transaction, is the customer
+        going ahead with it. A hint that names a different merchant, amount, card or date means
+        they rejected the one shown and are pointing at another. When the presented transaction
+        cannot be read back, the hint is searched for afresh rather than assumed to match.
+        """
+        if hint.is_empty:
+            return False
+        assert state.selected_ref is not None  # noqa: S101 - set whenever this slot is pending
+        selected = dispatch(
+            self._tool_port, tool_contracts.Tool.GET_TRANSACTION, state.selected_ref
+        )
+        if isinstance(selected, ToolFailure) or selected is None:
+            return True
+        if hint.date_on is not None and hint.date_on != selected.occurred_on:
+            return True
+        return not _matches_hint(selected, hint)
 
     def _handle_list_transactions(
         self, state: DialogueState, _result: NluResult
