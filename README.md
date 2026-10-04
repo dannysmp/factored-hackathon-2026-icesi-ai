@@ -257,7 +257,7 @@ says so, and `make judge-validation` completes it once two raters return their s
 ### Configuration
 
 Configuration is a single validated object (`app/config.py`) loaded from the environment and an
-optional `.env` file. Every variable is documented in `.env.example`. The service starts without
+optional `.env` file. `.env.example` lists the variables an operator sets; `app/config.py` defines every variable and its default. The service starts without
 `ANTHROPIC_API_KEY`; it is only required once a feature makes an LLM call. Anything that reads the
 serving store needs `DATABASE_URL`, and the service needs a domain date (see *Set up and run*). Invalid configuration
 fails at startup with a message that names the offending key and never echoes its value.
@@ -344,7 +344,7 @@ security requirements, and which controls exist today, are in [SECURITY.md](SECU
 | `gitleaks: command not found` when running `make secrets` | `brew install gitleaks` |
 | `ConfigError: Invalid configuration — LOG_LEVEL: …` | The message names the bad key; fix it in `.env` (see `.env.example` for accepted values) |
 | `make setup` fails with a stale lockfile | Run `uv lock` and commit the updated `uv.lock` |
-| `make profile` fails with `cannot load table …` or `lacks key column` | The message names the table; check that the raw files match the layout described under *Data* |
+| `make profile` fails with `could not be parsed`, `InvalidHeader`, `HeaderMismatch` or `lacks key column(s)` | The message names the table; check that the raw files match the layout described under *Data* |
 | `make pipeline` exits with code 1 and `reports/data-quality.md` exists | A table could not be cleaned; the report names it and the reason (for example a file without a header row) |
 | `make pipeline` exits non-zero and `reports/data-quality.md` is missing | The build crashed before finishing; a report from an earlier run is removed rather than left stale, so its absence is the crash's own signal. Check the traceback |
 | `make analyze` exits non-zero | Run `make pipeline` first: the analysis reads the cleaned layer. Any earlier `reports/workflow-analysis.md` is removed rather than left stale, so its absence is expected; `analysis_failed` in the log names a handled reason, otherwise check the traceback |
