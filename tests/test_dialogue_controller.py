@@ -30,6 +30,7 @@ from app.conversation.controller import (
     _matches_hint,
 )
 from app.conversation.handoff import HandoffContent, build_packet
+from app.conversation.llm_understanding import LlmNlu
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DuplicateTurn, InMemoryDialogueStore
 from app.conversation.understanding import TurnAccounting, UnderstandingUnavailable
@@ -43,6 +44,7 @@ from app.domain.policy.models import (
     TransactionStatus,
 )
 from app.domain.policy.models import Fact as PolicyFact
+from app.llm.client import FakeLlm
 from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError
 from app.security.sessions import Principal
@@ -565,6 +567,72 @@ def test_multiple_matches_ask_for_detail_then_escalate_at_the_budget(
     assert response.end_session
     assert outbox.packets
     assert outbox.packets[0].trigger.value == "low_understanding"
+
+
+def test_a_localized_amount_in_a_portuguese_report_still_presents_the_one_matching_transaction(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The customer's first message names no transaction; the second names the merchant, date and
+    "99.948,89 ARS". The model reports the figure as spoken, which must not cost the turn: the one
+    matching transaction is presented rather than the conversation escalating."""
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    port = FakeToolPort(
+        transactions=(
+            _transaction(
+                merchant="Farmacia Salud",
+                occurred_on=date(2026, 4, 21),
+                amount=Decimal("99948.89"),
+                currency="ARS",
+            ),
+        )
+    )
+    llm = FakeLlm(
+        responses=[
+            {
+                "intent": "file_dispute",
+                "confidence": 0.9,
+                "language": "pt",
+                "mentions_second_dispute": False,
+            },
+            {
+                "intent": "file_dispute",
+                "confidence": 0.9,
+                "language": "pt",
+                "merchant": "Farmacia Salud",
+                "date_expression": "21 de abril",
+                "amount": "99.948,89",
+                "currency": "ARS",
+                "mentions_second_dispute": False,
+            },
+        ]
+    )
+    controller = DialogueController(
+        LlmNlu(llm, model="claude-haiku-4-5-20251001"),
+        store=store,
+        tool_port=port,
+        retriever=retriever,
+        policy=policy,
+        outbox=outbox,
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+    )
+
+    asked = controller.handle_turn(
+        _turn("turn-0001", "Quero contestar uma compra"), principal=_principal()
+    )
+    assert asked.next_expected is Slot.TRANSACTION
+
+    presented = controller.handle_turn(
+        _turn("turn-0002", "Foi na Farmacia Salud, 21 de abril, 99.948,89 ARS"),
+        principal=_principal(),
+    )
+
+    assert not presented.end_session
+    assert outbox.packets == []
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-1"
 
 
 def test_eligible_decision_requiring_confirmation_then_yes_files_and_verifies(

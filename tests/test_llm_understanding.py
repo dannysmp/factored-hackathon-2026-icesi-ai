@@ -10,6 +10,7 @@ real provider.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -328,3 +329,110 @@ def test_an_overlong_date_expression_is_truncated_and_repaired() -> None:
     # graceful outcome as any other unrecognized expression.
     assert result.intent is NluIntent.FILE_DISPUTE
     assert result.transaction.date_on is None
+
+
+def _amount_understanding(amount: str, **extra: object) -> tuple[NluResult, FakeLlm]:
+    llm = FakeLlm(
+        responses=[
+            {
+                "intent": "file_dispute",
+                "confidence": 0.8,
+                "language": "pt",
+                "merchant": "Farmacia Salud",
+                "amount": amount,
+                "currency": "ARS",
+                "mentions_second_dispute": False,
+                **extra,
+            }
+        ]
+    )
+    result, _accounting = LlmNlu(llm, model=_MODEL).understand(
+        "nao reconheco a compra", language_hint="pt", reference_date=_REFERENCE_DATE
+    )
+    return result, llm
+
+
+@pytest.mark.parametrize(
+    ("spoken", "expected"),
+    [
+        ("99.948,89", "99948.89"),
+        ("99,948.89", "99948.89"),
+        ("99948,89", "99948.89"),
+        ("99948.89", "99948.89"),
+        ("$ 1 250,50", "1250.50"),
+        ("ARS 99948.89", "99948.89"),
+        ("$99,948.89 ARS", "99948.89"),
+        ("1.234", "1234"),
+        ("1,234", "1234"),
+        ("1.234.567", "1234567"),
+        ("1,234,567", "1234567"),
+        ("1.234,5", "1234.5"),
+        ("0,5", "0.5"),
+        ("125.5", "125.5"),
+        ("1234", "1234"),
+    ],
+)
+def test_a_localized_amount_is_read_with_its_own_separators(spoken: str, expected: str) -> None:
+    """A figure written either way round (or with a symbol or ISO code) keeps its value."""
+    result, _llm = _amount_understanding(spoken)
+
+    assert result.intent is NluIntent.FILE_DISPUTE
+    assert result.transaction.amount == Decimal(expected)
+    assert result.transaction.merchant == "Farmacia Salud"
+
+
+@pytest.mark.parametrize(
+    "spoken", ["abc", "12.3.4", "1.2345.678", "1,2.3,4", "$", "0.125", "1" * 15]
+)
+def test_an_unparseable_amount_is_dropped_while_the_rest_of_the_understanding_survives(
+    spoken: str,
+) -> None:
+    """The figure is the only thing lost: merchant, currency and intent still reach the dialogue,
+    so one garbled amount never turns a clear request into an unusable turn."""
+    result, llm = _amount_understanding(spoken)
+
+    assert result.intent is NluIntent.FILE_DISPUTE
+    assert result.transaction.amount is None
+    assert result.transaction.merchant == "Farmacia Salud"
+    assert result.transaction.currency == "ARS"
+    assert len(llm.requests) == 1
+
+
+def test_the_exact_localized_call_from_a_portuguese_report_is_understood() -> None:
+    """The model's arguments for "Farmacia Salud, 21 de abril, 99.948,89 ARS", verbatim."""
+    llm = FakeLlm(
+        responses=[
+            {
+                "intent": "file_dispute",
+                "confidence": 0.9,
+                "language": "pt",
+                "merchant": "Farmacia Salud",
+                "date_expression": "21 de abril",
+                "amount": "99.948,89",
+                "currency": "ARS",
+                "mentions_second_dispute": False,
+            }
+        ]
+    )
+
+    result, _accounting = LlmNlu(llm, model=_MODEL).understand(
+        "Foi a compra na Farmacia Salud de 21 de abril, 99.948,89 ARS",
+        language_hint="pt",
+        reference_date=_REFERENCE_DATE,
+    )
+
+    assert result.intent is NluIntent.FILE_DISPUTE
+    assert result.language == "pt"
+    assert result.transaction.merchant == "Farmacia Salud"
+    assert result.transaction.amount == Decimal("99948.89")
+    assert result.transaction.currency == "ARS"
+
+
+def test_the_amount_description_asks_for_plain_decimal_text() -> None:
+    """The model is told the format the parser reads best, so the repair is the exception."""
+    result, llm = _amount_understanding("1.00")
+    assert result.transaction.amount == Decimal("1.00")
+
+    properties = llm.requests[0].tool.input_schema["properties"]
+    assert isinstance(properties, dict)
+    assert "no thousands separator" in str(properties["amount"])

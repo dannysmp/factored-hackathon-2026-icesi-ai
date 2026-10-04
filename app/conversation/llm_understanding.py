@@ -25,11 +25,12 @@ Design Principles
   text; ``_ModelExtraction`` accepts them loosely (no length or cross-field rules), then the
   mapping into ``NluResult`` is where the contract's own bounds and rules apply. A result that
   fails them once is repaired once (truncating an overlong free-text field, dropping a choice out
-  of range, nulling an enum-like value the model spelled wrong) and validated again; a result that
-  still fails becomes ``NluResult.unusable()``: one question, then a person — the customer is
-  never shown a model or provider error. A call the port could not complete at all is a different
-  outcome (``UnderstandingUnavailable``, raised rather than swallowed): unlike a malformed result,
-  it is not the customer's own ambiguity, so it must not be treated as one.
+  of range, nulling an enum-like value the model spelled wrong or an amount that holds no figure)
+  and validated again; a result that still fails becomes ``NluResult.unusable()``: one question,
+  then a person — the customer is never shown a model or provider error. A call the port could
+  not complete at all is a different outcome (``UnderstandingUnavailable``, raised rather than
+  swallowed): unlike a malformed result, it is not the customer's own ambiguity, so it must not
+  be treated as one.
 - The masking serializer is the only path text takes to leave the process: this class never builds
   the user message from anything but ``redact_pan(text).masked``.
 - Temperature 0: this is structured extraction, not open-ended writing.
@@ -55,6 +56,7 @@ expression it never recognized, rather than guessing one specific day out of it.
 from __future__ import annotations
 
 # Standard libraries
+import re  # Stripping an amount's currency symbols and spacing
 from collections.abc import Mapping  # Type of the raw tool arguments
 from datetime import date  # The domain calendar's own reference date
 from decimal import Decimal, InvalidOperation  # Money is never a float; malformed amounts repair
@@ -122,7 +124,10 @@ _NLU_TOOL = ToolSpec(
             },
             "amount": {
                 "type": ["string", "null"],
-                "description": 'The amount as decimal text, e.g. "125.50", or null.',
+                "description": (
+                    "The amount as plain decimal text: digits with a point before the cents, "
+                    'no thousands separator, e.g. "99948.89" for "99.948,89", or null.'
+                ),
             },
             "currency": {
                 "type": ["string", "null"],
@@ -173,6 +178,68 @@ _ENUM_REPAIRS: Mapping[str, frozenset[str]] = {
 }
 
 
+_NOT_AMOUNT_CHARACTERS = re.compile(r"[^0-9.,]")
+_THOUSANDS_GROUP = 3
+_MAX_CENTS_DIGITS = 2
+_MAX_AMOUNT_DIGITS = 14
+
+
+def _parse_amount(text: str) -> Decimal:
+    """The amount in ``text``, however the customer's locale writes its separators.
+
+    A model told to give plain decimal text still sometimes copies the customer's own figure
+    ("99.948,89", "99,948.89", "$ 1 250,50", "ARS 99948.89"). Currency symbols, codes and spacing
+    are dropped; with both separators present the last is the decimal point; a separator that
+    repeats, or stands once before exactly three digits, groups thousands (money has two decimal
+    places, so "1.234" is 1234); any other single separator is the decimal point.
+
+    Raises
+    ------
+    decimal.InvalidOperation
+        ``text`` holds no amount, or its separators are not any locale's grouping.
+    """
+    digits = _NOT_AMOUNT_CHARACTERS.sub("", text)
+    if not any(character.isdigit() for character in digits):
+        raise InvalidOperation(text)
+    present = [separator for separator in (".", ",") if separator in digits]
+    if not present:
+        return Decimal(digits)
+    decimal_point = max(present, key=digits.rindex)
+    grouping = next((separator for separator in present if separator != decimal_point), None)
+    if grouping is not None:
+        grouped, _, fraction = digits.rpartition(decimal_point)
+        return Decimal(f"{_ungrouped(grouped, grouping)}.{fraction}")
+    integer, *later = digits.split(decimal_point)
+    repeated = len(later) > 1
+    stands_before_a_group = (
+        len(later[0]) == _THOUSANDS_GROUP and integer != "" and integer.strip("0") != ""
+    )
+    if repeated or stands_before_a_group:
+        return Decimal(_ungrouped(digits, decimal_point))
+    return Decimal(f"{integer or '0'}.{later[0]}")
+
+
+def _ungrouped(digits: str, separator: str) -> str:
+    """``digits`` without its thousands ``separator``; raises when the groups are not thousands."""
+    head, *groups = digits.split(separator)
+    if not 1 <= len(head) <= _THOUSANDS_GROUP or any(
+        len(group) != _THOUSANDS_GROUP for group in groups
+    ):
+        raise InvalidOperation(digits)
+    return head + "".join(groups)
+
+
+def _is_amount(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        amount = _parse_amount(value)
+    except InvalidOperation:
+        return False
+    parts = amount.as_tuple()
+    return int(parts.exponent) >= -_MAX_CENTS_DIGITS and len(parts.digits) <= _MAX_AMOUNT_DIGITS
+
+
 class _ModelExtraction(BaseModel):
     """The tool call's arguments, accepted loosely; the contract's own rules apply on mapping."""
 
@@ -218,7 +285,7 @@ def _to_nlu_result(extraction: _ModelExtraction, *, reference_date: date) -> Nlu
     )
     transaction = TransactionHint(
         merchant=extraction.merchant,
-        amount=Decimal(extraction.amount) if extraction.amount else None,
+        amount=_parse_amount(extraction.amount) if extraction.amount else None,
         currency=extraction.currency,
         date_on=resolved_date[0] if resolved_date is not None else None,
         date_source=resolved_date[1] if resolved_date is not None else None,
@@ -255,6 +322,8 @@ def _repaired(raw: Mapping[str, object]) -> dict[str, object]:
         value = repaired.get(key)
         if isinstance(value, str) and value not in allowed:
             repaired[key] = None
+    if repaired.get("amount") is not None and not _is_amount(repaired["amount"]):
+        repaired["amount"] = None
     choice = repaired.get("choice")
     if isinstance(choice, int) and not (_MIN_CHOICE <= choice <= _MAX_CHOICE):
         repaired["choice"] = None
