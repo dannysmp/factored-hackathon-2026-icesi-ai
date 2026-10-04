@@ -24,10 +24,14 @@ Design Principles
 - Structured output, validated: the model returns arguments through a forced tool call, never free
   text; ``_ModelExtraction`` accepts them loosely (no length or cross-field rules), then the
   mapping into ``NluResult`` is where the contract's own bounds and rules apply. A result that
-  fails them once is repaired once (truncating an overlong free-text field, dropping a choice out
-  of range, nulling an enum-like value the model spelled wrong or an amount that is not a plain
-  figure) and validated again; a result that still fails becomes ``NluResult.unusable()``: one
-  question, then a person — the customer is never shown a model or provider error. A call the port
+  fails them once is repaired once (truncating an overlong free-text field, reading an empty or
+  "null" optional field as absent, capitalising a currency code and dropping one that is not a
+  code, dropping a choice out of range, nulling an enum-like value the model spelled wrong or an
+  amount that is not a plain figure, dropping a slot reported under an intent that does not read
+  it, and reading an intent reported without its slot as ``unclear``) and validated again; the
+  transaction the customer described survives each of these. A result that still fails becomes
+  ``NluResult.unusable()``: one question, then a person — the customer is never shown a model or
+  provider error — and the fields and rules that failed (never the customer's words) are logged. A call the port
   could not complete at all is a different outcome (``UnderstandingUnavailable``, raised rather than
   swallowed): unlike a malformed result, it is not the customer's own ambiguity, so it must not
   be treated as one.
@@ -56,7 +60,9 @@ expression it never recognized, rather than guessing one specific day out of it.
 from __future__ import annotations
 
 # Standard libraries
+import logging  # The reasons a result was discarded, field names only
 import re  # Matching an amount's currency, digits and separators
+import unicodedata  # Control characters are read as spaces, not as a reason to discard a message
 from collections.abc import Mapping  # Type of the raw tool arguments
 from datetime import date  # The domain calendar's own reference date
 from decimal import Decimal, InvalidOperation  # Money is never a float; malformed amounts repair
@@ -93,6 +99,8 @@ from contracts.service_v1.nlu import (  # The typed result and its vocabulary
     NluResult,
     TransactionHint,
 )
+
+logger = logging.getLogger(__name__)
 
 _PROMPT_NAME = "nlu_v1"
 
@@ -172,6 +180,33 @@ _LENGTH_REPAIRS: tuple[tuple[str, int], ...] = (
     ("detail", 500),
     ("policy_query", 200),
 )
+
+# Optional fields a model fills with an empty string or the word "null" when the message says
+# nothing about them; read as absent, never as a value that voids the whole understanding.
+_OPTIONAL_FIELDS = (
+    "language",
+    "merchant",
+    "date_expression",
+    "amount",
+    "currency",
+    "product_last4",
+    "category",
+    "detail",
+    "confirmation",
+    "requested_language",
+    "policy_query",
+)
+_ABSENT_WORDS = frozenset({"", "null", "none"})
+_CURRENCY_FORM = re.compile(r"^[A-Z]{3}$")
+_LAST4_FORM = re.compile(r"^\d{4}$")
+
+# The one intent each slot exists for (``NluResult`` refuses the slot under any other intent, and
+# the intent without its slot).
+_SLOT_OWNER: Mapping[str, str] = {
+    "confirmation": NluIntent.CONFIRMATION.value,
+    "choice": NluIntent.CHOICE.value,
+    "requested_language": NluIntent.SWITCH_LANGUAGE.value,
+}
 
 # Enum-like fields worth nulling out, rather than discarding the whole result, when the model
 # spelled a value that is not in the closed set (for example a language code it invented).
@@ -339,14 +374,43 @@ def _to_nlu_result(extraction: _ModelExtraction, *, reference_date: date) -> Nlu
     )
 
 
+def _cleaned_optional_fields(repaired: dict[str, object]) -> None:
+    """Read an empty, blank or "null" optional field as absent, and tidy the codes."""
+    for key in _OPTIONAL_FIELDS:
+        value = repaired.get(key)
+        if isinstance(value, str):
+            cleaned = "".join(" " if unicodedata.category(c) == "Cc" else c for c in value).strip()
+            repaired[key] = None if cleaned.lower() in _ABSENT_WORDS else cleaned
+    currency = repaired.get("currency")
+    if isinstance(currency, str):
+        repaired["currency"] = currency.upper() if _CURRENCY_FORM.match(currency.upper()) else None
+    last4 = repaired.get("product_last4")
+    if isinstance(last4, str) and not _LAST4_FORM.match(last4):
+        repaired["product_last4"] = None
+
+
+def _slots_matched_to_intent(repaired: dict[str, object]) -> None:
+    """Drop a slot reported under an intent that does not read it; read an intent reported without
+    its slot as ``unclear``."""
+    intent = repaired.get("intent")
+    for slot, owner in _SLOT_OWNER.items():
+        if repaired.get(slot) is not None and intent != owner:
+            repaired[slot] = None
+    for slot, owner in _SLOT_OWNER.items():
+        if repaired.get(slot) is None and intent == owner:
+            repaired["intent"] = NluIntent.UNCLEAR.value
+
+
 def _repaired(raw: Mapping[str, object]) -> dict[str, object]:
     """One bounded repair of the raw tool arguments: truncate, clamp, or null — never re-ask.
 
-    Cross-field rules (a slot belonging to its intent, for example) are not repaired here; a
-    violation of one of those means the extraction is genuinely inconsistent, and the caller falls
-    back to unusable understanding rather than guessing which side of it was right.
+    A slot reported under an intent that does not read it is dropped, and an intent reported
+    without the slot it needs is read as ``unclear`` — in both cases the rest of the message's
+    understanding (the transaction it describes, above all) is kept rather than discarded with
+    it. A violation no field can be dropped to resolve falls back to unusable understanding.
     """
     repaired = dict(raw)
+    _cleaned_optional_fields(repaired)
     for key, limit in _LENGTH_REPAIRS:
         value = repaired.get(key)
         if isinstance(value, str) and len(value) > limit:
@@ -360,12 +424,28 @@ def _repaired(raw: Mapping[str, object]) -> dict[str, object]:
     choice = repaired.get("choice")
     if isinstance(choice, int) and not (_MIN_CHOICE <= choice <= _MAX_CHOICE):
         repaired["choice"] = None
+    _slots_matched_to_intent(repaired)
     return repaired
 
 
 # Failures a single bounded repair is worth attempting for: the model's JSON did not match the
 # loose intermediate model, the strict contract's own rules, or the amount did not parse.
 _REPAIRABLE_ERRORS = (ValidationError, InvalidOperation, TypeError, ValueError)
+
+
+def _discard_causes(error: Exception) -> str:
+    """Which fields, and which kinds of rule, made a result unusable — never the values, which
+    carry the customer's own words."""
+    if isinstance(error, ValidationError):
+        return ",".join(
+            sorted(
+                {
+                    f"{'.'.join(str(part) for part in e['loc']) or 'result'}:{e['type']}"
+                    for e in error.errors()
+                }
+            )
+        )
+    return type(error).__name__
 
 
 def _parse(tool_input: Mapping[str, object], *, reference_date: date) -> NluResult:
@@ -380,7 +460,8 @@ def _parse(tool_input: Mapping[str, object], *, reference_date: date) -> NluResu
         return _to_nlu_result(
             _ModelExtraction.model_validate(_repaired(tool_input)), reference_date=reference_date
         )
-    except _REPAIRABLE_ERRORS:
+    except _REPAIRABLE_ERRORS as error:
+        logger.warning("understanding_discarded causes=%s", _discard_causes(error))
         return NluResult.unusable()
 
 

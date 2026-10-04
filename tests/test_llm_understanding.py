@@ -9,6 +9,7 @@ real provider.
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from decimal import Decimal
 
@@ -150,7 +151,7 @@ def test_an_invalid_enum_value_is_nulled_and_repaired() -> None:
     assert result.language is None
 
 
-def test_an_out_of_range_choice_is_nulled_and_repaired() -> None:
+def test_an_out_of_range_choice_is_dropped_and_the_message_read_as_unclear() -> None:
     llm = FakeLlm(
         responses=[
             {
@@ -167,9 +168,11 @@ def test_an_out_of_range_choice_is_nulled_and_repaired() -> None:
         "el noveno", language_hint="es", reference_date=_REFERENCE_DATE
     )
 
-    # choice=None together with intent=CHOICE fails the contract's own slot-ownership rule, so
-    # this is a case a bounded repair cannot rescue: the whole result falls back to unusable.
-    assert result == NluResult.unusable()
+    # An unreadable choice leaves the intent without its slot, so it is read as unclear: the
+    # customer is asked again rather than the message being thrown away as unusable.
+    assert result.intent is NluIntent.UNCLEAR
+    assert result.choice is None
+    assert result != NluResult.unusable()
 
 
 def test_a_confirmation_that_belongs_to_its_intent_maps_cleanly() -> None:
@@ -529,3 +532,130 @@ def test_the_amount_description_asks_for_plain_decimal_text() -> None:
     properties = llm.requests[0].tool.input_schema["properties"]
     assert isinstance(properties, dict)
     assert "no thousands separator" in str(properties["amount"])
+
+
+def _understand(extraction: dict[str, object], text: str = "hola") -> NluResult:
+    arguments = {"intent": "file_dispute", "confidence": 0.9, "mentions_second_dispute": False}
+    arguments.update(extraction)
+    result, _accounting = LlmNlu(FakeLlm(responses=[arguments]), model=_MODEL).understand(
+        text, language_hint="es", reference_date=_REFERENCE_DATE
+    )
+    return result
+
+
+def test_a_lowercase_currency_code_is_read_in_capitals() -> None:
+    result = _understand({"merchant": "Cine Premium", "amount": "1914215", "currency": "cop"})
+
+    assert result.transaction.currency == "COP"
+    assert result.transaction.amount == Decimal("1914215")
+    assert result.transaction.merchant == "Cine Premium"
+
+
+def test_a_currency_that_is_not_a_code_is_dropped_and_the_rest_is_kept() -> None:
+    result = _understand({"merchant": "Cine Premium", "amount": "1914215", "currency": "pesos"})
+
+    assert result.intent is NluIntent.FILE_DISPUTE
+    assert result.transaction.currency is None
+    assert result.transaction.merchant == "Cine Premium"
+    assert result.transaction.amount == Decimal("1914215")
+
+
+@pytest.mark.parametrize("absent", ["", "   ", "null", "None", "NULL"])
+def test_an_optional_field_sent_empty_or_as_null_is_read_as_absent(absent: str) -> None:
+    result = _understand(
+        {
+            "merchant": "Cine Premium",
+            "date_expression": absent,
+            "currency": absent,
+            "category": absent,
+            "detail": absent,
+            "product_last4": absent,
+            "language": absent,
+        }
+    )
+
+    assert result.intent is NluIntent.FILE_DISPUTE
+    assert result.transaction.merchant == "Cine Premium"
+    assert result.transaction.date_on is None
+    assert result.transaction.currency is None
+    assert result.transaction.product_last4 is None
+    assert result.category is None
+    assert result.detail is None
+    assert result.language is None
+
+
+def test_control_characters_in_a_field_are_read_as_spaces() -> None:
+    result = _understand({"merchant": "Cine\x00 Premium\x07"})
+
+    assert result.intent is NluIntent.FILE_DISPUTE
+    assert result.transaction.merchant == "Cine  Premium"
+
+
+def test_a_malformed_last_four_digits_are_dropped_and_the_rest_is_kept() -> None:
+    result = _understand({"merchant": "Cine Premium", "product_last4": "12"})
+
+    assert result.transaction.product_last4 is None
+    assert result.transaction.merchant == "Cine Premium"
+
+
+def test_a_stray_choice_under_another_intent_is_dropped_and_the_transaction_kept() -> None:
+    result = _understand(
+        {"merchant": "Cine Premium", "amount": "1914215", "currency": "COP", "choice": 3}
+    )
+
+    assert result.intent is NluIntent.FILE_DISPUTE
+    assert result.choice is None
+    assert result.transaction.merchant == "Cine Premium"
+    assert result.transaction.amount == Decimal("1914215")
+
+
+def test_a_stray_confirmation_and_requested_language_are_dropped_the_same_way() -> None:
+    result = _understand(
+        {"merchant": "Cine Premium", "confirmation": "yes", "requested_language": "en"}
+    )
+
+    assert result.intent is NluIntent.FILE_DISPUTE
+    assert result.confirmation is None
+    assert result.requested_language is None
+    assert result.transaction.merchant == "Cine Premium"
+
+
+@pytest.mark.parametrize("intent", ["confirmation", "choice", "switch_language"])
+def test_an_intent_reported_without_its_slot_is_read_as_unclear_keeping_the_transaction(
+    intent: str,
+) -> None:
+    result = _understand({"intent": intent, "merchant": "Cine Premium", "amount": "1914215"})
+
+    assert result.intent is NluIntent.UNCLEAR
+    assert result.transaction.merchant == "Cine Premium"
+    assert result.transaction.amount == Decimal("1914215")
+
+
+def test_an_intent_with_its_own_slot_is_left_as_reported() -> None:
+    result = _understand({"intent": "choice", "choice": 2, "currency": "cop"})
+
+    assert result.intent is NluIntent.CHOICE
+    assert result.choice == 2
+    assert result.transaction.currency == "COP"
+
+
+def test_a_discarded_result_logs_the_fields_and_never_the_customers_words(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "mi-numero-4111111111111111"
+    with caplog.at_level(logging.WARNING, logger="app.conversation.llm_understanding"):
+        result = _understand({"intent": "no_such_intent", "merchant": secret}, text=secret)
+
+    assert result == NluResult.unusable()
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "understanding_discarded" in messages
+    assert "intent" in messages
+    assert secret not in messages
+    assert "4111" not in messages
+
+
+def test_a_usable_result_logs_nothing(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="app.conversation.llm_understanding"):
+        _understand({"merchant": "Cine Premium", "choice": 3})
+
+    assert caplog.records == []
