@@ -21,6 +21,7 @@ export const DEMO_QUEUE: QueueResponse = {
       promised_contact_by: '2026-06-19',
       age_days: 0,
       priority: true,
+      claimed_by: null,
     },
     {
       ticket_ref: 'T-20260617-BBBBBBBB',
@@ -33,6 +34,7 @@ export const DEMO_QUEUE: QueueResponse = {
       promised_contact_by: '2026-06-18',
       age_days: 1,
       priority: true,
+      claimed_by: null,
     },
     {
       ticket_ref: 'T-20260616-CCCCCCCC',
@@ -45,6 +47,7 @@ export const DEMO_QUEUE: QueueResponse = {
       promised_contact_by: '2026-06-20',
       age_days: 2,
       priority: false,
+      claimed_by: null,
     },
     {
       ticket_ref: 'T-20260615-DDDDDDDD',
@@ -57,6 +60,7 @@ export const DEMO_QUEUE: QueueResponse = {
       promised_contact_by: '2026-06-21',
       age_days: 3,
       priority: false,
+      claimed_by: null,
     },
     {
       ticket_ref: 'T-20260614-EEEEEEEE',
@@ -69,6 +73,7 @@ export const DEMO_QUEUE: QueueResponse = {
       promised_contact_by: '2026-06-22',
       age_days: 4,
       priority: false,
+      claimed_by: null,
     },
   ],
 }
@@ -168,6 +173,7 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
         policy_version: '2',
       },
     ],
+    notes: [],
   },
   {
     item: queueItem('T-20260616-CCCCCCCC'),
@@ -242,5 +248,6 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
         policy_version: '2',
       },
     ],
+    notes: [],
   },
 ]
