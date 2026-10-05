@@ -131,7 +131,7 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
             "DROP TABLE IF EXISTS cases, transactions, products, customers, "
             "ops_meta, audit_log, signin_audit, handoff_actions, handoff_open_questions, "
             "handoff_reason_codes, handoff_sources, handoff_notes, handoff_outbox, "
-            "dialogue_state, dialogue_turn_log, schema_migrations CASCADE"
+            "dialogue_state, dialogue_turn_log, llm_spend_daily, schema_migrations CASCADE"
         )
         # A table's own trigger drops with it, but the function it calls is a separate object.
         cur.execute("DROP FUNCTION IF EXISTS audit_log_forbid_mutation() CASCADE")
@@ -160,6 +160,7 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         "0013_audit_log_agent_write_actions",
         "0014_handoff_outbox_claims",
         "0015_handoff_notes",
+        "0016_llm_spend_daily",
     )
 
     again = apply_migrations(dsn)

@@ -5,31 +5,38 @@ Transaction Date Expression Resolution
 Overview
 --------
 Resolves the customer's own words for when a transaction happened ("ayer", "el lunes", "dia 3",
-"03/04") into an absolute date and the ``DateSource`` that names how it was expressed (AC-E5-16).
-Purely deterministic: no model call, no wall clock — the reference date is always the caller's own
-input, the domain calendar's reference date, never ``date.today()``.
+"3 de junio", "03/04") into an absolute date and the ``DateSource`` that names how it was
+expressed. Purely deterministic: no model call, no wall clock — the reference date is always the
+caller's own input, the domain calendar's reference date, never ``date.today()``.
 
 Scope
 -----
 In: matching a closed, curated vocabulary of relative day terms, weekday names and day-of-month
-phrases per language, and a numeric day-first date pattern; resolving each against the reference
-date the caller supplies.
+phrases and month-and-day phrases ("June 3rd", "3 de junio", "21 de abril") per language, and a
+numeric day-first date pattern; resolving each against the reference date the caller supplies.
 Out: recognizing that a message mentions a date at all (the model's own job, recorded as
-``date_expression``); confirming a resolved date in words before it is used (a later, separate
-controller-slice concern per AC-E5-16 and issue #106's own stated scope).
+``date_expression``); showing a resolved date back to the customer in words before it is used,
+which this module does not do.
 
 Design Principles
 ------------------
 - A transaction date is never resolved into the future relative to the reference date: a weekday
   name or a day-of-month resolves to the most recent occurrence on or before it, matching the
   domain fact that a dispute is always about a transaction already in the past.
-- An expression this table does not recognize resolves to ``None``, exactly the same "nothing
-  stated" outcome as before this module existed — an unrecognized phrase is never guessed at.
+- An expression this table does not recognize resolves to ``None``, the same "nothing stated"
+  outcome as a message with no date at all — an unrecognized phrase is never guessed at.
 - A curated per-language table, the same shape ``app.retrieval.lexical``'s own stopword lists use:
   additive, reversible, and deliberately narrow rather than a general-purpose date parser. Vague
   ranges ("semana pasada", "last week") are deliberately left unresolved: picking one specific day
   out of a stated week would be inventing a fact the customer did not give, the same principle
   ``prompts/nlu_v1.yaml`` already states for the model itself.
+
+Runtime Contract
+----------------
+``resolve(expression, *, language, reference_date) -> tuple[date, DateSource] | None``. A numeric
+date (``dd/mm`` or ``dd/mm/yyyy``) resolves with any ``language``, including ``None``; every other
+form needs the language to pick its vocabulary. ``DateSource.RELATIVE`` is a relative day term or a
+weekday, ``DateSource.PARTIAL`` a day of the month, ``DateSource.NUMERIC`` a numeric date.
 """
 
 from __future__ import annotations
@@ -91,12 +98,113 @@ _DAY_OF_MONTH: dict[Lang, re.Pattern[str]] = {
     "en": re.compile(r"^(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)$"),
 }
 
-# Day first, in every language, per AC-E5-16 — never the customer's own language's usual
-# convention. An optional two- or four-digit year; without one, the reference date's own year.
+# Month number per language's accent-folded, lowercased name; abbreviations a customer commonly
+# types are included alongside the full names.
+_MONTHS: dict[Lang, dict[str, int]] = {
+    "es": {
+        "enero": 1,
+        "febrero": 2,
+        "marzo": 3,
+        "abril": 4,
+        "mayo": 5,
+        "junio": 6,
+        "julio": 7,
+        "agosto": 8,
+        "septiembre": 9,
+        "setiembre": 9,
+        "octubre": 10,
+        "noviembre": 11,
+        "diciembre": 12,
+    },
+    "pt": {
+        "janeiro": 1,
+        "fevereiro": 2,
+        "marco": 3,
+        "abril": 4,
+        "maio": 5,
+        "junho": 6,
+        "julho": 7,
+        "agosto": 8,
+        "setembro": 9,
+        "outubro": 10,
+        "novembro": 11,
+        "dezembro": 12,
+    },
+    "en": {
+        "january": 1,
+        "jan": 1,
+        "february": 2,
+        "feb": 2,
+        "march": 3,
+        "mar": 3,
+        "april": 4,
+        "apr": 4,
+        "may": 5,
+        "june": 6,
+        "jun": 6,
+        "july": 7,
+        "jul": 7,
+        "august": 8,
+        "aug": 8,
+        "september": 9,
+        "sept": 9,
+        "sep": 9,
+        "october": 10,
+        "oct": 10,
+        "november": 11,
+        "nov": 11,
+        "december": 12,
+        "dec": 12,
+    },
+}
+
+
+def _month_alternation(language: Lang) -> str:
+    """The language's month names as a regular-expression alternation, longest first so a full
+    name is never cut short by one of its own abbreviations."""
+    return "|".join(sorted(_MONTHS[language], key=len, reverse=True))
+
+
+# A month-and-day phrase, per language, with the day and month as named groups and an optional
+# year from 1900 to 2099: "3 de junio" / "el 3 de junio de 2026" (es), "dia 21 de abril" / "no dia
+# 21 de abril" (pt), "June 3rd" / "3rd of June" / "on the 3rd of June, 2026" (en). A leading
+# preposition and article are accepted because the model may report the customer's phrase as
+# spoken.
+_YEAR = r"(?P<year>(?:19|20)\d{2})"
+_MONTH_DAY: dict[Lang, tuple[re.Pattern[str], ...]] = {
+    "es": (
+        re.compile(
+            r"^(?:(?:en\s+)?el\s+)?(?:dia\s+)?(?P<day>\d{1,2})\s+de\s+"
+            rf"(?P<month>{_month_alternation('es')})(?:\s+(?:de|del)\s+{_YEAR})?$"
+        ),
+    ),
+    "pt": (
+        re.compile(
+            r"^(?:(?:no|em|o)\s+)?(?:dia\s+)?(?P<day>\d{1,2})\s+de\s+"
+            rf"(?P<month>{_month_alternation('pt')})(?:\s+de\s+{_YEAR})?$"
+        ),
+    ),
+    "en": (
+        re.compile(
+            r"^(?:(?:on|in)\s+)?(?:the\s+)?"
+            rf"(?P<month>{_month_alternation('en')})\.?\s+(?:the\s+)?(?P<day>\d{{1,2}})"
+            rf"(?:st|nd|rd|th)?(?:,?\s+{_YEAR})?$"
+        ),
+        re.compile(
+            r"^(?:(?:on|in)\s+)?(?:the\s+)?(?P<day>\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?"
+            rf"(?P<month>{_month_alternation('en')})\.?(?:,?\s+{_YEAR})?$"
+        ),
+    ),
+}
+
+# Day first, in every language — never the customer's own language's usual convention (English
+# included). An optional two- or four-digit year; without one, the reference date's own year.
 _NUMERIC = re.compile(r"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?$")
 
 _MAX_MONTHS_BACK = 4  # Bounded search for a day-of-month that doesn't exist in every month.
 _TWO_DIGIT_YEAR_CUTOFF = 100  # A numeric date's own year below this is "26", not "2026".
+_MIN_YEAR = 1900  # An explicit year outside 1900-2099 is never a card transaction's date.
+_MAX_YEAR = 2099
 
 
 def _fold(text: str) -> str:
@@ -135,6 +243,14 @@ def _most_recent_day_of_month(reference_date: date, day: int) -> date | None:
     return None
 
 
+def _date_or_none(year: int, month: int, day: int) -> date | None:
+    """The calendar date, or ``None`` when that day does not exist in that month and year."""
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
 def _resolve_year(day: int, month: int, year: int | None, reference_date: date) -> date | None:
     """A numeric date's own year, when it has one; otherwise the reference date's year, or the
     year before it when that combination would fall after the reference date — a transaction date
@@ -144,21 +260,44 @@ def _resolve_year(day: int, month: int, year: int | None, reference_date: date) 
     if year is not None:
         if year < _TWO_DIGIT_YEAR_CUTOFF:
             year += 2000
-        try:
-            candidate = date(year, month, day)
-        except ValueError:
-            return None
-        return candidate if candidate <= reference_date else None
-    try:
-        candidate = date(reference_date.year, month, day)
-    except ValueError:
-        return None
-    if candidate > reference_date:
-        try:
-            return date(reference_date.year - 1, month, day)
-        except ValueError:
-            return None
+        candidate = _date_or_none(year, month, day) if _MIN_YEAR <= year <= _MAX_YEAR else None
+        return candidate if candidate is not None and candidate <= reference_date else None
+    candidate = _date_or_none(reference_date.year, month, day)
+    if candidate is not None and candidate > reference_date:
+        return _date_or_none(reference_date.year - 1, month, day)
     return candidate
+
+
+def _resolve_day_of_month(
+    folded: str, language: Lang, reference_date: date
+) -> tuple[date, DateSource] | None:
+    """The date a bare day-of-month phrase names, as its most recent occurrence."""
+    day_of_month = _DAY_OF_MONTH[language].match(folded)
+    if day_of_month is None:
+        return None
+    resolved = _most_recent_day_of_month(reference_date, int(day_of_month.group(1)))
+    return (resolved, DateSource.PARTIAL) if resolved is not None else None
+
+
+def _resolve_month_day(
+    folded: str, language: Lang, reference_date: date
+) -> tuple[date, DateSource] | None:
+    """The date a month-and-day phrase names, with its year when the phrase states one."""
+    for pattern in _MONTH_DAY[language]:
+        month_day = pattern.match(folded)
+        if month_day is None:
+            continue
+        year_text = month_day.group("year")
+        resolved = _resolve_year(
+            int(month_day.group("day")),
+            _MONTHS[language][month_day.group("month")],
+            int(year_text) if year_text is not None else None,
+            reference_date,
+        )
+        if resolved is None:
+            return None
+        return resolved, DateSource.ABSOLUTE if year_text is not None else DateSource.PARTIAL
+    return None
 
 
 def resolve(
@@ -166,6 +305,22 @@ def resolve(
 ) -> tuple[date, DateSource] | None:
     """The date ``expression`` names, resolved against ``reference_date``, and how it was
     expressed — or ``None`` when it names no date this table recognizes.
+
+    Parameters
+    ----------
+    expression : str
+        The customer's own words for the date, as the understanding step reported them.
+    language : Lang | None
+        The conversation's language, which selects the vocabulary; ``None`` leaves only the numeric
+        form resolvable.
+    reference_date : date
+        The domain calendar's reference date; every result is on or before it.
+
+    Returns
+    -------
+    tuple[date, DateSource] | None
+        The resolved date with how it was expressed, or ``None`` for an unrecognized phrase, a date
+        that does not exist, or a numeric date with an explicit year after ``reference_date``.
     """
     numeric = _NUMERIC.match(expression.strip())
     if numeric is not None:
@@ -188,9 +343,6 @@ def resolve(
     if weekday is not None:
         return _most_recent_weekday(reference_date, weekday), DateSource.RELATIVE
 
-    day_of_month = _DAY_OF_MONTH[language].match(folded)
-    if day_of_month is not None:
-        resolved = _most_recent_day_of_month(reference_date, int(day_of_month.group(1)))
-        return (resolved, DateSource.PARTIAL) if resolved is not None else None
-
-    return None
+    return _resolve_month_day(folded, language, reference_date) or _resolve_day_of_month(
+        folded, language, reference_date
+    )

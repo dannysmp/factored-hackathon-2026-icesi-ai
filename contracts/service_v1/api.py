@@ -55,6 +55,7 @@ from contracts.service_v1.envelope import (  # Shared base and types
     Slot,
 )
 
+# Longest customer message or reply, in characters; a bound on the model, not on the transport.
 MAX_TEXT_LENGTH = 2000
 
 
@@ -75,6 +76,7 @@ class TurnRequest(ContractModel):
     types one is answered, not refused with a schema error.
     """
 
+    # Chosen by the client; resending the same identifier replays the answer instead of advancing.
     turn_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{8,64}$")]
     text: Annotated[
         str,
@@ -94,17 +96,29 @@ class TurnResponse(ContractModel):
     """The reply to one turn."""
 
     contract_version: Literal["1"] = CONTRACT_VERSION
+    # Echo of the request's identifier.
     turn_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{8,64}$")]
     conversation_id: Annotated[str, Field(min_length=1, max_length=64)]
+    # Counts the turns applied to the conversation, starting at 1.
     state_version: Annotated[int, Field(ge=1)]
     lang: Lang
     reply: Annotated[str, Field(min_length=1, max_length=MAX_TEXT_LENGTH)]
+    # States which date the figures refer to; shown on every reply.
     reference_date_line: Annotated[str, Field(min_length=1, max_length=120)]
+    # Reminder that the data is simulated; a client shows it on every reply that carries it.
     demo_notice: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+    # Numbered options the customer may answer by number.
     choices: Annotated[tuple[Choice, ...], Field(max_length=5)] = ()
+    # The detail the reply asks for next, so a client can adapt its input.
     next_expected: Slot | None = None
+    # True when the conversation is over and the client should stop sending turns.
     end_session: bool = False
+    # Number of the ticket opened when the conversation was handed to a person.
     handoff_ticket: Annotated[str, Field(pattern=NUMBER_PATTERN)] | None = None
+    # Number of the dispute case, on a reply that reports it was filed and verified; null on every
+    # other reply. Retrying a turn id after a filing replays the session's latest outcome, so the
+    # retry reports the filed case again, whichever turn first used that id.
+    case_number: Annotated[str, Field(pattern=NUMBER_PATTERN)] | None = None
 
     @model_validator(mode="after")
     def _choices_are_numbered_from_one(self) -> TurnResponse:
@@ -117,9 +131,9 @@ class TurnResponse(ContractModel):
 class ReferenceDateOrigin(StrEnum):
     """Where the reference date of the data came from."""
 
-    SETTING = "setting"
-    SEED = "seed"
-    SYSTEM = "system"
+    SETTING = "setting"  # An explicit date in the service's configuration.
+    SEED = "seed"  # The as-of date recorded in the loaded seed data.
+    SYSTEM = "system"  # The current date by the bank's clock.
 
 
 class ReadinessPayload(ContractModel):

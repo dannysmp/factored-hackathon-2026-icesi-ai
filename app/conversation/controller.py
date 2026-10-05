@@ -6,9 +6,8 @@ Overview
 --------
 Turns one customer message into a reply: it reads the conversation's state, asks the understanding
 port what the message means, decides deterministically what happens next (never the model), calls
-the scoped tools it needs, and renders the fixed-wording reply. This is the orchestration the
-architecture calls out explicitly: the model understands and renders language; this module decides
-and acts.
+the scoped tools it needs, and renders the fixed-wording reply. The model understands and renders
+language; this module decides and acts.
 
 Scope
 -----
@@ -18,8 +17,8 @@ policy evaluation, filing and its read-back verification, and escalation to a pe
 Out: understanding a message (``app.conversation.understanding``), storing state
 (``app.conversation.store``/``app.persistence.dialogue_store``), the tools themselves
 (``app.tools``, ``app.persistence.reads``), rendering fixed wording
-(``app.conversation.renderer``), the turns endpoint and its body-size cap (a later change in this
-same slice).
+(``app.conversation.renderer``), the turns endpoint (``app.api.turns``) and the request body-size
+cap (``app.security.middleware.BodySizeLimitMiddleware``).
 
 Design Principles
 -----------------
@@ -33,7 +32,7 @@ Design Principles
   reason still missing"; identifying which transaction a given hint refers to (the search) is this
   module's own job, run whenever a hint is available and none is selected yet — independent of
   what the guard says about the *other* slot, since a hint is only ever available during the turn
-  it was given (no raw text or hint is carried in ``DialogueState``, AC-E5-57).
+  it was given (no raw text or hint is carried in ``DialogueState``).
 - **Verify before report.** A filed case is always read back through ``get_case`` before the
   customer is told it succeeded; a mismatch or a failed read is a ``FILING_UNVERIFIED`` handoff,
   never a claimed success.
@@ -52,6 +51,9 @@ Design Principles
   reply) has no tool call that isn't already safe to repeat, so it is simply recomputed.
 - **PII minimization.** No raw customer text reaches a store, a log or a handoff packet; a handoff
   names its category and reason codes, never a transcript.
+- **A session has a turn cap.** Once ``max_turns`` customer turns are applied, the next one is
+  answered with a handoff (or the session's existing ticket) without calling the understanding
+  port, so a runaway or abusive session stops spending model calls.
 - **Per-turn cost is logged, not stored**: a stable ``turn_completed`` log line reports the
   real model cost (if any — ``FakeNlu`` turns log zero/``None``) and, once the session has one, its
   case number, so cost per session or per case is computable from the log stream alone
@@ -68,28 +70,37 @@ Design Principles
 Runtime Contract
 ----------------
 ``DialogueController(understanding, store, tool_port, retriever, policy, outbox, *, domain_date,
-now, model_renderer=None, turn_log=None)`` with ``handle_turn(request: TurnRequest, *, principal:
-Principal) -> TurnResponse``. ``HandoffOutbox`` (protocol): the port this module writes a handoff
-through. ``model_renderer`` is ``None`` by default (the fixed-wording template path only); passing
-an ``LlmRenderer`` lets eligible replies render through the model path instead, verified, with the
-template as its own deterministic fallback (``app.conversation.reply.render_reply``).
+now, max_turns, model_renderer=None, turn_log=None)`` with ``handle_turn(request: TurnRequest, *,
+principal: Principal) -> TurnResponse``. ``max_turns`` is the most customer turns a session may
+apply; the next one is answered with a handoff and no understanding call. ``HandoffOutbox``
+(protocol): the port this module writes a handoff through. ``model_renderer`` is ``None`` by
+default (the fixed-wording template path only); passing an ``LlmRenderer`` lets eligible replies
+render through the model path instead, verified, with the template as its own deterministic
+fallback (``app.conversation.reply.render_reply``).
 ``DialogueTurnLog`` (protocol): the port this module records the console's own audit timeline
-through (ADR-17); ``turn_log`` is ``None`` by default (nothing is recorded) and is never consulted
-on a replayed turn, only on a turn this call genuinely advances.
+through; ``turn_log`` is ``None`` by default (nothing is recorded) and is never consulted on a
+replayed turn, only on a turn this call genuinely advances.
 
 Limitations
 -----------
 A single-match search result is presented with ``PRESENT_ONE`` and the customer's yes (or a
-reason, which implies it) selects it; a no asks for the transaction again; an unclear answer asks
-again within the clarification budget. The question stays pending across a reply to an unrelated
+reason, which implies it) selects it; a no asks for the transaction again; naming a different
+merchant, amount, card or date searches for that instead; an unclear answer asks again within the
+clarification budget. The question stays pending across a reply to an unrelated
 message (small talk, a policy question, a list request), as the reason and confirmation questions
-do, so the customer's yes after such a reply still selects the presented transaction; nothing is
-written until the filing confirmation. Two or more matches ask for more detail rather than
+do, so the customer's yes after such a reply still selects the presented transaction. The
+unrelated reply itself files nothing; a case is filed only once the policy's confirmation
+requirement for the category is met. Two or more matches ask for more detail rather than
 presenting a numbered list — the same v1 scope decision already made for slot collection, since
-neither a pending-candidate field nor a multi-candidate list exists in ``DialogueState`` yet. A
+``DialogueState`` has no pending-candidate field and no multi-candidate list. A
 session identifies and evaluates at most one transaction/category pair: nothing here resets
 ``selected_ref``/``category`` once set, so a second, different dispute needs a new session. The
-handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name yet.
+handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name.
+While the transaction is the pending question, a message that describes one is taken as the
+answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a category
+carried by such a message does not replace one already set, the same rule as above. A description
+that matches no transaction, or more than one, counts as one unsettled answer to the question,
+the same as any other reply that leaves it open.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
@@ -108,6 +119,7 @@ from __future__ import annotations
 # Standard libraries
 import hashlib  # Deterministic idempotency key derived from the turn id
 import logging  # Progress events, never print
+import unicodedata  # Accent-insensitive merchant comparison
 from collections.abc import Callable  # Type of one route's handler
 from datetime import date  # Domain date the controller was built with
 from decimal import Decimal  # Money is never a float
@@ -168,12 +180,19 @@ logger = logging.getLogger(__name__)
 # only, never shown to the customer.
 _UNKNOWN_FIRST_NAME = "Customer"
 
+# Handoff templates whose reply states a routed (escalate) decision; the others (card loss, a
+# person requested, an unregistered handoff, an unverified filing) carry no decision.
 _ROUTED_HANDOFFS = frozenset({TemplateId.HANDOFF_REVIEW, TemplateId.HANDOFF_FRAUD})
 
+# The facts of an envelope that states none.
 _EMPTY_FACTS = DisputeFacts()
 
+# Intents whose language says nothing reliable about the conversation's language: an unclear
+# message, or one that already names the language it wants.
 _LANGUAGE_NEUTRAL_INTENTS = frozenset({NluIntent.UNCLEAR, NluIntent.SWITCH_LANGUAGE})
 
+# The question template that asks for each slot, except the transaction choice, which is
+# rendered by presenting the selected transaction again (``_transaction_choice_envelope``).
 _ASK_TEMPLATE_OF: dict[Slot, TemplateId] = {
     Slot.TRANSACTION: TemplateId.CLARIFY_TRANSACTION,
     Slot.REASON: TemplateId.CLARIFY_REASON,
@@ -193,7 +212,7 @@ _ESCALATE_TRIGGER_OF: dict[ReasonCode, HandoffTrigger] = {
 }
 
 # The agent-facing summary of what brought the conversation to a person, in the system's own
-# words — never the customer's raw text (PII minimization, AC-E5-57). Exhaustive over
+# words — never the customer's raw text (PII minimization). Exhaustive over
 # ``HandoffTrigger`` (tested).
 _REQUEST_SUMMARY_OF: dict[HandoffTrigger, str] = {
     HandoffTrigger.FRAUD_REPORT: "Customer reported a possible fraud.",
@@ -229,7 +248,7 @@ class HandoffOutbox(Protocol):
 class DialogueTurnLog(Protocol):
     """Where a turn's own history is written; the port ``PostgresDialogueTurnLog`` implements."""
 
-    def record(self, entry: TimelineEntry, *, session_id: str, turn_id: str) -> None:
+    def record(self, entry: TimelineEntry, *, session_id: str) -> None:
         """Write one turn's history row.
 
         Raises
@@ -251,15 +270,25 @@ def _idempotency_key(turn_id: str) -> str:
     return hashlib.sha256(turn_id.encode("utf-8")).hexdigest()[:32]
 
 
+def _fold(text: str) -> str:
+    """``text`` without accents and case, so "cafe" and "Café" compare equal."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+
+
 def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -> bool:
     """Whether ``fact`` could be what the customer described in ``hint``.
 
     Every part of ``hint`` that was given must agree; a part the source data cannot answer (an
-    absent merchant and description, an unknown amount) never matches a hint that names it.
+    absent merchant and description, an unknown amount) never matches a hint that names it. The
+    merchant is compared ignoring accents and case, in both directions: a customer who types
+    "cafe" finds "Café Sol", and one who types "São Paulo" finds "SAO PAULO". A merchant that is
+    empty once accents and surrounding blanks are removed names nothing, so it matches nothing.
     """
     if hint.merchant is not None:
         label = fact.merchant or fact.description
-        if label is None or hint.merchant.lower() not in label.lower():
+        wanted = _fold(hint.merchant).strip()
+        if label is None or not wanted or wanted not in _fold(label):
             return False
     money = fact.amount.money
     if hint.amount is not None and (money is None or money.amount != hint.amount):
@@ -293,9 +322,38 @@ class DialogueController:
         outbox: HandoffOutbox,
         domain_date: date,
         now: Clock,
+        max_turns: int,
         model_renderer: LlmRenderer | None = None,
         turn_log: DialogueTurnLog | None = None,
     ) -> None:
+        """Wire one turn's collaborators; nothing is read or written yet.
+
+        Parameters
+        ----------
+        understanding : Understanding
+            Turns the customer's text into a structured result (a fake or the model-backed adapter).
+        store : DialogueStore
+            Where the session's state is read and saved between turns.
+        tool_port : ToolPort
+            The tool layer, already scoped to the authenticated customer.
+        retriever : LexicalRetriever
+            The policy-corpus search used to answer policy questions.
+        policy : Policy
+            The loaded policy; supplies the clarification budget and the policy version.
+        outbox : HandoffOutbox
+            Where a handoff packet is recorded.
+        domain_date : date
+            The injected business date used for date resolution and every rendered reference date.
+        now : Clock
+            The injected clock for timestamps.
+        max_turns : int
+            Customer turns a session may apply before every further one is handed to a person.
+        model_renderer : LlmRenderer | None
+            When given, eligible replies may render through the model path; ``None`` keeps templates
+            only.
+        turn_log : DialogueTurnLog | None
+            When given, each advanced turn is recorded for the console's timeline.
+        """
         self._understanding = understanding
         self._store = store
         self._tool_port = tool_port
@@ -304,6 +362,7 @@ class DialogueController:
         self._outbox = outbox
         self._domain_date = domain_date
         self._now = now
+        self._max_turns = max_turns
         self._model_renderer = model_renderer
         self._turn_log = turn_log
         # Set once per call, at the top of handle_turn: every private helper below reads the
@@ -311,6 +370,7 @@ class DialogueController:
         # every method signature. Safe because one instance ever handles exactly one turn.
         self._request: TurnRequest | None = None
         self._principal: Principal | None = None
+        self._handoff_reason: ReasonCode | None = None
 
     # -------------------------------------------------------------------------------------
     # Entry point
@@ -318,6 +378,26 @@ class DialogueController:
 
     def handle_turn(self, request: TurnRequest, *, principal: Principal) -> TurnResponse:
         """Process one customer turn and return the reply.
+
+        The flow is: load the session's state; a turn id already recorded on it is a replay and is
+        answered without redoing anything unsafe; a session at its turn cap is answered with a
+        handoff and no model call; otherwise the message is understood, the outcome is decided and
+        acted on (``_advance``), the cost line is logged, and the new state is saved with
+        optimistic concurrency, and the reply is rendered after the save. An unreachable
+        understanding dependency becomes a handoff rather than a clarification attempt. A save
+        that loses a race on the same turn id answers with the winner's result.
+
+        Parameters
+        ----------
+        request : TurnRequest
+            The customer's message and its client-chosen turn id.
+        principal : Principal
+            The authenticated session; its customer is the only one any tool call is scoped to.
+
+        Returns
+        -------
+        TurnResponse
+            The rendered reply, the saved state's version, and whether the session has ended.
 
         Raises
         ------
@@ -332,6 +412,9 @@ class DialogueController:
 
         if current is not None and current.last_turn_id == request.turn_id:
             return self._respond(current, self._replay_envelope(current))
+
+        if current is not None and current.turns_applied >= self._max_turns:
+            return self._cap_reached(current)
 
         try:
             state, expected_version, result, accounting = self._start_turn(current, request)
@@ -361,6 +444,57 @@ class DialogueController:
             ) from conflict
 
         return self._respond(saved, envelope, state_before=state_before)
+
+    def _cap_reached(self, current: DialogueState) -> TurnResponse:
+        """Answer a turn the session's turn cap refuses, without calling the model.
+
+        A session that already has a handoff ticket gets that same ticket again and nothing is
+        written, so a customer who keeps typing neither mints tickets nor advances the state. A
+        session without one is handed to a person through the same idempotent save as any other
+        handoff turn, carrying the case number it had already filed, if any. Its summary line is
+        the generic low-understanding one; the ``turn_cap`` action record is what identifies it.
+
+        Two concurrent requests at the cap on a session with no ticket can each record a packet
+        before the save decides the winner (the outbox is idempotent per turn id, not per
+        session), so the loser's packet stays in the queue unreferenced by the session. This is
+        the same ordering every handoff turn has.
+        """
+        request = self._request
+        assert request is not None  # noqa: S101 - set at the top of handle_turn
+        logger.warning(
+            "dialogue_turn_cap_reached session_id=%s turns_applied=%d max_turns=%d request_id=%s",
+            current.session_id,
+            current.turns_applied,
+            self._max_turns,
+            current_request_id(),
+        )
+        if current.last_ticket_ref is not None:
+            return self._respond(current, self._ticket_envelope(current))
+        new_state, envelope = self._handoff(
+            current,
+            trigger=HandoffTrigger.LOW_UNDERSTANDING,
+            reason_codes=(),
+            template=TemplateId.HANDOFF_REVIEW,
+            actions=(ActionRecord(action="turn_cap", result="reached"),),
+            existing_case_number=current.last_case_number,
+        )
+        try:
+            saved = self._store.save(
+                new_state,
+                expected_version=current.version,
+                turn_id=request.turn_id,
+                now=self._now(),
+            )
+        except DuplicateTurn as duplicate:
+            return self._respond(duplicate.state, self._replay_envelope(duplicate.state))
+        except Conflict as conflict:
+            raise ProblemError(
+                ErrorCode.TURN_CONFLICT,
+                409,
+                "The conversation moved on",
+                "Fetch the current state and try again.",
+            ) from conflict
+        return self._respond(saved, envelope, state_before=current.phase)
 
     def _handoff_from_turn(
         self, current: DialogueState | None, *, expected_version: int
@@ -419,7 +553,7 @@ class DialogueController:
 
         A brand-new session starts at expected version 0 (a fresh insert, unconditional on it —
         ``DialogueStore.save``'s own documented behavior); its language is the first message's own,
-        or Spanish when the message is too ambiguous to tell (AC: es and pt are both required).
+        or Spanish when the message is too ambiguous to tell.
         While the conversation has not left its opening (``DialogueState.is_opening``) the next
         message read in another language moves it there, so a customer whose opener carried no
         language signal is answered in their own language from their first real message. A message
@@ -499,6 +633,7 @@ class DialogueController:
         )
 
     def _session_id(self) -> str:
+        """The authenticated session's id, read from the principal set for this turn."""
         assert self._principal is not None  # noqa: S101 - set at the top of handle_turn
         return self._principal.session_id
 
@@ -527,11 +662,21 @@ class DialogueController:
     def _handle_file_dispute(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Collect what a filing needs, then evaluate it.
+
+        Keeps the category the message names (once, never overwritten), clears a pending transaction
+        choice, then follows the guard: ask for the transaction when none is named, search for it
+        when a hint is available and none is selected, ask for the reason, and finally evaluate the
+        dispute for the selected transaction and category.
+        """
         if result.category is not None and state.category is None:
             state = state.model_copy(update={"category": result.category})
 
         if state.pending_slot is Slot.TRANSACTION_CHOICE:
-            state = state.with_slot_filled()
+            if self._names_another_transaction(state, result.transaction):
+                state = state.model_copy(update={"selected_ref": None, "pending_slot": None})
+            else:
+                state = state.with_slot_filled()
 
         slot = required_slot(result, state)
         if slot is Slot.TRANSACTION:
@@ -544,9 +689,37 @@ class DialogueController:
         assert state.category is not None  # noqa: S101 - guaranteed by required_slot above
         return self._evaluate_and_present(state, state.selected_ref, state.category)
 
+    def _names_another_transaction(self, state: DialogueState, hint: TransactionHint) -> bool:
+        """Whether ``hint`` describes something other than the transaction just presented.
+
+        A hint that names nothing, or only matches the presented transaction, is the customer
+        going ahead with it. A hint that names a different merchant, amount, card or date means
+        they rejected the one shown and are pointing at another. When the presented transaction
+        cannot be read back, the hint is searched for afresh rather than assumed to match. A
+        merchant that is empty once accents and blanks are removed says nothing, so it is ignored.
+        """
+        if hint.merchant is not None and not _fold(hint.merchant).strip():
+            hint = hint.model_copy(update={"merchant": None})
+        if hint.is_empty:
+            return False
+        assert state.selected_ref is not None  # noqa: S101 - set whenever this slot is pending
+        selected = dispatch(
+            self._tool_port, tool_contracts.Tool.GET_TRANSACTION, state.selected_ref
+        )
+        if isinstance(selected, ToolFailure) or selected is None:
+            return True
+        if hint.date_on is not None and hint.date_on != selected.occurred_on:
+            return True
+        return not _matches_hint(selected, hint)
+
     def _handle_list_transactions(
         self, state: DialogueState, _result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """List the customer's transactions.
+
+        A tool failure becomes a handoff and an empty list a not-found reply. The state does not
+        change.
+        """
         page = dispatch(
             self._tool_port, tool_contracts.Tool.LIST_TRANSACTIONS, TransactionFilters()
         )
@@ -565,6 +738,10 @@ class DialogueController:
     def _handle_dispute_status(
         self, state: DialogueState, _result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Report the customer's dispute cases (at most the first three), or that there are none.
+
+        A tool failure becomes a handoff. Nothing is written and the state does not change.
+        """
         cases = dispatch(self._tool_port, tool_contracts.Tool.LIST_DISPUTE_CASES)
         if isinstance(cases, ToolFailure):
             return self._tool_failure_handoff(state, tool=tool_contracts.Tool.LIST_DISPUTE_CASES)
@@ -578,6 +755,11 @@ class DialogueController:
     def _handle_policy_question(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Answer a policy question from the retrieved corpus, or abstain when nothing is found.
+
+        The answer is the retrieved source plus the policy values it quotes; the state does not
+        change.
+        """
         query = result.policy_query or ""
         answered = policy_answer(query, state.lang, state.category, self._retriever, self._policy)
         if answered.source is None:
@@ -594,6 +776,11 @@ class DialogueController:
     def _handle_confirmation(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Route a yes or no by the question that is pending.
+
+        A pending transaction choice and a pending filing confirmation each have a handler; a yes or
+        no with nothing pending to answer falls back like an unclear message.
+        """
         if state.pending_slot is Slot.TRANSACTION_CHOICE:
             return self._handle_transaction_choice(state, result)
         if state.pending_slot is Slot.CONFIRMATION:
@@ -645,6 +832,7 @@ class DialogueController:
     def _handle_report_fraud(
         self, state: DialogueState, _result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Hand a fraud report to a person; the fraud claim is the escalation reason."""
         return self._handoff(
             state,
             trigger=HandoffTrigger.FRAUD_REPORT,
@@ -655,6 +843,7 @@ class DialogueController:
     def _handle_report_card_loss(
         self, state: DialogueState, _result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Hand a lost or stolen card report to a person."""
         return self._handoff(
             state,
             trigger=HandoffTrigger.CARD_LOSS,
@@ -665,6 +854,7 @@ class DialogueController:
     def _handle_request_person(
         self, state: DialogueState, _result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Hand the conversation to a person at the customer's request."""
         return self._handoff(
             state,
             trigger=HandoffTrigger.CUSTOMER_REQUEST,
@@ -675,16 +865,19 @@ class DialogueController:
     def _handle_request_reversal(
         self, state: DialogueState, _result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Refuse a request to reverse or refund a charge; the bank, not this service, decides."""
         return state, self._envelope(state, Intent.REFUSE, TemplateId.REFUSE_REVERSAL)
 
     def _handle_unsupported_action(
         self, state: DialogueState, _result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Refuse an action this service does not perform."""
         return state, self._envelope(state, Intent.REFUSE, TemplateId.REFUSE_UNSUPPORTED)
 
     def _handle_switch_language(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Continue the conversation in the language the customer asked for and greet them in it."""
         assert result.requested_language is not None  # noqa: S101 - guaranteed by the contract
         new_state = state.with_language(result.requested_language)
         return new_state, self._envelope(new_state, Intent.CLARIFY, TemplateId.GREETING)
@@ -692,6 +885,7 @@ class DialogueController:
     def _handle_small_talk(
         self, state: DialogueState, _result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Answer small talk with the greeting that offers what this service can do."""
         return state, self._envelope(state, Intent.CLARIFY, TemplateId.GREETING)
 
     def _handle_farewell(
@@ -706,7 +900,12 @@ class DialogueController:
     def _handle_unroutable(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
-        """``choice`` and ``correction`` share ``unclear``'s fallback (see Limitations)."""
+        """``choice`` and ``correction`` share ``unclear``'s fallback, except
+        when the transaction is what was just asked for and the message describes one: the model
+        reads each message on its own, so a plain answer to that question can come back under any
+        of these intents, and the description is the answer."""
+        if state.pending_slot is Slot.TRANSACTION and not result.transaction.is_empty:
+            return self._handle_file_dispute(state, result)
         return self._fallback(state, result)
 
     # -------------------------------------------------------------------------------------
@@ -722,7 +921,7 @@ class DialogueController:
         return state, self._envelope(state, Intent.CLARIFY, TemplateId.GREETING)
 
     def _ask(self, state: DialogueState, slot: Slot) -> tuple[DialogueState, RenderEnvelope]:
-        """Ask again for ``slot``, or escalate once the clarification budget is spent."""
+        """Ask for ``slot``, or escalate once the clarification budget is spent."""
         new_state = state.with_clarification(slot)
         if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
             return self._handoff(
@@ -774,17 +973,9 @@ class DialogueController:
 
         matches = tuple(item for item in page.items if _matches_hint(item, hint))
         if not matches:
-            return state, self._envelope(state, Intent.CLARIFY, TemplateId.NOT_FOUND)
+            return self._ask_for_a_better_description(state, TemplateId.NOT_FOUND)
         if len(matches) > 1:
-            new_state = state.with_clarification(Slot.TRANSACTION)
-            if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
-                return self._handoff(
-                    new_state,
-                    trigger=HandoffTrigger.LOW_UNDERSTANDING,
-                    reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
-                    template=TemplateId.HANDOFF_REVIEW,
-                )
-            return new_state, self._envelope(new_state, Intent.CLARIFY, TemplateId.PRESENT_NARROW)
+            return self._ask_for_a_better_description(state, TemplateId.PRESENT_NARROW)
 
         fact = to_envelope_transaction(matches[0])
         new_state = state.model_copy(
@@ -796,9 +987,32 @@ class DialogueController:
         )
         return new_state, self._present_selected(new_state, fact)
 
+    def _ask_for_a_better_description(
+        self, state: DialogueState, template: TemplateId
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """The description matched no transaction, or more than one: ask for it again, or hand
+        over once the clarification budget is spent. Each such reply counts as one unsettled
+        answer to the transaction question."""
+        new_state = state.with_clarification(Slot.TRANSACTION)
+        if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
+            return self._handoff(
+                new_state,
+                trigger=HandoffTrigger.LOW_UNDERSTANDING,
+                reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
+                template=TemplateId.HANDOFF_REVIEW,
+            )
+        return new_state, self._envelope(new_state, Intent.CLARIFY, template)
+
     def _evaluate_and_present(
         self, state: DialogueState, ref: str, category: DisputeCategory
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Ask the policy engine for a decision and act on its outcome.
+
+        Not eligible: present the refusal or escalate. Eligible without a confirmation requirement:
+        file now. Eligible and needing a confirmation: read the transaction fresh and ask the
+        customer to confirm, leaving the confirmation slot pending. A failed tool call becomes a
+        handoff.
+        """
         decision = dispatch(
             self._tool_port,
             tool_contracts.Tool.EVALUATE_DISPUTE,
@@ -845,6 +1059,12 @@ class DialogueController:
     def _present_non_eligible(
         self, state: DialogueState, category: DisputeCategory, decision: PolicyDecision
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Present a decision that is not eligible.
+
+        An ineligible decision closes the conversation with the refusal reason the customer may be
+        told. An escalation hands off with the trigger that matches its reason code and the full
+        list of codes, using the fraud wording when the reason is a fraud claim.
+        """
         if decision.outcome is Outcome.INELIGIBLE:
             new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
             decisions = (
@@ -876,6 +1096,15 @@ class DialogueController:
     def _file_and_verify(
         self, state: DialogueState, ref: str, category: DisputeCategory, decision: PolicyDecision
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """File the dispute, read it back, and report it only once the read-back agrees.
+
+        The filing uses an idempotency key derived from the turn id, so a retried turn never files
+        twice. A refusal is presented by ``_present_creation_refusal``; a failed call is a
+        tool-failure handoff. The case the tool reports is then read through ``get_case``: when that
+        read fails or its transaction or category differs from what was filed, the outcome is a
+        handoff for an unverified filing that names the case number, and the customer is not told it
+        succeeded.
+        """
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
         idempotency_key = _idempotency_key(request.turn_id)
@@ -933,6 +1162,12 @@ class DialogueController:
         refusal: ToolRefusalCode | None,
         existing_case_number: str | None,
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Present a refused filing.
+
+        A duplicate open case closes the conversation as ineligible for that reason. Any other
+        refusal is handed to a person, recording the refusal code and the existing case number when
+        the tool gave one.
+        """
         if refusal is ToolRefusalCode.DUPLICATE_OPEN_CASE:
             new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
             decisions = (
@@ -965,6 +1200,11 @@ class DialogueController:
         tool: tool_contracts.Tool,
         category: DisputeCategory | None = None,
     ) -> tuple[DialogueState, RenderEnvelope]:
+        """Hand off because a tool call failed, recording which tool failed.
+
+        The customer is told a person will review it; the action record names the tool, not the
+        error.
+        """
         action = ActionRecord(action=tool.value, result="tool_failure")
         return self._handoff(
             state,
@@ -1025,6 +1265,7 @@ class DialogueController:
                 new_state, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
             )
 
+        self._handoff_reason = reason_codes[0] if reason_codes else None
         new_state = state.with_handed_off(packet.ticket_ref)
         decisions = (_escalate_decision(self._policy),) if template in _ROUTED_HANDOFFS else ()
         facts = DisputeFacts(ticket_ref=packet.ticket_ref, category=category)
@@ -1036,11 +1277,26 @@ class DialogueController:
     # Replay of a duplicate turn
     # -------------------------------------------------------------------------------------
 
+    def _ticket_envelope(self, state: DialogueState) -> RenderEnvelope:
+        """The handoff reply for the ticket ``state`` already holds."""
+        facts = DisputeFacts(ticket_ref=state.last_ticket_ref, category=state.category)
+        return self._envelope(
+            state,
+            Intent.HANDOFF,
+            TemplateId.HANDOFF_REVIEW,
+            facts=facts,
+            decisions=(_escalate_decision(self._policy),),
+            end_session=True,
+        )
+
     def _replay_envelope(self, state: DialogueState) -> RenderEnvelope:
         """The reply for a turn id already applied to ``state`` — no further side effect.
 
         A filed case is read back fresh (its status may have moved on since); a handoff is
         rendered directly from its stored ticket; a pending clarification is a pure re-render.
+        The ticket takes precedence over a case when the session is handed off or filed no case,
+        so a session holding both replays its handoff, which is the latest outcome but not
+        necessarily the one the replayed turn id originally produced.
         ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
         cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
         clears the pending slot and leaves no case or ticket behind, so it can never be confused
@@ -1053,6 +1309,11 @@ class DialogueController:
         farewell, which touches no state at all) has no such decision to protect and no tool call
         that is not already safe to repeat, so it is recomputed exactly as the original turn was.
         """
+        if state.last_ticket_ref is not None and (
+            state.phase is ConversationPhase.HANDED_OFF or state.last_case_number is None
+        ):
+            return self._ticket_envelope(state)
+
         if state.last_case_number is not None:
             case = dispatch(self._tool_port, tool_contracts.Tool.GET_CASE, state.last_case_number)
             if isinstance(case, ToolFailure) or case is None:
@@ -1065,18 +1326,6 @@ class DialogueController:
             )
             return self._envelope(
                 state, Intent.FILING_RESULT, TemplateId.FILING_RESULT, facts=facts
-            )
-
-        if state.last_ticket_ref is not None:
-            facts = DisputeFacts(ticket_ref=state.last_ticket_ref, category=state.category)
-            decisions = (_escalate_decision(self._policy),)
-            return self._envelope(
-                state,
-                Intent.HANDOFF,
-                TemplateId.HANDOFF_REVIEW,
-                facts=facts,
-                decisions=decisions,
-                end_session=True,
             )
 
         if state.pending_slot is not None:
@@ -1138,6 +1387,12 @@ class DialogueController:
         sources: tuple[SourceRef, ...] = (),
         end_session: bool = False,
     ) -> RenderEnvelope:
+        """Build the render envelope for ``template`` from ``state``.
+
+        The envelope carries the session's language, the injected domain date and the slot still
+        pending (``next_expected``); it is always template mode here, the model path being chosen
+        later by ``render_reply``. Pure: no state is changed.
+        """
         return RenderEnvelope(
             session_id=state.session_id,
             lang=state.lang,
@@ -1159,6 +1414,13 @@ class DialogueController:
         *,
         state_before: ConversationPhase | None = None,
     ) -> TurnResponse:
+        """Render ``envelope`` and build the turn response from the saved ``state``.
+
+        Rendering goes through ``render_reply`` (templates, or the verified model path when a model
+        renderer was injected). When ``state_before`` is given the turn's history is recorded;
+        a turn that passes no ``state_before`` (a replay, or a repeated turn-cap answer) records
+        nothing. The handoff ticket is included only on a handoff reply.
+        """
         rendered: RenderedReply = render_reply(envelope, model_renderer=self._model_renderer)
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
@@ -1175,6 +1437,7 @@ class DialogueController:
             next_expected=envelope.next_expected,
             end_session=envelope.end_session,
             handoff_ticket=state.last_ticket_ref if envelope.intent is Intent.HANDOFF else None,
+            case_number=state.last_case_number if envelope.intent is Intent.FILING_RESULT else None,
         )
 
     def _record_turn(
@@ -1184,11 +1447,15 @@ class DialogueController:
         rendered: RenderedReply,
         state_before: ConversationPhase,
     ) -> None:
-        """Record this turn's history for the console's timeline (ADR-17); never on a replay,
-        never affecting the reply already computed above.
+        """Record this turn's history for the console's timeline; never on a replay, and never
+        affecting the reply already computed.
 
-        ``reason_code`` is not yet populated (a disclosed gap): the domain ``ReasonCode`` behind a
-        policy decision is not currently threaded onto ``Decision`` for this to read.
+        Nothing is written when no turn log was injected.
+
+        ``reason_code`` is the first reason code of the handoff this turn registered, and ``None``
+        for a turn that did not hand off: the domain ``ReasonCode`` behind a policy decision is not
+        carried on ``Decision``, so only handoffs name theirs. A failed database write is logged as
+        a warning and swallowed; any other error propagates.
         """
         if self._turn_log is None:
             return
@@ -1197,15 +1464,16 @@ class DialogueController:
         entry = TimelineEntry(
             occurred_at=self._now(),
             trace_id=state.session_id,
+            turn_id=request.turn_id,
             intent=envelope.intent,
             state_before=state_before.value,
             state_after=state.phase.value,
             render_mode=rendered.render_mode,
-            reason_code=None,
+            reason_code=self._handoff_reason,
             policy_version=envelope.decisions[0].policy_version if envelope.decisions else None,
         )
         try:
-            self._turn_log.record(entry, session_id=state.session_id, turn_id=request.turn_id)
+            self._turn_log.record(entry, session_id=state.session_id)
         except psycopg.Error:
             logger.warning(
                 "dialogue_turn_not_logged session_id=%s request_id=%s",
@@ -1214,6 +1482,7 @@ class DialogueController:
             )
 
 
+# One route's handler: the unbound method, called with the controller, state and understanding.
 _Handler = Callable[
     [DialogueController, DialogueState, NluResult], tuple[DialogueState, RenderEnvelope]
 ]

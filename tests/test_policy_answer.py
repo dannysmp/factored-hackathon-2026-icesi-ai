@@ -103,8 +103,8 @@ def test_a_general_question_answers_with_its_citation_and_no_figure(
 
 
 def test_an_unmatched_question_abstains(retriever: LexicalRetriever, policy: Policy) -> None:
-    """Nothing in the corpus answers a question with no term in common: the result is an
-    abstention (no source, no figure), not a store failure."""
+    """Nothing in the corpus answers a question with no term in common: this is the abstention
+    signal, not a store failure."""
     result = answer("xyzzy completely unrelated gibberish nonsense", "es", None, retriever, policy)
 
     assert result.source is None

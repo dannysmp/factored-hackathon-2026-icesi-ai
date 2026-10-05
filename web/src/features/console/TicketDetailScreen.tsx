@@ -1,18 +1,20 @@
 import type { JSX } from 'react'
 import './TicketDetailScreen.css'
 import { ReferenceBanner } from '../customer-chat/components/ReferenceBanner'
+import { Button } from '../../components/ui/Button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/Tabs'
 import { PacketPanel } from './components/PacketPanel'
 import { TimelinePanel } from './components/TimelinePanel'
 import type { TicketDetailClient } from './ticketDetailClient'
+import { formatDate } from './format'
 import { TRIGGER_LABELS } from './labels'
 import { useTicketDetail } from './useTicketDetail'
 
 /**
- * One ticket's whole detail (AC-E10-02, AC-E10-03): the packet and the timeline, as two genuine
- * `Tabs` panels — two complete, independent views of the same ticket, the fit ADR-19's tabs
+ * One case's whole detail (AC-E10-02, AC-E10-03): the packet and the timeline, as two genuine
+ * `Tabs` panels — two complete, independent views of the same case, the fit ADR-19's tabs
  * primitive was tested for. Every state rendered deliberately (AC-E10-18): loading, error with a
- * retry, a ticket that no longer resolves, and the ready view.
+ * retry, a case that no longer resolves, and the ready view.
  *
  * Fixed Spanish copy, not a catalog entry (D91), the same as `QueueScreen`.
  */
@@ -32,13 +34,11 @@ export function TicketDetailScreen({
   if (query.status === 'error') {
     return (
       <div className="ticket-detail-screen" role="alert">
-        <p>No se pudo cargar el ticket. Intente de nuevo.</p>
-        <button type="button" onClick={query.retry}>
+        <p>No se pudo cargar el caso. Intente de nuevo.</p>
+        <Button variant="primary" onClick={query.retry}>
           Intentar de nuevo
-        </button>
-        <button type="button" onClick={onBack}>
-          Volver a la cola
-        </button>
+        </Button>
+        <Button onClick={onBack}>Volver a la cola</Button>
       </div>
     )
   }
@@ -47,7 +47,7 @@ export function TicketDetailScreen({
     return (
       <div className="ticket-detail-screen">
         <p aria-live="polite" role="status">
-          Cargando el ticket…
+          Cargando el caso…
         </p>
       </div>
     )
@@ -56,10 +56,8 @@ export function TicketDetailScreen({
   if (query.status === 'not_found') {
     return (
       <div className="ticket-detail-screen">
-        <p>Este ticket ya no está disponible.</p>
-        <button type="button" onClick={onBack}>
-          Volver a la cola
-        </button>
+        <p>Este caso ya no está disponible.</p>
+        <Button onClick={onBack}>Volver a la cola</Button>
       </div>
     )
   }
@@ -70,28 +68,27 @@ export function TicketDetailScreen({
     // sets both together) — narrows the type for the render below without an assertion.
     return (
       <div className="ticket-detail-screen">
-        <p>Este ticket ya no está disponible.</p>
+        <p>Este caso ya no está disponible.</p>
       </div>
     )
   }
 
   return (
-    <section className="ticket-detail-screen" aria-label="Detalle del ticket">
-      <button type="button" onClick={onBack}>
+    <section className="ticket-detail-screen" aria-label="Detalle del caso">
+      <Button variant="quiet" onClick={onBack}>
         Volver a la cola
-      </button>
+      </Button>
       <ReferenceBanner
-        referenceDateLine={`Fecha de referencia de los datos: ${detail.packet.reference_date}.`}
+        referenceDateLine={`Fecha de referencia de los datos: ${formatDate(detail.packet.reference_date)}.`}
         demoNotice="Esta es una sesión de demostración."
       />
-      <h2>{detail.item.ticket_ref}</h2>
-      <p>
-        {TRIGGER_LABELS[detail.item.trigger]} — {detail.packet.customer.first_name}{' '}
-        {detail.packet.customer.masked_id}
-      </p>
+      <h2>
+        Caso <span className="ticket-ref">{detail.item.ticket_ref}</span>
+      </h2>
+      <p className="ticket-trigger">{TRIGGER_LABELS[detail.item.trigger]}</p>
 
       <Tabs defaultValue="packet">
-        <TabsList aria-label="Secciones del ticket">
+        <TabsList aria-label="Secciones del caso">
           <TabsTrigger value="packet">Paquete</TabsTrigger>
           <TabsTrigger value="timeline">Cronología</TabsTrigger>
         </TabsList>

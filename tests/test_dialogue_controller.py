@@ -52,7 +52,13 @@ from contracts.service_v1.api import TurnRequest, TurnResponse
 from contracts.service_v1.cases import AmountProvenance, CaseRecord, CaseStatus, DisclosedAmount
 from contracts.service_v1.cases import Money as CaseMoney
 from contracts.service_v1.console import TimelineEntry
-from contracts.service_v1.envelope import CUSTOMER_REASON_OF, CustomerReason, Intent, Slot
+from contracts.service_v1.envelope import (
+    CUSTOMER_REASON_OF,
+    CustomerReason,
+    DateSource,
+    Intent,
+    Slot,
+)
 from contracts.service_v1.handoff import HandoffPacket, HandoffTrigger
 from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult, TransactionHint
 from contracts.service_v1.tools import (
@@ -282,12 +288,12 @@ class FakeDialogueTurnLog:
     """Records every entry it's given; ``fail`` proves a store failure never reaches the reply."""
 
     fail: bool = False
-    entries: list[tuple[TimelineEntry, str, str]] = field(default_factory=list)
+    entries: list[tuple[TimelineEntry, str]] = field(default_factory=list)
 
-    def record(self, entry: TimelineEntry, *, session_id: str, turn_id: str) -> None:
+    def record(self, entry: TimelineEntry, *, session_id: str) -> None:
         if self.fail:
             raise psycopg.OperationalError("turn log unreachable")
-        self.entries.append((entry, session_id, turn_id))
+        self.entries.append((entry, session_id))
 
 
 @pytest.fixture
@@ -310,6 +316,7 @@ def _controller(
     retriever: LexicalRetriever,
     accounting: TurnAccounting | None = None,
     turn_log: FakeDialogueTurnLog | None = None,
+    max_turns: int = 30,
 ) -> tuple[DialogueController, ScriptedNlu]:
     nlu = ScriptedNlu(result, accounting)
     controller = DialogueController(
@@ -321,6 +328,7 @@ def _controller(
         outbox=outbox,
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=max_turns,
         turn_log=turn_log,
     )
     return controller, nlu
@@ -395,12 +403,43 @@ def test_matches_hint_falls_back_to_description_when_merchant_is_absent() -> Non
     assert _matches_hint(fact, TransactionHint(merchant="amzn"))
 
 
-def test_matches_hint_is_accent_and_case_insensitive() -> None:
-    """Spanish and Portuguese merchant names carry accents the customer may not retype."""
+def test_matches_hint_ignores_case_in_an_accented_name_typed_with_its_accent() -> None:
     fact = _transaction(merchant="Café Colombia")
     assert _matches_hint(fact, TransactionHint(merchant="café"))
     assert _matches_hint(fact, TransactionHint(merchant="CAFÉ"))
     assert _matches_hint(fact, TransactionHint(merchant="colombia"))
+
+
+@pytest.mark.parametrize(
+    ("stored", "typed"),
+    [
+        ("Café Sol", "cafe"),
+        ("Café Sol", "Cafe Sol"),
+        ("Cafe Sol", "Café"),
+        ("São Paulo", "SAO PAULO"),
+        ("SAO PAULO", "são paulo"),
+        ("Pão de Açúcar", "pao de acucar"),
+        ("Señor Taco", "senor"),
+        ("Café", " Café "),
+        ("Café", "Café "),
+    ],
+)
+def test_matches_hint_ignores_accents_whichever_side_carries_them(stored: str, typed: str) -> None:
+    """A customer may drop an accent the stored name has, or add one it lacks."""
+    assert _matches_hint(_transaction(merchant=stored), TransactionHint(merchant=typed))
+
+
+@pytest.mark.parametrize("typed", ["\u0301", " ", "\u0301 \u0301"])
+def test_matches_hint_rejects_a_merchant_that_folds_to_nothing(typed: str) -> None:
+    """An accent mark or blank alone names no merchant, so it must not match every transaction."""
+    assert not _matches_hint(_transaction(merchant="Café Sol"), TransactionHint(merchant=typed))
+
+
+def test_matches_hint_still_rejects_a_different_merchant_after_accent_folding() -> None:
+    """Folding accents must not make unrelated names compare equal."""
+    assert not _matches_hint(
+        _transaction(merchant="Café Sol"), TransactionHint(merchant="Sol Luna")
+    )
 
 
 def test_matches_hint_never_matches_an_unknown_amount_against_a_stated_one() -> None:
@@ -467,6 +506,7 @@ def _sequenced_controller(
         outbox=FakeHandoffOutbox(),
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
 
@@ -610,7 +650,7 @@ def test_a_message_that_says_nothing_reliable_about_the_language_does_not_switch
 
 
 def test_the_controller_passes_its_own_domain_date_as_the_understanding_reference_date() -> None:
-    """AC-E5-16: a customer-stated transaction date is resolved against the domain calendar's own
+    """A customer-stated transaction date is resolved against the domain calendar's own
     reference date, never the wall clock — proven by reading back exactly what the controller
     itself passed into ``understand``, not by trusting it silently matches."""
     store = InMemoryDialogueStore()
@@ -715,18 +755,84 @@ def test_no_match_states_not_found(policy: Policy, retriever: LexicalRetriever) 
         retriever=retriever,
     )
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
-    assert response.next_expected is None
+    assert response.next_expected is Slot.TRANSACTION
     assert store.get(_SESSION_ID).selected_ref is None  # type: ignore[union-attr]
 
 
-def test_multiple_matches_ask_for_detail_then_escalate_at_the_budget(
+_NOBODY = TransactionHint(merchant="Nobody")
+
+
+def test_a_description_that_matches_nothing_is_asked_again_twice_before_a_person_is_involved(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    first = dialogue.say(_file_dispute(transaction=_NOBODY))
+    assert first.next_expected is Slot.TRANSACTION
+    assert not first.end_session
+
+    second = dialogue.say(_file_dispute(transaction=_NOBODY))
+    assert second.next_expected is Slot.TRANSACTION
+    assert not second.end_session
+    assert dialogue.outbox.packets == []
+
+    third = dialogue.say(_file_dispute(transaction=_NOBODY))
+    assert third.end_session
+    assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        _plain(NluIntent.CORRECTION, transaction=_NOBODY),
+        _plain(NluIntent.UNCLEAR, transaction=_NOBODY),
+        _plain(NluIntent.CHOICE, choice=1, transaction=_NOBODY),
+    ],
+    ids=["correction", "unclear", "choice"],
+)
+def test_a_described_answer_that_matches_nothing_counts_whatever_the_intent_the_model_gave(
+    policy: Policy, retriever: LexicalRetriever, answer: NluResult
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute())
+
+    assert not dialogue.say(answer).end_session
+    assert dialogue.outbox.packets == []
+
+    assert dialogue.say(answer).end_session
+    assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+
+
+def test_after_a_description_that_matches_nothing_the_transaction_stays_the_open_question(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute(transaction=_NOBODY))
+
+    again = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert again.next_expected is Slot.TRANSACTION
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.clarification_attempts == 1
+
+    presented = dialogue.present_amazon()
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.clarification_attempts == 0
+
+
+def test_multiple_matches_ask_for_detail_twice_then_escalate(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The customer is asked to narrow the search the policy's budget number of times; the answer
+    to the last of those that still matches several transactions is what sends the request on."""
     store = InMemoryDialogueStore()
     outbox = FakeHandoffOutbox()
     port = FakeToolPort(transactions=(_transaction("TX-1"), _transaction("TX-2")))
+    responses = []
 
-    for i in range(1, policy.routing.clarification_budget + 1):
+    for i in range(1, policy.routing.clarification_budget + 2):
         controller, _ = _controller(
             _file_dispute(transaction=TransactionHint(merchant="Amazon")),
             store=store,
@@ -735,10 +841,11 @@ def test_multiple_matches_ask_for_detail_then_escalate_at_the_budget(
             outbox=outbox,
             retriever=retriever,
         )
-        response = controller.handle_turn(_turn(f"turn-{i:04d}"), principal=_principal())
+        responses.append(controller.handle_turn(_turn(f"turn-{i:04d}"), principal=_principal()))
 
-    assert response.end_session
-    assert outbox.packets
+    assert [response.end_session for response in responses] == [False, False, True]
+    assert all(response.next_expected is Slot.TRANSACTION for response in responses[:-1])
+    assert len(outbox.packets) == 1
     assert outbox.packets[0].trigger.value == "low_understanding"
 
 
@@ -789,6 +896,7 @@ def test_a_localized_amount_in_a_portuguese_report_still_presents_the_one_matchi
         outbox=outbox,
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
     asked = controller.handle_turn(
@@ -806,6 +914,106 @@ def test_a_localized_amount_in_a_portuguese_report_still_presents_the_one_matchi
     state = store.get(_SESSION_ID)
     assert state is not None
     assert state.selected_ref == "TX-1"
+
+
+@pytest.mark.parametrize(
+    ("language", "first_message", "second_message", "model_reading", "target"),
+    [
+        (
+            "en",
+            "Hi, there's a charge on my card I don't recognize.",
+            "It was at Cine Premium on June 3rd, about 1,914,215 COP.",
+            {
+                "merchant": "Cine Premium",
+                "date_expression": "June 3rd",
+                "amount": "1,914,215",
+                "currency": "COP",
+            },
+            ("Cine Premium", date(2026, 6, 3), Decimal("1914215"), "COP"),
+        ),
+        (
+            "pt",
+            "Quero contestar uma compra",
+            "Foi na Farmacia Salud, no dia 21 de abril, cerca de 99.948,89 ARS.",
+            {
+                "merchant": "Farmacia Salud",
+                "date_expression": "dia 21 de abril",
+                "amount": "99.948,89",
+                "currency": "ARS",
+            },
+            ("Farmacia Salud", date(2026, 4, 21), Decimal("99948.89"), "ARS"),
+        ),
+    ],
+)
+def test_a_month_name_date_finds_a_transaction_older_than_the_five_most_recent(
+    policy: Policy,
+    retriever: LexicalRetriever,
+    *,
+    language: str,
+    first_message: str,
+    second_message: str,
+    model_reading: dict[str, str],
+    target: tuple[str, date, Decimal, str],
+) -> None:
+    """The listing returns only the five newest transactions, so a date the customer gave in words
+    ("June 3rd", "21 de abril") must narrow the search or an older transaction is reported as not
+    found. The customer's second message names the merchant, month-and-day and amount; the one
+    transaction matching all three is presented."""
+    merchant, occurred_on, amount, currency = target
+    recent = tuple(
+        _transaction(
+            f"TX-{index}",
+            merchant=f"Recent shop {index}",
+            occurred_on=date(2026, 6, 17 - index),
+            amount=Decimal("10.00") + index,
+        )
+        for index in range(1, 9)
+    )
+    wanted = _transaction(
+        "TX-WANTED", merchant=merchant, occurred_on=occurred_on, amount=amount, currency=currency
+    )
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    port = FakeToolPort(transactions=(*recent, wanted))
+    llm = FakeLlm(
+        responses=[
+            {
+                "intent": "file_dispute",
+                "confidence": 0.9,
+                "language": language,
+                "mentions_second_dispute": False,
+            },
+            {
+                "intent": "file_dispute",
+                "confidence": 0.9,
+                "language": language,
+                "mentions_second_dispute": False,
+                **model_reading,
+            },
+        ]
+    )
+    controller = DialogueController(
+        LlmNlu(llm, model="claude-haiku-4-5-20251001"),
+        store=store,
+        tool_port=port,
+        retriever=retriever,
+        policy=policy,
+        outbox=outbox,
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+        max_turns=30,
+    )
+
+    asked = controller.handle_turn(_turn("turn-0001", first_message), principal=_principal())
+    assert asked.next_expected is Slot.TRANSACTION
+
+    presented = controller.handle_turn(_turn("turn-0002", second_message), principal=_principal())
+
+    assert not presented.end_session
+    assert outbox.packets == []
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-WANTED"
 
 
 def test_eligible_decision_requiring_confirmation_then_yes_files_and_verifies(
@@ -1022,20 +1230,35 @@ def test_an_unclear_answer_to_the_presented_transaction_asks_again_then_escalate
     assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
 
 
+@pytest.mark.parametrize(
+    "unrelated",
+    [
+        _plain(NluIntent.SMALL_TALK),
+        _plain(NluIntent.POLICY_QUESTION, policy_query="que es esta politica"),
+        _plain(NluIntent.LIST_TRANSACTIONS),
+    ],
+    ids=["small-talk", "policy-question", "list-request"],
+)
 def test_the_presented_transaction_question_stays_pending_across_an_unrelated_reply(
-    policy: Policy, retriever: LexicalRetriever
+    policy: Policy, retriever: LexicalRetriever, unrelated: NluResult
 ) -> None:
     dialogue = _Dialogue(policy, retriever)
     dialogue.present_amazon()
+    before = dialogue.store.get(_SESSION_ID)
+    assert before is not None
 
-    dialogue.say(_plain(NluIntent.SMALL_TALK))
+    reply = dialogue.say(unrelated)
+    assert reply.next_expected is Slot.TRANSACTION_CHOICE
     state = dialogue.store.get(_SESSION_ID)
     assert state is not None
     assert state.pending_slot is Slot.TRANSACTION_CHOICE
+    assert state.selected_ref == before.selected_ref
+    assert state.clarification_attempts == before.clarification_attempts
 
     answered = dialogue.say(_confirmation(ConfirmationAnswer.YES))
     assert answered.next_expected is Slot.REASON
     assert dialogue.port.create_calls == 0
+    assert dialogue.outbox.packets == []
 
 
 def test_a_repeated_turn_id_replays_the_presented_transaction(
@@ -1203,7 +1426,227 @@ def test_replaying_an_ineligible_turn_never_re_evaluates_or_files(
 
 
 # -----------------------------------------------------------------------------
-# The console's own turn history (ADR-17)
+# The question about which transaction, and how many answers it is given
+# -----------------------------------------------------------------------------
+
+
+def test_the_transaction_question_is_asked_twice_before_a_person_is_involved(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    first = dialogue.say(_file_dispute())
+    assert first.next_expected is Slot.TRANSACTION
+    assert not first.end_session
+
+    second = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert second.next_expected is Slot.TRANSACTION
+    assert not second.end_session
+    assert dialogue.outbox.packets == []
+
+    third = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert third.end_session
+    assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+
+
+def test_the_reason_question_is_asked_twice_before_a_person_is_involved(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.present_amazon()
+    asked = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    assert asked.next_expected is Slot.REASON
+
+    again = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert again.next_expected is Slot.REASON
+    assert not again.end_session
+    assert dialogue.outbox.packets == []
+
+    third = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert third.end_session
+    assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+
+
+def test_a_described_reply_after_an_unsettled_answer_starts_the_count_again(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute())
+    dialogue.say(_plain(NluIntent.UNCLEAR))
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.clarification_attempts == 1
+
+    presented = dialogue.say(
+        _plain(NluIntent.UNCLEAR, transaction=TransactionHint(merchant="Amazon"))
+    )
+
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.clarification_attempts == 0
+
+
+def test_a_category_on_a_described_answer_does_not_replace_the_one_already_set(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+
+    presented = dialogue.say(
+        _plain(
+            NluIntent.CORRECTION,
+            category=DisputeCategory.WRONG_AMOUNT,
+            transaction=TransactionHint(merchant="Amazon"),
+        )
+    )
+
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.category is DisputeCategory.UNRECOGNIZED_CHARGE
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        _plain(NluIntent.CORRECTION, transaction=TransactionHint(merchant="Amazon")),
+        _plain(NluIntent.UNCLEAR, transaction=TransactionHint(merchant="Amazon")),
+        _plain(NluIntent.CHOICE, choice=1, transaction=TransactionHint(merchant="Amazon")),
+    ],
+    ids=["correction", "unclear", "choice"],
+)
+def test_a_described_transaction_answers_the_question_whatever_intent_the_model_gave(
+    policy: Policy, retriever: LexicalRetriever, answer: NluResult
+) -> None:
+    """The model reads each message on its own, so a plain answer to "which transaction?" can come
+    back as a correction, a choice or unclear; the description it carries is still the answer."""
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute())
+
+    presented = dialogue.say(answer)
+
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    assert not presented.end_session
+    assert dialogue.outbox.packets == []
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-1"
+
+
+def test_an_unroutable_answer_describing_nothing_is_still_asked_again(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute())
+
+    again = dialogue.say(_plain(NluIntent.CORRECTION))
+
+    assert again.next_expected is Slot.TRANSACTION
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref is None
+    assert state.clarification_attempts == 1
+
+
+@pytest.mark.parametrize(
+    ("language", "first_message", "second_message", "reading", "transaction"),
+    [
+        (
+            "en",
+            "Hi, there's a charge on my card I don't recognize.",
+            "It was at Cine Premium on June 3rd, about 1,914,215 COP.",
+            {
+                "merchant": "Cine Premium",
+                "date_expression": "June 3rd",
+                "amount": "1,914,215",
+                "currency": "COP",
+            },
+            ("Cine Premium", date(2026, 6, 3), Decimal("1914215"), "COP"),
+        ),
+        (
+            "pt",
+            "Quero contestar uma compra",
+            "Foi na Farmacia Salud, no dia 21 de abril, cerca de 99.948,89 ARS.",
+            {
+                "merchant": "Farmacia Salud",
+                "date_expression": "21 de abril",
+                "amount": "99.948,89",
+                "currency": "ARS",
+            },
+            ("Farmacia Salud", date(2026, 4, 21), Decimal("99948.89"), "ARS"),
+        ),
+    ],
+)
+@pytest.mark.parametrize("intent", ["file_dispute", "correction", "unclear"])
+def test_the_live_second_message_presents_the_transaction_under_any_intent_the_model_gives(
+    policy: Policy,
+    retriever: LexicalRetriever,
+    *,
+    language: str,
+    first_message: str,
+    second_message: str,
+    reading: dict[str, str],
+    transaction: tuple[str, date, Decimal, str],
+    intent: str,
+) -> None:
+    """The two conversations that were sent to a person on the customer's first answer: the
+    customer's own wording, read as the model might label it, ends on the transaction presented."""
+    merchant, occurred_on, amount, currency = transaction
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    port = FakeToolPort(
+        transactions=(
+            _transaction(
+                "TX-WANTED",
+                merchant=merchant,
+                occurred_on=occurred_on,
+                amount=amount,
+                currency=currency,
+            ),
+        )
+    )
+    llm = FakeLlm(
+        responses=[
+            {
+                "intent": "file_dispute",
+                "confidence": 0.9,
+                "language": language,
+                "mentions_second_dispute": False,
+            },
+            {
+                "intent": intent,
+                "confidence": 0.9,
+                "language": language,
+                "mentions_second_dispute": False,
+                **reading,
+            },
+        ]
+    )
+    controller = DialogueController(
+        LlmNlu(llm, model="claude-haiku-4-5-20251001"),
+        store=store,
+        tool_port=port,
+        retriever=retriever,
+        policy=policy,
+        outbox=outbox,
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+        max_turns=30,
+    )
+
+    asked = controller.handle_turn(_turn("turn-0001", first_message), principal=_principal())
+    assert asked.next_expected is Slot.TRANSACTION
+
+    presented = controller.handle_turn(_turn("turn-0002", second_message), principal=_principal())
+
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    assert not presented.end_session
+    assert outbox.packets == []
+
+
+# -----------------------------------------------------------------------------
+# The console's own turn history
 # -----------------------------------------------------------------------------
 
 
@@ -1226,15 +1669,118 @@ def test_a_fresh_turn_advance_records_its_own_history(
     controller.handle_turn(_turn("turn-0001"), principal=_principal())
 
     assert len(turn_log.entries) == 1
-    entry, session_id, turn_id = turn_log.entries[0]
+    entry, session_id = turn_log.entries[0]
     assert session_id == _SESSION_ID
-    assert turn_id == "turn-0001"
+    assert entry.turn_id == "turn-0001"
     assert entry.trace_id == _SESSION_ID
     assert entry.intent is Intent.CLARIFY
     assert entry.state_before == "started"
     assert entry.state_after == "started"
     assert entry.render_mode == "template"
     assert entry.reason_code is None
+
+
+def test_a_hand_off_turn_records_the_reason_code_it_was_routed_with(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    turn_log = FakeDialogueTurnLog()
+    understandings = [_file_dispute(), _plain(NluIntent.UNCLEAR), _plain(NluIntent.UNCLEAR)]
+    for turn, understanding in enumerate(understandings, start=1):
+        controller, _ = _controller(
+            understanding,
+            store=store,
+            tool_port=FakeToolPort(),
+            policy=policy,
+            outbox=FakeHandoffOutbox(),
+            retriever=retriever,
+            turn_log=turn_log,
+        )
+        controller.handle_turn(_turn(f"turn-{turn:04d}"), principal=_principal())
+
+    assert [entry.reason_code for entry, _ in turn_log.entries] == [
+        None,
+        None,
+        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,
+    ]
+
+
+def _logged_reason_codes(
+    policy: Policy,
+    retriever: LexicalRetriever,
+    understandings: list[NluResult],
+    *,
+    port: FakeToolPort,
+    outbox: FakeHandoffOutbox,
+) -> list[ReasonCode | None]:
+    store = InMemoryDialogueStore()
+    turn_log = FakeDialogueTurnLog()
+    for turn, understanding in enumerate(understandings, start=1):
+        controller, _ = _controller(
+            understanding,
+            store=store,
+            tool_port=port,
+            policy=policy,
+            outbox=outbox,
+            retriever=retriever,
+            turn_log=turn_log,
+        )
+        controller.handle_turn(_turn(f"turn-{turn:04d}"), principal=_principal())
+    return [entry.reason_code for entry, _ in turn_log.entries]
+
+
+def test_a_policy_escalation_records_its_reason_code_in_the_turn_history(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(Outcome.ESCALATE, ReasonCode.ESCALATE_FRAUD_CLAIM),
+    )
+
+    recorded = _logged_reason_codes(
+        policy,
+        retriever,
+        [
+            _file_dispute(transaction=TransactionHint(merchant="Amazon")),
+            _file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE),
+        ],
+        port=port,
+        outbox=FakeHandoffOutbox(),
+    )
+
+    assert recorded == [None, ReasonCode.ESCALATE_FRAUD_CLAIM]
+
+
+def test_a_hand_off_that_names_no_reason_code_records_none(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        list_transactions_result=ToolFailure(tool=ToolName.LIST_TRANSACTIONS, cause="error")
+    )
+
+    recorded = _logged_reason_codes(
+        policy,
+        retriever,
+        [_file_dispute(transaction=TransactionHint(merchant="Amazon"))],
+        port=port,
+        outbox=FakeHandoffOutbox(),
+    )
+
+    assert recorded == [None]
+
+
+def test_a_hand_off_that_could_not_be_registered_records_no_reason_code(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    recorded = _logged_reason_codes(
+        policy,
+        retriever,
+        [_file_dispute(), _plain(NluIntent.UNCLEAR), _plain(NluIntent.UNCLEAR)],
+        port=FakeToolPort(),
+        outbox=FakeHandoffOutbox(fail=True),
+    )
+
+    assert recorded == [None, None, None]
 
 
 def test_no_turn_log_configured_records_nothing_and_never_fails(
@@ -1288,6 +1834,30 @@ def test_replaying_a_turn_never_records_a_second_history_entry(
     controller.handle_turn(_turn("turn-0001"), principal=_principal())
 
     assert len(turn_log.entries) == 1
+
+
+def test_two_turns_of_one_conversation_record_their_own_turn_ids(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """Every entry shares the session as its trace, so the turn id is what tells them apart."""
+    store = InMemoryDialogueStore()
+    turn_log = FakeDialogueTurnLog()
+    result = NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, language="es")
+
+    for turn_id in ("turn-0001", "turn-0002"):
+        controller, _ = _controller(
+            result,
+            store=store,
+            tool_port=FakeToolPort(),
+            policy=policy,
+            outbox=FakeHandoffOutbox(),
+            retriever=retriever,
+            turn_log=turn_log,
+        )
+        controller.handle_turn(_turn(turn_id), principal=_principal())
+
+    assert [entry.trace_id for entry, _ in turn_log.entries] == [_SESSION_ID, _SESSION_ID]
+    assert [entry.turn_id for entry, _ in turn_log.entries] == ["turn-0001", "turn-0002"]
 
 
 def test_a_turn_log_failure_never_changes_the_reply(
@@ -1492,6 +2062,112 @@ def test_tool_failure_during_search_hands_off(policy: Policy, retriever: Lexical
     assert outbox.packets[0].trigger.value == "tool_failure"
 
 
+def _filing_port(*, cases: tuple[CaseRecord, ...], verified: bool = True) -> FakeToolPort:
+    """A port that evaluates the dispute as eligible with a confirmation and files it as D-1."""
+    return FakeToolPort(
+        transactions=(_transaction(),),
+        cases=cases,
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+        get_case_result=_UNSET if verified else None,
+    )
+
+
+def test_the_case_number_is_null_until_the_filing_turn_and_set_on_it(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """Only the reply that reports the verified filing carries the case number."""
+    dialogue = _Dialogue(policy, retriever, _filing_port(cases=(_case(),)))
+    before = [
+        dialogue.present_amazon(),
+        dialogue.say(_confirmation(ConfirmationAnswer.YES)),
+        dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE)),
+    ]
+    assert before[-1].next_expected is Slot.CONFIRMATION
+    assert [turn.case_number for turn in before] == [None, None, None]
+
+    filed = dialogue.say(_confirmation(ConfirmationAnswer.YES), turn_id="turn-filing")
+
+    assert filed.case_number == "D-1"
+    assert filed.handoff_ticket is None
+    assert dialogue.say(_plain(NluIntent.SMALL_TALK)).case_number is None
+
+
+def test_a_retried_filing_turn_carries_the_same_case_number(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The retry reports the case that was filed, and files nothing again."""
+    dialogue = _Dialogue(policy, retriever, _filing_port(cases=(_case(),)))
+    dialogue.present_amazon()
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    first = dialogue.say(_confirmation(ConfirmationAnswer.YES), turn_id="turn-filing")
+
+    retried = dialogue.say(_confirmation(ConfirmationAnswer.YES), turn_id="turn-filing")
+
+    assert retried.case_number == first.case_number == "D-1"
+    assert dialogue.port.create_calls == 1
+
+
+def test_a_retried_later_turn_reports_the_session_case_after_a_fresh_read_back(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A replay reports the latest outcome, so a retry after a filing repeats the filed case."""
+    dialogue = _Dialogue(policy, retriever, _filing_port(cases=(_case(),)))
+    dialogue.present_amazon()
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    dialogue.say(_confirmation(ConfirmationAnswer.YES), turn_id="turn-filing")
+    later = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-later")
+    assert later.case_number is None
+
+    retried = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-later")
+
+    assert retried.case_number == "D-1"
+    assert dialogue.port.create_calls == 1
+
+
+def test_the_case_number_is_null_when_the_filing_could_not_be_verified(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A case the read-back did not find is handed to a person, never reported as filed."""
+    dialogue = _Dialogue(policy, retriever, _filing_port(cases=(), verified=False))
+    dialogue.present_amazon()
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+
+    handed_off = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert handed_off.case_number is None
+    assert handed_off.handoff_ticket is not None
+
+
+@pytest.mark.parametrize("closing", ["cancelled", "ineligible"])
+def test_the_case_number_is_null_when_the_dispute_ends_without_a_case(
+    policy: Policy, retriever: LexicalRetriever, closing: str
+) -> None:
+    """A cancelled or refused dispute has no case to report."""
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=(
+            _decision(Outcome.INELIGIBLE, ReasonCode.FILING_WINDOW_EXPIRED)
+            if closing == "ineligible"
+            else _decision(Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True)
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.present_amazon()
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+
+    ended = dialogue.say(_confirmation(ConfirmationAnswer.NO))
+
+    assert ended.case_number is None
+    assert port.create_calls == 0
+
+
 # -----------------------------------------------------------------------------
 # Browsing, status and policy questions
 # -----------------------------------------------------------------------------
@@ -1579,6 +2255,26 @@ def test_policy_question_answers_or_abstains(policy: Policy, retriever: LexicalR
     )
     abstained = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert abstained.reply
+
+
+def test_a_policy_question_answered_by_a_section_without_a_figure_cites_the_section(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    controller, _ = _controller(
+        _plain(NluIntent.POLICY_QUESTION, policy_query="que transacciones se pueden disputar"),
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+
+    response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.reply == (
+        "Puede consultarlo en la sección “Qué transacciones se pueden disputar” de nuestra "
+        "política de disputas."
+    )
 
 
 @pytest.mark.parametrize(
@@ -2049,7 +2745,7 @@ def test_get_transaction_failure_while_presenting_confirmation_hands_off(
 def test_a_matchless_evaluate_dispute_result_hands_off_on_first_evaluation(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
-    """None (AC-E4-06: the reference stopped resolving, or stopped being this customer's own,
+    """None (the reference stopped resolving, or stopped being this customer's own,
     between an earlier read and this evaluation) is routed through the same fail-closed handoff
     as a genuine ToolFailure, never re-interpreted as an ineligible or eligible decision."""
     store = InMemoryDialogueStore()
@@ -2342,6 +3038,7 @@ def test_an_unreachable_understanding_dependency_hands_off_on_a_fresh_session(
         outbox=outbox,
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
@@ -2367,15 +3064,16 @@ def test_an_unreachable_understanding_dependency_still_records_turn_history(
         outbox=FakeHandoffOutbox(),
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
         turn_log=turn_log,
     )
 
     controller.handle_turn(_turn("turn-0001"), principal=_principal())
 
     assert len(turn_log.entries) == 1
-    entry, session_id, turn_id = turn_log.entries[0]
+    entry, session_id = turn_log.entries[0]
     assert session_id == _SESSION_ID
-    assert turn_id == "turn-0001"
+    assert entry.turn_id == "turn-0001"
     assert entry.intent is Intent.HANDOFF
     assert entry.state_before == "started"
     assert entry.state_after == "handed_off"
@@ -2411,6 +3109,7 @@ def test_an_unreachable_understanding_dependency_never_spends_the_clarification_
         outbox=outbox,
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
     controller.handle_turn(_turn("turn-0001"), principal=_principal())
@@ -2450,6 +3149,7 @@ def test_replaying_a_turn_whose_recompute_hits_an_unreachable_dependency_degrade
         outbox=outbox,
         domain_date=_DOMAIN_DATE,
         now=_now,
+        max_turns=30,
     )
 
     response = replay_controller.handle_turn(_turn("turn-0001"), principal=_principal())
@@ -2457,3 +3157,510 @@ def test_replaying_a_turn_whose_recompute_hits_an_unreachable_dependency_degrade
     assert response.end_session
     assert outbox.packets == []
     assert store.get(_SESSION_ID) == before
+
+
+# -----------------------------------------------------------------------------
+# Per-session turn cap
+# -----------------------------------------------------------------------------
+
+
+def _seed_session(
+    store: InMemoryDialogueStore, *, turns: int, lang: str = "es", **changes: object
+) -> DialogueState:
+    """A session that has already applied ``turns`` customer turns."""
+    values: dict[str, object] = {"session_id": _SESSION_ID, "lang": lang, "updated_at": _NOW}
+    state = DialogueState(**{**values, **changes})
+    saved = store.save(state, expected_version=turns - 1, turn_id="turn-seed", now=_now())
+    assert saved.turns_applied == turns
+    return saved
+
+
+def _capped_controller(
+    policy: Policy,
+    retriever: LexicalRetriever,
+    store: InMemoryDialogueStore,
+    outbox: FakeHandoffOutbox,
+    *,
+    max_turns: int = 3,
+) -> tuple[DialogueController, ScriptedNlu]:
+    return _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=store,
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=outbox,
+        retriever=retriever,
+        max_turns=max_turns,
+    )
+
+
+def test_the_turn_after_the_cap_is_handed_to_a_person_and_the_cap_turn_is_served(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    controller, nlu = _capped_controller(policy, retriever, store, outbox)
+
+    for number in range(1, 4):
+        served = controller.handle_turn(_turn(f"turn-{number:04d}"), principal=_principal())
+        assert served.handoff_ticket is None
+    assert len(nlu.calls) == 3
+    assert outbox.packets == []
+
+    capped = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert capped.handoff_ticket == "T-0001"
+    assert "T-0001" in capped.reply
+    assert capped.end_session
+    assert len(outbox.packets) == 1
+    packet = outbox.packets[0]
+    assert packet.trigger is HandoffTrigger.LOW_UNDERSTANDING
+    assert [(a.action, a.result) for a in packet.actions] == [("turn_cap", "reached")]
+
+
+def test_a_capped_turn_never_calls_the_model(policy: Policy, retriever: LexicalRetriever) -> None:
+    store = InMemoryDialogueStore()
+    _seed_session(store, turns=3)
+    controller, nlu = _capped_controller(policy, retriever, store, FakeHandoffOutbox())
+
+    controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert nlu.calls == []
+
+
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [
+        ("es", "Un asesor debe revisar esto."),
+        ("pt", "Um atendente precisa analisar isso."),
+        ("en", "A person must review this."),
+    ],
+)
+def test_the_capped_reply_is_in_the_session_language(
+    policy: Policy, retriever: LexicalRetriever, lang: str, expected: str
+) -> None:
+    store = InMemoryDialogueStore()
+    _seed_session(store, turns=3, lang=lang)
+    controller, _ = _capped_controller(policy, retriever, store, FakeHandoffOutbox())
+
+    capped = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert expected in capped.reply
+    assert "T-0001" in capped.reply
+
+
+def test_further_turns_after_the_cap_return_the_same_ticket_and_change_nothing(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    _seed_session(store, turns=3)
+    controller, nlu = _capped_controller(policy, retriever, store, outbox)
+    first = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+    version_at_handoff = store.get(_SESSION_ID)
+    assert version_at_handoff is not None
+
+    for number in range(5, 8):
+        again = controller.handle_turn(_turn(f"turn-{number:04d}"), principal=_principal())
+        assert again.handoff_ticket == first.handoff_ticket
+
+    assert len(outbox.packets) == 1
+    assert nlu.calls == []
+    assert store.get(_SESSION_ID) == version_at_handoff
+
+
+def test_repeating_the_capped_turn_replays_the_handoff_not_a_filing_result(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A session that filed a case and then hit the cap must replay its handoff, not re-announce
+    the earlier filing, when the capped turn's id arrives again."""
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    _seed_session(store, turns=3, last_case_number="D-1")
+    controller, _ = _capped_controller(policy, retriever, store, outbox)
+    first = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    replay = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert replay.reply == first.reply
+    assert replay.handoff_ticket == first.handoff_ticket
+    assert "D-1" not in replay.reply
+    assert len(outbox.packets) == 1
+    assert outbox.packets[0].existing_case_number == "D-1"
+
+
+def test_a_duplicate_of_a_served_turn_is_replayed_even_at_the_cap(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    controller, _ = _capped_controller(policy, retriever, store, outbox)
+    for number in range(1, 4):
+        last = controller.handle_turn(_turn(f"turn-{number:04d}"), principal=_principal())
+
+    replay = controller.handle_turn(_turn("turn-0003"), principal=_principal())
+
+    assert replay.reply == last.reply
+    assert replay.handoff_ticket is None
+    assert outbox.packets == []
+
+
+@dataclass
+class _CappedRaceStore:
+    """Serves a session at the cap and makes the cap turn's save lose to another request."""
+
+    inner: InMemoryDialogueStore
+    outcome: Exception
+
+    def get(self, session_id: str) -> DialogueState | None:
+        return self.inner.get(session_id)
+
+    def save(
+        self, state: DialogueState, *, expected_version: int, turn_id: str, now: datetime
+    ) -> DialogueState:
+        raise self.outcome
+
+
+def test_a_capped_turn_that_loses_the_save_race_replays_the_winners_handoff(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The packet this request recorded stays in the queue unreferenced by the session; the
+    reply is the winner's ticket, so the customer sees one."""
+    inner = InMemoryDialogueStore()
+    _seed_session(inner, turns=3)
+    winner = DialogueState(
+        session_id=_SESSION_ID,
+        version=4,
+        lang="es",
+        phase=ConversationPhase.HANDED_OFF,
+        last_turn_id="turn-0004",
+        last_ticket_ref="T-9999",
+        updated_at=_NOW,
+    )
+    outbox = FakeHandoffOutbox()
+    controller, nlu = _capped_controller(
+        policy,
+        retriever,
+        _CappedRaceStore(inner, DuplicateTurn(winner)),  # type: ignore[arg-type]
+        outbox,
+    )
+
+    response = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert response.handoff_ticket == "T-9999"
+    assert "T-9999" in response.reply
+    assert len(outbox.packets) == 1
+    assert nlu.calls == []
+
+
+def test_a_capped_turn_on_a_stale_version_is_a_turn_conflict(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    inner = InMemoryDialogueStore()
+    _seed_session(inner, turns=3)
+    controller, nlu = _capped_controller(
+        policy,
+        retriever,
+        _CappedRaceStore(inner, Conflict("moved on")),  # type: ignore[arg-type]
+        FakeHandoffOutbox(),
+    )
+
+    with pytest.raises(ProblemError) as excinfo:
+        controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert excinfo.value.code is ErrorCode.TURN_CONFLICT
+    assert nlu.calls == []
+
+
+def test_an_unavailable_outbox_at_the_cap_says_nothing_was_registered_and_the_next_message_retries(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    _seed_session(store, turns=3)
+    outbox = FakeHandoffOutbox(fail=True)
+    controller, nlu = _capped_controller(policy, retriever, store, outbox)
+
+    failed = controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    assert failed.handoff_ticket is None
+    assert failed.end_session
+    assert outbox.packets == []
+
+    outbox.fail = False
+    retried = controller.handle_turn(_turn("turn-0005"), principal=_principal())
+
+    assert retried.handoff_ticket == "T-0001"
+    assert len(outbox.packets) == 1
+    assert nlu.calls == []
+
+
+def test_reaching_the_cap_is_logged_with_the_counts_and_no_message_text(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = InMemoryDialogueStore()
+    _seed_session(store, turns=3)
+    controller, _ = _capped_controller(policy, retriever, store, FakeHandoffOutbox())
+
+    with caplog.at_level(logging.WARNING):
+        controller.handle_turn(_turn("turn-0004"), principal=_principal())
+
+    logged = [
+        r.getMessage() for r in caplog.records if "dialogue_turn_cap_reached" in r.getMessage()
+    ]
+    assert len(logged) == 1
+    assert f"session_id={_SESSION_ID}" in logged[0]
+    assert "turns_applied=3" in logged[0]
+    assert "max_turns=3" in logged[0]
+    assert _turn("turn-0004").text not in logged[0]
+
+
+# -----------------------------------------------------------------------------
+# A different transaction named while one is awaiting confirmation
+# -----------------------------------------------------------------------------
+
+
+def _two_transaction_controller(
+    results: list[NluResult],
+    *,
+    store: InMemoryDialogueStore,
+    policy: Policy,
+    retriever: LexicalRetriever,
+    port: FakeToolPort | None = None,
+) -> DialogueController:
+    return DialogueController(
+        SequencedNlu(results),
+        store=store,
+        tool_port=port
+        or FakeToolPort(
+            transactions=(
+                _transaction("TX-1", merchant="Amazon", amount=Decimal("100.00")),
+                _transaction(
+                    "TX-2",
+                    merchant="Netflix",
+                    amount=Decimal("15.99"),
+                    occurred_on=date(2026, 6, 10),
+                    last4="9876",
+                ),
+            )
+        ),
+        retriever=retriever,
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+        max_turns=30,
+    )
+
+
+def _second_turn_after_naming_then_naming_again(
+    first: TransactionHint,
+    second: TransactionHint,
+    *,
+    policy: Policy,
+    retriever: LexicalRetriever,
+    port: FakeToolPort | None = None,
+) -> tuple[str | None, TurnResponse]:
+    store = InMemoryDialogueStore()
+    controller = _two_transaction_controller(
+        [_file_dispute(transaction=first), _file_dispute(transaction=second)],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+        port=port,
+    )
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+    reply = controller.handle_turn(_turn("turn-0002", "segunda"), principal=_principal())
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    return state.selected_ref, reply
+
+
+def _selected_after_naming_then_naming_again(
+    first: TransactionHint,
+    second: TransactionHint,
+    *,
+    policy: Policy,
+    retriever: LexicalRetriever,
+    port: FakeToolPort | None = None,
+) -> tuple[str | None, str]:
+    selected, reply = _second_turn_after_naming_then_naming_again(
+        first, second, policy=policy, retriever=retriever, port=port
+    )
+    return selected, reply.reply
+
+
+@pytest.mark.parametrize("typed", ["\u0301", " ", "\u0301 \u0301"])
+def test_a_merchant_that_names_nothing_keeps_the_presented_transaction(
+    typed: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A blank merchant is no description at all, so the transaction on offer stays selected."""
+    selected, _reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(merchant=typed),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected == "TX-1"
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        TransactionHint(amount=Decimal("15.99")),
+        TransactionHint(date_on=date(2026, 6, 10), date_source=DateSource.ABSOLUTE),
+    ],
+    ids=["amount", "date"],
+)
+def test_a_blank_merchant_does_not_keep_the_selection_when_another_amount_or_date_is_named(
+    other: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The amount or date beside a blank merchant still drops the transaction that was on offer."""
+    selected, _reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        other.model_copy(update={"merchant": " "}),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected != "TX-1"
+
+
+def test_naming_a_different_merchant_while_one_is_presented_presents_that_one(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(merchant="Netflix"),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected == "TX-2"
+    assert "Netflix" in reply
+    assert "15,99" in reply
+
+
+def test_naming_a_different_amount_while_one_is_presented_presents_that_one(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, _ = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(amount=Decimal("15.99")),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected == "TX-2"
+
+
+def test_naming_a_different_date_while_one_is_presented_presents_that_one(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, _ = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(date_on=date(2026, 6, 10), date_source=DateSource.ABSOLUTE),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected == "TX-2"
+
+
+@pytest.mark.parametrize(
+    "second",
+    [
+        TransactionHint(),
+        TransactionHint(merchant="amazon"),
+        TransactionHint(merchant="Amazon", amount=Decimal("100.00"), currency="USD"),
+        TransactionHint(date_on=_DOMAIN_DATE, date_source=DateSource.ABSOLUTE),
+    ],
+    ids=["nothing", "same-merchant", "same-merchant-and-amount", "same-date"],
+)
+def test_repeating_what_is_presented_keeps_it_selected(
+    second: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"), second, policy=policy, retriever=retriever
+    )
+
+    assert selected == "TX-1"
+    assert "Netflix" not in reply
+
+
+def test_naming_something_that_matches_nothing_does_not_confirm_the_presented_one(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, _ = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(merchant="Spotify"),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected is None
+
+
+@pytest.mark.parametrize(
+    "unreadable",
+    [ToolFailure(tool=ToolName.GET_TRANSACTION, cause="error"), None],
+    ids=["tool-failure", "no-longer-found"],
+)
+def test_an_unreadable_presented_transaction_is_searched_for_again(
+    unreadable: ToolFailure | None, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction("TX-1", merchant="Amazon"),),
+        get_transaction_result=unreadable,
+    )
+    selected, response = _second_turn_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(merchant="Amazon"),
+        policy=policy,
+        retriever=retriever,
+        port=port,
+    )
+
+    assert selected == "TX-1"
+    assert response.next_expected is Slot.TRANSACTION_CHOICE
+
+
+@pytest.mark.parametrize(
+    "second",
+    [
+        TransactionHint(product_last4="9999"),
+        TransactionHint(amount=Decimal("100.00"), currency="EUR"),
+        TransactionHint(date_on=date(2026, 6, 10), date_source=DateSource.PARTIAL),
+        TransactionHint(date_on=date(2026, 6, 10), date_source=DateSource.RELATIVE),
+    ],
+    ids=["other-card", "same-amount-other-currency", "partial-date", "relative-date"],
+)
+def test_naming_another_card_currency_or_date_does_not_confirm_the_presented_one(
+    second: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    _, response = _second_turn_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"), second, policy=policy, retriever=retriever
+    )
+
+    assert response.next_expected is not Slot.REASON
+
+
+@pytest.mark.parametrize(
+    "second",
+    [
+        TransactionHint(product_last4="1234"),
+        TransactionHint(amount=Decimal("100.00"), currency="USD"),
+        TransactionHint(date_on=_DOMAIN_DATE, date_source=DateSource.PARTIAL),
+        TransactionHint(date_on=_DOMAIN_DATE, date_source=DateSource.RELATIVE),
+    ],
+    ids=["same-card", "same-amount-and-currency", "same-partial-date", "same-relative-date"],
+)
+def test_naming_the_presented_card_amount_or_date_goes_ahead_with_it(
+    second: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, response = _second_turn_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"), second, policy=policy, retriever=retriever
+    )
+
+    assert selected == "TX-1"
+    assert response.next_expected is Slot.REASON

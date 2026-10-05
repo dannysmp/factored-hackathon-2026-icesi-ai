@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { ChatFeature } from './ChatFeature'
 import { FixtureChatClient } from './client'
 import { FILE_DISPUTE_EN } from './fixtures'
+import { findMessage } from './findMessage'
 
 function renderChat(): ReturnType<typeof render> {
   return render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN)} lang="en" />)
@@ -14,7 +15,7 @@ describe('ChatFeature keyboard traversal', () => {
   it('reaches the message field first, then Send once there is text to send', async () => {
     const user = userEvent.setup()
     renderChat()
-    await screen.findByText('Hi! Which transaction would you like to dispute?')
+    await findMessage('Hi! Which transaction would you like to dispute?')
 
     await user.tab()
     expect(screen.getByLabelText('Your message')).toHaveFocus()
@@ -35,23 +36,25 @@ describe('ChatFeature keyboard traversal', () => {
   it('walks the whole conversation with Tab, Enter and Space alone', async () => {
     const user = userEvent.setup()
     renderChat()
-    await screen.findByText('Hi! Which transaction would you like to dispute?')
+    await findMessage('Hi! Which transaction would you like to dispute?')
 
     await user.tab()
     await user.keyboard('the Tienda Sol one')
     await user.tab()
     await user.keyboard('{Enter}')
+    // Sending hands focus back to the field, so the next message can be typed straight away.
+    expect(screen.getByLabelText('Your message')).toHaveFocus()
 
     // The numbered choice comes before the text field in the tab order.
     const choice = await screen.findByRole('button', {
       name: '1. MXN 250.00 at Tienda Sol on 12 June 2026',
     })
-    await user.tab()
+    await user.tab({ shift: true })
     expect(choice).toHaveFocus()
     await user.keyboard(' ')
 
-    await screen.findByText(/what is the reason for the dispute/i)
-    await user.tab()
+    // The clicked option disappears with the next reply; focus lands on the field, not the page.
+    await findMessage(/what is the reason for the dispute/i)
     expect(screen.getByLabelText('Your message')).toHaveFocus()
     await user.keyboard('unrecognized charge')
     await user.tab()
@@ -59,11 +62,10 @@ describe('ChatFeature keyboard traversal', () => {
 
     // The confirmation button also precedes the field, and Enter on it files the case.
     const confirm = await screen.findByRole('button', { name: 'Confirm' })
-    // The next Tab stop after the reply is the confirmation button, ahead of the field.
-    await user.tab()
+    await user.tab({ shift: true })
     expect(confirm).toHaveFocus()
     await user.keyboard('{Enter}')
 
-    expect(await screen.findByText(/case DEMO-1234/)).toBeInTheDocument()
+    expect(await findMessage(/case DEMO-1234/)).toBeInTheDocument()
   })
 })

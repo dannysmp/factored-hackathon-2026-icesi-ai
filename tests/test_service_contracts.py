@@ -216,7 +216,7 @@ def _field_names(schema: Any) -> Iterator[str]:
 
 
 def test_the_package_init_is_empty() -> None:
-    """Neither stream edits the other's files through the package: its init holds nothing."""
+    """The package init holds nothing, so importing the package pulls in no contract."""
     assert Path(service_v1.__file__ or "").read_text() == ""
 
 
@@ -482,6 +482,11 @@ def test_a_verifier_result_agrees_with_its_own_outcome() -> None:
 
 
 def _routed_envelope() -> Envelope:
+    """Build a handoff envelope routed by a rule, carrying agent-only decisions and risk evidence.
+
+    It is the one envelope that holds detail meant for a person and never for the customer, so
+    the tests on what each audience may see start from it.
+    """
     return _envelope(
         intent=Intent.HANDOFF,
         end_session=True,
@@ -669,6 +674,24 @@ def test_the_turn_response_carries_no_envelope_or_routing_detail() -> None:
     assert "decisions" not in names
 
 
+def test_the_turn_response_case_number_defaults_to_null_and_must_be_well_formed() -> None:
+    """The case number is absent until a filing is reported, and only a valid number is accepted."""
+    base: dict[str, Any] = {
+        "turn_id": "turn-0001",
+        "conversation_id": "c-1",
+        "state_version": 1,
+        "lang": "es",
+        "reply": "Hola",
+        "reference_date_line": "Fecha de referencia de los datos: 18 de junio de 2026",
+    }
+
+    assert TurnResponse(**base).case_number is None
+    assert TurnResponse(**base, case_number="D-2001").case_number == "D-2001"
+    for malformed in ("", "D 1", "x" * 33, "D-1; drop"):
+        with pytest.raises(ValidationError):
+            TurnResponse(**base, case_number=malformed)
+
+
 def test_readiness_reports_the_reference_date_and_its_origin() -> None:
     """A deployment on an explicit date cannot be mistaken for live data."""
     payload = ReadinessPayload(
@@ -707,6 +730,7 @@ def test_a_ticket_detail_holds_the_packet_and_a_timeline_without_message_text() 
             TimelineEntry(
                 occurred_at=datetime(2026, 9, 26, 15, 0, tzinfo=UTC),
                 trace_id="trace-1",
+                turn_id="turn-0001",
                 intent=Intent.HANDOFF,
                 state_before="collect_reason",
                 state_after="handed_off",
@@ -1084,6 +1108,24 @@ def test_the_priority_flag_follows_the_trigger() -> None:
     assert _queue_item(trigger=HandoffTrigger.AMOUNT_REVIEW, priority=False)
 
 
+@pytest.mark.parametrize("turn_id", [None, "", "t" * 65])
+def test_a_timeline_entry_needs_a_turn_identifier_of_bounded_length(turn_id: str | None) -> None:
+    """The turn identifier tells apart entries that share one trace identifier."""
+    values: dict[str, object] = {
+        "occurred_at": datetime(2026, 9, 26, 15, 0, tzinfo=UTC),
+        "trace_id": "trace-1",
+        "intent": Intent.HANDOFF,
+        "state_before": "a",
+        "state_after": "b",
+        "render_mode": "template",
+    }
+    if turn_id is not None:
+        values["turn_id"] = turn_id
+
+    with pytest.raises(ValidationError, match="turn_id"):
+        TimelineEntry(**values)
+
+
 def test_instants_of_record_are_utc_everywhere() -> None:
     """The queue row and the timeline hold UTC like the packet does."""
     bogota = timezone(timedelta(hours=-5))
@@ -1094,6 +1136,7 @@ def test_instants_of_record_are_utc_everywhere() -> None:
         TimelineEntry(
             occurred_at=datetime(2026, 9, 26, 10, 0, tzinfo=bogota),
             trace_id="trace-1",
+            turn_id="turn-0001",
             intent=Intent.HANDOFF,
             state_before="a",
             state_after="b",
@@ -1233,8 +1276,8 @@ def test_the_response_version_choices_and_readiness_are_closed() -> None:
 # Closed sets only grow
 # -----------------------------------------------------------------------------
 
-# Every value a closed set held when the contract was frozen. A later version may add values to a
-# set, never rename or remove one: these pins fail on any rename or removal.
+# Every value a closed set held when the contract was released. A later version may add values to
+# a set, never rename or remove one: these pins fail on any rename or removal.
 _FROZEN_VALUES: dict[type[StrEnum], set[str]] = {
     Intent: {
         "clarify",
@@ -1325,7 +1368,7 @@ _FROZEN_VALUES: dict[type[StrEnum], set[str]] = {
 
 @pytest.mark.parametrize("enumeration", list(_FROZEN_VALUES), ids=lambda e: e.__name__)
 def test_a_closed_set_keeps_every_value_it_was_frozen_with(enumeration: type[StrEnum]) -> None:
-    """A rename or a removal in a frozen closed set fails; an addition does not."""
+    """A rename or a removal in a released closed set fails; an addition does not."""
     assert _FROZEN_VALUES[enumeration] <= {member.value for member in enumeration}
 
 

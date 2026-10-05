@@ -10,6 +10,7 @@ Out of scope: how other modules consume settings.
 from __future__ import annotations
 
 # Standard libraries
+from decimal import Decimal  # The spend limit's type
 from pathlib import Path  # Temporary dotenv files
 
 # Third-party libraries
@@ -41,6 +42,7 @@ _ENV_KEYS = (
     "DATABASE_URL",
     "MODEL_RENDERER_ENABLED",
     "CASE_CREATE_SESSION_CAP",
+    "DIALOGUE_MAX_TURNS",
     "LLM_RETRY_MAX_ATTEMPTS",
     "LLM_RETRY_BASE_DELAY_MS",
     "LLM_RETRY_MAX_DELAY_MS",
@@ -308,6 +310,29 @@ def test_the_reliability_settings_default_to_the_designed_values() -> None:
     assert settings.llm_breaker_reset_seconds == 30.0
     assert settings.tool_breaker_failure_threshold == 5
     assert settings.tool_breaker_reset_seconds == 10.0
+
+
+def test_the_daily_spend_limit_defaults_to_ten_dollars() -> None:
+    assert load_settings(env_file=None).llm_daily_spend_limit_usd == Decimal("10")
+
+
+def test_the_daily_spend_limit_is_read_from_the_environment_as_a_decimal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_DAILY_SPEND_LIMIT_USD", "2.50")
+
+    assert load_settings(env_file=None).llm_daily_spend_limit_usd == Decimal("2.50")
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "NaN", "Infinity", "abc", ""])
+def test_a_daily_spend_limit_that_is_not_a_positive_finite_amount_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """A zero or unparsed limit would either disable the guard or refuse every call."""
+    monkeypatch.setenv("LLM_DAILY_SPEND_LIMIT_USD", value)
+
+    with pytest.raises(ConfigError, match="LLM_DAILY_SPEND_LIMIT_USD"):
+        load_settings(env_file=None)
 
 
 @pytest.mark.parametrize(
@@ -667,3 +692,29 @@ def test_model_renderer_may_now_be_enabled_since_the_verifier_exists(
     monkeypatch.setenv("MODEL_RENDERER_ENABLED", "true")
 
     assert load_settings(env_file=None).model_renderer_enabled is True
+
+
+def test_the_dialogue_turn_cap_defaults_to_thirty() -> None:
+    """A bare environment yields the documented default."""
+    assert load_settings(env_file=None).dialogue_max_turns == 30
+
+
+@pytest.mark.parametrize("cap", ["4", "201", "0", "-1", "many"])
+def test_a_dialogue_turn_cap_outside_five_to_two_hundred_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, cap: str
+) -> None:
+    """The cap is bounded so it can neither starve a real conversation nor stop capping."""
+    monkeypatch.setenv("DIALOGUE_MAX_TURNS", cap)
+
+    with pytest.raises(ConfigError, match="DIALOGUE_MAX_TURNS"):
+        load_settings(env_file=None)
+
+
+@pytest.mark.parametrize("cap", ["5", "200"])
+def test_the_dialogue_turn_cap_bounds_are_inclusive(
+    monkeypatch: pytest.MonkeyPatch, cap: str
+) -> None:
+    """Five and two hundred are valid."""
+    monkeypatch.setenv("DIALOGUE_MAX_TURNS", cap)
+
+    assert load_settings(env_file=None).dialogue_max_turns == int(cap)

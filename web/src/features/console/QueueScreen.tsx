@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import type { JSX } from 'react'
 import './QueueScreen.css'
+import { Button } from '../../components/ui/Button'
 import { ReferenceBanner } from '../customer-chat/components/ReferenceBanner'
 import { QueueFilters } from './components/QueueFilters'
 import type { TriggerView } from './components/QueueFilters'
 import { QueueTable } from './components/QueueTable'
 import type { QueueClient } from './client'
 import type { QueueItem } from './contracts'
+import { formatDate } from './format'
 import { useQueue } from './useQueue'
 
 function itemsForView(items: readonly QueueItem[], view: TriggerView): QueueItem[] {
@@ -40,9 +42,9 @@ export function QueueScreen({
     return (
       <div className="queue-screen" role="alert">
         <p>No se pudo cargar la cola. Intente de nuevo.</p>
-        <button type="button" onClick={queue.retry}>
+        <Button variant="primary" onClick={queue.retry}>
           Intentar de nuevo
-        </button>
+        </Button>
       </div>
     )
   }
@@ -67,7 +69,7 @@ export function QueueScreen({
         referenceDateLine={
           queue.referenceDate === null
             ? 'Cargando la fecha de referencia de los datos…'
-            : `Fecha de referencia de los datos: ${queue.referenceDate}.`
+            : `Fecha de referencia de los datos: ${formatDate(queue.referenceDate)}.`
         }
         demoNotice="Esta es una sesión de demostración."
       />
@@ -81,11 +83,16 @@ export function QueueScreen({
           Actualizando…
         </p>
       )}
-      {showEmpty && <p>No hay tickets abiertos en este momento.</p>}
+      {showEmpty && <p>No hay casos abiertos en este momento.</p>}
       {!showLoading && !showEmpty && (
         <QueueFilters
           language={queue.language}
           onLanguageChange={queue.setLanguage}
+          counts={{
+            all: queue.items.length,
+            priority: itemsForView(queue.items, 'priority').length,
+            other: itemsForView(queue.items, 'other').length,
+          }}
           triggerView={triggerView}
           onTriggerViewChange={setTriggerView}
           renderTable={(view) => (
