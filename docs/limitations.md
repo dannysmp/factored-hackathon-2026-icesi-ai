@@ -61,8 +61,8 @@ results still to come say so and name the command that completes them.
   raters and the judge scored the same 50 cases (6 for clarification, which only ambiguous cases
   carry). Agreement is the share of cases scored identically, and a dimension is demoted to
   human-only when the judge agrees with either rater below 80%. All three are demoted. Grounding:
-  judge-to-rater agreement 60% and 28%, and the raters agree with each other on only 38%.
-  Language quality: 62% and 60%, with the raters at 94%; the judge scores lower than both raters in
+  judge-to-rater agreement 62% and 30%, and the raters agree with each other on only 38%.
+  Language quality: 64% and 62%, with the raters at 94%; the judge scores lower than both raters in
   nearly every case where they differ. Clarification: 17% and 100% over six cases, a sample too
   small to settle anything. The judge-scored quality section of `reports/evaluation.md` therefore
   states "not reportable by the judge" in place of the judge's means and shows the raters' means
@@ -87,6 +87,20 @@ results still to come say so and name the command that completes them.
   amount is matched against the transaction's dollar figure or its amount in its own currency,
   and the amount and currency must come from the same figure. The behavior was verified with
   scripted understanding results, not across live model output.
+- **A message that only states a transaction is read as a request to list transactions.** A
+  customer who writes "Fiz uma transferência de $1.277,60 dólares no dia 13 de junho." without
+  asking for anything sees the recent-transactions menu and gives the detail again before the
+  dispute starts. Wordings that read such a message as the start of a dispute misread other
+  messages in measurement (a "no fui yo, quiero reportar" fraud report read as a dispute filing, a
+  mixed Spanish and Portuguese question read with no language), so the listing reading is kept. The
+  golden set holds this case (`norm-filed-duplicate-pt-01`, a Portuguese duplicate-charge filing),
+  and it does not file.
+- **An English filing whose second turn is "That wasn't me, I'd like to report it." has no
+  guaranteed outcome.** The verb "report" reads either as a fraud report, which goes to a person,
+  or as a request to file, and the reading depends on the exact wording of the turn and varies
+  between runs of the model. The golden set holds this case (`norm-filed-unrecognized-en-03`). The
+  result is a handoff or a longer conversation rather than a filing, not a policy decision made
+  wrongly.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in
