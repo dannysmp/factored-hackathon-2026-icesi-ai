@@ -284,6 +284,20 @@ def _fold(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
 
 
+def _without_blank_merchant(result: NluResult) -> NluResult:
+    """``result`` with an empty merchant description removed from its transaction hint.
+
+    A merchant that is empty once accents and surrounding blanks are removed describes nothing,
+    so the rest of the hint (an amount, a date, a card) is what identifies the transaction.
+    """
+    merchant = result.transaction.merchant
+    if merchant is None or _fold(merchant).strip():
+        return result
+    return result.model_copy(
+        update={"transaction": result.transaction.model_copy(update={"merchant": None})}
+    )
+
+
 def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -> bool:
     """Whether ``fact`` could be what the customer described in ``hint``.
 
@@ -715,6 +729,7 @@ class DialogueController:
         when a hint is available and none is selected, ask for the reason, and finally evaluate the
         dispute for the selected transaction and category.
         """
+        result = _without_blank_merchant(result)
         if result.category is not None and state.category is None:
             state = state.model_copy(update={"category": result.category})
 
