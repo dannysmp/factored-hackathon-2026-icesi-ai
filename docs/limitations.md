@@ -111,6 +111,15 @@ results still to come say so and name the command that completes them.
   writes (claim, release, note and status change under `/v1/agent/tickets/{ticket_ref}`), each
   scoped to the signed-in agent and audited. The console's interface never calls them, matching
   its design as a viewer, so those actions are reachable only through the API.
+- **Text enlarged beyond 200% on a narrow phone can make the page scroll sideways, and part of the
+  header title can be cut off.** Every interactive control stays reachable by scrolling. At 200%
+  text size on a 375 px phone the layout fits without scrolling. At 300% on 375 px and 320 px
+  phones, depending on language and width, the sign-in language buttons and the persona language
+  tag, the Yes and No quick replies and the console header and queue overflow, and in the Spanish
+  chat and the console the start of the header title sits left of the page origin where it cannot
+  be scrolled to. This concerns text-only enlargement. At browser page zoom of 400% on a 320 px
+  screen the sign-in, chat and console pages do not scroll sideways; the console queue table
+  scrolls inside its own region.
 - **Structured logging runs across the service and every CLI entrypoint, including a configuration
   failure at start-up.** Every line carries a stable event name, the request's trace id and, once
   authenticated, its session id, with any card-shaped digit run redacted before the line is
