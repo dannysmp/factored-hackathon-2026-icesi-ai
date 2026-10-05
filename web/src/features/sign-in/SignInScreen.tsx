@@ -57,16 +57,17 @@ function personaLabel(persona: DemoPersonaSummary): string {
  * `focusForm` moves the keyboard to the persona picker as soon as the form appears, for a person
  * who has just been sent back here and would otherwise have lost their place.
  *
- * `preferredLang` selects the first persona who speaks that language once the directory loads, so
- * a person sent back after a session in Portuguese or English meets a form in that language
- * rather than Spanish. Without it, or without a persona in that language, the first persona is
+ * `preferredLang` selects a persona who speaks that language once the directory loads, so a
+ * person sent back after a session in Portuguese or English meets a form in that language rather
+ * than Spanish. `preferredSlug` picks that exact persona when they speak it, otherwise the first
+ * one who does. Without either, or without a persona in that language, the first persona is
  * selected.
  *
  * `onLanguageChange` reports the language this screen is currently speaking, as the selection
  * changes, so the page around it can follow.
  *
- * `onSignedIn` receives the session token and the chosen persona's language, so the caller can
- * hand both to the chat client. The token is held only for the moment it takes to pass it up;
+ * `onSignedIn` receives the session token, the chosen persona's language and slug, so the caller
+ * can hand them to the chat client and offer the same persona again. The token is held only for the moment it takes to pass it up;
  * nothing here ever writes it to storage.
  *
  * The customer path follows the selected persona's language; the agent path stays in Spanish, like
@@ -77,13 +78,15 @@ export function SignInScreen({
   audience = 'customer',
   focusForm = false,
   preferredLang,
+  preferredSlug,
   onSignedIn,
   onLanguageChange,
 }: {
   audience?: SignInAudience
   focusForm?: boolean
   preferredLang?: Lang
-  onSignedIn: (token: string, lang: Lang) => void
+  preferredSlug?: string
+  onSignedIn: (token: string, lang: Lang, slug: string) => void
   onLanguageChange?: (lang: Lang) => void
 }): JSX.Element {
   const [directoryStatus, setDirectoryStatus] = useState<DirectoryStatus>('loading')
@@ -121,7 +124,11 @@ export function SignInScreen({
       (fetched) => {
         if (cancelled) return
         setPersonas(fetched)
-        const preferred = fetched.find((persona) => toLang(persona.language) === preferredLang)
+        const inPreferredLang = fetched.filter(
+          (persona) => toLang(persona.language) === preferredLang,
+        )
+        const preferred =
+          inPreferredLang.find((persona) => persona.slug === preferredSlug) ?? inPreferredLang[0]
         setSelectedSlug((preferred ?? fetched[0])?.slug ?? '')
         setDirectoryStatus(fetched.length === 0 ? 'unavailable' : 'ready')
       },
@@ -135,7 +142,7 @@ export function SignInScreen({
     return () => {
       cancelled = true
     }
-  }, [audience, directoryAttempt, preferredLang])
+  }, [audience, directoryAttempt, preferredLang, preferredSlug])
 
   useEffect(() => {
     if (focusForm && directoryStatus === 'ready') personaRef.current?.focus()
@@ -160,7 +167,7 @@ export function SignInScreen({
     setSignInError(null)
     signIn(selectedPersona.slug, accessCode, audience).then(
       (token) => {
-        onSignedIn(token, toLang(selectedPersona.language))
+        onSignedIn(token, toLang(selectedPersona.language), selectedPersona.slug)
       },
       (error: unknown) => {
         const failure = classifyFailure(error)

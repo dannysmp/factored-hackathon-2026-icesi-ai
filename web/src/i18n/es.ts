@@ -5,14 +5,14 @@ import type { Messages } from './messages'
 export const es: Messages = {
   'app.title': 'Disputa de transacciones',
   'app.signOut': 'Cerrar sesión',
-  'app.sessionExpired': 'Su sesión terminó. Inicie sesión de nuevo.',
+  'app.sessionExpired': 'Su sesión expiró. Inicie sesión de nuevo.',
   'common.loading': 'Cargando…',
   'common.retry': 'Reintentar',
   'common.error.generic': 'Ocurrió un error.',
   'failure.offline':
     'No hay conexión con el servicio. Revise su conexión a internet e inténtelo de nuevo.',
   'failure.timeout': 'La respuesta tardó demasiado. Inténtelo de nuevo.',
-  'failure.rateLimited': 'Hubo demasiados intentos. Espere un minuto e inténtelo de nuevo.',
+  'failure.rateLimited': 'Ha realizado demasiados intentos. Espere un minuto e inténtelo de nuevo.',
   'failure.unavailable':
     'El servicio no está disponible por ahora. Inténtelo de nuevo en unos minutos.',
   'chat.regionLabel': 'Conversación con el asistente',

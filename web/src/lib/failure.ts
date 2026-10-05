@@ -7,7 +7,11 @@
  * share, the HTTP status, plus the two ways a `fetch` fails before any status exists.
  */
 
-/** How long a request may take before the person is told, so a stalled connection never leaves a spinner running forever. */
+/**
+ * How long a request may take before the person is told, so a stalled connection never leaves a
+ * spinner running forever. It sits well above the service's own limit for one model call (eight
+ * seconds), so a turn that needs a few calls still completes.
+ */
 export const REQUEST_TIMEOUT_MS = 30_000
 
 export type FailureKind =

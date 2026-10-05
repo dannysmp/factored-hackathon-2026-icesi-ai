@@ -1,5 +1,5 @@
 /** Component test: what the chat says, and lets the person do, for each way a turn can fail. */
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { describe, expect, it, vi } from 'vitest'
@@ -102,6 +102,24 @@ describe('ChatFeature when the conversation cannot start', () => {
     expect(alert).toHaveTextContent(en['failure.offline'])
     expect(screen.getByRole('region', { name: en['chat.regionLabel'] })).toContainElement(alert)
     expect(await axe(document.body)).toHaveNoViolations()
+  })
+
+  it('keeps the keyboard on Retry when starting fails again', async () => {
+    const user = userEvent.setup()
+    const start = vi.fn<ChatClient['start']>().mockRejectedValue(new TypeError('Failed to fetch'))
+    render(
+      <ChatFeature
+        client={{ start, sendTurn: () => Promise.reject(new Error('unused')) }}
+        lang="en"
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => {
+      expect(start).toHaveBeenCalledTimes(2)
+      expect(screen.getByRole('button', { name: 'Retry' })).toHaveFocus()
+    })
   })
 
   it('starts the conversation again when Retry is pressed', async () => {

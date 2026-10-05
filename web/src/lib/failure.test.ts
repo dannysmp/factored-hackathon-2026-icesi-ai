@@ -1,5 +1,5 @@
 /** Unit tests: a failed request is sorted into the kind of problem a person can act on. */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { REQUEST_TIMEOUT_MS, classifyFailure, requestSignal } from './failure'
 
 describe('classifyFailure', () => {
@@ -40,8 +40,20 @@ describe('classifyFailure', () => {
 })
 
 describe('requestSignal', () => {
-  it('gives a signal that is not yet aborted and times out after the request limit', () => {
-    expect(REQUEST_TIMEOUT_MS).toBe(30_000)
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('gives a signal that is not yet aborted', () => {
     expect(requestSignal().aborted).toBe(false)
+  })
+
+  it('times a request out after the request limit', () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+
+    requestSignal()
+
+    expect(REQUEST_TIMEOUT_MS).toBe(30_000)
+    expect(timeout).toHaveBeenCalledWith(REQUEST_TIMEOUT_MS)
   })
 })

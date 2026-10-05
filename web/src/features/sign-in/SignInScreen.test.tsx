@@ -84,7 +84,7 @@ describe('SignInScreen', () => {
 
     expect(signInMock).toHaveBeenCalledWith('emma', 'the-code', 'customer')
     await waitFor(() => {
-      expect(onSignedIn).toHaveBeenCalledWith('token-abc', 'en')
+      expect(onSignedIn).toHaveBeenCalledWith('token-abc', 'en', 'emma')
     })
   })
 
@@ -144,7 +144,7 @@ describe('SignInScreen', () => {
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
 
     expect(signInMock).toHaveBeenCalledWith('diego', 'agent-code', 'agent')
-    expect(onSignedIn).toHaveBeenCalledWith('agent-token', 'pt')
+    expect(onSignedIn).toHaveBeenCalledWith('agent-token', 'pt', 'diego')
   })
 
   it('stays fixed-Spanish for the agent audience regardless of the selected persona’s own language (D91)', async () => {
@@ -177,6 +177,6 @@ describe('SignInScreen', () => {
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
 
-    expect(onSignedIn).toHaveBeenCalledWith('token-xyz', 'es')
+    expect(onSignedIn).toHaveBeenCalledWith('token-xyz', 'es', 'zora')
   })
 })
