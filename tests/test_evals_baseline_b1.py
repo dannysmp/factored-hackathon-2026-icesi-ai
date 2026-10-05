@@ -221,7 +221,7 @@ def test_run_case_logs_the_real_cost_of_every_call_it_makes(
 ) -> None:
     """Unlike P, B1's own client discards its token counts once send() returns; this is the only
     place that spend is ever recorded, so a real evaluation run's B1 cost must be computable from
-    these lines alone, the same guarantee E9 already established for P's own turn_completed."""
+    these lines alone, the same guarantee P's own turn_completed already gives."""
     stub = _StubAnthropic(
         [
             _response(

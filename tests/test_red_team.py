@@ -3,16 +3,17 @@ Red-Team Structural Tests
 ===========================
 
 Component: the dialogue controller and its collaborators, exercised against the categories of
-attack the evaluation plan names (prompt injection via a message and via a poisoned data field,
-exfiltration, policy-override attempts). Hermetic: ``FakeLlm``/scripted `NluResult`s, no network.
+attack the evaluation covers (prompt injection via a message and via a poisoned data field,
+exfiltration, policy-override attempts). Hermetic: ``FakeLlm``/scripted `NluResult`s, no
+network.
 
 Overview
 --------
-The full 32-case adversarial golden set (`evals/golden/adversarial.py`) and the runner that will
-score a real model against it are stream 3's own, separate work (E8). This module does not
-duplicate that data or scoring; it proves the *structural* guarantees stream 2's own code makes
-regardless of what a compromised or mistaken understanding step returns — the guarantees that make
-the golden set's cases safe to pass in the first place, independent of any one model's judgment:
+The full 32-case adversarial golden set (`evals/golden/adversarial.py`) and the runner that
+scores a real model against it live under `evals/`. This module does not duplicate that data or
+scoring; it proves the *structural* guarantees the application code makes regardless of what a
+compromised or mistaken understanding step returns — the guarantees that make the golden set's
+cases safe to pass in the first place, independent of any one model's judgment:
 
 - No contract field the understanding step can extract lets a customer specify an arbitrary
   transaction or case reference; the only way a transaction is ever selected is the controller's
@@ -22,7 +23,7 @@ the golden set's cases safe to pass in the first place, independent of any one m
 - A policy question never states a figure the retrieval step itself supplied: the figure always
   comes from the loaded ``Policy`` object, keyed by the conversation's own known category, so a
   poisoned or manipulated query can at most cause a wrong section match or an abstention, never a
-  fabricated number (ADR-16's retrieval boundary).
+  fabricated number (the retrieval boundary).
 - A poisoned merchant name (or any other fact) never reaches the model-rendered path's own prompt:
   the model is told only the intent and field names it may cite, never a grounded value.
 """
@@ -168,7 +169,7 @@ def test_a_customer_naming_someone_elses_transaction_ref_in_free_text_is_never_l
     (an unauthorized-access attempt), the controller's own search only ever matches transactions by
     merchant/amount/date/last-four against this session's own transactions — never by a customer-
     supplied ref, because TransactionHint has no ref field for one to travel through in the first
-    place (the ToolPort itself is also session-scoped, a stream-1 guarantee tested separately)."""
+    place (the ToolPort itself is also session-scoped, a guarantee tested separately)."""
     store = InMemoryDialogueStore()
     port = FakeToolPort(transactions=(_transaction(),))
     result = NluResult(
@@ -226,7 +227,7 @@ def test_a_manipulated_policy_query_never_states_a_figure_the_retrieval_step_its
 ):
     """A prompt-injection-style policy question can steer which corpus section matches, but the
     figure a reply states always comes from the loaded Policy object for the conversation's own
-    known category — never text the retrieval step itself surfaced (ADR-16)."""
+    known category — never text the retrieval step itself surfaced."""
     policy = load_policy()
     retriever = LexicalRetriever.from_corpus()
     injected_query = (

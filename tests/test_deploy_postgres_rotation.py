@@ -3,13 +3,13 @@ Postgres Password Rotation Tests
 =================================
 
 Component: the wait-then-rotate step ``infra/scripts/05-deploy.sh`` runs after
-``docker compose ... up -d`` (issue #149). ``POSTGRES_PASSWORD`` only takes effect on
-Postgres's own first init of an empty data directory; a redeploy against an
-already-initialized volume silently keeps the old live password unless something
-explicitly rotates it. These tests read the exact shell block out of the real script and
-run it against real, disposable Postgres containers, so a revert or edit of the rotation
-step changes what the test executes, not a hand-copied duplicate of it. Needs Docker;
-skipped when it is not available.
+``docker compose ... up -d``. ``POSTGRES_PASSWORD`` only takes effect on Postgres's own
+first init of an empty data directory; a redeploy against an already-initialized volume
+silently keeps the old live password unless something explicitly rotates it. These tests
+read the exact shell block out of the real script and run it against real, disposable
+Postgres containers, so a revert or edit of the rotation step changes what the test
+executes, not a hand-copied duplicate of it. Needs Docker; skipped when it is not
+available.
 """
 
 from __future__ import annotations
@@ -182,7 +182,7 @@ def postgres_project(tmp_path: Path) -> Iterator[dict[str, Any]]:
 def test_rotation_converges_the_live_password_on_an_already_initialized_volume(
     postgres_project: dict[str, Any],
 ) -> None:
-    """The scenario issue #149's fix targets: a redeploy reusing the existing volume."""
+    """The scenario the rotation step exists for: a redeploy reusing the existing volume."""
     up = postgres_project["up"]
     port = postgres_project["port"]
     rotate = postgres_project["rotate"]
@@ -197,7 +197,7 @@ def test_rotation_converges_the_live_password_on_an_already_initialized_volume(
     up("new-password-456")
     assert _wait_until(lambda: _can_connect(port(), "old-password-123")), (
         "expected POSTGRES_PASSWORD alone to be ignored on a non-fresh volume -- if this "
-        "fails, the premise behind issue #149 no longer holds and needs re-deriving"
+        "fails, the premise behind the rotation step no longer holds and needs re-deriving"
     )
     assert not _can_connect(port(), "new-password-456")
 

@@ -277,7 +277,7 @@ def all_envelopes() -> Iterator[tuple[Lang, str, Envelope]]:
 
     Reads the committed JSON files back rather than the in-memory builders, so a caller also
     exercises the same file the "one source" check pins against — the same file a client, an
-    evaluation harness or another stream would read.
+    evaluation harness or another consumer would read.
     """
     for lang in LANGUAGES:
         flows_in_lang = json.loads(path_for(lang).read_text(encoding="utf-8"))
