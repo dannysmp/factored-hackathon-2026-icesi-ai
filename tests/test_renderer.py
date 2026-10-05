@@ -111,6 +111,26 @@ def test_format_date_is_absolute_and_carries_the_year(lang: str, expected: str) 
     assert format_date(_DOMAIN_DATE, lang) == expected  # type: ignore[arg-type]
 
 
+_MONTH_NAMES = {
+    "es": (
+        "enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre"
+    ),
+    "pt": (
+        "janeiro fevereiro março abril maio junho julho agosto setembro outubro novembro dezembro"
+    ),
+    "en": ("January February March April May June July August September October November December"),
+}
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_format_date_names_every_month_in_the_reply_language(lang: str) -> None:
+    """Each of the twelve months is written with its own name, not another language's."""
+    for month, name in enumerate(_MONTH_NAMES[lang].split(), start=1):
+        written = format_date(date(2026, month, 5), lang)  # type: ignore[arg-type]
+
+        assert written == (f"{name} 5, 2026" if lang == "en" else f"5 de {name} de 2026")
+
+
 @pytest.mark.parametrize(
     ("lang", "expected"),
     [
