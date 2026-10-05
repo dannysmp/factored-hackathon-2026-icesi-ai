@@ -127,7 +127,7 @@ redirection and the same offer of a person.
 | Turn | Speaker | Line |
 |---|---|---|
 | 1 | Customer | Hay un cargo que no reconozco y creo que es un fraude, alguien está usando mi tarjeta. |
-| 1 | System (`handoff` / `handoff_fraud`) | Esto lo atiende un asesor de inmediato por ser un posible fraude. No prometo un resultado. Le contactarán en un plazo de 24 horas. Su referencia es T-100. |
+| 1 | System (`handoff` / `handoff_fraud`) | Esto lo atiende un asesor de inmediato por ser un posible fraude. No prometo un resultado. Su referencia es T-100. |
 
 **What this demonstrates:** a fraud claim always escalates to a person, regardless of the
 transaction's amount or the risk model's score — the risk score only ever routes a case to human
@@ -140,7 +140,7 @@ filing decision was made by the system here.
 | Turn | Speaker | Line |
 |---|---|---|
 | 1 | Customer | Tem uma cobrança que eu não reconheço e acho que é uma fraude, alguém está usando meu cartão. |
-| 1 | System (`handoff` / `handoff_fraud`) | Como pode se tratar de fraude, um atendente cuida disso de imediato. Não posso prometer um resultado. Um atendente entrará em contato com você em até 24 horas. Sua referência é T-100. |
+| 1 | System (`handoff` / `handoff_fraud`) | Como pode se tratar de fraude, um atendente cuida disso de imediato. Não posso prometer um resultado. Sua referência é T-100. |
 
 **What this demonstrates:** the same escalation path, correctly worded in Portuguese.
 

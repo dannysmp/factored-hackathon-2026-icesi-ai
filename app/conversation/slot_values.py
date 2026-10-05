@@ -193,20 +193,12 @@ def _policy_answer(e: RenderEnvelope) -> tuple[SlotValue, ...]:
 
 
 def _handoff(e: RenderEnvelope) -> tuple[SlotValue, ...]:
-    """The generic review sentence, plus the ticket reference and contact window when the facts have
-    them.
-    """
+    """The generic review sentence, plus the ticket reference when the facts have one."""
     entries = [
         SlotValue(field=GroundedField.OUTCOME_STATEMENT, value=_HANDOFF_OUTCOME_STATEMENT[e.lang])
     ]
     if e.facts.ticket_ref is not None:
         entries.append(SlotValue(field=GroundedField.TICKET_REF, value=e.facts.ticket_ref))
-    if e.facts.contact_within_hours is not None:
-        entries.append(
-            SlotValue(
-                field=GroundedField.CONTACT_WITHIN_HOURS, value=str(e.facts.contact_within_hours)
-            )
-        )
     return tuple(entries)
 
 
