@@ -165,11 +165,14 @@ def test_policy_answer_lists_one_entry_per_value_with_no_name_prefix() -> None:
     )
     envelope = _envelope(
         intent=Intent.POLICY_ANSWER,
+        lang="en",
         sources=(source,),
         facts=DisputeFacts(
             policy_values=(
                 PolicyValue(name="filing_window_days", value="120"),
-                PolicyValue(name="evidence_required", value="receipt, statement"),
+                PolicyValue(
+                    name="evidence_required", value="card_in_possession, merchant_not_recognized"
+                ),
             )
         ),
     )
@@ -179,7 +182,11 @@ def test_policy_answer_lists_one_entry_per_value_with_no_name_prefix() -> None:
     policy_entries = [
         entry.value for entry in values.entries if entry.field is GroundedField.POLICY_VALUE
     ]
-    assert policy_entries == ["120", "receipt, statement"]
+    assert policy_entries == [
+        "120",
+        "confirm you still have your card and say which part of the charge you do not recognize "
+        "(merchant, date or amount)",
+    ]
     assert all("filing_window_days" not in entry for entry in policy_entries)
 
 

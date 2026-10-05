@@ -23,6 +23,7 @@ from app.conversation.renderer import (
     reference_date_line,
     render,
 )
+from app.domain.policy import load_policy  # The shipped policy's evidence identifiers
 from app.domain.policy.models import DisputeCategory, Outcome, TransactionStatus
 from contracts.service_v1.envelope import (
     CaseFact,
@@ -654,3 +655,85 @@ def test_dispute_status_grounds_a_case_without_an_expected_response_date() -> No
     rendered = render(envelope)
 
     assert case.case_number in rendered.reply
+
+
+_EVIDENCE_ANSWER_VALUES = (
+    PolicyValue(name="filing_window_days", value="60"),
+    PolicyValue(name="first_response_days", value="10"),
+    PolicyValue(name="evidence_required", value="card_in_possession, merchant_not_recognized"),
+)
+
+
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [
+        (
+            "es",
+            "el plazo para presentar la disputa es de 60 días; el banco da una primera respuesta "
+            "dentro de 10 días, contados desde la fecha de presentación; para la disputa se le "
+            "pide: confirmar que aún tiene la tarjeta y indicar qué parte del cargo no "
+            "reconoce (comercio, fecha o monto).",
+        ),
+        (
+            "pt",
+            "o prazo para apresentar a contestação é de 60 dias; o banco dá a primeira resposta "
+            "em até 10 dias, contados a partir da data de apresentação; para a contestação, "
+            "pedimos: a confirmação de que o cartão continua com você e a indicação de qual "
+            "parte da cobrança você não reconhece (estabelecimento, data ou valor).",
+        ),
+        (
+            "en",
+            "the filing window is 60 days; the bank gives a first response within 10 days of "
+            "filing; for the dispute we ask for: confirm you still have your card and say which "
+            "part of the charge you do not recognize (merchant, date or amount).",
+        ),
+    ],
+)
+def test_a_policy_answer_states_every_figure_in_the_reply_language(
+    lang: Lang, expected: str
+) -> None:
+    """The reply names each figure in words, never by its internal identifier."""
+    envelope = _envelope(
+        intent=Intent.POLICY_ANSWER,
+        template_id=TemplateId.POLICY_ANSWER,
+        lang=lang,
+        facts=DisputeFacts(policy_values=_EVIDENCE_ANSWER_VALUES),
+        sources=(_source(),),
+    )
+
+    rendered = render(envelope)
+
+    assert rendered.reply.endswith(expected)
+    for identifier in ("filing_window_days", "first_response_days", "evidence_required"):
+        assert identifier not in rendered.reply
+    assert "card_in_possession" not in rendered.reply
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_every_policy_figure_the_answer_builders_produce_has_a_sentence_and_wording(
+    lang: Lang,
+) -> None:
+    """A figure added to the policy answer cannot reach the reply without its wording."""
+    policy = load_policy()
+    envelope = _envelope(
+        intent=Intent.POLICY_ANSWER,
+        template_id=TemplateId.POLICY_ANSWER,
+        lang=lang,
+        facts=DisputeFacts(
+            policy_values=tuple(
+                value
+                for category in DisputeCategory
+                for value in (
+                    PolicyValue(name="filing_window_days", value="1"),
+                    PolicyValue(name="first_response_days", value="1"),
+                    PolicyValue(
+                        name="evidence_required",
+                        value=", ".join(policy.evidence_required[category]),
+                    ),
+                )
+            )
+        ),
+        sources=(_source(),),
+    )
+
+    assert "_" not in render(envelope).reply.split("”", 1)[1]

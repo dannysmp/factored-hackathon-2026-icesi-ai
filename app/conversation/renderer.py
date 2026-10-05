@@ -35,9 +35,9 @@ Runtime Contract
 ``render(envelope) -> RenderedReply``. ``reference_date_line(domain_date, lang)``.
 ``demo_notice(lang)``. ``transaction_line(transaction, lang)`` is the one-line description of a
 transaction used for a numbered list. ``format_money``/``format_date``/``amount_text``/
-``CATEGORY_NAMES``/``INELIGIBLE_TEXT`` are exported so the model-rendered path's own slot values
-(``app.conversation.slot_values``) format a figure identically to the template path, rather than
-a second, independently maintained copy.
+``CATEGORY_NAMES``/``INELIGIBLE_TEXT``/``policy_value_text`` are exported so the model-rendered
+path's own slot values (``app.conversation.slot_values``) format a figure identically to the
+template path, rather than a second, independently maintained copy.
 
 Limitations
 -----------
@@ -55,11 +55,13 @@ from datetime import date  # Absolute dates, always formatted in words
 from typing import Literal  # Which path produced a reply
 
 # Local modules
+from app.domain.policy.corpus import MESSAGES  # The policy corpus's own evidence wording
 from app.domain.policy.models import DisputeCategory, Outcome  # Shared vocabulary
 from contracts.service_v1.envelope import (  # The envelope and its typed facts
     CustomerReason,
     Lang,
     Money,
+    PolicyValue,
     RenderEnvelope,
     TemplateId,
     TransactionFact,
@@ -558,6 +560,52 @@ def _no_case_found(e: RenderEnvelope) -> str:
     }[e.lang]
 
 
+def policy_value_text(value: PolicyValue, lang: Lang) -> str:
+    """The figure of ``value`` as it is quoted in ``lang``.
+
+    An evidence list is written in the policy corpus's own wording, so the reply and the corpus
+    name the same items; a count is quoted as it is.
+
+    Raises
+    ------
+    KeyError
+        When an evidence identifier has no wording in the corpus.
+    """
+    if value.name != "evidence_required":
+        return value.value
+    messages = MESSAGES[lang]
+    items = [messages.evidence_items[item] for item in value.value.split(", ")]
+    if len(items) <= 1:
+        return "".join(items)
+    return f"{', '.join(items[:-1])} {messages.and_word} {items[-1]}"
+
+
+# One clause per figure the policy answer may quote, with ``{value}`` standing for its text.
+_POLICY_FIGURE_CLAUSES: dict[Lang, dict[str, str]] = {
+    "es": {
+        "filing_window_days": "el plazo para presentar la disputa es de {value} días",
+        "first_response_days": (
+            "el banco da una primera respuesta dentro de {value} días, contados desde la fecha "
+            "de presentación"
+        ),
+        "evidence_required": "para la disputa se le pide: {value}",
+    },
+    "pt": {
+        "filing_window_days": "o prazo para apresentar a contestação é de {value} dias",
+        "first_response_days": (
+            "o banco dá a primeira resposta em até {value} dias, contados a partir da data de "
+            "apresentação"
+        ),
+        "evidence_required": "para a contestação, pedimos: {value}",
+    },
+    "en": {
+        "filing_window_days": "the filing window is {value} days",
+        "first_response_days": "the bank gives a first response within {value} days of filing",
+        "evidence_required": "for the dispute we ask for: {value}",
+    },
+}
+
+
 def _policy_answer(e: RenderEnvelope) -> str:
     """Quote the retrieved policy section by title together with the values it states."""
     title = e.sources[0].title_for(e.lang)
@@ -567,11 +615,14 @@ def _policy_answer(e: RenderEnvelope) -> str:
             "pt": f"Você pode consultar isso na seção “{title}” da nossa política de disputas.",
             "en": f"You can find this in the “{title}” section of our dispute policy.",
         }[e.lang]
-    values = ", ".join(f"{v.name}: {v.value}" for v in e.facts.policy_values)
+    clauses = "; ".join(
+        _POLICY_FIGURE_CLAUSES[e.lang][v.name].format(value=policy_value_text(v, e.lang))
+        for v in e.facts.policy_values
+    )
     parts = {
-        "es": f"Según la sección “{title}”: {values}.",
-        "pt": f"De acordo com a seção “{title}”: {values}.",
-        "en": f"According to the “{title}” section: {values}.",
+        "es": f"Según la sección “{title}”, {clauses}.",
+        "pt": f"De acordo com a seção “{title}”, {clauses}.",
+        "en": f"According to the “{title}” section, {clauses}.",
     }
     return parts[e.lang]
 
