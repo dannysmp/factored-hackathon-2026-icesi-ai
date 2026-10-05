@@ -1519,9 +1519,10 @@ class DialogueController:
         rendered directly from its stored ticket; a pending clarification is a pure re-render.
         The ticket takes precedence over a case when the session is handed off or filed no case,
         so a session holding both replays its handoff, which is the latest outcome but not
-        necessarily the one the replayed turn id originally produced. The same holds for a
-        session with a filed case: a retried turn id that followed the filing, and answered
-        something other than the filing, replays the filing result.
+        necessarily the one the replayed turn id originally produced. A question still open
+        comes before a filed case: a filing leaves nothing pending, so an open question was
+        asked by a later turn and is what a retry of that turn is owed. A retried turn id that
+        followed the filing and left no question open replays the filing result.
         ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
         cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
         clears the pending slot and leaves no case or ticket behind, so it can never be confused
@@ -1539,6 +1540,9 @@ class DialogueController:
         ):
             return self._ticket_envelope(state)
 
+        if state.pending_slot is not None:
+            return self._replay_pending(state, state.pending_slot)
+
         if state.last_case_number is not None:
             case = dispatch(self._tool_port, tool_contracts.Tool.GET_CASE, state.last_case_number)
             if isinstance(case, ToolFailure) or case is None:
@@ -1552,9 +1556,6 @@ class DialogueController:
             return self._envelope(
                 state, Intent.FILING_RESULT, TemplateId.FILING_RESULT, facts=facts
             )
-
-        if state.pending_slot is not None:
-            return self._replay_pending(state, state.pending_slot)
 
         if state.phase is ConversationPhase.CLOSED:
             return self._envelope(state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
