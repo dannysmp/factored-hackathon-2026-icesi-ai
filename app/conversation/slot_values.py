@@ -63,6 +63,7 @@ from app.conversation.renderer import (  # Reuse the template path's own tables 
     amount_text,
     case_status_label,
     format_date,
+    policy_value_text,
 )
 from app.domain.policy.models import Outcome
 from contracts.service_v1.envelope import (  # The envelope and its typed facts
@@ -185,7 +186,7 @@ def _policy_answer(e: RenderEnvelope) -> tuple[SlotValue, ...]:
     """The cited section's title in the reply language and each policy figure it quotes."""
     entries = [SlotValue(field=GroundedField.SOURCE_TITLE, value=e.sources[0].title_for(e.lang))]
     entries.extend(
-        SlotValue(field=GroundedField.POLICY_VALUE, value=value.value)
+        SlotValue(field=GroundedField.POLICY_VALUE, value=policy_value_text(value, e.lang))
         for value in e.facts.policy_values
     )
     return tuple(entries)
