@@ -28,7 +28,9 @@ from app.conversation.controller import (
     _ROUTES,
     DialogueController,
     _idempotency_key,
+    _LEADING_DETERMINERS,
     _matches_hint,
+    _names_no_merchant,
 )
 from app.conversation.handoff import HandoffContent, build_packet
 from app.conversation.llm_understanding import LlmNlu
@@ -5498,6 +5500,13 @@ _GENERIC_MERCHANTS = [
     "one transfer",
     "some services",
     "unos pagos",
+    "meus pagamentos",
+    "minhas compras",
+    "suas transferencias",
+    "essas lojas",
+    "nuestras compras",
+    "tus pagos",
+    "estes servicos",
     "uns serviços",
     "las transferencias",
     "Transferencia ",
@@ -5531,6 +5540,18 @@ def _transfer_controller(
             )
         ),
     )
+
+
+@pytest.mark.parametrize("determiner", sorted(_LEADING_DETERMINERS))
+def test_every_leading_determiner_is_dropped_before_a_generic_word(determiner: str) -> None:
+    assert _names_no_merchant(f"{determiner} servicio")
+
+
+@pytest.mark.parametrize("hint", ["su", "this", "Su Casa", "One Medical", "El Corte Inglés"])
+def test_a_hint_that_is_not_a_determiner_before_a_generic_word_stays_a_merchant(
+    hint: str,
+) -> None:
+    assert not _names_no_merchant(hint)
 
 
 @pytest.mark.parametrize("typed", _GENERIC_MERCHANTS)
