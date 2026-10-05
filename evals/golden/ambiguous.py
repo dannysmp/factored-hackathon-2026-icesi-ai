@@ -43,8 +43,8 @@ Limitations
 -----------
 The vague-transaction-reference subtype's grounding (two real transactions within days of each
 other) is a property of the customer's seeded data at authoring time; it is not re-verified at
-case-authoring time against a moving reference date, since the golden set is frozen before
-tuning ends, per the evaluation plan.
+case-authoring time against a moving reference date, since the golden set is frozen before tuning
+ends.
 """
 
 from __future__ import annotations

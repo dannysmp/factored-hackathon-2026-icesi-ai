@@ -4,16 +4,16 @@ Judge Grounding Facts
 
 Overview
 --------
-Assembles the ``facts_and_sources`` text the LLM judge (``evals.judge``) and the human validation
-sample (H4) both score a case's replies against: what a grounded reply is allowed to state. Never
-reads the running conversation's own envelope (ADR-2's boundary, the same one
+Assembles the ``facts_and_sources`` text the LLM judge (``evals.judge``) and the human
+judge-validation sample both score a case's replies against: what a grounded reply is allowed to
+state. Never reads the running conversation's own envelope (the grounding boundary, the same one
 ``evals.scoring``'s deterministic checks already refuse to reopen "from outside the process") —
 every fact here comes from either the store's own tables, by the transcript's own ``session_id``
 (the identical "two vantage points" precedent ``evals.scoring``'s ``_case_row_exists`` and
 ``_handoff_ticket_is_backed`` already use), or the golden-set case's own authored, committed
-``expected_policy_section_id``. Also attaches this text, and the run's own reply text, to a
-finished ``CaseResult`` (``attach_masked_transcript``) so a judge or a human rater can read both
-long after the run that produced them has ended.
+``expected_policy_section_id``. Also attaches this text, and the run's own reply text, to a finished
+``CaseResult`` (``attach_masked_transcript``) so a judge or a human rater can read both long after
+the run that produced them has ended.
 
 Scope
 -----
@@ -56,9 +56,9 @@ Limitations
 Only the transaction behind a case the session actually filed is included; a status-inquiry case
 whose transaction already existed in seeded state before this run, but whose session never filed a
 new case, is not resolved here (the transcript alone does not name that transaction id without
-reopening the envelope). Retrieval-quality judgment — whether the system found the *best* of
-several plausible sections — is out of scope for grounding; the plan's own "recall at three of
-policy retrieval" deterministic metric covers that separately.
+reopening the envelope). Retrieval-quality judgment — whether the system found the *best* of several
+plausible sections — is out of scope for grounding; the deterministic "recall at three of policy
+retrieval" metric covers that separately.
 """
 
 from __future__ import annotations
@@ -176,9 +176,9 @@ def attach_masked_transcript(dsn: str, transcript: RunTranscript, result: CaseRe
 
     Every reply ``transcript`` recorded, joined in order, and this same transcript's own grounding
     text (``assemble_facts_and_sources``) — both PAN-masked before they are attached, the same
-    unconditional egress control every other outbound LLM field already goes through (CLAUDE.md's
-    own PII-minimization rule draws no exception for text this module already trusts came from the
-    store rather than the customer).
+    unconditional egress control every other outbound LLM field already goes through (the
+    PII-minimization rule draws no exception for text this module already trusts came from the store
+    rather than the customer).
 
     Raises
     ------

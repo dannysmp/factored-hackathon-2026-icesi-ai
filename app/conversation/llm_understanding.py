@@ -15,9 +15,10 @@ Scope
 In: building the request (prompt, masked text, forced tool schema), and turning the tool's
 arguments into a validated ``NluResult`` with one bounded repair before falling back.
 Out: the model call itself (``app.llm.client.LlmClient`` and its Anthropic adapter), masking
-(``app.llm.masking``), the prompt file (``app.llm.prompts``), language stickiness across turns and
-the deterministic missing-slot guard (``app.conversation.language``, ``app.conversation.guard`` —
-both pure functions the controller applies to whatever this class returns).
+(``app.llm.masking``), the prompt file (``app.llm.prompts``), the language the conversation
+continues in (the controller's decision, from ``DialogueState``) and the deterministic
+missing-slot guard (``app.conversation.guard``, a pure function the controller applies to
+whatever this class returns).
 
 Design Principles
 -----------------
@@ -71,9 +72,7 @@ from pydantic import (  # Loose intermediate model
 )
 
 # Local modules
-from app.conversation.date_expressions import (
-    resolve as resolve_date,
-)  # Deterministic date resolution
+from app.conversation.date_expressions import resolve as resolve_date  # Deterministic dates
 from app.conversation.understanding import (  # What this call cost; raised, never swallowed
     TurnAccounting,
     UnderstandingUnavailable,
@@ -96,8 +95,10 @@ from contracts.service_v1.nlu import (  # The typed result and its vocabulary
     TransactionHint,
 )
 
+# The versioned prompt this adapter loads when none is injected.
 _PROMPT_NAME = "nlu_v1"
 
+# The forced tool call: its schema is what the model must answer with, and the only output read.
 _NLU_TOOL = ToolSpec(
     name="record_understanding",
     description=(
@@ -185,15 +186,15 @@ _ENUM_REPAIRS: Mapping[str, frozenset[str]] = {
 }
 
 
-# A figure is read only when it is exactly: an optional currency (a symbol, or one of the ISO 4217
-# codes the bank's customers write, in either case, or "U$S" as Rioplatense Spanish writes dollars),
-# a number whose marks are digit groups and separators, and an optional currency. Anything else (a
-# sign, a percentage, an exponent, words, a code outside this list, digit runs split by text) is
-# not an amount and is never repaired into one.
+# A figure is read only when it is exactly: an optional currency (a symbol, one of the ISO 4217
+# codes the bank's customers write in either ASCII case, or "U$S" as Rioplatense Spanish writes
+# dollars), a number whose marks are digit groups and separators, and an optional currency.
+# Anything else (a sign, a percentage, an exponent, words, a code outside this list, digit runs
+# split by text) is not an amount and is never repaired into one.
 _CURRENCY_CODES = (
     "ARS|BOB|BRL|CLP|COP|CRC|CUP|DOP|EUR|GBP|GTQ|HNL|JPY|MXN|NIO|PAB|PEN|PYG|USD|UYU|VES"
 )
-_CURRENCY = rf"(?:(?i:(?:{_CURRENCY_CODES})\$?|U\$S|US\$)|R\$|\$|€|£|¥)"
+_CURRENCY = rf"(?:(?ai:(?:{_CURRENCY_CODES})\$?|U\$S|US\$)|R\$|\$|€|£|¥)"
 _SPACING = " \u00a0\u202f"
 _AMOUNT_TEXT = re.compile(
     rf"(?:{_CURRENCY}[{_SPACING}]*)?"
@@ -387,7 +388,11 @@ def _parse(tool_input: Mapping[str, object], *, reference_date: date) -> NluResu
 
 
 class LlmNlu:
-    """``Understanding`` implemented through the LLM port."""
+    """``Understanding`` implemented through the LLM port.
+
+    Holds the port, the model id and the prompt; it keeps no per-conversation state, so one
+    instance serves every session.
+    """
 
     def __init__(self, llm: LlmClient, *, model: str, prompt: PromptTemplate | None = None) -> None:
         """
@@ -409,8 +414,8 @@ class LlmNlu:
     ) -> tuple[NluResult, TurnAccounting | None]:
         """Understand ``text`` through the model, or return unusable understanding.
 
-        ``reference_date`` resolves a customer-stated transaction date against the
-        domain calendar's own reference date — never the wall clock.
+        ``reference_date`` resolves a customer-stated transaction date against the domain
+        calendar's own reference date — never the wall clock.
 
         Empty text and an invalid call's output are both treated as unusable: the customer is
         never shown a model or provider error, only asked again — genuine ambiguity a
