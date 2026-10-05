@@ -184,7 +184,7 @@ from contracts.service_v1.tools import (
 
 logger = logging.getLogger(__name__)
 
-# A placeholder until a tool exposes the customer's first name (see Limitations): agent-facing
+# Stands in for the customer's first name, which no tool exposes (see Limitations): agent-facing
 # only, never shown to the customer.
 _UNKNOWN_FIRST_NAME = "Customer"
 
@@ -404,10 +404,11 @@ class DialogueController:
         The flow is: load the session's state; a turn id already recorded on it is a replay and is
         answered without redoing anything unsafe; a session at its turn cap is answered with a
         handoff and no model call; otherwise the message is understood, the outcome is decided and
-        acted on (``_advance``), the cost line is logged, and the new state is saved with
-        optimistic concurrency, and the reply is rendered after the save. An unreachable
-        understanding dependency becomes a handoff rather than a clarification attempt. A save
-        that loses a race on the same turn id answers with the winner's result.
+        acted on (``_advance``), the cost line is logged, the new state is saved with
+        optimistic concurrency, and the reply is rendered after the save.
+
+        An unreachable understanding dependency becomes a handoff rather than a clarification
+        attempt. A save that loses a race on the same turn id answers with the winner's result.
 
         Parameters
         ----------

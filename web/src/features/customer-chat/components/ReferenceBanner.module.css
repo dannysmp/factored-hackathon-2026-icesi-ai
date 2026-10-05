@@ -1,5 +1,6 @@
-/* One compact strip: the two lines sit side by side when there is room and stack tightly when
-   there is not, so the conversation starts as high on the screen as it can. */
+/* Styles the reference-date and demonstration-notice banner as one compact strip: the two lines
+   sit side by side when there is room and stack tightly when there is not, so the conversation
+   starts as high on the screen as it can. */
 .banner {
   display: flex;
   flex-wrap: wrap;

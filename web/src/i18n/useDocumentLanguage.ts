@@ -1,3 +1,4 @@
+/** A hook that keeps the document's `lang` attribute and title in step with the page language. */
 import { useEffect } from 'react'
 import type { Lang } from './lang'
 

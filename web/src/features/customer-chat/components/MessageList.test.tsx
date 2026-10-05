@@ -1,3 +1,7 @@
+/**
+ * Component test: `MessageList` labels each message by sender, marks unsent ones, shows the typing
+ * row politely, scrolls only to genuinely new content, and has no accessibility violations.
+ */
 import { render, screen } from '@testing-library/react'
 import { axe } from 'jest-axe'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -30,6 +34,24 @@ describe('MessageList', () => {
       screen.getByText((_content, element) => element?.textContent === 'You: Hello'),
     ).toBeInTheDocument()
   })
+
+  it.each([
+    ['es', 'Hola', 'Yo: Hola'],
+    ['pt', 'Olá', 'Eu: Olá'],
+  ] as const)(
+    'labels the customer\u2019s own message in the first person in %s',
+    (lang, text, label) => {
+      render(
+        <MessageList
+          messages={[{ id: 'a', from: 'customer', text }]}
+          lang={lang}
+          pending={false}
+        />,
+      )
+
+      expect(screen.getByRole('listitem')).toHaveTextContent(label)
+    },
+  )
 
   it('reads its copy from the catalog matching lang, not a hardcoded English string', () => {
     render(<MessageList messages={[]} lang="es" pending={false} />)

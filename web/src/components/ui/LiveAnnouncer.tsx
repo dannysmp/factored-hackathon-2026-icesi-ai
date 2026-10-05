@@ -1,3 +1,4 @@
+/** A visually hidden live region for announcing changes to screen-reader users. */
 import type { JSX } from 'react'
 import styles from './LiveAnnouncer.module.css'
 

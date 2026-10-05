@@ -1,3 +1,4 @@
+/** The ticket timeline: a ticket's decisions and reasons as a table, in the order they happened. */
 import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { JSX } from 'react'
 import type { TimelineEntry } from '../contracts'
