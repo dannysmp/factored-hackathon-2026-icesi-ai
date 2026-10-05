@@ -255,6 +255,14 @@ def test_a_repeated_run_shows_a_range_a_single_run_does_not() -> None:
     assert "range" in section
 
 
+def test_repeated_run_section_names_the_run_count_in_a_plain_heading() -> None:
+    text = render_markdown(_report(systems=(_system("P", run_count=3),)))
+
+    section = text.split("## 5.")[1].split("## 6.")[0]
+    assert "### P\n\nRuns: 3." in section
+    assert "(3 runs)" not in section
+
+
 # -----------------------------------------------------------------------------
 # Judge-scored quality — the live judge's own verdicts over a system's last run
 # -----------------------------------------------------------------------------

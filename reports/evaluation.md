@@ -63,7 +63,9 @@ Judge calls: 135; judge cost: 0.7015 USD. This is evaluation tooling cost, repor
 
 ## 5. Repeated-run variability
 
-### P (3 runs)
+### P
+
+Runs: 3.
 
 4 case(s) flipped:
 
