@@ -53,8 +53,12 @@ describe('actionResultLabel', () => {
   })
 
   it('words every outcome so it agrees with a masculine and a feminine action alike', () => {
-    expect(actionResultLabel('reached')).toBe('Se completó')
-    expect(actionResultLabel('refused')).toBe('Se rechazó')
+    expect(`${actionLabel('turn_cap')}: ${actionResultLabel('reached')}`).toBe(
+      'Límite de turnos: Se alcanzó',
+    )
+    expect(`${actionLabel('create_dispute_case')}: ${actionResultLabel('refused')}`).toBe(
+      'Registro de la disputa: Se rechazó',
+    )
   })
 
   it('reads a policy reason code through its own label', () => {

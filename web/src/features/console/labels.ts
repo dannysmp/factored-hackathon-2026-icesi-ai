@@ -150,7 +150,7 @@ export const ACTION_LABELS: Record<string, string> = {
  * participle.
  */
 export const ACTION_RESULT_LABELS: Record<string, string> = {
-  reached: 'Se completó',
+  reached: 'Se alcanzó',
   unavailable: 'No disponible',
   unverified: 'Sin verificar',
   refused: 'Se rechazó',
