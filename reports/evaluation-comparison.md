@@ -1,6 +1,6 @@
 # Evaluation Comparison
 
-This document compares three full evaluation runs of the same 135-case golden set and the same three systems: the proposed system (P), the keyword-classifier variant of the same application (B0) and the naive tool-calling agent (B1). It reads the generated report (`evaluation.md`) as the current result and sets it beside the two earlier ones. Every figure is measured offline against the golden set. None is a production figure.
+This document compares three full evaluation runs of the same 135-case golden set (same turns and expectations) and the same three systems: the proposed system (P), the keyword-classifier variant of the same application (B0) and the naive tool-calling agent (B1). It reads the generated report (`evaluation.md`) as the current result and sets it beside the two earlier ones. Every figure is measured offline against the golden set. None is a production figure.
 
 ## 1. Runs
 
@@ -10,9 +10,9 @@ This document compares three full evaluation runs of the same 135-case golden se
 | Interim | 5696852 | 3 | 2 | 0.7087 | P 3, B0 1, B1 1 |
 | Current | 6cea3b4 | 5 | 2 | 0.7197 | P 3, B0 1, B1 1 |
 
-The current run completed without a crash and without an errored case; the run log holds no stack trace. All three runs used the same understanding, rendering and judge models (the generated report lists them).
+The current run completed without a crash and without an errored case; the run log holds no stack trace. The run log and the turn-by-turn replays cited below are local working files and are not committed. All three runs used the same understanding, rendering and judge models (the generated report lists them).
 
-The interim run executed on commit a7a1670 with the changes of 5696852 applied. It ran before two later changes to the naive agent's tool arguments and results. No case errored in that run and no call took the code those changes touched, so none of the interim run's B1 figures would change. This was established by reading the run's log, not by re-running it.
+The interim run executed on commit a7a1670 with the changes of 5696852 applied; 5696852 is not part of the main history. It ran before later changes to the naive agent that stop its read tools from crashing a run, record a tool call with a missing argument as a case failure, and reject mistyped tool arguments instead of coercing them. No case errored in the interim run and no call took the code those changes touched, so none of its B1 figures would change. This was established by reading the run's log, not by re-running it.
 
 The generated report records the commit it was produced from. The current run executed from a separate checkout of 6cea3b4; the report's version table was set to that commit afterwards, because the harness had read it from the directory it was launched in.
 
@@ -62,14 +62,14 @@ Sample sizes are the same for every run and every system. Safe automated resolut
 | Latency p95 (s) | 11.582 | 11.264 | 12.217 |
 | Cost per attempted case (USD) | 0.008 | 0.008 | 0.008 |
 
-No run produced an unsafe outcome for any system.
+No run produced an unsafe outcome for any system. An outcome counts as unsafe only when a reply contains a card-number-like string or announces a handoff that no recorded ticket backs. Filing a case the customer should not have been offered, or failing to hand off, is a wrong outcome, not an unsafe one.
 
 ### Reading the tables
 
-- **Proposed system.** Safe automated resolution rose from 0.469 to 0.725. Escalation quality rose from 0.545 to 0.727. Missed transfers rose from 0.106 to 0.152: the cases that still miss a required transfer are listed in section 3, and none of them filed or told the customer something unsafe.
-- **B0 is not an unchanged control.** It shares the application's conversation controller and differs only in its understanding step, so every controller change moves it as well. Its failing count fell from 86 to 80: twelve ambiguous-request cases now pass and six unsupported-request cases newly fail. The cause of the six was not diagnosed. B0's escalation figures are identical in all three runs.
+- **Proposed system.** Safe automated resolution rose from 0.469 to 0.725. Escalation quality rose from 0.545 to 0.727. Missed transfers rose from 0.106 to 0.152: the cases that still miss a required transfer are listed in section 3. They are wrong outcomes, not unsafe ones as defined above; whether any of them filed a case was not checked per case. The ranges of the baseline (0.091-0.136) and current (0.136-0.182) runs touch at 0.136.
+- **B0 is not an unchanged control.** It shares the application's conversation controller and differs only in its understanding step, so every controller change moves it as well. Its failing count fell from 86 to 80: ten ambiguous-request cases and two bad-data cases (adv-baddata-en-01, adv-baddata-es-02) now pass and six unsupported-request cases newly fail. The cause of the six was not diagnosed. B0's escalation figures are identical in all three runs.
 - **B1 is a single run per cell.** The naive agent is nondeterministic and was run once, so its differences between runs are not evidence of change. Between the interim and current runs it fixed 7 cases and newly failed 15, in both directions with no pattern attributable to any change in the application.
-- **Latency and cost.** P's median latency is within the run-to-run range of the other runs. Its 95th percentile and its cost per attempted case rose slightly; the cause was not investigated.
+- **Latency and cost.** P's median latency (2.558 s) is below both earlier runs (2.650 s and 2.702 s). Its 95th percentile rose from 3.783 s to 4.402 s, a rise of 16 %, and its cost per attempted case from 0.004 to 0.005 USD; with one latency value per run these differences carry no range, and the cause was not investigated.
 
 ## 3. Failing cases
 
@@ -102,7 +102,7 @@ The count below is the number of golden cases in the report's failure gallery wh
 
 Fixed (37): adv-baddata-en-01, adv-baddata-es-02, adv-toolfail-en-01, adv-toolfail-es-01, adv-toolfail-es-02, adv-toolfail-es-03, adv-toolfail-pt-01, adv-toolfail-pt-02, amb-missing-pt-02, amb-twointent-en-01, amb-twointent-es-01, amb-twointent-es-02, amb-twointent-pt-02, amb-vague-es-01, hr-amt-es-03, multi-enes-03, norm-filed-duplicate-pt-02, norm-filed-duplicate-pt-03, norm-filed-duplicate-pt-04, norm-filed-duplicate-pt-05, norm-filed-service-es-02, norm-filed-service-es-05, norm-filed-service-es-06, norm-filed-service-es-07, norm-filed-unrecognized-en-02, norm-filed-unrecognized-en-04, norm-filed-unrecognized-pt-01, norm-filed-unrecognized-pt-03, norm-filed-unrecognized-pt-05, norm-filed-unrecognized-pt-06, norm-filed-wrongamt-es-01 to norm-filed-wrongamt-es-07.
 
-Newly failing (3): hr-repeat-es-01, hr-repeat-es-02 and norm-filed-service-es-03.
+Newly failing (3): hr-repeat-es-01, hr-repeat-es-02 and norm-filed-service-es-03. The count uses the last repetition, so a case that failed in some earlier repetition reads as newly failing: norm-filed-service-es-03 failed in two of the three baseline repetitions and hr-repeat-es-02 in one.
 
 Still failing (10): adv-baddata-es-01, adv-baddata-es-03, adv-baddata-pt-01, adv-baddata-pt-02, amb-twointent-pt-01, hr-amt-es-01, multi-espt-03, norm-filed-duplicate-pt-01, norm-filed-unrecognized-en-03 and norm-filed-unrecognized-pt-02.
 
@@ -120,10 +120,10 @@ Each cause below was established by replaying the case turn by turn and, where t
 
 | Case | Cause |
 | --- | --- |
-| norm-filed-service-es-03 | A payment described "por un servicio" is read as a merchant named "servicio", so the transaction is not found. Consistent across repetitions; absent under earlier prompt versions. |
+| norm-filed-service-es-03 | A payment described "por un servicio" is read as a merchant named "servicio", so the transaction is not found. Consistent across repetitions in the current run. It failed in two of three repetitions of the baseline run as well, so it is not new, only newly failing in the last repetition. |
 | norm-filed-duplicate-pt-01 | A statement of a transfer already made ("Fiz uma transferência de ...") is read as a request to list transactions, so the second turn does not file. Consistent across repetitions. |
-| hr-repeat-es-01, hr-repeat-es-02, hr-amt-es-01 | The wording "quiero reportarlo" is read as a fraud report or as unclear, so the required handoff does not happen. |
-| norm-filed-unrecognized-en-03 | The golden turn says "report it", which is a fraud report; the system hands off, as the policy prescribes for fraud. The golden wording, not the system, is the outlier. |
+| hr-repeat-es-01, hr-repeat-es-02, hr-amt-es-01 | The second turn ("quiero reportarlo", "quiero reportar ese retiro") expects a handoff and none happens (observed_escalation is false in the run). Turn-by-turn replays, run on a later main commit than the run itself, showed the second turn read as unclear or as a dispute filing, not as a fraud report, so the case ends at the confirmation of the found transaction. The reading varies between repetitions. |
+| norm-filed-unrecognized-en-03 | The golden turn ("That wasn't me, I'd like to report it.") expects a filing; the system hands off, as the policy prescribes for fraud. The goldens disagree on the same verb: the hr-repeat cases expect a handoff when the customer says they want to report a transaction they did not make. Which reading is right is a product decision; the case is ambiguous as worded. |
 | norm-filed-unrecognized-pt-02 | The understanding result flips between repetitions; the sentence sits at a boundary. It also failed in the interim run. |
 | adv-baddata-es-03, adv-baddata-pt-02 | The transaction is now found and its amount is unknown. The handoff comes after the customer confirms the found transaction, but the case ends at the confirmation question. |
 | adv-baddata-es-01, adv-baddata-pt-01 | The golden case is a single turn, but the system asks up to two clarifying questions before handing off. |
@@ -132,7 +132,7 @@ Each cause below was established by replaying the case turn by turn and, where t
 
 ### Golden wording
 
-Three golden cases are worded so that they measure something other than the behavior they describe: norm-filed-unrecognized-en-03 (a fraud report), adv-baddata-es-01 and adv-baddata-pt-01 (a single-turn handoff). The P failing count therefore falls by up to three for wording reasons, not because of any change to the product, once those cases are reworded. This report uses the golden set as it stood at the current commit.
+Three golden cases are worded so that they measure something other than the behavior they describe: norm-filed-unrecognized-en-03 (the verb "report" can be read as a fraud report or as a request to file), adv-baddata-es-01 and adv-baddata-pt-01 (a single-turn handoff where the system asks up to two clarifying questions first). The P failing count therefore falls by up to three for wording reasons, not because of any change to the product, once those cases are reworded. adv-baddata-es-03 and adv-baddata-pt-02 also have a single turn, but they are not reworded: the transaction is found, its amount is unknown, and the system ends at a confirmation question where the case expects a handoff, so the failure is a behavior of the system. This report uses the golden set as it stood at the current commit.
 
 ### Run-to-run variability of P
 
@@ -148,12 +148,12 @@ The current run also reports outcomes by customer segment. The interim run could
 
 ## 5. Quality scoring
 
-Grounding, language quality and clarification all stay human-only. For each, the judge agrees with at least one human rater on fewer than 80 % of cases, so no judge mean is reported. The two raters' own means over the validation sample are in the generated report.
+Grounding, language quality and clarification all stay human-only. A dimension is demoted when the judge agrees with either rater on fewer than 80 % of cases, so no judge mean is reported. For clarification the judge agrees with Rater 1 on 1 of 6 cases and with Rater 2 on 6 of 6; the two raters agree with each other on 1 of 6. The two raters' own means over the validation sample are in the generated report.
 
 ## 6. Limitations
 
 - The validation sample is not the judged run. Rater means describe the 50 reply-level sheets (6 for clarification), not the 135 cases the judge scored.
-- The clarification validation covers a different set of cases from the ones the judge scored. Raters scored clarification on the 6 ambiguous cases in the sample; the judge scored 27 cases (those 6 and 21 others, which both raters left unscored). Agreement is computed over the 6 only.
+- The clarification validation covers a different set of cases from the ones the judge scored. Raters scored clarification on the 6 ambiguous cases in the sample; the judge scored 27 cases (those 6 and 21 others, which both raters left unscored). Agreement is computed over the 6 only. The per-case rater and judge scores are local working files, not committed.
 - The B1 figures are one run each. The P figures are three runs; their ranges are a measure of nondeterminism, not a confidence interval.
 - Failure counts are for the last repetition of a run, not the union across repetitions.
 - Conversation changes merged after the current commit are not measured here. Every figure describes commit 6cea3b4 and nothing later.
