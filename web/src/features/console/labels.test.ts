@@ -52,6 +52,11 @@ describe('actionResultLabel', () => {
     expect(actionResultLabel('confirmation_required')).toBe('Requiere confirmación')
   })
 
+  it('words every outcome so it agrees with a masculine and a feminine action alike', () => {
+    expect(actionResultLabel('reached')).toBe('Se completó')
+    expect(actionResultLabel('refused')).toBe('Se rechazó')
+  })
+
   it('reads a policy reason code through its own label', () => {
     expect(actionResultLabel('escalate_fraud_claim')).toBe('Escalado: reclamo de fraude')
   })
