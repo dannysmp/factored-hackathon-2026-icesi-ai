@@ -333,6 +333,25 @@ def test_every_template_id_has_a_working_renderer(lang: str) -> None:
         assert rendered.reply.strip()
 
 
+@pytest.mark.parametrize(
+    ("lang", "asked_for", "person"),
+    [
+        ("es", ("comercio", "monto exacto", "fecha"), "asesor"),
+        ("pt", ("estabelecimento", "valor exato", "data"), "atendente"),
+        ("en", ("merchant", "exact amount", "date"), "person"),
+    ],
+)
+def test_not_found_asks_for_details_the_customer_can_give_and_offers_a_person(
+    lang: str, asked_for: tuple[str, ...], person: str
+) -> None:
+    """The reply names what to say next and never offers an action the assistant cannot take."""
+    reply = render(_every_template_envelope(lang)[TemplateId.NOT_FOUND]).reply
+
+    assert all(detail in reply for detail in asked_for)
+    assert person in reply
+    assert not any(offer in reply for offer in ("widen", "ampliar"))
+
+
 def test_the_spanish_language_offer_does_not_speak_in_a_gendered_first_person() -> None:
     """The assistant has no gender, so the Spanish offer must not say it is "segura"."""
     envelope = _envelope(template_id=TemplateId.LANGUAGE_OFFER)
@@ -548,6 +567,38 @@ def test_the_policy_answer_cites_the_section_title_in_the_reply_language() -> No
 
     assert source.title_for("pt") in rendered.reply
     assert source.section_id not in rendered.reply
+
+
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [
+        (
+            "es",
+            "Puede consultarlo en la sección “Plazos para disputar” de nuestra "
+            "política de disputas.",
+        ),
+        (
+            "pt",
+            "Você pode consultar isso na seção “Prazos para contestar” da nossa "
+            "política de disputas.",
+        ),
+        ("en", "You can find this in the “Filing windows” section of our dispute policy."),
+    ],
+)
+def test_a_policy_answer_without_a_figure_cites_the_section_alone(
+    lang: Lang, expected: str
+) -> None:
+    envelope = _envelope(
+        intent=Intent.POLICY_ANSWER,
+        template_id=TemplateId.POLICY_ANSWER,
+        lang=lang,
+        sources=(_source(),),
+    )
+
+    rendered = render(envelope)
+
+    assert rendered.reply == expected
+    assert ": ." not in rendered.reply
 
 
 def test_dispute_status_grounds_a_case_without_an_expected_response_date() -> None:

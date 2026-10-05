@@ -32,6 +32,7 @@ def _entry(**changes: object) -> TimelineEntry:
     values: dict[str, object] = {
         "occurred_at": _T1,
         "trace_id": "s-1",
+        "turn_id": "t-1",
         "intent": Intent.CLARIFY,
         "state_before": "started",
         "state_after": "clarifying",
@@ -70,9 +71,23 @@ def test_a_recorded_entry_is_read_back_in_the_timeline(turn_log: PostgresDialogu
         policy_version="2",
     )
 
-    turn_log.record(entry, session_id="s-1", turn_id="t-1")
+    turn_log.record(entry, session_id="s-1")
 
     assert turn_log.timeline_for("s-1") == (entry,)
+
+
+@pytest.mark.integration
+def test_every_entry_of_one_conversation_keeps_its_own_turn_id(
+    turn_log: PostgresDialogueTurnLog,
+) -> None:
+    """All entries share the trace identifier, so the turn identifier is what tells them apart."""
+    turn_log.record(_entry(occurred_at=_T1, turn_id="t-1"), session_id="s-1")
+    turn_log.record(_entry(occurred_at=_T2, turn_id="t-2"), session_id="s-1")
+
+    timeline = turn_log.timeline_for("s-1")
+
+    assert [entry.trace_id for entry in timeline] == ["s-1", "s-1"]
+    assert [entry.turn_id for entry in timeline] == ["t-1", "t-2"]
 
 
 @pytest.mark.integration
@@ -82,12 +97,32 @@ def test_a_trace_id_with_no_entries_returns_empty(turn_log: PostgresDialogueTurn
 
 @pytest.mark.integration
 def test_entries_are_ordered_by_when_they_occurred(turn_log: PostgresDialogueTurnLog) -> None:
-    later = _entry(occurred_at=_T2, trace_id="s-1")
-    earlier = _entry(occurred_at=_T1, trace_id="s-1")
-    turn_log.record(later, session_id="s-1", turn_id="t-2")
-    turn_log.record(earlier, session_id="s-1", turn_id="t-1")
+    later = _entry(occurred_at=_T2, trace_id="s-1", turn_id="t-2")
+    earlier = _entry(occurred_at=_T1, trace_id="s-1", turn_id="t-1")
+    turn_log.record(later, session_id="s-1")
+    turn_log.record(earlier, session_id="s-1")
 
     assert turn_log.timeline_for("s-1") == (earlier, later)
+
+
+@pytest.mark.integration
+def test_turns_at_the_same_instant_are_read_in_the_order_they_were_written(dsn: str) -> None:
+    """Rows are inserted with their write order (``id``) out of step with their physical order,
+    so only an explicit tiebreak on ``id`` returns them in the order they were written."""
+    insert = """
+        INSERT INTO dialogue_turn_log (
+            id, session_id, turn_id, occurred_at_utc, trace_id, intent, state_before,
+            state_after, render_mode
+        ) OVERRIDING SYSTEM VALUE
+        VALUES (%s, 's-1', %s, %s, 's-1', 'clarify', 'started', 'clarifying', 'template')
+    """
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        for row_id, turn_id in ((3, "t-c"), (1, "t-a"), (2, "t-b")):
+            cur.execute(insert, (row_id, turn_id, _T1))
+
+    timeline = PostgresDialogueTurnLog(dsn).timeline_for("s-1")
+
+    assert [entry.turn_id for entry in timeline] == ["t-a", "t-b", "t-c"]
 
 
 @pytest.mark.integration
@@ -97,8 +132,8 @@ def test_a_repeated_session_and_turn_id_is_a_no_op(turn_log: PostgresDialogueTur
     first = _entry(trace_id="s-1", intent=Intent.CLARIFY)
     second = _entry(trace_id="s-1", intent=Intent.FAREWELL)
 
-    turn_log.record(first, session_id="s-1", turn_id="t-1")
-    turn_log.record(second, session_id="s-1", turn_id="t-1")
+    turn_log.record(first, session_id="s-1")
+    turn_log.record(second, session_id="s-1")
 
     assert turn_log.timeline_for("s-1") == (first,)
 
@@ -109,7 +144,7 @@ def test_a_null_reason_code_and_policy_version_round_trip(
 ) -> None:
     entry = _entry(trace_id="s-1", reason_code=None, policy_version=None)
 
-    turn_log.record(entry, session_id="s-1", turn_id="t-1")
+    turn_log.record(entry, session_id="s-1")
 
     assert turn_log.timeline_for("s-1") == (entry,)
 
@@ -120,8 +155,8 @@ def test_entries_from_different_conversations_do_not_mix(
 ) -> None:
     mine = _entry(trace_id="s-1")
     theirs = _entry(trace_id="s-2")
-    turn_log.record(mine, session_id="s-1", turn_id="t-1")
-    turn_log.record(theirs, session_id="s-2", turn_id="t-1")
+    turn_log.record(mine, session_id="s-1")
+    turn_log.record(theirs, session_id="s-2")
 
     assert turn_log.timeline_for("s-1") == (mine,)
 
@@ -136,7 +171,7 @@ def test_dialogue_turn_log_refuses_an_update_at_the_store(
     turn_log: PostgresDialogueTurnLog, dsn: str
 ) -> None:
     """Fails at the store, not only in code."""
-    turn_log.record(_entry(trace_id="s-1"), session_id="s-1", turn_id="t-1")
+    turn_log.record(_entry(trace_id="s-1"), session_id="s-1")
 
     with (
         psycopg.connect(dsn, autocommit=True) as conn,
@@ -151,7 +186,7 @@ def test_dialogue_turn_log_refuses_a_delete_at_the_store(
     turn_log: PostgresDialogueTurnLog, dsn: str
 ) -> None:
     """Fails at the store, not only in code."""
-    turn_log.record(_entry(trace_id="s-1"), session_id="s-1", turn_id="t-1")
+    turn_log.record(_entry(trace_id="s-1"), session_id="s-1")
 
     with (
         psycopg.connect(dsn, autocommit=True) as conn,
@@ -168,7 +203,7 @@ def test_dialogue_turn_log_refuses_a_truncate_at_the_store_even_for_the_table_ow
     """TRUNCATE fires no row-level trigger, so it needs (and has) its own; this project has no
     role separation, so the connecting role is also the table's owner, and Postgres normally lets
     an owner TRUNCATE regardless of any row-level rule."""
-    turn_log.record(_entry(trace_id="s-1"), session_id="s-1", turn_id="t-1")
+    turn_log.record(_entry(trace_id="s-1"), session_id="s-1")
 
     with (
         psycopg.connect(dsn, autocommit=True) as conn,

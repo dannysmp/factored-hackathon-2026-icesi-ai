@@ -403,12 +403,12 @@ def _present_narrow(e: RenderEnvelope) -> str:
 def _not_found(e: RenderEnvelope) -> str:
     """Say no transaction matched and offer a wider date range or a person."""
     return {
-        "es": "No encontré ninguna transacción con esos datos. Puedo ampliar el rango de "
-        "fechas o pasarla con un asesor.",
-        "pt": "Não encontrei nenhuma transação com esses dados. Posso ampliar o período ou "
-        "encaminhar você para um atendente.",
-        "en": "I couldn't find a transaction matching that. I can widen the date range or "
-        "connect you with a person.",
+        "es": "No encontré ninguna transacción con esos datos. Dígame el comercio, el monto "
+        "exacto o la fecha tal como aparecen en su extracto, o pídame hablar con un asesor.",
+        "pt": "Não encontrei nenhuma transação com esses dados. Informe o estabelecimento, o "
+        "valor exato ou a data como aparecem no seu extrato, ou peça para falar com um atendente.",
+        "en": "I couldn't find a transaction matching that. Tell me the merchant, the exact "
+        "amount or the date as it appears on your statement, or ask to speak with a person.",
     }[e.lang]
 
 
@@ -531,6 +531,12 @@ def _no_case_found(e: RenderEnvelope) -> str:
 def _policy_answer(e: RenderEnvelope) -> str:
     """Quote the retrieved policy section by title together with the values it states."""
     title = e.sources[0].title_for(e.lang)
+    if not e.facts.policy_values:
+        return {
+            "es": f"Puede consultarlo en la sección “{title}” de nuestra política de disputas.",
+            "pt": f"Você pode consultar isso na seção “{title}” da nossa política de disputas.",
+            "en": f"You can find this in the “{title}” section of our dispute policy.",
+        }[e.lang]
     values = ", ".join(f"{v.name}: {v.value}" for v in e.facts.policy_values)
     parts = {
         "es": f"Según la sección “{title}”: {values}.",

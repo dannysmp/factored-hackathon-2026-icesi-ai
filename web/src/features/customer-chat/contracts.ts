@@ -65,10 +65,16 @@ export const ChoiceSchema = z
   .strict()
 export type Choice = z.infer<typeof ChoiceSchema>
 
+/** The longest customer message the turn endpoint accepts, in characters. */
+export const MAX_TURN_TEXT_LENGTH = 2000
+
+/** The longest assistant reply a turn response may carry, in characters. */
+export const MAX_REPLY_LENGTH = 2000
+
 export const TurnRequestSchema = z
   .object({
     turn_id: z.string().regex(IdentifierPattern),
-    text: refuseBlankOrControl(z.string().min(1).max(2000)),
+    text: refuseBlankOrControl(z.string().min(1).max(MAX_TURN_TEXT_LENGTH)),
   })
   .strict()
 export type TurnRequest = z.infer<typeof TurnRequestSchema>
@@ -80,13 +86,14 @@ export const TurnResponseSchema = z
     conversation_id: z.string().min(1).max(64),
     state_version: z.number().int().min(1),
     lang: LangSchema,
-    reply: z.string().min(1).max(2000),
+    reply: z.string().min(1).max(MAX_REPLY_LENGTH),
     reference_date_line: z.string().min(1).max(120),
     demo_notice: z.string().min(1).max(200).nullable().default(null),
     choices: z.array(ChoiceSchema).max(5).default([]),
     next_expected: SlotSchema.nullable().default(null),
     end_session: z.boolean().default(false),
     handoff_ticket: z.string().regex(TicketPattern).nullable().default(null),
+    case_number: z.string().regex(TicketPattern).nullable().default(null),
   })
   .strict()
   // `_choices_are_numbered_from_one` (api.py): choices are numbered 1, 2, ... in order, so a
