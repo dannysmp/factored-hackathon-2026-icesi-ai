@@ -24,10 +24,10 @@ stands in for that provider:
   checked (and the attempt counted) before the body is looked at;
 - the body carries only ``customer_id``. A document number, a name or any other field is
   rejected: **an identifier the customer types is never proof of identity**;
-- a ``customer_id`` the store does not know gets the same refusal as a wrong shared secret
-  (AC-E4-47): the two are indistinguishable by response code, message or shape;
+- a ``customer_id`` the store does not know gets the same refusal as a wrong shared secret:
+  the two are indistinguishable by response code, message or shape;
 - a customer the store does know always gets a session, whatever their status — the policy
-  applies no status gate (AC-E4-48), and the login boundary does not invent one either;
+  applies no status gate, and the login boundary does not invent one either;
 - failed attempts are limited per client address; a correct key always proceeds regardless of
   that address's recorded failures, and a success never clears them for another client sharing
   the address.
@@ -72,8 +72,8 @@ logger = logging.getLogger(__name__)
 
 TEST_SESSIONS_PATH = "/v1/auth/test-sessions"
 
-# The customer's status as the store records it, or None when there is no match (AC-E4-47); the
-# sandbox login checks existence only, never status (AC-E4-48).
+# The customer's status as the store records it, or None when there is no match; the
+# sandbox login checks existence only, never status.
 CustomerLookup = Callable[[str], str | None]
 
 # The model's pattern is a search, not a full match, so it is anchored explicitly.
@@ -101,7 +101,7 @@ class SessionResponse(BaseModel):
 class SessionInfo(BaseModel):
     """Who the current session belongs to.
 
-    ``demo`` and ``audience`` are additive fields (ADR-18): the interface's demonstration banner
+    ``demo`` and ``audience`` are additive fields: the interface's demonstration banner
     reads them to show a non-dismissible notice whenever ``demo`` is true.
     """
 
@@ -138,7 +138,7 @@ def agent_principal_of(request: Request) -> AgentPrincipal:
 
     A route protected by an ``"agent"``-audience path prefix never reaches this with a customer
     ``Principal`` instead (``SessionAuthMiddleware`` refuses the wrong audience before the route
-    is ever called, ADR-18); this only guards the same wiring mistake ``principal_of`` guards
+    is ever called); this only guards the same wiring mistake ``principal_of`` guards
     against for the customer side.
 
     Raises
@@ -177,7 +177,7 @@ def build_auth_router(
     limiter : AttemptLimiter
         Limits failed sandbox logins per client address.
     customer_lookup : CustomerLookup
-        Answers whether a customer exists (AC-E4-47); ignored when the sandbox login is not
+        Answers whether a customer exists; ignored when the sandbox login is not
         registered. Defaults to "nobody exists" so a caller that forgets to inject one for an
         enabled sandbox login fails closed rather than accepting every identifier.
     """
@@ -229,9 +229,9 @@ def build_auth_router(
         def create_test_session(body: TestLoginRequest) -> SessionResponse:
             """Issue a session for a trusted test client (sandbox only).
 
-            AC-E4-47: a customer the store does not know gets the same refusal as a wrong shared
+            A customer the store does not know gets the same refusal as a wrong shared
             secret; a customer it does know always gets a session, whatever their status
-            (AC-E4-48 — no status gate, here or in the policy).
+            (no status gate, here or in the policy).
             """
             if customer_lookup(body.customer_id) is None:
                 logger.warning("test_login_unknown_customer request_id=%s", current_request_id())
