@@ -86,7 +86,17 @@ Limitations
 A single-match search result is presented with ``PRESENT_ONE`` and the customer's yes (or a
 reason, which implies it) selects it; a no asks for the transaction again; naming a different
 merchant, amount, card or date searches for that instead; an unclear answer asks again within the
-clarification budget. The question stays pending across a reply to an unrelated
+clarification budget.
+
+A yes that carries a change, or a correction, while the transaction or the filing is awaiting an
+answer is not repeated back: the customer is asked which part to change, the transaction or the
+reason. A different reason stated at the filing question re-evaluates the dispute under that reason
+and asks for confirmation of the result. A different transaction described there goes back to
+presenting that transaction for confirmation, keeping the reason unless the message states another.
+A description that changes neither repeats the filing question and counts against the clarification
+budget.
+
+The question stays pending across a reply to an unrelated
 message (small talk, a policy question, a list request), as the reason and confirmation questions
 do, so the customer's yes after such a reply still selects the presented transaction. The
 unrelated reply itself files nothing; a case is filed only once the policy's confirmation
@@ -100,11 +110,15 @@ transaction ask for more detail rather than presenting a numbered list.
 A session works on one transaction and reason at a time: the selected pair is kept from selection
 until the dispute ends (a case filed, or the filing cancelled, ineligible or refused as a
 duplicate), which clears it so the customer's next dispute starts from its own transaction and
-reason; a no to the transaction presented, a different transaction named while one awaits a yes, or
-a number from a list just shown replaces the transaction instead. A dispute that ends in a handoff
-keeps its pair. A policy question asked after a dispute has ended without a handoff is answered
-without a reason, so a figure that depends on one is declined with an offer of an advisor. The
-handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name.
+reason; a no to the transaction presented, a different transaction named at the
+presented-transaction or filing question, or a number from a list just shown replaces the
+transaction instead, and a different reason is evaluated afresh only at the filing question. A
+transaction named at the filing question that is not found, or that matches several, leaves none
+selected, so the customer describes the transaction again; nothing is filed in between. A dispute
+that ends in a handoff keeps its pair. A policy question asked after a dispute has ended without a
+handoff is answered without a reason, so a figure that depends on one is declined with an offer of
+an advisor. The handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's
+first name.
 While the transaction is the pending question, a message that describes one is taken as the
 answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a category
 carried by such a message does not replace one already set. A description
@@ -203,6 +217,10 @@ _EMPTY_FACTS = DisputeFacts()
 # Intents whose language says nothing reliable about the conversation's language: an unclear
 # message, or one that already names the language it wants.
 _LANGUAGE_NEUTRAL_INTENTS = frozenset({NluIntent.UNCLEAR, NluIntent.SWITCH_LANGUAGE})
+
+# The open questions a change of mind can be answered under: the presented transaction and the
+# filing awaiting confirmation. The reason question is asked afresh, never changed.
+_CHANGEABLE_SLOTS = frozenset({Slot.TRANSACTION_CHOICE, Slot.CONFIRMATION})
 
 # The most digits a message can have and still be read as a position in the list. A longer number
 # is an amount, a card ending or a reference, which only the understanding step can place.
@@ -775,12 +793,16 @@ class DialogueController:
     ) -> tuple[DialogueState, RenderEnvelope]:
         """Collect what a filing needs, then evaluate it.
 
-        Keeps the category the message names (once, never overwritten), clears a pending transaction
-        choice, then follows the guard: ask for the transaction when none is named, search for it
-        when a hint is available and none is selected, ask for the reason, and finally evaluate the
-        dispute for the selected transaction and category.
+        While a filing awaits confirmation, a restated dispute is handled as a change to it.
+        Otherwise keeps the category the message names (once, never overwritten), clears a pending
+        transaction choice, then follows the guard: ask for the transaction when none is named,
+        search for it when a hint is available and none is selected, ask for the reason, and
+        finally evaluate the dispute for the selected transaction and category.
         """
         result = _without_blank_merchant(result)
+        if state.pending_slot is Slot.CONFIRMATION:
+            return self._handle_restated_dispute(state, result)
+
         if result.category is not None and state.category is None:
             state = state.model_copy(update={"category": result.category})
 
@@ -800,6 +822,26 @@ class DialogueController:
 
         assert state.category is not None  # noqa: S101 - guaranteed by required_slot above
         return self._evaluate_and_present(state, state.selected_ref, state.category)
+
+    def _handle_restated_dispute(
+        self, state: DialogueState, result: NluResult
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """The customer described a dispute while the filing question is open.
+
+        A message naming a different transaction goes back to finding that transaction, keeping
+        the reason unless the message states another. A message stating a different reason is
+        evaluated afresh under it. A message that changes neither is a repeat of the question and
+        counts against the clarification budget.
+        """
+        if self._names_another_transaction(state, result.transaction):
+            category = result.category if result.category is not None else state.category
+            reopened = state.model_copy(
+                update={"selected_ref": None, "pending_slot": None, "category": category}
+            )
+            return self._resolve_transaction(reopened, result.transaction)
+        if result.category is not None and result.category is not state.category:
+            return self._handle_change(state, result)
+        return self._ask(state, Slot.CONFIRMATION)
 
     def _names_another_transaction(self, state: DialogueState, hint: TransactionHint) -> bool:
         """Whether ``hint`` describes something other than the transaction just presented.
@@ -936,8 +978,10 @@ class DialogueController:
         if answer is ConfirmationAnswer.NO:
             new_state = state.with_dispute_closed()
             return new_state, self._envelope(new_state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
-        if answer is not ConfirmationAnswer.YES:
+        if answer is ConfirmationAnswer.AMBIGUOUS:
             return self._ask(state, Slot.CONFIRMATION)
+        if answer is not ConfirmationAnswer.YES:
+            return self._handle_change(state, result)
 
         assert state.selected_ref is not None and state.category is not None  # noqa: S101
         decision = dispatch(
@@ -961,8 +1005,10 @@ class DialogueController:
                 state.model_copy(update={"selected_ref": None, "pending_slot": None}),
                 Slot.TRANSACTION,
             )
-        if answer is not ConfirmationAnswer.YES:
+        if answer is ConfirmationAnswer.AMBIGUOUS:
             return self._ask(state, Slot.TRANSACTION_CHOICE)
+        if answer is not ConfirmationAnswer.YES:
+            return self._handle_change(state, result)
 
         state = state.with_slot_filled()
         assert state.selected_ref is not None  # noqa: S101 - set whenever this slot is pending
@@ -1041,13 +1087,46 @@ class DialogueController:
     def _handle_unroutable(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
-        """``correction`` shares ``unclear``'s fallback, and so does a ``choice`` that names no
-        listed transaction, except when the transaction is what was just asked for and the message
-        describes one: the model reads each message on its own, so a plain answer to that question
-        can come back under any of these intents, and the description is the answer."""
+        """A ``correction`` outside the questions a change of mind can answer shares ``unclear``'s
+        fallback, and so does a ``choice`` that names no listed transaction, except when the
+        transaction is what was just asked for and the message describes one: the model reads each
+        message on its own, so a plain answer to that question can come back under any of these
+        intents, and the description is the answer."""
         if state.pending_slot is Slot.TRANSACTION and not result.transaction.is_empty:
             return self._handle_file_dispute(state, result)
         return self._fallback(state, result)
+
+    def _handle_correction(
+        self, state: DialogueState, result: NluResult
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """A correction while a question about the presented transaction or the filing is open
+        is handled as a change to it; anywhere else it is treated like an unclear message, so a
+        description of the transaction that was just asked for is still taken as the answer."""
+        if state.pending_slot in _CHANGEABLE_SLOTS:
+            return self._handle_change(state, result)
+        return self._handle_unroutable(state, result)
+
+    def _handle_change(
+        self, state: DialogueState, result: NluResult
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """The customer answered the open question with a change rather than a plain yes or no.
+
+        When the filing is awaiting confirmation and the message states a different reason, the
+        dispute is evaluated afresh under that reason, and the customer confirms the result.
+        Otherwise the customer is asked which part to change — the transaction or the reason —
+        and the repeat counts against the clarification budget like any other unanswered
+        question.
+        """
+        assert state.pending_slot is not None  # noqa: S101 - both callers run with a slot open
+        if (
+            state.pending_slot is Slot.CONFIRMATION
+            and result.category is not None
+            and result.category is not state.category
+        ):
+            assert state.selected_ref is not None  # noqa: S101 - set whenever this slot is pending
+            changed = state.with_slot_filled().model_copy(update={"category": result.category})
+            return self._evaluate_and_present(changed, state.selected_ref, result.category)
+        return self._ask(state, state.pending_slot, template=TemplateId.CLARIFY_CHANGE)
 
     # -------------------------------------------------------------------------------------
     # Shared decision logic
@@ -1061,8 +1140,13 @@ class DialogueController:
             return self._ask(state, state.pending_slot)
         return state, self._envelope(state, Intent.CLARIFY, TemplateId.GREETING)
 
-    def _ask(self, state: DialogueState, slot: Slot) -> tuple[DialogueState, RenderEnvelope]:
-        """Ask for ``slot``, or escalate once the clarification budget is spent."""
+    def _ask(
+        self, state: DialogueState, slot: Slot, *, template: TemplateId | None = None
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """Ask again for ``slot``, or escalate once the clarification budget is spent.
+
+        ``template`` replaces the slot's own wording with a clarification that carries no facts.
+        """
         new_state = state.with_clarification(slot)
         if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
             return self._handoff(
@@ -1071,6 +1155,8 @@ class DialogueController:
                 reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
                 template=TemplateId.HANDOFF_REVIEW,
             )
+        if template is not None:
+            return new_state, self._envelope(new_state, Intent.CLARIFY, template)
         if slot is Slot.TRANSACTION_CHOICE:
             envelope = self._transaction_choice_envelope(new_state)
             if envelope is None:
@@ -1659,7 +1745,7 @@ _ROUTES: dict[NluIntent, _Handler] = {
     NluIntent.POLICY_QUESTION: DialogueController._handle_policy_question,
     NluIntent.CONFIRMATION: DialogueController._handle_confirmation,
     NluIntent.CHOICE: DialogueController._handle_choice,
-    NluIntent.CORRECTION: DialogueController._handle_unroutable,
+    NluIntent.CORRECTION: DialogueController._handle_correction,
     NluIntent.REPORT_FRAUD: DialogueController._handle_report_fraud,
     NluIntent.REPORT_CARD_LOSS: DialogueController._handle_report_card_loss,
     NluIntent.REQUEST_PERSON: DialogueController._handle_request_person,
