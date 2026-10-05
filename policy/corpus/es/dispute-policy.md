@@ -62,7 +62,7 @@ Antes de presentar una disputa, el cliente confirma la transacción, el motivo y
 Aunque la solicitud cumpla las reglas, pasa a revisión de un asesor en estos casos:
 
 - Es un reporte de fraude.
-- El sistema no pudo determinar con suficiente claridad qué solicita el cliente.
+- El sistema no puede determinar con suficiente claridad qué solicita el cliente.
 - Se aplican otros criterios de revisión del banco.
 
 ## Reportes de fraude {#fraud-claims}
@@ -71,7 +71,7 @@ Un asesor revisa siempre los reportes de fraude. Nunca se descartan automáticam
 
 ## Motivos de cada decisión {#decision-codes}
 
-Cada decisión lleva uno de estos motivos. Para cada motivo que requiere revisión por un asesor, se muestra el mensaje: “Un asesor revisa esta solicitud.”
+Cada decisión lleva uno de estos motivos. En esta tabla, cada motivo que requiere revisión de un asesor se describe con la frase: “Un asesor revisa esta solicitud.”
 
 | Motivo | Significado |
 |---|---|
