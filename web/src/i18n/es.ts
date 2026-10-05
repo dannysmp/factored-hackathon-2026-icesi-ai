@@ -3,9 +3,13 @@
 import type { Messages } from './messages'
 
 export const es: Messages = {
+  'app.title': 'Disputa de transacciones',
+  'app.signOut': 'Cerrar sesión',
   'common.loading': 'Cargando…',
   'common.retry': 'Reintentar',
   'common.error.generic': 'Ocurrió un error.',
+  'chat.regionLabel': 'Conversación con el asistente',
+  'chat.messagesLabel': 'Mensajes',
   'chat.placeholder': 'Escribe tu mensaje',
   'chat.messageLabel': 'Su mensaje',
   'chat.starting': 'Iniciando la conversación…',
@@ -16,8 +20,12 @@ export const es: Messages = {
   'chat.customerLabel': 'Usted:',
   'chat.confirm': 'Confirmar',
   'chat.send': 'Enviar',
+  'chat.assistantTyping': 'El asistente está escribiendo…',
+  'chat.notSent': 'Mensaje no enviado',
+  'chat.charactersLeft': 'Caracteres restantes: {count}',
   'chat.ended': 'Esta conversación ha finalizado.',
   'chat.caseReference': 'Número de caso: {ticket}.',
+  'signin.regionLabel': 'Inicio de sesión de demostración',
   'signin.loading': 'Cargando el inicio de sesión de demostración…',
   'signin.unreachable':
     'No se pudo conectar con el inicio de sesión de demostración. Inténtelo de nuevo.',

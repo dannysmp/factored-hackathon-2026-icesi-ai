@@ -1,3 +1,4 @@
+import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { JSX } from 'react'
 import type { QueueItem } from '../contracts'
 import { CATEGORY_LABELS, LANGUAGE_LABELS, STATUS_LABELS, TRIGGER_LABELS } from '../labels'
@@ -35,7 +36,7 @@ export function QueueTable({
     // A narrow viewport scrolls this wrapper horizontally rather than wrapping every cell's text
     // across several lines (AC-E10-20: no truncated or illegible text at the mobile breakpoint) —
     // the same accepted pattern `Tabs.css`'s own trigger list already uses for the same reason.
-    <div className="queue-table-scroll queue-table-openable">
+    <ScrollRegion className="queue-table-scroll queue-table-openable" label="Tickets escalados">
       <table>
         <caption className="sr-only">Tickets escalados</caption>
         <thead>
@@ -84,6 +85,6 @@ export function QueueTable({
           })}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   )
 }

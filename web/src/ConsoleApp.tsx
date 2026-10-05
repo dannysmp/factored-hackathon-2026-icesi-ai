@@ -7,8 +7,12 @@ import { LiveTicketDetailClient } from './features/console/ticketDetailClient'
 import { useConsoleNavigation } from './features/console/useConsoleNavigation'
 import { SignInScreen } from './features/sign-in/SignInScreen'
 import { Notice } from './components/ui/Notice'
+import { Button } from './components/ui/Button'
 import { PageHeader } from './components/ui/PageHeader'
+import { useDocumentLanguage } from './i18n/useDocumentLanguage'
 import styles from './ConsoleApp.module.css'
+
+const CONSOLE_TITLE = 'Consola del agente'
 
 /**
  * The console shell: the agent demonstration sign-in (AC-E10-14, its own broker and access code,
@@ -43,6 +47,12 @@ export function ConsoleApp(): JSX.Element {
     setExpired(true)
     setSession(null)
   }
+  const signOut = (): void => {
+    setExpired(false)
+    setSelectedTicketRef(null)
+    setSession(null)
+  }
+  useDocumentLanguage('es', CONSOLE_TITLE)
 
   const queueClient = useMemo(
     () => (session === null ? null : new LiveQueueClient(session)),
@@ -56,7 +66,7 @@ export function ConsoleApp(): JSX.Element {
   if (session === null || queueClient === null || ticketDetailClient === null) {
     return (
       <>
-        <PageHeader title="Consola del agente" width="wide" />
+        <PageHeader title={CONSOLE_TITLE} width="wide" />
         <main>
           {expired ? (
             <div className={styles.notice}>
@@ -78,7 +88,11 @@ export function ConsoleApp(): JSX.Element {
 
   return (
     <>
-      <PageHeader title="Consola del agente" width="wide" />
+      <PageHeader title={CONSOLE_TITLE} width="wide">
+        <Button variant="quiet" onClick={signOut}>
+          Cerrar sesión
+        </Button>
+      </PageHeader>
       <main>
         {selectedTicketRef === null ? (
           <QueueScreen

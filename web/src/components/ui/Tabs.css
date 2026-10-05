@@ -17,6 +17,7 @@
   border: none;
   background: none;
   cursor: pointer;
+  min-height: var(--size-touch-target);
   padding: var(--space-2) var(--space-4);
   font-family: var(--font-family);
   font-size: var(--font-size-base);
@@ -39,6 +40,11 @@
   color: var(--color-text-subtle);
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* The list scrolls sideways, which would clip a ring drawn outside the trigger: draw it inside. */
+.tabs-trigger:focus-visible {
+  outline-offset: calc(var(--focus-ring-width) * -1);
 }
 
 .tabs-content {

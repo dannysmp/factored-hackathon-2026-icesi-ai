@@ -2,7 +2,15 @@
   display: flex;
   align-items: flex-end;
   gap: var(--space-2);
-  margin: var(--space-4) 0;
+  /* Pinned to the bottom of the screen so the field stays in reach while a long conversation
+     scrolls; the inset keeps it clear of a phone's home indicator. */
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin: 0;
+  padding: var(--space-3) 0 calc(var(--space-3) + env(safe-area-inset-bottom));
+  border-top: var(--border-width-thin) solid var(--color-border);
+  background: var(--color-bg);
 }
 
 .field {
@@ -20,10 +28,19 @@
 .input {
   min-height: var(--size-touch-target);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
+  border: var(--border-width-thin) solid var(--color-border-control);
   border-radius: var(--radius-md);
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-family);
   font-size: var(--font-size-base);
+}
+
+.input[readonly] {
+  color: var(--color-text-subtle);
+}
+
+.hint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-subtle);
 }

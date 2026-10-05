@@ -5,9 +5,13 @@
  * the type checker can't express.
  */
 export interface Messages {
+  'app.title': string
+  'app.signOut': string
   'common.loading': string
   'common.retry': string
   'common.error.generic': string
+  'chat.regionLabel': string
+  'chat.messagesLabel': string
   'chat.placeholder': string
   'chat.messageLabel': string
   'chat.starting': string
@@ -18,9 +22,14 @@ export interface Messages {
   'chat.customerLabel': string
   'chat.confirm': string
   'chat.send': string
+  'chat.assistantTyping': string
+  'chat.notSent': string
+  /** `{count}` is replaced with the number of characters the customer may still type. */
+  'chat.charactersLeft': string
   'chat.ended': string
-  /** `{ticket}` is replaced with the handoff ticket at render time — the one templated key. */
+  /** `{ticket}` is replaced with the handoff ticket at render time. */
   'chat.caseReference': string
+  'signin.regionLabel': string
   'signin.loading': string
   'signin.unreachable': string
   'signin.unavailable': string

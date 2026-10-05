@@ -1,3 +1,4 @@
+import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { JSX } from 'react'
 import type { HandoffPacket, LocalizedTitle } from '../contracts'
 import type { Lang } from '../../customer-chat/contracts'
@@ -53,7 +54,7 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
       {packet.verified_facts.length === 0 ? (
         <p>Ninguna transacción verificada.</p>
       ) : (
-        <div className="queue-table-scroll">
+        <ScrollRegion className="queue-table-scroll" label="Transacciones verificadas">
           <table>
             <caption className="sr-only">Transacciones verificadas</caption>
             <thead>
@@ -85,7 +86,7 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
       )}
 
       <h3>Acciones</h3>

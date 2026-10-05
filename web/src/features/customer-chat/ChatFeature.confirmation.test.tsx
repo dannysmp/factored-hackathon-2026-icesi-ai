@@ -8,6 +8,7 @@ import { CONFIRMATION_TEXT, TurnResponseSchema } from './contracts'
 import type { TurnResponse } from './contracts'
 import { es } from '../../i18n/es'
 import { pt } from '../../i18n/pt'
+import { findMessage } from './findMessage'
 
 function turn(
   version: number,
@@ -70,7 +71,7 @@ async function sendText(user: ReturnType<typeof userEvent.setup>, text: string):
 describe('ChatFeature confirmation button', () => {
   it('is not offered until the assistant asks for confirmation', async () => {
     render(<ChatFeature client={recordingClient([]).client} lang="en" />)
-    await screen.findByText(OPENING.reply)
+    await findMessage(OPENING.reply)
 
     expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
   })
@@ -79,12 +80,12 @@ describe('ChatFeature confirmation button', () => {
     const user = userEvent.setup()
     const { client, sent } = recordingClient([SUMMARY_250, FILED])
     render(<ChatFeature client={client} lang="en" />)
-    await screen.findByText(OPENING.reply)
+    await findMessage(OPENING.reply)
     await sendText(user, 'the Tienda Sol one')
 
     await user.click(await screen.findByRole('button', { name: 'Confirm' }))
 
-    await screen.findByText(FILED.reply)
+    await findMessage(FILED.reply)
     expect(sent).toEqual(['the Tienda Sol one', CONFIRMATION_TEXT])
   })
 
@@ -92,20 +93,20 @@ describe('ChatFeature confirmation button', () => {
     const user = userEvent.setup()
     const { client, sent } = recordingClient([SUMMARY_250, CHANGED, SUMMARY_180, FILED])
     render(<ChatFeature client={client} lang="en" />)
-    await screen.findByText(OPENING.reply)
+    await findMessage(OPENING.reply)
     await sendText(user, 'the Tienda Sol one')
     await screen.findByRole('button', { name: 'Confirm' })
 
     // The customer changes the amount instead of confirming: the old summary no longer applies.
     await sendText(user, 'no, the amount is wrong')
-    await screen.findByText(CHANGED.reply)
+    await findMessage(CHANGED.reply)
     expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
 
     await sendText(user, '180')
-    await screen.findByText(SUMMARY_180.reply)
+    await findMessage(SUMMARY_180.reply)
     await user.click(await screen.findByRole('button', { name: 'Confirm' }))
 
-    await screen.findByText(FILED.reply)
+    await findMessage(FILED.reply)
     expect(sent).toEqual([
       'the Tienda Sol one',
       'no, the amount is wrong',
@@ -119,16 +120,16 @@ describe('ChatFeature confirmation button', () => {
     const user = userEvent.setup()
     const { client, sent } = recordingClient([SUMMARY_250, SUMMARY_180, FILED])
     render(<ChatFeature client={client} lang="en" />)
-    await screen.findByText(OPENING.reply)
+    await findMessage(OPENING.reply)
     await sendText(user, 'the Tienda Sol one')
     await screen.findByRole('button', { name: 'Confirm' })
 
     await sendText(user, 'make it 180')
-    await screen.findByText(SUMMARY_180.reply)
+    await findMessage(SUMMARY_180.reply)
     expect(screen.getAllByRole('button', { name: 'Confirm' })).toHaveLength(1)
 
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
-    await screen.findByText(FILED.reply)
+    await findMessage(FILED.reply)
     expect(sent).toEqual(['the Tienda Sol one', 'make it 180', CONFIRMATION_TEXT])
   })
 
@@ -147,13 +148,13 @@ describe('ChatFeature confirmation button', () => {
       render(
         <ChatFeature client={{ ...client, start: () => Promise.resolve(opening) }} lang={lang} />,
       )
-      await screen.findByText(opening.reply)
+      await findMessage(opening.reply, catalog['chat.messagesLabel'])
       await user.type(screen.getByLabelText(catalog['chat.messageLabel']), 'x')
       await user.click(screen.getByRole('button', { name: catalog['chat.send'] }))
 
       await user.click(await screen.findByRole('button', { name: catalog['chat.confirm'] }))
 
-      await screen.findByText(FILED.reply)
+      await findMessage(FILED.reply, catalog['chat.messagesLabel'])
       expect(sent).toEqual(['x', CONFIRMATION_TEXT])
     },
   )
@@ -175,7 +176,7 @@ describe('ChatFeature confirmation button', () => {
       },
     }
     render(<ChatFeature client={client} lang="en" />)
-    await screen.findByText(OPENING.reply)
+    await findMessage(OPENING.reply)
     await sendText(user, 'the Tienda Sol one')
     const confirm = await screen.findByRole('button', { name: 'Confirm' })
 
@@ -188,7 +189,7 @@ describe('ChatFeature confirmation button', () => {
       release(FILED)
     })
 
-    await screen.findByText(FILED.reply)
+    await findMessage(FILED.reply)
     expect(sent.filter((text) => text === CONFIRMATION_TEXT)).toHaveLength(1)
   })
 })

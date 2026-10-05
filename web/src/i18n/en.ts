@@ -3,9 +3,13 @@
 import type { Messages } from './messages'
 
 export const en: Messages = {
+  'app.title': 'Transaction disputes',
+  'app.signOut': 'Sign out',
   'common.loading': 'Loading…',
   'common.retry': 'Retry',
   'common.error.generic': 'Something went wrong.',
+  'chat.regionLabel': 'Conversation with the assistant',
+  'chat.messagesLabel': 'Messages',
   'chat.placeholder': 'Type your message',
   'chat.messageLabel': 'Your message',
   'chat.starting': 'Starting the conversation…',
@@ -16,8 +20,12 @@ export const en: Messages = {
   'chat.customerLabel': 'You:',
   'chat.confirm': 'Confirm',
   'chat.send': 'Send',
+  'chat.assistantTyping': 'The assistant is typing…',
+  'chat.notSent': 'Not sent',
+  'chat.charactersLeft': 'Characters left: {count}',
   'chat.ended': 'This conversation has ended.',
   'chat.caseReference': 'Case reference: {ticket}.',
+  'signin.regionLabel': 'Demonstration sign-in',
   'signin.loading': 'Loading the demonstration sign-in…',
   'signin.unreachable': 'The demonstration sign-in could not be reached. Please try again.',
   'signin.unavailable': 'The demonstration is not available at the moment.',
