@@ -249,3 +249,18 @@ text.
   intent accuracy and confusion matrix, the keyword-rule baseline and the pretrained zero-shot
   multilingual classifier were descoped together. Nothing downstream depends on them.
 - **Write actions in the console's interface.** See Conversation and evaluation.
+- **Four accessibility and interface reviews were not performed.** None was attempted, so the
+  interface makes no claim that rests on them:
+  - AC-E10-17, the judgement of the dominant element on each screen. The console queue's styling
+    is written so that the fraud and card-loss rows are the dominant element, but no reviewer has
+    judged the rendered screen.
+  - AC-E10-18, the checklist of the states each screen can be in (empty, loading, error, expired
+    session and the like). Individual states have components and tests, such as the error state;
+    the screens have not been walked against one checklist.
+  - AC-E10-19, the review of the interface's tone in each of the three languages.
+  - The manual screen-reader pass. The interface sets accessible names, live announcements and
+    focus handling, and component tests assert them, but no person has used a screen reader
+    through the sign-in, chat or console.
+- **Text enlarged to 300% on a 375 px or 320 px phone is a known limit.** The page scrolls
+  sideways and part of the header title is cut off; see Conversation and evaluation for the
+  screens and languages affected. It is accepted as it stands, not scheduled to be fixed.
