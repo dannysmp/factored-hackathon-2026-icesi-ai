@@ -5141,15 +5141,83 @@ def test_a_first_message_with_a_blank_merchant_searches_by_the_rest_of_the_hint(
 
 _GENERIC_MERCHANTS = [
     "transferencia",
-    "una transferencia",
+    "transferencias",
+    "transferencia bancaria",
     "transferência",
-    "uma transferência",
+    "transferências",
     "transfer",
-    "a transfer",
+    "transfers",
+    "bank transfer",
+    "wire transfer",
+    "pix",
+    "transaccion",
+    "transacción",
+    "transacciones",
+    "transacao",
+    "transação",
+    "transações",
+    "transaction",
+    "transactions",
+    "movimiento",
+    "movimientos",
+    "movimento",
+    "movimentos",
+    "cargo",
+    "cargos",
+    "cobro",
+    "cobros",
+    "cobrança",
+    "cobranças",
+    "charge",
+    "charges",
+    "compra",
+    "compras",
+    "compra online",
+    "compra en línea",
+    "purchase",
+    "purchases",
+    "online purchase",
+    "pago",
+    "pagos",
+    "pagamento",
+    "pagamentos",
+    "payment",
+    "payments",
+    "retiro",
+    "retiros",
+    "saque",
+    "saques",
+    "withdrawal",
+    "withdrawals",
+    "depósito",
+    "depósitos",
+    "deposit",
+    "deposits",
+    "tienda",
+    "tiendas",
     "tienda en línea",
-    "una tienda en línea",
+    "tienda online",
+    "comercio",
+    "establecimiento",
+    "estabelecimento",
+    "loja",
+    "lojas",
     "loja online",
+    "loja virtual",
+    "store",
+    "stores",
+    "online store",
+    "shop",
+    "shops",
+    "online shop",
+    "merchant",
+    "una transferencia",
+    "uma transferência",
+    "a transfer",
+    "una tienda en línea",
     "the online store",
+    "Transferencia ",
+    "  LA TIENDA ",
 ]
 
 
@@ -5252,6 +5320,45 @@ def test_a_word_for_a_kind_of_transaction_keeps_the_presented_transaction(
     )
 
     assert selected == "TX-1"
+
+
+@pytest.mark.parametrize(
+    "article", ["un", "una", "el", "la", "o", "a", "um", "uma", "the", "an", "my"]
+)
+def test_every_leading_article_is_ignored_before_a_generic_word(
+    article: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    def reply_for(typed: str) -> str:
+        controller = _transfer_controller(
+            [_file_dispute(transaction=TransactionHint(merchant=typed))],
+            store=InMemoryDialogueStore(),
+            policy=policy,
+            retriever=retriever,
+        )
+        return controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal()).reply
+
+    assert reply_for(f"{article} transfer") == reply_for("transfer")
+    assert reply_for(f"{article} transfer") != reply_for("Zzzz Unmatched")
+
+
+@pytest.mark.parametrize("merchant", ["A&A", "$$", "The A"])
+def test_a_merchant_made_only_of_articles_or_symbols_is_searched_for_like_any_other(
+    merchant: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """Such a name is a merchant's, not a word for a kind of transaction: it is searched for and,
+    matching nothing, is answered as any unmatched merchant is, rather than being dropped."""
+
+    def reply_for(typed: str) -> str:
+        controller = _two_transaction_controller(
+            [_file_dispute(transaction=TransactionHint(merchant=typed))],
+            store=InMemoryDialogueStore(),
+            policy=policy,
+            retriever=retriever,
+        )
+        return controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal()).reply
+
+    assert reply_for(merchant) == reply_for("Zzzz Unmatched")
+    assert reply_for(merchant) != reply_for("transfer")
 
 
 def test_a_merchant_that_merely_contains_a_generic_word_is_still_searched_for(

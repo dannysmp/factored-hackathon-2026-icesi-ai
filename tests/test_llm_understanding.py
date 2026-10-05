@@ -568,17 +568,70 @@ def test_a_currency_guessed_from_a_bare_dollar_sign_is_dropped(text: str) -> Non
     [
         ("Não reconheço R$ 2.763,79.", "BRL"),
         ("I don't recognize US$2,763.79.", "USD"),
+        ("No reconozco COL$ 2.763,79.", "COP"),
+        ("No reconozco MX$ 2.763,79.", "MXN"),
+        ("No reconozco AR$ 2.763,79.", "ARS"),
+        ("No reconozco CL$ 2.763,79.", "CLP"),
+        ("No reconozco C$ 2.763,79.", "NIO"),
         ("I don't recognize a charge of $2,763.79 USD.", "USD"),
-        ("No reconozco 2.763,79 pesos.", "COP"),
-        ("No reconozco 2763.79 COP.", "COP"),
-        ("No reconozco 2763.79", "COP"),
+        ("No reconozco $ 2.763,79 COP.", "COP"),
+        ("No reconozco $ 2.763,79 dólares.", "USD"),
+        ("No reconozco $ 2.763,79 dolares.", "USD"),
+        ("I don't recognize $2,763.79 dollars.", "USD"),
+        ("I don't recognize $2,763.79 dollar.", "USD"),
+        ("Não reconheço $ 2.763,79 reais.", "BRL"),
+        ("No reconozco $ 2.763,79 pesos.", "COP"),
+        ("No reconozco $ 2.763,79 peso.", "COP"),
+        ("No reconozco $ 2.763,79 euros.", "EUR"),
+        ("I don't recognize $2,763.79 in euro.", "EUR"),
+        ("I don't recognize €2,763.79 or $3.", "EUR"),
+        ("I don't recognize £2,763.79 or $3.", "GBP"),
+        ("I don't recognize ¥2,763.79 or $3.", "JPY"),
     ],
-    ids=["pt-prefix", "en-prefix", "en-code", "es-word", "es-code", "no-dollar-sign"],
+    ids=[
+        "pt-reais-prefix",
+        "en-us-prefix",
+        "es-col-prefix",
+        "es-mx-prefix",
+        "es-ar-prefix",
+        "es-cl-prefix",
+        "es-c-prefix",
+        "en-code-usd",
+        "es-code-cop",
+        "es-dolares",
+        "es-dolares-unaccented",
+        "en-dollars",
+        "en-dollar",
+        "pt-reais",
+        "es-pesos",
+        "es-peso",
+        "es-euros",
+        "en-euro",
+        "euro-sign",
+        "pound-sign",
+        "yen-sign",
+    ],
 )
-def test_a_currency_the_message_states_is_kept(text: str, currency: str) -> None:
+def test_a_currency_the_message_states_is_kept_beside_a_dollar_sign(
+    text: str, currency: str
+) -> None:
     result = _understand({"amount": "2763.79", "currency": currency}, text)
 
     assert result.transaction.currency == currency
+
+
+def test_a_currency_is_kept_when_the_message_has_no_dollar_sign() -> None:
+    result = _understand({"amount": "2763.79", "currency": "COP"}, "No reconozco 2763.79")
+
+    assert result.transaction.currency == "COP"
+
+
+def test_the_word_real_is_not_a_stated_currency() -> None:
+    result = _understand(
+        {"amount": "50", "currency": "BRL"}, "I have a real problem with a charge of $50."
+    )
+
+    assert result.transaction.currency is None
 
 
 def test_a_lowercase_currency_code_is_read_in_capitals() -> None:

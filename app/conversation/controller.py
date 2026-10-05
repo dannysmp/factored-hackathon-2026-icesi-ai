@@ -347,39 +347,69 @@ _GENERIC_MERCHANTS = frozenset(
     {
         "transferencia",
         "transferencia bancaria",
+        "transferencias",
         "transfer",
+        "transfers",
         "bank transfer",
+        "wire transfer",
+        "pix",
         "transaccion",
+        "transacciones",
         "transacao",
+        "transacoes",
         "transaction",
+        "transactions",
         "movimiento",
+        "movimientos",
         "movimento",
+        "movimentos",
         "cargo",
+        "cargos",
         "cobro",
+        "cobros",
         "cobranca",
+        "cobrancas",
         "charge",
+        "charges",
         "compra",
+        "compras",
+        "compra online",
+        "compra en linea",
         "purchase",
+        "purchases",
+        "online purchase",
         "pago",
+        "pagos",
         "pagamento",
+        "pagamentos",
         "payment",
+        "payments",
         "retiro",
+        "retiros",
         "saque",
+        "saques",
         "withdrawal",
+        "withdrawals",
         "deposito",
+        "depositos",
         "deposit",
+        "deposits",
         "tienda",
+        "tiendas",
         "tienda en linea",
         "tienda online",
         "comercio",
         "establecimiento",
         "estabelecimento",
         "loja",
+        "lojas",
         "loja online",
         "loja virtual",
         "store",
+        "stores",
         "online store",
         "shop",
+        "shops",
         "online shop",
         "merchant",
     }
@@ -391,10 +421,13 @@ _LEADING_ARTICLES = frozenset({"un", "una", "el", "la", "o", "a", "um", "uma", "
 
 def _names_no_merchant(merchant: str) -> bool:
     """Whether ``merchant`` is empty or only a generic word for a kind of transaction or place."""
-    words = "".join(ch if ch.isalnum() else " " for ch in _fold(merchant)).split()
+    folded = _fold(merchant)
+    if not folded.strip():
+        return True
+    words = "".join(ch if ch.isalnum() else " " for ch in folded).split()
     while words and words[0] in _LEADING_ARTICLES:
         words.pop(0)
-    return not words or " ".join(words) in _GENERIC_MERCHANTS
+    return bool(words) and " ".join(words) in _GENERIC_MERCHANTS
 
 
 def _without_unnamed_merchant(result: NluResult) -> NluResult:
@@ -945,11 +978,11 @@ class DialogueController:
         A hint that names nothing, or only matches the presented transaction, is the customer
         going ahead with it. A hint that names a different merchant, amount, card or date means
         they rejected the one shown and are pointing at another. When the presented transaction
-        cannot be read back, the hint is searched for afresh rather than assumed to match. A
-        merchant that names nothing (empty, or only a generic word) says nothing, so it is ignored.
+        cannot be read back, the hint is searched for afresh rather than assumed to match. The
+        hint arrives with a merchant that names nothing already removed, so a customer who answers
+        with only a word for a kind of transaction keeps the presented one, which the confirmation
+        shows in full before anything is filed.
         """
-        if hint.merchant is not None and _names_no_merchant(hint.merchant):
-            hint = hint.model_copy(update={"merchant": None})
         if hint.is_empty:
             return False
         assert state.selected_ref is not None  # noqa: S101 - set whenever this slot is pending
