@@ -14,13 +14,12 @@ fixture the tests read.
 
 Limitations
 -----------
-A document number typed in a customer's free-text message is not detected or redacted: the
-card-number detector's Luhn-checksum technique does not extend to a document number, which carries
-no checksum, so the value still reaches the outbound request unmasked. The conversation never asks
-for one and never echoes the free-text fields back (see "Security posture" in
-``docs/limitations.md``). The log test below uses a document number only to prove it is not
-logged; no test here claims the request is free of it. Only the understanding step's request is
-captured here; the renderer's request is not.
+A document number is found by shape, not by checksum (see ``app.llm.masking``): an unbroken run
+of seven or more digits and the two punctuated Brazilian tax-number shapes are redacted before the
+request is sent. A national identity number typed with thousands-style dots has the shape of an
+amount and is not detected, and an amount typed as seven or more unbroken digits is redacted; the
+tests below pin both ends. Only the understanding step's request is captured here; the renderer's
+request is not.
 """
 
 from __future__ import annotations
@@ -73,6 +72,50 @@ def test_a_card_number_split_by_separators_never_reaches_the_outbound_request() 
     sent = llm.requests[0].user_text
     assert "1111" * 4 not in sent.replace(" ", "")
     assert masking.PLACEHOLDER in sent
+
+
+_DOCUMENT_MESSAGES = {
+    "es": ("Mi cédula es 1094921834 y no reconozco un cargo de Amazon.", "1094921834"),
+    "pt": ("Meu CPF é 123.456.789-09 e não reconheço uma compra na Amazon.", "123.456.789-09"),
+    "en": ("My ID number is 1094921834 and I don't recognise a charge from Amazon.", "1094921834"),
+}
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_a_document_number_never_reaches_the_outbound_request(lang: str) -> None:
+    llm = FakeLlm(
+        responses=[{"intent": "file_dispute", "confidence": 0.8, "mentions_second_dispute": False}]
+    )
+    nlu = LlmNlu(llm, model="claude-sonnet-5")
+    message, document_number = _DOCUMENT_MESSAGES[lang]
+
+    nlu.understand(message, language_hint=lang, reference_date=_REFERENCE_DATE)  # type: ignore[arg-type]
+
+    sent = llm.requests[0].user_text
+    assert document_number not in sent
+    assert masking.DOCUMENT_PLACEHOLDER in sent
+    assert "Amazon" in sent
+
+
+@pytest.mark.parametrize(
+    "amount",
+    ["$27.556.276,44", "$4.593.557,41", "1,475,202.64", "$7.548.781,13", "250.000"],
+)
+def test_an_amount_written_with_separators_still_reaches_the_outbound_request(amount: str) -> None:
+    llm = FakeLlm(
+        responses=[{"intent": "file_dispute", "confidence": 0.8, "mentions_second_dispute": False}]
+    )
+    nlu = LlmNlu(llm, model="claude-sonnet-5")
+
+    nlu.understand(
+        f"No reconozco una transferencia de {amount} pesos colombianos.",
+        language_hint="es",
+        reference_date=_REFERENCE_DATE,
+    )
+
+    sent = llm.requests[0].user_text
+    assert amount in sent
+    assert masking.DOCUMENT_PLACEHOLDER not in sent
 
 
 def test_the_transaction_hint_has_no_dedicated_identifier_field() -> None:

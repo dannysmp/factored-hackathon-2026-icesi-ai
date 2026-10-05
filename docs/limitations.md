@@ -150,23 +150,26 @@ results still to come say so and name the command that completes them.
 Every control's actual implementation status, not just its design intent, is tracked in
 [SECURITY.md](../SECURITY.md), which this document defers to rather than duplicating.
 
-**A document number typed unprompted into a free-text message is not detected or redacted.** The
-conversation never asks a customer for a document number. The understanding contract has exactly
-three free-text fields with no restriction on what they hold — a transaction's merchant as the
-customer describes it, the dispute detail, and a policy question — any of which can carry a
-document number if a customer types one there; every other field (the category, a confirmation,
-an amount, a date) is a closed enum or a narrowly patterned value that cannot. None of the three
-free-text fields is ever echoed back to that or any other customer: the merchant hint is used only
-to match against the customer's own real transactions, never displayed itself (a reply always
-states the matched transaction's own stored merchant, not the customer's typed hint); the dispute
-detail is not read anywhere; a policy question is used only to retrieve a matching policy section,
-never quoted back. Unlike a card number, a document number carries no checksum a detector could
-key on, so a content filter over free text would be a length-only heuristic with an unmeasured
-false-positive cost against legitimate reference and case numbers. The deliberate choice is to
-rely on never asking for or echoing the value, not on scanning for and stripping it after the
-fact; a customer who volunteers one anyway in free text is not protected against by any content
-filter today — the value still reaches the outbound model request unmasked, the way a card
-number's digits are masked before that same request is sent.
+**A document number typed unprompted into a free-text message is redacted by shape, with two known
+gaps.** The conversation never asks a customer for a document number. The understanding contract
+has exactly three free-text fields with no restriction on what they hold — a transaction's
+merchant as the customer describes it, the dispute detail, and a policy question — any of which can
+carry a document number if a customer types one there. None of the three is ever echoed back to
+that or any other customer: the merchant hint is used only to match against the customer's own
+real transactions, never displayed itself; the dispute detail is not read anywhere; a policy
+question is used only to retrieve a matching policy section, never quoted back. Before the
+customer's message is sent to the model, an unbroken run of seven or more digits and the two
+punctuated Brazilian tax-number shapes (a personal tax number such as `123.456.789-09` and a
+company tax number such as `12.345.678/0001-95`) are replaced with a fixed placeholder, the same
+way a card number is. A document number has no checksum, so the rule is by shape, and it is chosen
+so that a money amount written with separators (`$27.556.276,44`, `1,475,202.64`) is never
+touched. That choice leaves two gaps. A national identity number typed with thousands-style dots
+(`1.094.921.834`) has the shape of an amount and reaches the model unmasked. An amount typed as
+seven or more unbroken digits (`1250000`) is redacted like an identifier; it is only a search hint
+for the customer's own transactions, and policy reads the stored amount, so the cost is one more
+question to the customer. An identity number split by other characters, or written in words, is
+not detected. The customer's own message text is the only thing this rule applies to; the
+controller's own parsing always reads the original text.
 
 ## Not attempted
 
