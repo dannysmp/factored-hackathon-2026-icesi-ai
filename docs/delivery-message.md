@@ -53,7 +53,7 @@ Agent profiles for the console are Beatriz (Portuguese and Spanish) and Diego (S
 Things to know:
 
 - A customer session lasts 30 minutes and an agent session 60 minutes, then the sign-in is asked for again.
-- A profile is reserved for the full session length from the moment it signs in, even if the page is reloaded or the tab is closed, because the page keeps no sign-in once it is left. A reserved profile is refused with a generic message until its time runs out, so choose another profile or wait. Each address can hold five live sessions on each side, which is one per customer profile, so readers sharing a network may exhaust it.
+- A profile can be used by one session at a time. Signing out frees it at once; closing the tab or reloading the page does not, because the page keeps no sign-in once it is left, so the profile stays in use until its session expires. A profile in use is refused with the message "This profile is in use right now. Choose another profile.", so choose another profile or wait. Each address can hold five live sessions on each side, which is one per customer profile, so readers sharing a network may exhaust it.
 - Several wrong access codes from the same address are temporarily refused, so copy the code rather than retyping it.
 - The accounts and transactions are synthetic data; nobody's real information is involved.
 - Please sign out when you finish. It frees your profile at once for the next reader; closing the tab does not, and the profile then stays in use for up to 30 minutes (customer) or 60 (agent).
@@ -69,5 +69,5 @@ Each of these is a check against the release checklist, and none needs a secret 
 
 - All four links open from a private browser window.
 - `curl -s -w '\n%{http_code}\n' https://<host>/v1/auth/demo-personas` answers `200` and lists profiles of both audiences, as in step 5 of the runbook.
-- Each code has been tried once, with a different profile for each. That try reserves its profile for 30 minutes (customer) or 60 minutes (agent), so send the message after that time has passed, or keep readers off that profile.
+- Each code has been tried once, with a different profile for each. Sign out after each try, which frees the profile at once; a try that is left signed in holds its profile for 30 minutes (customer) or 60 minutes (agent).
 - The clipboard is cleared after each paste, and the message is the only place either code is written.
