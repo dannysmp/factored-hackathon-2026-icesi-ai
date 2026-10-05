@@ -46,7 +46,7 @@ describe('SignInScreen product heading', () => {
       expect(
         screen.getByRole('heading', { level: 2, name: catalog['signin.heading'] }),
       ).toBeInTheDocument()
-      expect(screen.getByText(catalog['signin.productTagline'])).toBeInTheDocument()
+      expect(screen.getByText(catalog['signin.intro'])).toBeInTheDocument()
     },
   )
 
@@ -62,6 +62,26 @@ describe('SignInScreen product heading', () => {
       expect(screen.queryByText(en['signin.heading'])).not.toBeInTheDocument()
       expect(screen.queryByText(/dispute intake/i)).not.toBeInTheDocument()
       expect(screen.getByText(catalog['signin.heading'])).toBeInTheDocument()
+    },
+  )
+})
+
+describe('SignInScreen wording', () => {
+  it.each([
+    ['ana', es],
+    ['joao', pt],
+    ['emma', en],
+  ] as const)(
+    'states each thing once in the language of %s: one title, one helper line, the profiles',
+    async (slug, catalog) => {
+      const user = await renderCustomerScreen()
+      await user.click(getPersonaRadio(slug))
+
+      const card = screen.getByRole('region', { name: catalog['signin.heading'] })
+      const sentences = [...card.querySelectorAll('h2, p, legend')].map((node) => node.textContent)
+      expect(new Set(sentences).size).toBe(sentences.length)
+      expect(within(card).getAllByRole('heading')).toHaveLength(1)
+      expect(within(card).getAllByText(catalog['signin.intro'])).toHaveLength(1)
     },
   )
 })
@@ -91,7 +111,7 @@ describe('SignInScreen language switcher', () => {
     await user.click(screen.getByRole('button', { name: 'Português' }))
 
     expect(screen.getByRole('radio', { checked: true })).toHaveAttribute('value', 'joao')
-    expect(screen.getByText(pt['signin.productTagline'])).toBeInTheDocument()
+    expect(screen.getByText(pt['signin.intro'])).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Português' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -157,7 +177,7 @@ describe('SignInScreen language switcher', () => {
     expect(
       screen.queryByRole('group', { name: es['signin.languageSwitcherLabel'] }),
     ).not.toBeInTheDocument()
-    expect(screen.getByText(es['signin.agentTagline'])).toBeInTheDocument()
+    expect(screen.getByText(es['signin.intro'])).toBeInTheDocument()
   })
 })
 
@@ -167,7 +187,7 @@ describe('SignInScreen persona cards', () => {
 
     const carlos = screen.getByRole('radio', { name: /^Carlos\s+Español/ })
     expect(carlos).toHaveAccessibleName(`Carlos Español ${es['signin.persona.carlos.case']}`)
-    expect(screen.getAllByText(es['signin.persona.ana.case'])).toHaveLength(3)
+    expect(screen.getByText(es['signin.persona.ana.case'])).toBeInTheDocument()
   })
 
   it('shows initials on each card', async () => {

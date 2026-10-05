@@ -8,9 +8,9 @@ import styles from './PageHeader.module.css'
  * optional slot on the right for actions that belong to the whole page (signing out, for example).
  *
  * It renders a `banner` landmark, so it sits beside `main` rather than inside it. `width` matches
- * the page's own content area: `narrow` for the single-column chat, `form` for the sign-in card
- * and `wide` for the console's tables, so the header's brand lines up with the left edge of the
- * content beneath it.
+ * the page's own content area: `narrow` for the single-column chat and `wide` for the console's
+ * tables, so the header's brand lines up with the left edge of the content beneath it. `form` is
+ * the sign-in card's width: the brand is larger and centered over the card.
  */
 export function PageHeader({
   title,

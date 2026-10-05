@@ -45,14 +45,11 @@ export interface Messages {
   'chat.result.keepNumber': string
   'chat.result.escalatedNext': string
   'chat.result.filedEarlierLabel': string
-  'signin.regionLabel': string
   'signin.loading': string
   'signin.unreachable': string
   'signin.unavailable': string
   'signin.intro': string
   'signin.heading': string
-  'signin.productTagline': string
-  'signin.agentTagline': string
   'signin.languageSwitcherLabel': string
   'signin.personaGroupLabel': string
   'signin.personaLanguage.es': string
