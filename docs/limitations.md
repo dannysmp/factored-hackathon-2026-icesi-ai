@@ -35,7 +35,7 @@ results still to come say so and name the command that completes them.
 ## Machine learning
 
 - **The transaction risk model does not route any case today.** Calibration ran, searched for a
-  threshold that clears the pre-registered precision floor at no more than a 5% routed share, and
+  threshold that clears the precision floor fixed in advance at no more than a 5% routed share, and
   found none: the model card records this as a negative result and keeps routing switched off. A
   fraud claim still always reaches a person regardless of this signal, since that rule does not
   depend on the risk score.
@@ -70,6 +70,10 @@ results still to come say so and name the command that completes them.
   makes grounding a weaker test than a reply set beside the facts it should cite, and the
   disagreement between the two raters on grounding is unexplained. The written analysis of where
   raters and judge disagree is a person's job and is not generated.
+  Running `make judge-validation RATER1=<sheet> RATER2=<sheet>` scores the same cases with the
+  real judge, patches that section and the matching limitations line of the report, and writes
+  every case's scores to `reports/judge-validation-cases.csv`, a local working file that is not
+  tracked in the repository.
   The report's figures describe the commit it names, not the current head, which carries later
   behaviour and scoring fixes.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get

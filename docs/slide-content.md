@@ -23,8 +23,8 @@ This document states the content of each slide; it is not the slide file itself.
 
 - The system splits along one line the whole design follows: **the model understands and renders
   language; code decides and acts** (a deterministic policy engine rather than an
-  autonomous agent loop). Dispute eligibility, routing and confirmation requirements live only in that engine — the
-  model never decides an outcome.
+  autonomous agent loop). Dispute eligibility, routing and confirmation requirements live only in
+  that engine — the model never decides an outcome.
 - **Every write is read back before the customer is told it happened**; a document number is never
   accepted as identity, in any tool, for any customer.
 - Three deliberate right-sizing trade-offs, each with a written trigger to move up a tier:
