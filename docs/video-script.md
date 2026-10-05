@@ -2,7 +2,7 @@
 
 A walk through the deployed system: the problem, the language switch, three paths with one
 demonstration persona each, the evaluation result, four design decisions and the route to operation.
-The total is about three minutes fifteen seconds against a target of three minutes, a length chosen
+The total is about three minutes twenty seconds against a target of three minutes, a length chosen
 for this video; the Timing table gives the pace the narration assumes.
 
 ## Before recording
@@ -31,8 +31,8 @@ Case and ticket numbers are read off the screen, never from this script: the dep
 
 ## The problem
 
-Narration: "The bank receives about 12,297 disputed charges in 37 months, and the cases that do
-close take a median of 15 days."
+Narration: "In the banking dataset we were given, there are 12,297 disputed charges in 37 months,
+and the cases that do close take a median of 15 days."
 
 On screen: the figures as slide 2 of the deck states them: 12,297 disputed charges in 37 months, and
 15.0 days as the median time to resolve the cases that do close.
@@ -89,8 +89,9 @@ is a viewer today."
 Show the headline table of `reports/evaluation.md`, captioned as an offline measurement on
 team-written cases. Narration: "On 135 team-written cases, 32 of them adversarial, among them prompt
 injection, attempts to reach another customer's data and corrupted data, there were zero unsafe
-outcomes. Safe automated resolution is 73.5%, against 33.0% and 36.9% for the two baselines. The
-automated judge did not match both human raters on 80% of replies, so we do not report its scores."
+outcomes. Safe automated resolution is 73.5% over the 103 cases in scope, against 33.0% and 36.9%
+for the two baselines. The automated judge did not match both human raters on 80% of replies, so we
+do not report its scores."
 
 ## Design decisions
 
@@ -118,16 +119,16 @@ part is for sign-ins, typing, replies and console navigation.
 
 | Part | Seconds | Narration words | Seconds of speech |
 |---|---|---|---|
-| The problem | 10 | 22 | 9 |
+| The problem | 12 | 27 | 11 |
 | Opening | 15 | 33 | 13 |
 | Language switch | 7 | 15 | 6 |
 | Path 1 | 33 | 22 | 9 |
 | Path 2 | 12 | 13 | 5 |
 | Path 3 | 33 | 28 | 11 |
-| Results | 26 | 59 | 24 |
+| Results | 30 | 65 | 26 |
 | Design decisions | 40 | 69 | 28 |
 | Closing | 20 | 49 | 20 |
-| Total | 196 | 310 | 125 |
+| Total | 202 | 321 | 129 |
 
 ## Notes for the recording
 
