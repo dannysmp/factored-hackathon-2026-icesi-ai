@@ -17,12 +17,12 @@ In: the three routes (customer sign-in, agent sign-in, and the read-only persona
 pickers use), their request and response shapes, and wiring the access-code check, the persona
 lookup, the issuance limits and the sign-in audit together: the access code is compared first,
 then the persona is looked up, the issuance reservations are taken, and the attempt is audited
-before a token is returned. The two
-sign-in brokers share every helper below but are never the same route or the same access code, so
-a leaked customer code leaves the console protected. The persona directory
-carries no access code of its own — it mints no session and reveals nothing beyond a slug, a
-display name, a language and which audience it belongs to (never a customer or agent id) — but is
-gated by the same two settings, so the kill switch hides it exactly like the two sign-in routes.
+before a token is returned. The two sign-in brokers share every helper below but are never the
+same route or the same access code, so a leaked customer code leaves the console protected. The
+persona directory carries no access code of its own — it mints no session and reveals nothing
+beyond a slug, a display name, a language and which audience it belongs to (never a customer or
+agent id) — but is gated by the same two settings, so the kill switch hides it exactly like the two
+sign-in routes.
 Out: validating the persona file or checking it against the seed (``app.security.demo_personas``,
 done once at start-up — the agent list has no seed to check against), issuing or verifying the
 token itself (``SessionService``), the two limiter implementations (``app.security.limits``,
