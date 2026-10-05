@@ -122,10 +122,20 @@ def _executable(path: Path, text: str) -> None:
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
 
+def _environment() -> dict[str, str]:
+    """The test process's environment without the coverage hooks that would measure its children.
+
+    A child started elsewhere than the repository root cannot read the coverage configuration, so
+    it would write line-only data that cannot be combined with the run's branch data.
+    """
+    return {key: value for key, value in os.environ.items() if not key.startswith("COV_CORE_")}
+
+
 def _marts() -> list[str]:
     result = subprocess.run(
         ["python3", "lib/theme_metabase_dashboard.py", "--list-marts"],  # noqa: S607
         cwd=REPO_ROOT / "infra" / "scripts",
+        env=_environment(),
         capture_output=True,
         text=True,
         check=True,
@@ -149,7 +159,7 @@ def _run_check(work: Path, *, python_stub: str | None = None) -> subprocess.Comp
     if python_stub is not None:
         _executable(bin_dir / "python3", python_stub)
     env = {
-        **os.environ,
+        **_environment(),
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "CAPTURE_PATH": str(work / "payload.json"),
     }
@@ -174,7 +184,7 @@ def _run_remote(work: Path, counts: dict[str, int]) -> subprocess.CompletedProce
     counts_file = work / "counts.txt"
     counts_file.write_text("".join(f"{mart}={rows}\n" for mart, rows in counts.items()))
     env = {
-        **os.environ,
+        **_environment(),
         "PATH": f"{work / 'bin'}{os.pathsep}{os.environ['PATH']}",
         "COUNTS_FILE": str(counts_file),
     }
