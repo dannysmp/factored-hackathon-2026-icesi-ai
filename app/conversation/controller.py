@@ -96,7 +96,8 @@ handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's
 While the transaction is the pending question, a message that describes one is taken as the
 answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a category
 carried by such a message does not replace one already set, the same rule as above. A description
-that matches no transaction does not use up the clarification budget.
+that matches no transaction, or more than one, counts as one unsettled answer to the question,
+the same as any other reply that leaves it open.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
@@ -852,17 +853,9 @@ class DialogueController:
 
         matches = tuple(item for item in page.items if _matches_hint(item, hint))
         if not matches:
-            return state, self._envelope(state, Intent.CLARIFY, TemplateId.NOT_FOUND)
+            return self._ask_for_a_better_description(state, TemplateId.NOT_FOUND)
         if len(matches) > 1:
-            new_state = state.with_clarification(Slot.TRANSACTION)
-            if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
-                return self._handoff(
-                    new_state,
-                    trigger=HandoffTrigger.LOW_UNDERSTANDING,
-                    reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
-                    template=TemplateId.HANDOFF_REVIEW,
-                )
-            return new_state, self._envelope(new_state, Intent.CLARIFY, TemplateId.PRESENT_NARROW)
+            return self._ask_for_a_better_description(state, TemplateId.PRESENT_NARROW)
 
         fact = to_envelope_transaction(matches[0])
         new_state = state.model_copy(
@@ -873,6 +866,22 @@ class DialogueController:
             }
         )
         return new_state, self._present_selected(new_state, fact)
+
+    def _ask_for_a_better_description(
+        self, state: DialogueState, template: TemplateId
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """The description matched no transaction, or more than one: ask for it again, or hand
+        over once the clarification budget is spent. Each such reply counts as one unsettled
+        answer to the transaction question."""
+        new_state = state.with_clarification(Slot.TRANSACTION)
+        if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
+            return self._handoff(
+                new_state,
+                trigger=HandoffTrigger.LOW_UNDERSTANDING,
+                reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
+                template=TemplateId.HANDOFF_REVIEW,
+            )
+        return new_state, self._envelope(new_state, Intent.CLARIFY, template)
 
     def _evaluate_and_present(
         self, state: DialogueState, ref: str, category: DisputeCategory

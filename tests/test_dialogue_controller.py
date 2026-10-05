@@ -739,8 +739,71 @@ def test_no_match_states_not_found(policy: Policy, retriever: LexicalRetriever) 
         retriever=retriever,
     )
     response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
-    assert response.next_expected is None
+    assert response.next_expected is Slot.TRANSACTION
     assert store.get(_SESSION_ID).selected_ref is None  # type: ignore[union-attr]
+
+
+_NOBODY = TransactionHint(merchant="Nobody")
+
+
+def test_a_description_that_matches_nothing_is_asked_again_twice_before_a_person_is_involved(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    first = dialogue.say(_file_dispute(transaction=_NOBODY))
+    assert first.next_expected is Slot.TRANSACTION
+    assert not first.end_session
+
+    second = dialogue.say(_file_dispute(transaction=_NOBODY))
+    assert second.next_expected is Slot.TRANSACTION
+    assert not second.end_session
+    assert dialogue.outbox.packets == []
+
+    third = dialogue.say(_file_dispute(transaction=_NOBODY))
+    assert third.end_session
+    assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        _plain(NluIntent.CORRECTION, transaction=_NOBODY),
+        _plain(NluIntent.UNCLEAR, transaction=_NOBODY),
+        _plain(NluIntent.CHOICE, choice=1, transaction=_NOBODY),
+    ],
+    ids=["correction", "unclear", "choice"],
+)
+def test_a_described_answer_that_matches_nothing_counts_whatever_the_intent_the_model_gave(
+    policy: Policy, retriever: LexicalRetriever, answer: NluResult
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute())
+
+    assert not dialogue.say(answer).end_session
+    assert dialogue.outbox.packets == []
+
+    assert dialogue.say(answer).end_session
+    assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+
+
+def test_after_a_description_that_matches_nothing_the_transaction_stays_the_open_question(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute(transaction=_NOBODY))
+
+    again = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert again.next_expected is Slot.TRANSACTION
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.clarification_attempts == 1
+
+    presented = dialogue.present_amazon()
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.clarification_attempts == 0
 
 
 def test_multiple_matches_ask_for_detail_twice_then_escalate(
