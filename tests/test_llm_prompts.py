@@ -105,7 +105,9 @@ def test_the_shipped_nlu_prompt_teaches_the_choice_intent_and_its_limits(phrase:
         "leave merchant null",
         'A bare "$" does not state a currency',
         "the sign € or",
+        "£, or a currency word such as dollars, euros or reais",
         'The word "pesos" alone names no country',
+        "unless the message says which pesos",
     ],
 )
 def test_the_shipped_nlu_prompt_keeps_a_transfer_already_made_disputable_and_states_currencies(
