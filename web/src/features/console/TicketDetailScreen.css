@@ -40,6 +40,18 @@
   margin: 0;
 }
 
+/* Narrow screens give each value the full width under its label rather than a sliver beside it.
+   The breakpoint is a literal: a custom property cannot be read inside a media query. */
+@media (max-width: 40rem) {
+  .ticket-detail-screen dl {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-detail-screen dd {
+    margin-bottom: var(--space-2);
+  }
+}
+
 .ticket-detail-screen h2 {
   font-size: var(--font-size-lg);
   margin: 0;
