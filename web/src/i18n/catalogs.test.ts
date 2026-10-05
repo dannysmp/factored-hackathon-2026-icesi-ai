@@ -75,7 +75,7 @@ describe('the message catalogs', () => {
   })
 
   it('keeps Spanish in the formal register, with no informal address', () => {
-    for (const text of Object.values<string>(CATALOGS.es)) {
+    for (const text of Object.values(asRecords(CATALOGS).es ?? {})) {
       expect(informalSpanishAddress(text)).toEqual([])
     }
   })
