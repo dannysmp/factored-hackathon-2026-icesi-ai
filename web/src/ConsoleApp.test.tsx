@@ -2,7 +2,7 @@
  * with no accessibility violations at any step. Every request (sign-in, queue, ticket detail) is
  * a mocked `fetch`, serving the same fixture data `web/src/features/console/fixtures.ts` already
  * validates against the real contracts. */
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -300,5 +300,92 @@ describe('ConsoleApp', () => {
 
     await user.click(screen.getByRole('button', { name: 'Volver a la cola' }))
     expect(await screen.findByRole('button', { name: ref })).toHaveFocus()
+  })
+
+  describe('the request to focus the row the agent returned from', () => {
+    async function openFirstTicketAndGoBackWhileTheQueueReloads(
+      respondToTheReload: () => Promise<Response>,
+    ): Promise<{
+      ref: string
+      signInAgain: () => Promise<void>
+      user: ReturnType<typeof userEvent.setup>
+    }> {
+      const fetchMock = stubTheWholeFlow()
+      const stubbed = fetchMock.getMockImplementation()
+      if (stubbed === undefined)
+        throw new Error('fixture setup: the fetch stub has no implementation')
+      let queueRequests = 0
+      fetchMock.mockImplementation((url, init) => {
+        if (url === '/v1/agent/queue') {
+          queueRequests += 1
+          if (queueRequests === 2) return respondToTheReload()
+        }
+        return stubbed(url, init)
+      })
+      const user = userEvent.setup()
+      render(<ConsoleApp />)
+      const signIn = async (): Promise<void> => {
+        await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
+        await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
+        await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+      }
+      await signIn()
+      const [firstDetail] = DEMO_TICKET_DETAILS
+      if (firstDetail === undefined) {
+        throw new Error('fixture setup: DEMO_TICKET_DETAILS needs at least one entry for this test')
+      }
+      const ref = firstDetail.item.ticket_ref
+      await user.click(await screen.findByRole('button', { name: ref }))
+      await screen.findByRole('region', { name: 'Detalle del caso' })
+      await user.click(screen.getByRole('button', { name: 'Volver a la cola' }))
+      return { ref, signInAgain: signIn, user }
+    }
+
+    it('is spent once the row has taken focus, so a later remount of the table does not take it again', async () => {
+      stubTheWholeFlow()
+      const user = userEvent.setup()
+      render(<ConsoleApp />)
+      await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
+      await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
+      await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+      const [firstDetail] = DEMO_TICKET_DETAILS
+      if (firstDetail === undefined) {
+        throw new Error('fixture setup: DEMO_TICKET_DETAILS needs at least one entry for this test')
+      }
+      const ref = firstDetail.item.ticket_ref
+      await user.click(await screen.findByRole('button', { name: ref }))
+      await user.click(await screen.findByRole('button', { name: 'Volver a la cola' }))
+      expect(await screen.findByRole('button', { name: ref })).toHaveFocus()
+
+      const blurActiveElement = (): void => {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+      }
+      blurActiveElement()
+      fireEvent.mouseDown(screen.getByRole('tab', { name: /^Otros/ }), { button: 0 })
+      blurActiveElement()
+      fireEvent.mouseDown(screen.getByRole('tab', { name: /^Todos/ }), { button: 0 })
+
+      expect(await screen.findByRole('button', { name: ref })).not.toHaveFocus()
+    })
+
+    it('is dropped when the agent signs out before the queue has come back', async () => {
+      const { ref, signInAgain, user } = await openFirstTicketAndGoBackWhileTheQueueReloads(
+        () => new Promise<Response>(() => undefined),
+      )
+      await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }))
+      await signInAgain()
+
+      expect(await screen.findByRole('button', { name: ref })).not.toHaveFocus()
+    })
+
+    it('is dropped when the session ends before the queue has come back', async () => {
+      const { ref, signInAgain } = await openFirstTicketAndGoBackWhileTheQueueReloads(() =>
+        Promise.resolve(jsonResponse(401, {})),
+      )
+      await screen.findByText('Su sesión expiró. Inicie sesión de nuevo.')
+      await signInAgain()
+
+      expect(await screen.findByRole('button', { name: ref })).not.toHaveFocus()
+    })
   })
 })

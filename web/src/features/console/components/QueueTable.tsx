@@ -39,23 +39,27 @@ function PriorityBadge(): JSX.Element {
  *
  * `focusTicketRef` names the case the agent has just come back from: when it is in this view and
  * nothing holds focus, its button takes focus, so going back lands on the row that was open.
+ * The request is single-use: `onFocusHandled` is called once the table has acted on it, whether or
+ * not the row was found or focus was taken, so a later remount of the table never replays it.
  */
 export function QueueTable({
   items,
   onSelectTicket,
   focusTicketRef = null,
+  onFocusHandled,
 }: {
   items: readonly QueueItem[]
   onSelectTicket: (ticketRef: string) => void
   focusTicketRef?: string | null
+  onFocusHandled?: () => void
 }): JSX.Element {
   const returnedButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    if (focusTicketRef !== null && document.activeElement === document.body) {
-      returnedButtonRef.current?.focus()
-    }
-  }, [focusTicketRef])
+    if (focusTicketRef === null) return
+    if (document.activeElement === document.body) returnedButtonRef.current?.focus()
+    onFocusHandled?.()
+  }, [focusTicketRef, onFocusHandled])
 
   if (items.length === 0) {
     return <p>Ningún caso coincide con este filtro.</p>

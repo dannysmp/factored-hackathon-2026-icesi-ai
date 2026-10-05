@@ -1,5 +1,5 @@
 /** The agent console shell: agent sign-in, then the ticket queue, then one ticket's detail. */
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { JSX } from 'react'
 import { QueueScreen } from './features/console/QueueScreen'
 import { TicketDetailScreen } from './features/console/TicketDetailScreen'
@@ -36,7 +36,8 @@ const CONSOLE_TITLE = 'Consola del agente'
  * clears both, so the next agent starts at the queue.
  *
  * Going back from a ticket returns focus to that ticket's row in the queue, so the agent resumes
- * where they left off; `returnedFrom` carries that reference to the queue until the next selection.
+ * where they left off. `returnedFrom` carries that reference to the queue, which reports back once it
+ * has acted on it so the request is never replayed; ending the session also drops it.
  *
  * The console stays in Spanish whatever the agent persona's language. `SignInScreen` reads its
  * copy from the trilingual `useT` hook only for the customer audience, so passing
@@ -47,8 +48,12 @@ export function ConsoleApp(): JSX.Element {
 
   const [expired, setExpired] = useState(false)
   const [returnedFrom, setReturnedFrom] = useState<string | null>(null)
+  const clearReturnedFrom = useCallback(() => {
+    setReturnedFrom(null)
+  }, [])
   const expireSession = (): void => {
     setExpired(true)
+    setReturnedFrom(null)
     setSession(null)
   }
   const signOut = (): void => {
@@ -102,11 +107,9 @@ export function ConsoleApp(): JSX.Element {
         {selectedTicketRef === null ? (
           <QueueScreen
             client={queueClient}
-            onSelectTicket={(ticketRef) => {
-              setReturnedFrom(null)
-              setSelectedTicketRef(ticketRef)
-            }}
+            onSelectTicket={setSelectedTicketRef}
             focusTicketRef={returnedFrom}
+            onFocusHandled={clearReturnedFrom}
             onSessionExpired={expireSession}
           />
         ) : (
