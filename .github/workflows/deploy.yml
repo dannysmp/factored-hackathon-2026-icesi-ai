@@ -25,6 +25,14 @@
 #   application secrets are read on the host by its own instance role; this
 #   workflow never sees any of their values.
 #
+# Redeploying a commit:
+#   The repositories' tags are immutable and the tag is the commit, so a commit
+#   already pushed cannot be pushed again. Before building, the run looks for
+#   each image's tag in its repository; an image that is already there passed
+#   its scan when it was first pushed and is deployed as it is, without being
+#   built, scanned or pushed again. An image that is not there is built,
+#   scanned and pushed as usual, so a run that stopped after one push resumes.
+#
 # Pinned actions:
 #   actions/checkout                11d5960a326750d5838078e36cf38b85af677262   release v4
 #   aws-actions/configure-aws-credentials  e1253824e5c10ff9df46874f81ed3ec929e19cfd  release v6.3.0
@@ -92,13 +100,35 @@ jobs:
           account_id="$(aws sts get-caller-identity --query Account --output text)"
           echo "ecr_registry=${account_id}.dkr.ecr.us-east-1.amazonaws.com" >> "$GITHUB_OUTPUT"
 
+      - name: Look for each image's tag already in its repository
+        id: existing
+        run: |
+          to_push=""
+          for name in backend web; do
+            found="$(aws ecr batch-get-image --region us-east-1 \
+              --repository-name "dispute-intake-${name}" \
+              --image-ids "imageTag=${{ steps.tag.outputs.image_tag }}" \
+              --query 'length(images)' --output text)"
+            if [ "${found}" = "1" ]; then
+              echo "dispute-intake-${name}:${{ steps.tag.outputs.image_tag }} is already in its repository; it is deployed as it is"
+              echo "${name}_exists=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "${name}_exists=false" >> "$GITHUB_OUTPUT"
+              to_push="${to_push} ${name}"
+            fi
+          done
+          echo "to_push=${to_push# }" >> "$GITHUB_OUTPUT"
+
       - name: Build the backend image
+        if: steps.existing.outputs.backend_exists != 'true'
         run: docker build -t dispute-intake-backend:${{ steps.tag.outputs.image_tag }} -f Dockerfile .
 
       - name: Build the web image
+        if: steps.existing.outputs.web_exists != 'true'
         run: docker build -t dispute-intake-web:${{ steps.tag.outputs.image_tag }} -f web/Dockerfile web
 
       - name: Scan the backend image
+        if: steps.existing.outputs.backend_exists != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: dispute-intake-backend:${{ steps.tag.outputs.image_tag }}
@@ -107,6 +137,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Scan the web image
+        if: steps.existing.outputs.web_exists != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: dispute-intake-web:${{ steps.tag.outputs.image_tag }}
@@ -117,9 +148,9 @@ jobs:
       - name: Log in to this account's ECR
         run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "${{ steps.registry.outputs.ecr_registry }}"
 
-      - name: Tag and push both images
+      - name: Tag and push the images not yet in their repositories
         run: |
-          for name in backend web; do
+          for name in ${{ steps.existing.outputs.to_push }}; do
             docker tag "dispute-intake-${name}:${{ steps.tag.outputs.image_tag }}" \
               "${{ steps.registry.outputs.ecr_registry }}/dispute-intake-${name}:${{ steps.tag.outputs.image_tag }}"
             docker push "${{ steps.registry.outputs.ecr_registry }}/dispute-intake-${name}:${{ steps.tag.outputs.image_tag }}"
