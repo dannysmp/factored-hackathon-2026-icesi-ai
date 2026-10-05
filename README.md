@@ -61,7 +61,7 @@ production results; the full table is under [Evaluation](#evaluation).
 | Sign in with a demonstration profile, in Spanish, Portuguese or English | ![The sign-in page with the language switcher, five customer profiles and the access code field](docs/images/sign-in.png) |
 | Review the dispute before anything is filed | ![The chat asking the customer to confirm the transaction, with Yes, file it and No, don't file it buttons](docs/images/confirmation.png) |
 | The case is filed and its reference is shown after the record is read back | ![The Dispute filed card showing the case reference](docs/images/case-filed.png) |
-| A possible fraud goes to a person, with a reference, in Portuguese | ![The chat telling the customer that a person will review the request and showing its reference](docs/images/handoff.png) |
+| A possible fraud goes to a person, with a reference, in Spanish | ![The chat telling the customer that a person will review the request and showing its reference](docs/images/handoff.png) |
 | The agent console lists handed-over cases | ![The agent console queue with priority fraud reports first](docs/images/console-queue.png) |
 | A case opens as a packet with the request, verified transactions, actions, evidence and open questions | ![The agent console showing the packet of a fraud report, with the customer identifier masked](docs/images/console-packet.png) |
 
