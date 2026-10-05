@@ -868,6 +868,7 @@ def test_a_replayed_turn_does_not_log_a_second_decision(
 ) -> None:
     dialogue = _Dialogue(policy, retriever)
     dialogue.say(_file_dispute(), turn_id="turn-once")
+    caplog.clear()
 
     with caplog.at_level(logging.INFO, logger="app.conversation.controller"):
         dialogue.say(_file_dispute(), turn_id="turn-once")
