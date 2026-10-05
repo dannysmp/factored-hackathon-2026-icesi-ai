@@ -24,6 +24,9 @@ Design Principles
 -----------------
 - **Built fresh per request.** Every collaborator is injected at construction; there is no module-
   level state and no singleton, so nothing about one customer's turn can leak into another's.
+- **An unclear first message asks for the transaction.** Only unclear text that opens a
+  conversation asks which transaction is meant; a greeting or thanks keeps the menu, and two
+  unusable replies hand the conversation over with the missing element recorded.
 - **One route per intent, exhaustively.** ``_ROUTES`` covers every ``NluIntent``, mirroring
   ``TEMPLATE_INTENTS``'s own completeness idiom: an intent added to the contract without a route
   here fails the tests, not silently falls through.
@@ -1096,7 +1099,8 @@ class DialogueController:
         """Route a yes or no by the question that is pending.
 
         A pending transaction choice and a pending filing confirmation each have a handler; a yes or
-        no with nothing pending to answer falls back like an unclear message.
+        no with nothing pending to answer is handled like an unroutable message: the menu, or the
+        pending question again.
         """
         if state.pending_slot is Slot.TRANSACTION_CHOICE:
             return self._handle_transaction_choice(state, result)
@@ -1245,7 +1249,7 @@ class DialogueController:
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
         """A correction while a question about the presented transaction or the filing is open
-        is handled as a change to it; anywhere else it is treated like an unclear message, so a
+        is handled as a change to it; anywhere else it is handled like an unroutable message, so a
         description of the transaction that was just asked for is still taken as the answer."""
         if state.pending_slot in _CHANGEABLE_SLOTS:
             return self._handle_change(state, result)
