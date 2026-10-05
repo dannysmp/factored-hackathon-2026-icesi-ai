@@ -61,4 +61,5 @@ def _fold_map() -> tuple[str, str]:
 
 SQL_FOLD_FROM, SQL_FOLD_TO = _fold_map()
 
+# The Latin-1 characters `str.strip` removes; the store's `btrim` removes only spaces by default.
 SQL_BLANKS = "".join(char for char in map(chr, range(0x100)) if char.isspace())
