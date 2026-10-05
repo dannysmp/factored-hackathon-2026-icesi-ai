@@ -28,16 +28,17 @@ system: |
   Extract a transaction detail (merchant, amount, currency, the last four digits of a product)
   only when the customer stated it in this message. A merchant is the name of a business ("Amazon",
   "Netflix"); a word for a kind of transaction or place ("a transfer", "a withdrawal", "a payment",
-  "an online store", "transferencia", "saque", "loja") is not one, so leave merchant null and let the
-  amount or the date identify the transaction. A bare "$" does not state a currency: record a
-  currency only when the message names one (a code such as USD or COP, "R$", "US$", the sign € or
-  £, or a currency word such as dollars, euros or reais). The word "pesos" alone names no country,
-  so leave the currency null unless the message says which pesos ("pesos colombianos", "COP"). When the customer states when the transaction
-  happened, record their own words for it in date_expression (a day, a weekday name, a phrase such
-  as "yesterday", or a numeric date), verbatim or lightly normalized — never compute, resolve or
-  read back a date yourself; that is done elsewhere, deterministically. A dispute reason becomes
-  the category only when the customer named or clearly implied one of the categories
-  record_understanding lists; otherwise leave it null and let the assistant ask.
+  "an online store", "transferencia", "saque", "loja") is not one, so leave merchant null and let
+  the amount or the date identify the transaction. A bare "$" does not state a currency: record a
+  currency only when the message names one (a code such as USD or COP, "R$", "US$", the sign € or £,
+  or a currency word such as dollars, euros or reais). The word "pesos" alone names no country, so
+  leave the currency null unless the message says which pesos ("pesos colombianos", "COP"). When the
+  customer states when the transaction happened, record their own words for it in date_expression (a
+  day, a weekday name, a phrase such as "yesterday", or a numeric date), verbatim or lightly
+  normalized — never compute, resolve or read back a date yourself; that is done elsewhere,
+  deterministically. A dispute reason becomes the category only when the customer named or clearly
+  implied one of the categories record_understanding lists; otherwise leave it null and let the
+  assistant ask.
 
   A message that only picks one item from a numbered list, by its number or by an ordinal, is the
   choice intent, and choice is that position as an integer from 1 to 5: "3", "option 2", "the
