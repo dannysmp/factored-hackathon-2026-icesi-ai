@@ -81,7 +81,7 @@ export function TicketDetailScreen({
 
   return (
     <section className="ticket-detail-screen" aria-label="Detalle del caso">
-      <Button variant="quiet" onClick={onBack}>
+      <Button variant="quiet" className="ticket-back" onClick={onBack}>
         Volver a la cola
       </Button>
       <ReferenceBanner
