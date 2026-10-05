@@ -1,10 +1,10 @@
-/** Unit test: the state-independence property AC-E10-08 rests on. */
+/** Unit test: the selected ticket and the session are independent state, so a session change never clears the selection. */
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { useConsoleNavigation } from './useConsoleNavigation'
 
 describe('useConsoleNavigation', () => {
-  it('keeps the selected ticket through a session going null then a fresh value (AC-E10-08)', () => {
+  it('keeps the selected ticket through a session going null then a fresh value', () => {
     const { result } = renderHook(() => useConsoleNavigation())
 
     act(() => {
@@ -15,8 +15,8 @@ describe('useConsoleNavigation', () => {
     })
     expect(result.current.selectedTicketRef).toBe('T-20260618-AAAAAAAA')
 
-    // Simulates a session expiring — no such mechanism is wired anywhere in `web/` yet; this
-    // proves the *state*, not the trigger, which is a separate, disclosed gap.
+    // Simulates a session expiring; this proves the *state* is independent, not what triggers
+    // the expiry.
     act(() => {
       result.current.setSession(null)
     })

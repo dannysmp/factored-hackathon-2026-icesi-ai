@@ -10,6 +10,7 @@ import { FILE_DISPUTE_EN } from './fixtures'
 import { FILE_DISPUTE_ES } from './fixtures.es'
 import { findMessage } from './findMessage'
 
+/** Renders the chat over the full English script. */
 function renderChat(): ReturnType<typeof render> {
   return render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN)} lang="en" />)
 }

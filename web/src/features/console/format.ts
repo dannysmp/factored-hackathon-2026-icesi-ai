@@ -5,8 +5,10 @@
  * reads the same on every machine, whatever time zone the agent's browser is set to.
  */
 
+/** The console is deliberately fixed-Spanish and never uses the per-language catalogs. */
 const LOCALE = 'es'
 
+/** Day, abbreviated month and year, in UTC. */
 const DATE = new Intl.DateTimeFormat(LOCALE, {
   day: 'numeric',
   month: 'short',
@@ -14,6 +16,7 @@ const DATE = new Intl.DateTimeFormat(LOCALE, {
   timeZone: 'UTC',
 })
 
+/** `DATE` plus a 24-hour time and the zone name, in UTC. */
 const DATE_TIME = new Intl.DateTimeFormat(LOCALE, {
   day: 'numeric',
   month: 'short',

@@ -1,11 +1,13 @@
+/** The reference-date line and the optional demonstration notice shown above the conversation. */
 import type { JSX } from 'react'
 import styles from './ReferenceBanner.module.css'
 
 /**
  * The persistent reference-date line and the demonstration notice.
  *
- * The service renders both texts (api.py: "the client shows them and decides nothing"); this
- * component never computes or guesses either one.
+ * The service renders both texts (`contracts/service_v1/api.py`: the client shows them and decides
+ * nothing); this component never computes or guesses either one. It has the `note` role so the date
+ * context is exposed as supplementary information without interrupting the conversation.
  */
 export function ReferenceBanner({
   referenceDateLine,

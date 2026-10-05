@@ -1,3 +1,4 @@
+/** The agent console shell: agent sign-in, then the ticket queue, then one ticket's detail. */
 import { useMemo, useState } from 'react'
 import type { JSX } from 'react'
 import { QueueScreen } from './features/console/QueueScreen'
@@ -12,32 +13,31 @@ import { PageHeader } from './components/ui/PageHeader'
 import { useDocumentLanguage } from './i18n/useDocumentLanguage'
 import styles from './ConsoleApp.module.css'
 
+/** The console is written in Spanish only, so its page title and document language are fixed. */
 const CONSOLE_TITLE = 'Consola del agente'
 
 /**
- * The console shell: the agent demonstration sign-in (AC-E10-14, its own broker and access code,
- * `POST /v1/auth/demo-agent-sessions`), then the queue, then — once a ticket is selected — that
- * ticket's own detail. A separate entry point from the customer chat's `App.tsx`
- * (`console.html`/`console-main.tsx`) — two demo paths, not one app branching on a path a static
- * host would need a rewrite rule to serve.
+ * The console shell: the agent demonstration sign-in (its own broker and access code,
+ * `POST /v1/auth/demo-agent-sessions`), then the queue, then, once a ticket is selected, that
+ * ticket's own detail. It is a separate entry point from the customer chat's `App.tsx`
+ * (`console.html` / `console-main.tsx`): two demo paths, not one app branching on a URL path
+ * that a static host would need a rewrite rule to serve.
  *
- * Navigation state (which session, which ticket) lives in `useConsoleNavigation`, not here,
- * specifically so `selectedTicketRef`'s independence from `session` (AC-E10-08) is directly unit
- * tested — see that hook's own docstring.
+ * Navigation state (which session, which ticket) lives in `useConsoleNavigation`, not here, so
+ * that the selected ticket's independence from the session can be unit tested on its own.
  *
- * The two live clients are built once per signed-in session, not on every render (frontend
- * standard, section 5): a new sign-in (a new token) is a new session in every sense, so a new
- * client for it is correct, not wasteful — the same rule the customer chat's own `LiveChatClient`
- * follows in `App.tsx`.
+ * The two live clients are built once per signed-in session, not on every render: a new sign-in
+ * (a new token) is a new session in every sense, so a new client for it is correct, not wasteful.
+ * The customer chat's `LiveChatClient` follows the same rule in `App.tsx`.
  *
  * A 401 from the queue or a ticket's detail means the session ended: it is not refreshed, so the
  * console returns to the sign-in with a notice. Only `session` is cleared; `selectedTicketRef`
- * stays, so the agent who signs in again lands back on the same ticket (AC-E10-08, AC-E10-16).
+ * stays, so the agent who signs in again lands back on the same ticket. Signing out by choice
+ * clears both, so the next agent starts at the queue.
  *
- * The heading is fixed Spanish (D91: the console stays fixed-Spanish). `SignInScreen` reads its
- * copy from the trilingual `useT` hook, but only for the customer audience — passing
- * `audience="agent"` here keeps this screen's own sign-in fixed-Spanish too, regardless of which
- * agent persona is selected, matching the rest of the console.
+ * The console stays in Spanish whatever the agent persona's language. `SignInScreen` reads its
+ * copy from the trilingual `useT` hook only for the customer audience, so passing
+ * `audience="agent"` keeps this sign-in in Spanish too, matching the rest of the console.
  */
 export function ConsoleApp(): JSX.Element {
   const { session, setSession, selectedTicketRef, setSelectedTicketRef } = useConsoleNavigation()

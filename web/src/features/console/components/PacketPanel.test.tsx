@@ -1,5 +1,8 @@
-/** Component test: `PacketPanel` renders the whole packet (AC-E10-02) and never a document
- * number or full card/account number (AC-E10-05). */
+/**
+ * Component test: `PacketPanel` renders the whole hand-off packet in the console's fixed Spanish,
+ * and never a document number or a full card or account number: products show only their last
+ * four digits.
+ */
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { DEMO_TICKET_DETAILS } from '../fixtures'
@@ -151,7 +154,7 @@ describe('PacketPanel', () => {
       throw new Error('fixture setup: FIRST.packet.verified_facts must be non-empty for this test')
     }
     // `ProductLabel` (contracts/service_v1/envelope.py) carries no full number at all — this
-    // pins the masked presentation the contract's own shape already guarantees (AC-E10-05).
+    // pins the masked presentation the contract's own shape already guarantees.
     expect(screen.getByText(`${fact.product.name} ····${fact.product.last4}`)).toBeInTheDocument()
   })
 

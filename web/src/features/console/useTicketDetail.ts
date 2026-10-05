@@ -1,15 +1,16 @@
 /**
  * Drives the ticket-detail screen against a `TicketDetailClient`.
  *
- * Server state (the packet and the timeline) lives here, not copied into components (frontend
- * standard, section 4, the same rule `useConversation`/`useQueue` follow): a component reads
- * `status`/`detail`/`error` and calls `retry`, and never talks to the client itself.
+ * Server state (the packet and the timeline) lives here, not copied into components (the same rule
+ * `useConversation`/`useQueue` follow): a component reads `status`/`detail`/`error` and calls
+ * `retry`, and never talks to the client itself.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AgentRequestError } from './client'
 import type { TicketDetailClient } from './ticketDetailClient'
 import type { TicketDetail } from './contracts'
 
+/** `not_found` is a normal answer (an unknown reference), distinct from a failed request (`error`). */
 export type TicketDetailStatus = 'loading' | 'ready' | 'not_found' | 'error'
 
 interface TicketDetailState {
@@ -18,6 +19,7 @@ interface TicketDetailState {
   error: string | null
 }
 
+/** What the ticket screen reads: the load status, the detail when ready, and the error message. */
 export interface TicketDetailQuery extends TicketDetailState {
   /** Re-issues the current request; the error state's own recovery action. */
   retry: () => void
@@ -25,7 +27,11 @@ export interface TicketDetailQuery extends TicketDetailState {
 
 const INITIAL_STATE: TicketDetailState = { status: 'loading', detail: null, error: null }
 
-/** `onSessionExpired` is called on a 401, as in `useQueue`, instead of showing a retryable error. */
+/**
+ * Loads one ticket's packet and timeline and keeps it as screen state, reloading when `ticketRef`
+ * changes. `onSessionExpired` is called on a 401, as in `useQueue`, instead of showing a
+ * retryable error.
+ */
 export function useTicketDetail(
   client: TicketDetailClient,
   ticketRef: string,

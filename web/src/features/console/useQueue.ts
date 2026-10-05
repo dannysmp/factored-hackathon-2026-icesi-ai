@@ -1,9 +1,9 @@
 /**
  * Drives the queue screen against a `QueueClient`.
  *
- * Server state (the queue) lives here, not copied into components (frontend standard, section
- * 4, the same rule `useConversation` follows): a component reads `status`/`items`/`language` and
- * calls `setLanguage`/`retry`, and never talks to the client itself.
+ * Server state (the queue) lives here, not copied into components (the same rule `useConversation`
+ * follows): a component reads `status`/`items`/`language` and calls `setLanguage`/`retry`, and
+ * never talks to the client itself.
  *
  * The trigger view (all/priority/other, `QueueFilters.tsx`) is not a fetch parameter: it is a
  * pure view over whatever `items` already holds, since `QueueItem.priority` is already on every
@@ -17,6 +17,7 @@ import { AgentRequestError } from './client'
 import type { QueueClient } from './client'
 import type { QueueItem } from './contracts'
 
+/** `loading` before the first answer and while a filter change or retry is in flight. */
 export type QueueStatus = 'loading' | 'ready' | 'error'
 
 interface QueueState {
@@ -26,6 +27,10 @@ interface QueueState {
   error: string | null
 }
 
+/**
+ * What the queue screen reads: the load status, the items, the server's reference date and the
+ * active language filter, plus the two actions it can take.
+ */
 export interface Queue extends QueueState {
   language: Lang | undefined
   /** `undefined` clears the filter (every language). */
@@ -42,9 +47,12 @@ const INITIAL_STATE: QueueState = {
 }
 
 /**
+ * Loads the queue for the active language filter and keeps it as screen state.
+ *
  * `onSessionExpired` is called, instead of showing a retryable error, when the backend answers
  * 401: the session is not refreshed, so retrying with the same token can never succeed and the
- * only recovery is a new sign-in.
+ * only recovery is a new sign-in. A response from a superseded request, or one that arrives after
+ * unmount, is discarded.
  */
 export function useQueue(client: QueueClient, onSessionExpired?: () => void): Queue {
   const [language, setLanguageState] = useState<Lang | undefined>(undefined)
@@ -70,7 +78,7 @@ export function useQueue(client: QueueClient, onSessionExpired?: () => void): Qu
   }, [])
 
   // The effect only starts the fetch and commits its outcome; it never calls `setState`
-  // synchronously in its own body (react-hooks/set-state-in-effect) — the "now loading" state
+  // synchronously in its own body (react-hooks/set-state-in-effect) — the loading state
   // for a filter change or a retry is set in the event handler that causes it, below. The very
   // first fetch needs no such call either: `INITIAL_STATE.status` is already `'loading'`.
   useEffect(() => {

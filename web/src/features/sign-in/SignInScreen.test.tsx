@@ -9,6 +9,7 @@ import { SignInScreen } from './SignInScreen'
 import { en } from '../../i18n/en'
 import { es } from '../../i18n/es'
 
+/** Two customer personas, one speaking Spanish and one English. */
 const PERSONAS = [
   { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' as const },
   { slug: 'emma', display_name: 'Emma', language: 'en', audience: 'customer' as const },
@@ -147,7 +148,7 @@ describe('SignInScreen', () => {
     expect(onSignedIn).toHaveBeenCalledWith('agent-token', 'pt', 'diego')
   })
 
-  it('stays fixed-Spanish for the agent audience regardless of the selected persona’s own language (D91)', async () => {
+  it('stays fixed-Spanish for the agent audience regardless of the selected persona’s own language', async () => {
     // Diego's own language is Portuguese — that's what the customer chat would use once signed
     // in, but the console's own sign-in chrome must not switch to it.
     const agentPersonas = [

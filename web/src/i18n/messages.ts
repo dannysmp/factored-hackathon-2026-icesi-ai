@@ -1,14 +1,18 @@
+/** The key set of the message catalogs, shared by all languages. */
+
 /**
+ * The shape every catalog must satisfy.
+ *
  * Every user-facing string key the catalogs must carry, one flat, namespaced key per string
- * (e.g. `chat.placeholder`). The type checker enforces that every catalog defines every key;
+ * (e.g. `chat.send`). The type checker enforces that every catalog defines every key;
  * `catalogs.test.ts` additionally proves no catalog leaves a key with a blank value, something
- * the type checker can't express.
+ * the type checker can't express. Strings may contain `{name}` placeholders that the caller
+ * fills at render time; each language must keep every placeholder its siblings have.
  */
 export interface Messages {
   'app.title': string
   'app.signOut': string
   'app.sessionExpired': string
-  'common.loading': string
   'common.retry': string
   'common.error.generic': string
   'failure.offline': string
@@ -17,7 +21,6 @@ export interface Messages {
   'failure.unavailable': string
   'chat.regionLabel': string
   'chat.messagesLabel': string
-  'chat.placeholder': string
   'chat.messageLabel': string
   'chat.starting': string
   'chat.couldNotStart': string
