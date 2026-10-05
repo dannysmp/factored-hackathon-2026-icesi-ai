@@ -191,6 +191,35 @@ aws budgets describe-notifications-for-budget --account-id "$account" --budget-n
 | AWS monthly cost alert | 2026-10-04 | Programmer, read-only commands above | One monthly cost budget of US$50 with notifications at 50 %, 80 % and 100 % of actual spend and at 100 % of forecast spend |
 | Model provider spend limit | 2026-10-04 | Maintainer, reported; not read back by the programmer | Monthly limit of US$100, notification at US$80, automatic reload of US$20 when the balance falls to US$5. Not verifiable from the repository |
 
+## Incidents and their prevention
+
+Two failures on the deployed host, each with what caused it, how it was corrected and what now stops it from recurring.
+
+### A seed built before a column existed
+
+**What happened.** Every deploy reloads the database from the seed bucket, and the loader inserts only the columns present in the seed's Parquet files. The bucket held a seed built before `customers.is_repeat_complainer` existed, so the column kept the default the migration gives it (`false`) for every customer. The policy engine routes a repeat complainer to a person; with no customer flagged, repeat complainers were filed as ordinary cases. Nothing failed: the seed's checksums matched its manifest and the load succeeded. An evaluation run against such a store sent `hr-repeat-es-01` and `hr-repeat-es-02` to a filed case instead of a person, which is how it was noticed.
+
+**Fix.** The seed was rebuilt and the bucket republished with it (step 4). The deployed database then showed 28 customers flagged as repeat complainers, and with a current seed both evaluation cases were routed to a person in four of four fresh runs.
+
+**What prevents it now.**
+
+- The loader (`app/persistence/load_seed.py`) refuses a seed whose customers output lacks `is_repeat_complainer`, names the column in the error and says to rebuild. The check runs before any database connection, so a refused seed never truncates the store. It guards only that column; other defaulted columns need adding to the same table as policy comes to depend on them.
+- Step 4 publishes the seed before each deploy and compares the bucket's `manifest.json` with the local one, so a publish that did not take effect is caught before the dispatch. The comparison cannot tell whether the local seed is current, so rebuild it with `make pipeline && make seed` whenever its schema or inputs change. Only a publish refreshes the bucket; nothing else does.
+
+### An empty Operations dashboard
+
+**What happened.** Migrations create the `analytics.*` tables empty. Nothing on the host loaded them: `make load-analytics` runs only on the machine that builds the marts, and the marts had never reached the host. Every panel of the Operations dashboard rendered "No results", and the only populated dashboard was Metabase's built-in sample, "E-commerce Insights". The deploy and its checks passed, because none of them read the analytics tables.
+
+**Fix.** The deploy now syncs `dispute_demand/` from the seed bucket next to `ops_seed/` and runs `python -m pipelines.analytics_load` immediately after the seed load, as a one-off backend container (`infra/scripts/05-deploy.sh`). The loader checks the marts' manifest and reloads every `analytics.*` table in one transaction, so a redeploy never duplicates rows. Provisioning of the dashboard removes Metabase's sample content (its sample database, the "Examples" and "E-commerce" collections and the "E-commerce Insights" dashboard).
+
+**What prevents it now.**
+
+- A deploy stops at the load step when `dispute_demand/` or its manifest is missing from the bucket. Step 4 publishes both directories and compares each manifest.
+- `infra/scripts/13-verify-analytics.sh` runs after the hardening check on every deploy and fails the run, naming the table, when any table a dashboard question reads holds no rows. The tables come from the dashboard definition (`lib/theme_metabase_dashboard.py --list-marts`), so the check cannot drift from the panels. It prints row counts only.
+- With `deploy_metabase=true`, the dashboard step runs every panel's question and fails, naming the panels, when one returns no rows or errors.
+- **Never remove orphans in a deploy command.** The Metabase container belongs to `docker-compose.metabase.yml`, so a command that names only `docker-compose.yml` and `docker-compose.prod.yml` sees it as an orphan, and `--remove-orphans` (or `COMPOSE_REMOVE_ORPHANS`) would delete the dashboard container. Every compose command that must manage Metabase names all three files, and no command may pass the flag without `-f docker-compose.metabase.yml`. A test (`tests/test_deploy_analytics_load.py`) fails when a file under `infra/`, `.github/` or `docs/`, the `Makefile`, the `README.md` or a compose file breaks the rule.
+- Metabase adds its sample database back each time it restarts. The example collections and the "E-commerce Insights" dashboard stay removed; the database entry returns until the next deploy with `deploy_metabase=true`.
+
 ## Run record
 
 One row per clean-account reproduction or persisting deployment, filled in by the maintainer after step 5. A row states only what its run did: a deployment onto an account that already holds the roles, repositories and seed bucket is not a clean-account reproduction and is not recorded as one.
