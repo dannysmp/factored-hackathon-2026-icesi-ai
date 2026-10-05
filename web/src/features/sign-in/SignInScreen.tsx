@@ -119,6 +119,7 @@ export function SignInScreen({
   const [submitting, setSubmitting] = useState(false)
   const [signInError, setSignInError] = useState<string | null>(null)
   const [directoryFailure, setDirectoryFailure] = useState<FailureKind | null>(null)
+  const [directoryRetryAfter, setDirectoryRetryAfter] = useState<number | null>(null)
   const [directoryAttempt, setDirectoryAttempt] = useState(0)
   const headingId = useId()
   const languageLabelId = useId()
@@ -165,6 +166,7 @@ export function SignInScreen({
         if (cancelled) return
         const failure = classifyFailure(error)
         setDirectoryFailure(failure)
+        setDirectoryRetryAfter(error instanceof SignInError ? error.retryAfterSeconds : null)
         setDirectoryStatus(failure === 'unauthorized' ? 'unavailable' : 'error')
       },
     )
@@ -242,7 +244,10 @@ export function SignInScreen({
   if (directoryStatus === 'error') {
     return (
       <div className={styles.slot}>
-        <ErrorState title={t('signin.unreachable')} reason={failureReason(directoryFailure, t)}>
+        <ErrorState
+          title={t('signin.unreachable')}
+          reason={failureReason(directoryFailure, t, directoryRetryAfter)}
+        >
           <Button onClick={reloadDirectory}>{t('common.retry')}</Button>
         </ErrorState>
       </div>
