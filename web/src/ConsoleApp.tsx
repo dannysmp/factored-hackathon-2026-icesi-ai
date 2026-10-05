@@ -35,6 +35,9 @@ const CONSOLE_TITLE = 'Consola del agente'
  * stays, so the agent who signs in again lands back on the same ticket. Signing out by choice
  * clears both, so the next agent starts at the queue.
  *
+ * Going back from a ticket returns focus to that ticket's row in the queue, so the agent resumes
+ * where they left off; `returnedFrom` carries that reference to the queue until the next selection.
+ *
  * The console stays in Spanish whatever the agent persona's language. `SignInScreen` reads its
  * copy from the trilingual `useT` hook only for the customer audience, so passing
  * `audience="agent"` keeps this sign-in in Spanish too, matching the rest of the console.
@@ -43,12 +46,14 @@ export function ConsoleApp(): JSX.Element {
   const { session, setSession, selectedTicketRef, setSelectedTicketRef } = useConsoleNavigation()
 
   const [expired, setExpired] = useState(false)
+  const [returnedFrom, setReturnedFrom] = useState<string | null>(null)
   const expireSession = (): void => {
     setExpired(true)
     setSession(null)
   }
   const signOut = (): void => {
     setExpired(false)
+    setReturnedFrom(null)
     setSelectedTicketRef(null)
     setSession(null)
   }
@@ -97,7 +102,11 @@ export function ConsoleApp(): JSX.Element {
         {selectedTicketRef === null ? (
           <QueueScreen
             client={queueClient}
-            onSelectTicket={setSelectedTicketRef}
+            onSelectTicket={(ticketRef) => {
+              setReturnedFrom(null)
+              setSelectedTicketRef(ticketRef)
+            }}
+            focusTicketRef={returnedFrom}
             onSessionExpired={expireSession}
           />
         ) : (
@@ -106,6 +115,7 @@ export function ConsoleApp(): JSX.Element {
             ticketRef={selectedTicketRef}
             onSessionExpired={expireSession}
             onBack={() => {
+              setReturnedFrom(selectedTicketRef)
               setSelectedTicketRef(null)
             }}
           />

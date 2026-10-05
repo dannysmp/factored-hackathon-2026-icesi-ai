@@ -176,4 +176,41 @@ describe('QueueTable', () => {
 
     expect(container.querySelector('.queue-table-openable')).not.toBeNull()
   })
+
+  describe('focus on return', () => {
+    const rows = [item(), item({ ticket_ref: 'T-20260618-BBBBBBBB', priority: false })]
+
+    it('focuses the button of the case the agent came back from', () => {
+      render(
+        <QueueTable items={rows} onSelectTicket={vi.fn()} focusTicketRef="T-20260618-BBBBBBBB" />,
+      )
+
+      expect(screen.getByRole('button', { name: 'T-20260618-BBBBBBBB' })).toHaveFocus()
+    })
+
+    it('leaves focus alone when the case is not in this view', () => {
+      render(
+        <QueueTable items={rows} onSelectTicket={vi.fn()} focusTicketRef="T-20260618-ZZZZZZZZ" />,
+      )
+
+      expect(document.body).toHaveFocus()
+    })
+
+    it('leaves focus alone when no case was returned from', () => {
+      render(<QueueTable items={rows} onSelectTicket={vi.fn()} />)
+
+      expect(document.body).toHaveFocus()
+    })
+
+    it('does not take focus from a control the person already holds', () => {
+      render(<input aria-label="otro control" />)
+      screen.getByLabelText('otro control').focus()
+
+      render(
+        <QueueTable items={rows} onSelectTicket={vi.fn()} focusTicketRef="T-20260618-BBBBBBBB" />,
+      )
+
+      expect(screen.getByLabelText('otro control')).toHaveFocus()
+    })
+  })
 })
