@@ -93,4 +93,10 @@ describe('PacketPanel', () => {
     // pins the masked presentation the contract's own shape already guarantees (AC-E10-05).
     expect(screen.getByText(`${fact.product.name} ····${fact.product.last4}`)).toBeInTheDocument()
   })
+
+  it('does not carry the openable-row class, since its rows cannot be opened', () => {
+    const { container } = render(<PacketPanel packet={FIRST.packet} />)
+
+    expect(container.querySelector('.queue-table-openable')).toBeNull()
+  })
 })

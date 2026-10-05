@@ -14,9 +14,10 @@ refusal cannot be model-rendered at all (``contracts.service_v1.envelope``'s own
 Scope
 -----
 In: ``verify()`` — the one function this module exports, and the private substitution/scan it runs.
-Out: producing ``CandidateReply`` (the LLM adapter) and ``SlotValues`` (the dialogue controller,
-from the same envelope this call receives) are both someone else's job; this module
-only checks what it is handed against what the envelope allows.
+Out: producing ``CandidateReply`` (the LLM adapter) and ``SlotValues``
+(``app.conversation.slot_values``, called by ``app.conversation.reply.render_reply`` on the same
+envelope this call receives) are both someone else's job; this module only checks what it is
+handed against what the envelope allows.
 
 Design Principles
 -----------------
@@ -24,9 +25,9 @@ Design Principles
   rejects the reply outright, before any placeholder is even parsed — checked with
   ``str.isnumeric()``, not ``str.isdigit()``, so a vulgar fraction, a circled digit or a
   single-character Roman numeral (``½``, ``⑩``, ``Ⅻ``) rejects exactly like an ASCII digit, not
-  only the narrower set ``isdigit()`` recognizes. A prior guard that inspected the *finished*
-  sentence for a suspicious-looking number was found gameable; nothing here inspects finished
-  text, because there is no numeral character left in it to inspect by the time substitution runs.
+  only the narrower set ``isdigit()`` recognizes. Inspecting the *finished* sentence for a
+  suspicious-looking number is gameable; nothing here inspects finished text, because there is no
+  numeral character left in it to inspect by the time substitution runs.
 - Cross-customer leak scan and decision consistency fall out of the same mechanism rather than a
   second detector: ``SlotValues`` is built from this envelope's own facts, decisions and sources
   (a caller's job, not verified here), so a value from another customer or a contradicted decision
@@ -75,6 +76,7 @@ from contracts.service_v1.verification import (  # The candidate, its slots and 
     VerifierResult,
 )
 
+# A well-formed placeholder: lowercase letters and underscores between double braces.
 _PLACEHOLDER = re.compile(r"\{\{([a-z_]+)\}\}")
 
 

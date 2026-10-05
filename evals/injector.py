@@ -13,14 +13,14 @@ Scope
 -----
 In: ``FailureInjectingToolPort``, wrapping any ``ToolPort`` implementation.
 Out: choosing which tool a case fails (``evals.models.InjectedToolFailure``, stated on the case),
-running a case end to end (the runner, a later slice), and the tool layer's own implementation
-(``app.tools``, untouched by this module).
+running a case end to end (the runner), and the tool layer's own implementation (``app.tools``,
+untouched by this module).
 
 Design Principles
 -----------------
 - **A decorator, not a fork.** Every method delegates to the wrapped port unchanged except the one
   tool a case names; there is exactly one real `ToolPort` implementation, here or in `app`, per
-  the architecture's own rule against duplicate implementations of the same thing.
+  the rule against duplicate implementations of the same thing.
 - **Pure and stateless.** No call this makes has a side effect of its own: it either forwards to
   the inner port or returns a `ToolFailure` built from the case's own declared cause. A frozen
   dataclass, matching every other harness module's own rule against hidden state.

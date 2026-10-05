@@ -3,6 +3,7 @@ import type { JSX, SyntheticEvent } from 'react'
 import type { DemoPersonaSummary } from './contracts'
 import type { Lang } from '../customer-chat/contracts'
 import type { SignInAudience } from './api'
+import { Button } from '../../components/ui/Button'
 import { SignInError, fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
 import { useT } from '../../i18n/useT'
 import { LANGUAGES } from '../../i18n/lang'
@@ -186,13 +187,14 @@ export function SignInScreen({
           </p>
         )}
 
-        <button
+        <Button
           type="submit"
-          className={styles.submit}
+          variant="primary"
+          large
           disabled={submitting || selectedSlug === '' || accessCode === ''}
         >
           {t('signin.submit')}
-        </button>
+        </Button>
       </form>
     </section>
   )
