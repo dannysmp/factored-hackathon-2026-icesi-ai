@@ -28,7 +28,12 @@ from app.persistence.reads import PostgresToolPort
 from app.retrieval.lexical import LexicalRetriever
 from contracts.service_v1.cases import AmountProvenance, CaseRecord, CaseStatus, DisclosedAmount
 from contracts.service_v1.cases import Money as CaseMoney
-from contracts.service_v1.tools import EvaluateDisputeRequest, Tool, ToolFailure
+from contracts.service_v1.tools import (
+    CreateDisputeCaseRequest,
+    EvaluateDisputeRequest,
+    Tool,
+    ToolFailure,
+)
 from evals.runner.baselines.b1_tools import (
     _REQUEST_SUMMARY_OF,
     TOOL_SCHEMAS,
@@ -265,6 +270,84 @@ def test_a_missing_required_argument_is_a_value_error_the_harness_records_per_ca
 
     with pytest.raises(ValueError, match="required argument"):
         dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("get_transaction", {"ref": None}),
+        ("get_case", {"case_number": 7}),
+        ("get_policy", {"query": ["a"]}),
+        ("handoff", {"trigger": None}),
+        ("evaluate_dispute", {"transaction_ref": None, "category": "unrecognized_charge"}),
+        ("evaluate_dispute", {"transaction_ref": "TRX-1", "category": 1}),
+        ("create_dispute_case", {"transaction_ref": 5, "category": "unrecognized_charge"}),
+        ("create_dispute_case", {"transaction_ref": "TRX-1", "category": None}),
+    ],
+)
+def test_a_required_argument_of_the_wrong_type_is_a_value_error_not_a_stringified_value(
+    retriever: LexicalRetriever, tool: str, arguments: dict[str, object]
+) -> None:
+    """``{"ref": None}`` must not become a lookup of the reference ``"None"``."""
+    dispatcher = _dispatcher_over(object(), retriever)
+    call = ToolCall(id="t1", name=tool, input=arguments)
+
+    with pytest.raises(ValueError, match="must be a string"):
+        dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
+
+
+class _FilingToolPort:
+    """Stands in for a `ToolPort` that records the filing request it is given."""
+
+    def __init__(self) -> None:
+        self.requests: list[CreateDisputeCaseRequest] = []
+
+    def create_dispute_case(self, request: CreateDisputeCaseRequest) -> None:
+        self.requests.append(request)
+
+
+def _file(confirmed: object, retriever: LexicalRetriever) -> list[CreateDisputeCaseRequest]:
+    port = _FilingToolPort()
+    arguments: dict[str, object] = {"transaction_ref": "TRX-1", "category": "unrecognized_charge"}
+    if confirmed is not _ABSENT:
+        arguments["confirmed"] = confirmed
+    call = ToolCall(id="t1", name="create_dispute_case", input=arguments)
+    _dispatcher_over(port, retriever).dispatch(
+        call, session_id="s", turn_id="turn-00000001", trace_id="s"
+    )
+    return port.requests
+
+
+_ABSENT = object()
+
+
+@pytest.mark.parametrize(("flag", "expected"), [(True, True), (False, False), (_ABSENT, False)])
+def test_a_filing_is_confirmed_only_by_a_boolean_true(
+    retriever: LexicalRetriever, flag: object, expected: bool
+) -> None:
+    (request,) = _file(flag, retriever)
+
+    assert request.confirmed is expected
+
+
+@pytest.mark.parametrize("flag", ["false", "no", "0", "true", 1, 0, None, []])
+def test_a_confirmation_that_is_not_a_boolean_is_a_value_error_never_a_filing(
+    retriever: LexicalRetriever, flag: object
+) -> None:
+    """Truthiness would read ``"false"`` as a confirmation the customer never gave."""
+    port = _FilingToolPort()
+    call = ToolCall(
+        id="t1",
+        name="create_dispute_case",
+        input={"transaction_ref": "TRX-1", "category": "unrecognized_charge", "confirmed": flag},
+    )
+
+    with pytest.raises(ValueError, match="must be a boolean"):
+        _dispatcher_over(port, retriever).dispatch(
+            call, session_id="s", turn_id="turn-00000001", trace_id="s"
+        )
+
+    assert port.requests == []
 
 
 def test_to_json_uses_model_dump_json_for_a_pydantic_value() -> None:

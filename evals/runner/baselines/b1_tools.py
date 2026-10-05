@@ -206,13 +206,29 @@ TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
 def _str_arg(call: ToolCall, name: str) -> str:
     """The argument ``name`` of ``call`` as a string.
 
-    The schema marks it required, but the model is not bound by the schema, so a missing argument
-    raises ``ValueError``, a failure the harness records against one case; the ``KeyError`` that
-    indexing raises would stop the whole run.
+    The schema marks it required and a string, but the model is not bound by the schema, so a
+    missing argument or a value of another type raises ``ValueError``, a failure the harness
+    records against one case; the ``KeyError`` that indexing raises would stop the whole run, and
+    stringifying a ``None`` would look up the reference ``"None"``.
     """
     if name not in call.input:
         raise ValueError(f"tool {call.name!r} was called without its required argument {name!r}")
-    return str(call.input[name])
+    value = call.input[name]
+    if not isinstance(value, str):
+        raise ValueError(f"tool {call.name!r} argument {name!r} must be a string")
+    return value
+
+
+def _confirmed_arg(call: ToolCall) -> bool:
+    """Whether ``call`` carries the customer's confirmation: ``True`` only for a boolean ``True``.
+
+    An absent flag is ``False``. Any other type raises ``ValueError``, since truthiness would read
+    the strings ``"false"`` and ``"0"`` as a confirmation the customer never gave.
+    """
+    value = call.input.get("confirmed", False)
+    if not isinstance(value, bool):
+        raise ValueError(f"tool {call.name!r} argument 'confirmed' must be a boolean")
+    return value
 
 
 def _idempotency_key(turn_id: str) -> str:
@@ -282,7 +298,7 @@ class B1ToolDispatcher:
         ------
         ValueError
             ``call.name`` is not one of the tools this dispatcher knows, or ``call`` lacks an
-            argument its tool requires.
+            argument its tool requires or gives one a value of the wrong type.
         """
         if call.name in _READ_TOOLS:
             return _to_json(_READ_TOOLS[call.name](self.tool_port, call))
@@ -325,7 +341,7 @@ class B1ToolDispatcher:
         request = CreateDisputeCaseRequest(
             transaction_ref=transaction_ref,
             category=category,
-            confirmed=bool(call.input.get("confirmed", False)),
+            confirmed=_confirmed_arg(call),
             idempotency_key=_idempotency_key(turn_id),
             decision=decision,
         )
