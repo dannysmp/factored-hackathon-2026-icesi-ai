@@ -13,6 +13,10 @@ const PERSONAS = [
   { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' as const },
   { slug: 'joao', display_name: 'João', language: 'pt', audience: 'customer' as const },
 ]
+const TWO_IN_PORTUGUESE = [
+  ...PERSONAS,
+  { slug: 'beatriz', display_name: 'Beatriz', language: 'pt', audience: 'customer' as const },
+]
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -244,6 +248,20 @@ describe('SignInScreen form', () => {
   it('selects the first persona who speaks the preferred language, and speaks it', async () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
     render(<SignInScreen preferredLang="pt" onSignedIn={vi.fn()} />)
+
+    expect(await screen.findByLabelText(pt['signin.personaLabel'])).toHaveValue('joao')
+  })
+
+  it('selects the preferred persona when they speak the preferred language', async () => {
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(TWO_IN_PORTUGUESE)
+    render(<SignInScreen preferredLang="pt" preferredSlug="beatriz" onSignedIn={vi.fn()} />)
+
+    expect(await screen.findByLabelText(pt['signin.personaLabel'])).toHaveValue('beatriz')
+  })
+
+  it('ignores the preferred persona when they do not speak the preferred language', async () => {
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(TWO_IN_PORTUGUESE)
+    render(<SignInScreen preferredLang="pt" preferredSlug="ana" onSignedIn={vi.fn()} />)
 
     expect(await screen.findByLabelText(pt['signin.personaLabel'])).toHaveValue('joao')
   })

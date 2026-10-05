@@ -33,7 +33,16 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status })
 }
 
-function stubService(turnStatuses: number[], withSpanishPersona = false): void {
+interface ServiceOptions {
+  spanishPersona?: boolean
+  secondEnglishPersona?: boolean
+  turnLang?: 'en' | 'es'
+}
+
+function stubService(
+  turnStatuses: number[],
+  { spanishPersona = false, secondEnglishPersona = false, turnLang = 'en' }: ServiceOptions = {},
+): void {
   const remaining = [...turnStatuses]
   vi.stubGlobal(
     'fetch',
@@ -43,7 +52,10 @@ function stubService(turnStatuses: number[], withSpanishPersona = false): void {
           json(200, {
             personas: [
               { slug: 'emma', display_name: 'Emma', language: 'en', audience: 'customer' },
-              ...(withSpanishPersona
+              ...(secondEnglishPersona
+                ? [{ slug: 'noah', display_name: 'Noah', language: 'en', audience: 'customer' }]
+                : []),
+              ...(spanishPersona
                 ? [{ slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' }]
                 : []),
             ],
@@ -53,7 +65,9 @@ function stubService(turnStatuses: number[], withSpanishPersona = false): void {
       if (url === '/v1/auth/demo-sessions') return Promise.resolve(json(201, SESSION_BODY))
       const status = remaining.shift() ?? 200
       return Promise.resolve(
-        status === 200 ? json(200, TURN_BODY) : json(status, { title: 'Sign in required' }),
+        status === 200
+          ? json(200, { ...TURN_BODY, lang: turnLang })
+          : json(status, { title: 'Sign in required' }),
       )
     }),
   )
@@ -87,7 +101,7 @@ describe('App when the session ends', () => {
   })
 
   it('brings back a form in the language of the ended session, so the note and the form agree', async () => {
-    stubService([401], true)
+    stubService([401], { spanishPersona: true })
     const user = userEvent.setup()
     render(<App />)
     await user.selectOptions(await screen.findByLabelText(en['signin.personaLabel']), 'ana')
@@ -100,6 +114,32 @@ describe('App when the session ends', () => {
     const picker = await screen.findByLabelText(es['signin.personaLabel'])
     expect(picker).toHaveValue('ana')
     expect(screen.getByRole('button', { name: es['signin.submit'] })).toBeInTheDocument()
+  })
+
+  it('follows the language the conversation moved to, not the persona it started with', async () => {
+    stubService([200, 401], { spanishPersona: true, turnLang: 'es' })
+    const user = userEvent.setup()
+    render(<App />)
+    await signIn(user)
+    await user.type(await screen.findByLabelText(es['chat.messageLabel']), 'hola')
+    await user.click(screen.getByRole('button', { name: es['chat.send'] }))
+
+    await waitFor(() => {
+      expect(screen.getByText(es['app.sessionExpired']).closest('[role="status"]')).not.toBeNull()
+    })
+    expect(await screen.findByLabelText(es['signin.personaLabel'])).toHaveValue('ana')
+    expect(document.documentElement.lang).toBe('es')
+  })
+
+  it('offers the same person again when more than one speaks the language', async () => {
+    stubService([401], { secondEnglishPersona: true })
+    const user = userEvent.setup()
+    render(<App />)
+    await user.selectOptions(await screen.findByLabelText(en['signin.personaLabel']), 'noah')
+    await signIn(user)
+
+    await screen.findByText(en['app.sessionExpired'])
+    expect(await screen.findByLabelText(en['signin.personaLabel'])).toHaveValue('noah')
   })
 
   it('puts the keyboard on the form so the person can sign in again at once', async () => {

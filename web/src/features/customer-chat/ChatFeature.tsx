@@ -91,7 +91,11 @@ export function ChatFeature({
             title={t('chat.couldNotStart')}
             reason={failureReason(conversation.failure, t)}
           >
-            {!expired && <Button onClick={conversation.retry}>{t('common.retry')}</Button>}
+            {!expired && (
+              <Button ref={retryRef} onClick={conversation.retry}>
+                {t('common.retry')}
+              </Button>
+            )}
           </ErrorState>
         </div>
       </section>
