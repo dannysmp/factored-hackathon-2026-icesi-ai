@@ -431,7 +431,10 @@ def _controller_factory(
     )
 
     def build(principal: Principal) -> DialogueController:
-        """Assemble a controller whose store, tools and audit sink are bound to this session."""
+        """Assemble a controller for one principal; its tool port is scoped to that customer.
+
+        The dialogue store and the audit sink are opened per request and carry no customer scope.
+        """
         dsn = settings.require_database_url().get_secret_value()
         store = PostgresDialogueStore(dsn)
         current = store.get(principal.session_id)
