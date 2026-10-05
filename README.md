@@ -339,9 +339,10 @@ The deployed system is one AWS host (`t3.large`, region `us-east-1`) running the
 interface, Postgres and a Caddy reverse proxy with automatic TLS in docker compose, reachable at
 `<address-with-dashes>.sslip.io` with no domain to buy. The Metabase operations dashboard is an
 optional addition. `.github/workflows/deploy.yml` runs on demand: it builds both images, scans them
-with Trivy, pushes them to ECR using GitHub's OIDC identity (no static AWS keys anywhere), brings
-the stack up over Systems Manager (no SSH), loads the operational seed from a private bucket, then
-runs a smoke test and a hardening check against the live address. The host is removed at the end of
+with Trivy, pushes them to ECR using GitHub's OIDC identity (no static AWS keys anywhere), then
+deploys over Systems Manager (no SSH): the database is migrated and loaded with the operational seed
+from a private bucket before the rest of the stack is brought up. It finishes with a smoke test and
+a hardening check against the live address. The host is removed at the end of
 the run unless it is started with `teardown_after=false`.
 
 ```bash
