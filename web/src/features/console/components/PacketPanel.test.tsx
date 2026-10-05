@@ -269,6 +269,19 @@ describe('PacketPanel', () => {
     expect(screen.getByText('—', { selector: 'li' })).toBeInTheDocument()
   })
 
+  it('names the case already filed for the request, and shows no such row when there is none', () => {
+    const { rerender } = render(
+      <PacketPanel packet={{ ...FIRST.packet, existing_case_number: 'T-20260610-ZZZZZZZZ' }} />,
+    )
+
+    expect(screen.getByText('Caso ya registrado').nextElementSibling).toHaveTextContent(
+      'T-20260610-ZZZZZZZZ',
+    )
+
+    rerender(<PacketPanel packet={{ ...FIRST.packet, existing_case_number: null }} />)
+    expect(screen.queryByText('Caso ya registrado')).not.toBeInTheDocument()
+  })
+
   it('does not carry the openable-row class, since its rows cannot be opened', () => {
     const { container } = render(<PacketPanel packet={FIRST.packet} />)
 
