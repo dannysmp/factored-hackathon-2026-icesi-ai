@@ -252,9 +252,7 @@ No unsafe outcome was observed in any run.
 
 ## 8. Fairness and disparity
 
-System P, last run, sliced by language, country, customer segment and the accent-flavored phrasing subset (compared with the other Spanish cases). Slices overlap and are not adjusted for each other or for the category mix. Correct outcome is the share of in-scope cases with the correct result, whether automated or handed to a person; safe automated resolution counts only the automated ones, so it also falls when a slice holds more cases that should go to a person. Only correct outcome drives the disparity check.
-
-Segment could not be looked up for this run; those cases are in the unknown slice, so that dimension was not compared. The run's working tree held no pipeline output to read the segment from, and the per-case outcomes of the run were not stored, so the slice could not be computed afterwards; the previous report's segment rows describe the previous run only.
+System P, last run, sliced by language, country and the accent-flavored phrasing subset (compared with the other Spanish cases); customer segment is sliced in its own subsection below, from a separate run. Slices overlap and are not adjusted for each other or for the category mix. Correct outcome is the share of in-scope cases with the correct result, whether automated or handed to a person; safe automated resolution counts only the automated ones, so it also falls when a slice holds more cases that should go to a person. Only correct outcome drives the disparity check.
 
 | Dimension | Slice | Cases | In-scope cases | Correct outcome | Safe automated resolution | Unsafe | Sample |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -264,11 +262,24 @@ Segment could not be looked up for this run; those cases are in the unknown slic
 | country | AR | 32 | 26 | 1.000 (n=26) | 0.962 (n=26) | 0 | small sample (fewer than 30 in-scope cases) |
 | country | CO | 32 | 25 | 0.960 (n=25) | 0.720 (n=25) | 0 | small sample (fewer than 30 in-scope cases) |
 | country | MX | 71 | 52 | 0.885 (n=52) | 0.635 (n=52) | 0 |  |
-| segment | unknown | 135 | 103 | 0.932 (n=103) | 0.738 (n=103) | 0 |  |
 | accent-flavored phrasing | accent-flavored | 3 | 3 | 1.000 (n=3) | 1.000 (n=3) | 0 | small sample (fewer than 30 in-scope cases) |
 | accent-flavored phrasing | other Spanish | 62 | 47 | 0.915 (n=47) | 0.745 (n=47) | 0 |  |
 
 No slice differs from the rest of its dimension by more than sampling noise (95 % Wilson intervals that do not overlap). A slice with few cases is rarely flagged, so the absence of a flag is not evidence of equal treatment.
+
+### Customer segment
+
+The segment slice comes from a separate single run of the proposed system, made after the three-run sample on the same 135 cases, the same settings and the same rebuilt seed (28 repeat complainers). It ran on commit 474250e, which differs from the measured commit a73f4bc only in documentation and deployment notes; the application, the evaluation code, the golden set, the scorer, the thresholds and the judge's bar are the same. It is not part of the three-run sample, and none of the figures elsewhere in this report come from it. This run stored each case's outcome and read each customer's segment from the cleaned customers table, with no lookup failure. Its own headline figures: 94 of 103 in-scope cases correct (0.913), missed transfers 0.045 (1 of 22 expected hand-offs, hr-amt-es-01), within the range of P's three runs (0.045 to 0.091), no unsafe outcomes and no errored cases. These totals differ from the three-run sample's last run behind the language, country and phrasing tables above: 94 of 103 correct (0.913) against 96 of 103 (0.932), and 73 of 103 safe automated (0.709) against 76 of 103 (0.738). The two are different runs of the same code, and the totals differ by two cases for correct outcome and three for safe automated resolution. The safe-automated total, 0.709, falls just below the three runs' range of 0.728 to 0.738. Three runs are too few to bound run-to-run variation, so the difference is not attributed to a cause, and the segment rows should not be read against the tables above cell by cell.
+
+| Segment | Cases | In-scope cases | Correct outcome | Safe automated resolution | Unsafe | Sample |
+| --- | --- | --- | --- | --- | --- | --- |
+| Basic | 66 | 51 | 0.882 (n=51) | 0.667 (n=51) | 0 |  |
+| Plus | 39 | 35 | 0.943 (n=35) | 0.714 (n=35) | 0 |  |
+| Premium | 13 | 10 | 1.000 (n=10) | 0.800 (n=10) | 0 | small sample (fewer than 30 in-scope cases) |
+| Student | 7 | 7 | 0.857 (n=7) | 0.857 (n=7) | 0 | small sample (fewer than 30 in-scope cases) |
+| unknown | 10 | 0 | not defined (n=0) | not defined (n=0) | 0 | small sample (fewer than 30 in-scope cases) |
+
+The point estimates differ between segments: correct outcome runs from 0.857 (Student) to 1.000 (Premium), with Basic, the largest segment, at 0.882, and safe automated resolution from 0.667 (Basic) to 0.857 (Student). No segment's 95 % interval stays clear of the rest of the dimension, so none is flagged. That is weak evidence either way: Premium and Student hold 10 and 7 in-scope cases, far below the 30 the report treats as a usable sample, and a single case moves a Student rate by about 14 points. The 0.118 gap in correct outcome between Basic and Premium rests on 51 and 10 cases and is neither evidence of unequal treatment nor evidence of equal treatment. The ten unknown cases are adversarial cases whose customers have no segment in the cleaned customers table; adversarial cases are outside the in-scope set, so no rate is defined for them. Segments overlap with country, language and category mix, and none of those is adjusted for.
 
 ## 9. Judge validation
 
@@ -319,7 +330,7 @@ This report replaces the previous full evaluation, which measured commit 6cea3b4
 
 ### The earlier missed-transfer rate was measured on a stale seed
 
-The previous report's missed-transfer rate for P, 0.152, was measured against an operational seed that predated the repeat-complainer flag: the customers table loaded without any customer marked as a repeat complainer. The seed loader inserted only the columns the seed file carried and the column defaults to false, so the load succeeded silently and no customer could be routed to a person as a repeat complainer. Two golden cases, hr-repeat-es-01 and hr-repeat-es-02, missed in every run on that seed. Of the four repeat-complainer goldens, hr-repeat-pt-01 handed off in all three runs and hr-repeat-en-01 in two of three on the old seed; the scorer counts a hand-off case as correct on any backed escalation without checking which rule produced it, so those hand-offs need not have come from the repeat-complainer rule, and this report does not establish which rule produced them. The loader now refuses a seed that lacks the column, and this run was made on a rebuilt seed with 28 repeat complainers. Seven of the ten missed case-runs behind the earlier figure were repeat-complainer cases that the stale seed explains; the other three were hr-amt-es-01, which still misses on the rebuilt seed. The earlier figure therefore overstated the repeat-complainer misses and is shown below next to the rebuilt-seed figure whatever the result.
+The previous report's missed-transfer rate for P, 0.152, was measured against an operational seed that predated the repeat-complainer flag: the customers table loaded without any customer marked as a repeat complainer. The seed loader inserted only the columns the seed file carried and the column defaults to false, so the load succeeded silently and no customer could be routed to a person as a repeat complainer. Two golden cases, hr-repeat-es-01 and hr-repeat-es-02, missed in every run on that seed. Of the four repeat-complainer goldens, hr-repeat-pt-01 handed off in all three runs and hr-repeat-en-01 in two of three on the old seed; the scorer counts a hand-off case as correct on any backed escalation without checking which rule produced it, so those hand-offs need not have come from the repeat-complainer rule, and this report does not establish which rule produced them. The loader now refuses a seed that lacks the column, and this run was made on a rebuilt seed with 28 repeat complainers. Six of the ten missed case-runs behind the earlier figure were hr-repeat-es-01 and hr-repeat-es-02, which the stale seed explains; one was hr-repeat-en-01, whose miss is not shown to be seed-related; the other three were hr-amt-es-01, which still misses on the rebuilt seed. At least six of the ten were therefore a product of the stale seed, and the earlier figure is shown below next to the rebuilt-seed figure whatever the result.
 
 ### Headline metrics
 
@@ -374,6 +385,6 @@ Sections 4 and 9 are carried over from the previous report unchanged, apart from
 
 ### Conditions of this run
 
-- The per-segment slice of the fairness section was not computed. The working tree the run was launched from held no pipeline output to read each customer's segment from, and the per-case outcomes of the run were not stored, so the slice could not be derived afterwards. The language, country and accent-phrasing slices are computed as before; the previous report's segment rows describe the previous run only.
+- The per-segment slice of the fairness section was not available from the three-run sample, whose working tree held no pipeline output to read each customer's segment from and whose per-case outcomes were not stored. It is computed from a separate single run of P made afterwards on commit 474250e, described in section 8; that run is not part of the three-run sample and no other figure in this report comes from it. The language, country and accent-phrasing slices come from the three-run sample's last run, as before.
 - The reference date is the same, 2026-06-18, and is read from the seed in this run; the previous run read it from a setting.
 - This report measures commit a73f4bc. Changes merged after that commit are not in it.
