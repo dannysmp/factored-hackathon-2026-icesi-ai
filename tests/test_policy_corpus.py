@@ -692,6 +692,36 @@ def test_portuguese_reason_rows_name_the_advisor_as_the_subject_of_the_review(
     assert all(row.endswith("| Um atendente analisa este pedido. |") for row in rows)
 
 
+@pytest.mark.parametrize(
+    ("language", "sentence"),
+    [
+        ("es", "Un asesor revisa esta solicitud."),
+        ("pt", "Um atendente analisa este pedido."),
+        ("en", "A person reviews this request."),
+    ],
+)
+def test_every_routing_reason_states_the_same_sentence_in_every_language(
+    policy: Policy, language: str, sentence: str
+) -> None:
+    """The six routing reasons each read as one sentence about "this" request."""
+    rows = [
+        line for line in _document(policy, language).splitlines() if line.startswith("| `escalate_")
+    ]
+
+    assert len(rows) == 6
+    assert all(row.endswith(f"| {sentence} |") for row in rows)
+
+
+def test_the_spanish_decision_codes_introduction_describes_the_table_without_claiming_a_display(
+    policy: Policy,
+) -> None:
+    """The sentence quotes the table's wording and does not say it is shown to the customer."""
+    text = _document(policy, "es")
+
+    assert "se describe con la frase: “Un asesor revisa esta solicitud.”" in text
+    assert "se muestra" not in text
+
+
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_a_category_that_alone_requires_confirmation_is_named_once(
     policy: Policy, language: str
