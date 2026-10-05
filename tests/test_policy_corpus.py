@@ -76,6 +76,7 @@ def _evidence(policy: Policy, category: DisputeCategory, items: tuple[str, ...])
 
 
 def _document(policy: Policy, language: str) -> str:
+    """The full rendered document of one language for ``policy``."""
     return render_corpus(policy)[f"{language}/dispute-policy.md"]
 
 
@@ -322,9 +323,8 @@ _FUTURE_DATE_KEYWORD = {"es": "futur", "pt": "futur", "en": "future"}
 
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_a_future_dated_transaction_cannot_be_disputed(policy: Policy, language: str) -> None:
-    """The who-can-dispute section states the future-date gate, the one condition that used to
-    be missing from the sentence (`_gate_future_date` in the engine, reason
-    ``transaction_date_in_future``)."""
+    """The who-can-dispute section states the future-date gate that the engine applies
+    (``_gate_future_date``, reason ``transaction_date_in_future``)."""
     text = render_corpus(policy)[f"{language}/dispute-policy.md"]
     section = text.split("{#who-can-dispute}")[1].split("{#filing-windows}")[0]
 
@@ -394,6 +394,7 @@ def test_the_confirmation_section_follows_the_categories_that_require_it(
     messages = MESSAGES[language]
 
     def rules(required: set[DisputeCategory]) -> Policy:
+        """A copy of the policy where exactly the categories in ``required`` need confirmation."""
         categories = {
             c: policy.categories[c].model_copy(update={"requires_confirmation": c in required})
             for c in DisputeCategory
@@ -460,6 +461,7 @@ def test_the_fraud_section_states_the_rule_the_engine_enforces(policy: Policy) -
 
 
 def _arguments(tmp_path: Path, *extra: str) -> list[str]:
+    """Command-line arguments that read the shipped policy and write into ``tmp_path``."""
     return ["--policy", str(DEFAULT_POLICY_PATH), "--out", str(tmp_path / "corpus"), *extra]
 
 
@@ -688,6 +690,36 @@ def test_portuguese_reason_rows_name_the_advisor_as_the_subject_of_the_review(
 
     assert len(rows) == 6
     assert all(row.endswith("| Um atendente analisa este pedido. |") for row in rows)
+
+
+@pytest.mark.parametrize(
+    ("language", "sentence"),
+    [
+        ("es", "Un asesor revisa esta solicitud."),
+        ("pt", "Um atendente analisa este pedido."),
+        ("en", "A person reviews this request."),
+    ],
+)
+def test_every_routing_reason_states_the_same_sentence_in_every_language(
+    policy: Policy, language: str, sentence: str
+) -> None:
+    """The six routing reasons each read as one sentence about "this" request."""
+    rows = [
+        line for line in _document(policy, language).splitlines() if line.startswith("| `escalate_")
+    ]
+
+    assert len(rows) == 6
+    assert all(row.endswith(f"| {sentence} |") for row in rows)
+
+
+def test_the_spanish_decision_codes_introduction_describes_the_table_without_claiming_a_display(
+    policy: Policy,
+) -> None:
+    """The sentence quotes the table's wording and does not say it is shown to the customer."""
+    text = _document(policy, "es")
+
+    assert "se describe con la frase: “Un asesor revisa esta solicitud.”" in text
+    assert "se muestra" not in text
 
 
 @pytest.mark.parametrize("language", LANGUAGES)

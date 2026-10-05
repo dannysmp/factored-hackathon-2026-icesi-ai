@@ -4,10 +4,10 @@ Agent Routes
 
 Overview
 --------
-The routes the human-agent console needs (ADR-17): the queue of open tickets, one ticket's whole
+The routes the human-agent console needs: the queue of open tickets, one ticket's whole
 detail (its packet and its conversation's timeline), and the four narrow writes — claim or
 release a ticket, add a note, and set a filed case's status. All are reachable only with an agent
-session (ADR-18).
+session.
 
 Scope
 -----
@@ -20,10 +20,10 @@ into the running application (``app.main``).
 
 Design Principles
 -----------------
-- **Every read of a ticket's packet or timeline is audited before it is returned** (AC-E10-07,
-  ADR-17's own fail-closed rule): the write happens first, and its own exception — including
-  ``NotImplementedError`` from ``ConsoleAuditSink``'s stub implementation — propagates instead of
-  being swallowed, so this route can never actually return agent-facing data without a
+- **Every read of a ticket's packet or timeline is audited before it is returned**, failing
+  closed: the write happens first, and its own exception — including
+  the ``NotImplementedError`` of ``AuditNotYetImplemented`` — propagates instead of being
+  swallowed, so this route can never actually return agent-facing data without a
   corresponding audit record, in production or in a test.
 - **Every narrow write audits itself as part of the same call** (``AgentWritesPort``'s own
   contract, matching ``PostgresAgentWrites``): a route never audits separately from the
@@ -34,10 +34,10 @@ Design Principles
   there is nothing here that a shared instance could leak between two agents' requests, unlike the
   customer-facing turns route's per-request controller.
 - **A ticket or a case that does not exist is a plain 404**, never the customer-facing
-  foreign-reference disguise (AC-E4-06's "answers exactly like a missing one"): that disguise
-  exists so a customer cannot enumerate another customer's references through their own session;
-  an agent's session is already scoped to reading and writing across customers by design, so there
-  is nothing to hide a real not-found behind here.
+  foreign-reference disguise, where a reference that is not the caller's answers exactly like a
+  missing one: that disguise exists so a customer cannot enumerate another customer's references
+  through their own session; an agent's session is already scoped to reading and writing across
+  customers by design, so there is nothing to hide a real not-found behind here.
 - **A terminal case status is a 409, not a 404 or a silent no-op**: the case exists and was found;
   the request is refused because of what state it is already in, the same distinction
   ``TURN_CONFLICT`` already draws for a conversation that moved on.
@@ -115,7 +115,7 @@ class TicketDetailPort(Protocol):
 
 
 class ConsoleAuditSink(Protocol):
-    """Where every packet or timeline read is audited (AC-E10-07, ADR-17).
+    """Where every packet or timeline read is audited.
 
     ``contracts.service_v1.audit.AuditAction.PACKET_VIEWED``/``TIMELINE_VIEWED`` exist; the real
     implementation (``app.persistence.console_audit``) resolves the ticket's own ``customer_id``
@@ -124,9 +124,9 @@ class ConsoleAuditSink(Protocol):
     other source once the read completes) and the exact data shown (``packet``/``timeline``), so
     the real sink can hash what was actually returned into ``AuditRecord.tool_result_hash``, the
     same "prove what was shown, not just that something was" rule every other read audits under
-    (``app.persistence.reads``'s own ``_hash(result)``). Until a real implementation is injected, a
-    stub that always raises keeps this router from ever actually serving agent data unaudited, in
-    production or in a test — never a silent no-op.
+    (``app.persistence.reads``'s own ``_hash(result)``). ``AuditNotYetImplemented`` is the
+    fail-closed alternative that always raises, so a router built with it can never actually serve
+    agent data unaudited, in production or in a test — never a silent no-op.
     """
 
     def packet_viewed(
@@ -151,7 +151,7 @@ class AgentWritesPort(Protocol):
     """Where the four narrow agent writes go;
     ``app.persistence.agent_writes.PostgresAgentWrites`` implements this today.
 
-    Each call audits itself with the acting agent's own identity (ADR-17): a route here never
+    Each call audits itself with the acting agent's own identity: a route here never
     issues a separate audit call the way the two read routes above do, since the write and its
     audit record are one collaborator call, not two. A ``None`` return means no such ticket (or,
     for ``set_case_status``, no filed case) — the same not-found contract ``TicketDetailPort``
@@ -183,7 +183,7 @@ class AgentWritesPort(Protocol):
 
 
 class AuditNotYetImplemented:
-    """The ``ConsoleAuditSink`` a composition root injects until it wires the real one.
+    """A fail-closed ``ConsoleAuditSink`` for a composition that has no real audit sink.
 
     Raises ``NotImplementedError`` unconditionally: fails the ticket-detail route closed rather
     than ever serving a packet or a timeline with no audit record.

@@ -44,8 +44,8 @@ to its text. ``LANGUAGES`` and ``SECTION_IDS`` name what is rendered.
 Limitations
 -----------
 The prose is fixed per language, not per country. A native review of the final wording is still
-recommended before customer use. The text is synthetic policy
-prose written for this project, not legal advice.
+recommended before customer use. The text is synthetic policy prose written for this project, not
+legal advice.
 """
 
 from __future__ import annotations
@@ -61,6 +61,7 @@ from app.domain.policy.models import (  # Vocabulary rendered in the text
     TransactionStatus,
 )
 
+# Languages of the corpus, in the order the documents are produced.
 LANGUAGES: tuple[str, ...] = ("es", "pt", "en")
 
 # Stable identifiers of the sections, in reading order; identical in every language.
@@ -76,12 +77,21 @@ SECTION_IDS: tuple[str, ...] = (
     "decision-codes",
 )
 
+# File name of the policy document inside each language directory.
 DOCUMENT_NAME = "dispute-policy.md"
 
 
 @dataclass(frozen=True, slots=True)
 class Messages:
-    """Every piece of prose of one language."""
+    """Every piece of prose of one language: titles, sentence templates and vocabulary.
+
+    Templates use ``str.format`` placeholders that the section builders fill from the policy
+    (for example ``{days}`` or ``{products}``), so the numbers come from the policy and never from
+    the prose. The mappings translate the engine's own identifiers (categories, transaction
+    statuses, product and transaction-type codes, reason codes, evidence ids) into customer
+    language; ``and_word``, ``or_word``, ``nor_word``, ``day_one`` and ``day_many`` are the small
+    grammatical pieces used when joining lists and counting days.
+    """
 
     title: str
     section_titles: dict[str, str]
@@ -147,8 +157,8 @@ _ES = Messages(
     ),
     transactions=(
         "Para presentar una disputa, la transacción debe ser un cargo al cliente ({types}), "
-        "estar {approved}, no estar fechada en el futuro, estar dentro del plazo de su "
-        "categoría (ver más abajo) y no tener otra disputa abierta."
+        "estar {approved}, no estar fechada en el futuro, encontrarse dentro del plazo "
+        "correspondiente (ver más abajo) y no tener otra disputa abierta."
     ),
     types_excluded="No se pueden disputar {types}.",
     statuses_excluded=(
@@ -182,28 +192,32 @@ _ES = Messages(
         "last_genuine_use": "cuándo la usó por última vez",
     },
     confirmation_all=(
-        "Antes de presentar una disputa, el cliente confirma exactamente lo que se va a "
-        "presentar: la transacción, el motivo y los datos de la solicitud."
+        "Antes de presentar una disputa, el cliente confirma la transacción, el motivo y los "
+        "datos de la solicitud."
     ),
     confirmation_some=(
-        "En los casos de {categories}, antes de presentar la disputa, el cliente confirma "
-        "exactamente lo que se va a presentar: la transacción, el motivo y los datos de la "
-        "solicitud."
+        "En los casos de {categories}, antes de presentar la disputa, el cliente confirma la "
+        "transacción, el motivo y los datos de la solicitud."
     ),
     confirmation_none="La política no exige confirmación previa a la presentación.",
     human_intro=(
         "Aunque la solicitud cumpla las reglas, pasa a revisión de un asesor en estos casos:"
     ),
     human_fraud="- Es un reporte de fraude.",
-    human_confidence="- El sistema no entendió la solicitud con suficiente certeza.",
+    human_confidence=(
+        "- El sistema no puede determinar con suficiente claridad qué solicita el cliente."
+    ),
     human_criteria="- Se aplican otros criterios de revisión del banco.",
     fraud=(
         "Un asesor revisa siempre los reportes de fraude. Nunca se descartan automáticamente, "
         "aunque la transacción haya sido rechazada, esté fuera de plazo o corresponda a un "
         "producto fuera del alcance de esta política; en esos casos, el asesor recibe además "
-        "el motivo por el que la solicitud no habría sido elegible."
+        "el motivo por el que la solicitud no cumple las reglas."
     ),
-    codes_intro="Cada decisión lleva uno de estos motivos.",
+    codes_intro=(
+        "Cada decisión lleva uno de estos motivos. En esta tabla, cada motivo que requiere "
+        "revisión de un asesor se describe con la frase: “Un asesor revisa esta solicitud.”"
+    ),
     codes_header=("Motivo", "Significado"),
     categories={
         DisputeCategory.UNRECOGNIZED_CHARGE: "cargo no reconocido",
@@ -262,12 +276,12 @@ _ES = Messages(
         ReasonCode.TRANSACTION_DATE_IN_FUTURE: "La fecha de la transacción es futura.",
         ReasonCode.FILING_WINDOW_EXPIRED: "Venció el plazo para presentar esta disputa.",
         ReasonCode.DUPLICATE_OPEN_CASE: "Ya hay una disputa abierta para esta transacción.",
-        ReasonCode.ESCALATE_FRAUD_CLAIM: "Un asesor revisa la solicitud.",
-        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: "Un asesor revisa la solicitud.",
-        ReasonCode.ESCALATE_REPEAT_COMPLAINER: "Un asesor revisa la solicitud.",
-        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: "Un asesor revisa la solicitud.",
-        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: "Un asesor revisa la solicitud.",
-        ReasonCode.ESCALATE_RISK_SCORE: "Un asesor revisa la solicitud.",
+        ReasonCode.ESCALATE_FRAUD_CLAIM: "Un asesor revisa esta solicitud.",
+        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: "Un asesor revisa esta solicitud.",
+        ReasonCode.ESCALATE_REPEAT_COMPLAINER: "Un asesor revisa esta solicitud.",
+        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: "Un asesor revisa esta solicitud.",
+        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: "Un asesor revisa esta solicitud.",
+        ReasonCode.ESCALATE_RISK_SCORE: "Un asesor revisa esta solicitud.",
     },
     and_word="y",
     or_word="o",
@@ -502,7 +516,7 @@ _EN = Messages(
     confirmation_none="The policy does not require confirmation before filing.",
     human_intro="Even when a request meets the rules, a person reviews it in these cases:",
     human_fraud="- It is a fraud claim.",
-    human_confidence="- The request was not understood with enough confidence.",
+    human_confidence="- The request was not understood with sufficient confidence.",
     human_criteria="- Other bank review criteria apply.",
     fraud=(
         "A fraud claim is always reviewed by a person. It is never refused automatically, even "
@@ -568,12 +582,12 @@ _EN = Messages(
         ReasonCode.TRANSACTION_DATE_IN_FUTURE: "The transaction date is in the future.",
         ReasonCode.FILING_WINDOW_EXPIRED: "The deadline to file this dispute has passed.",
         ReasonCode.DUPLICATE_OPEN_CASE: "A dispute is already open for this transaction.",
-        ReasonCode.ESCALATE_FRAUD_CLAIM: "A person reviews the request.",
-        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: "A person reviews the request.",
-        ReasonCode.ESCALATE_REPEAT_COMPLAINER: "A person reviews the request.",
-        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: "A person reviews the request.",
-        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: "A person reviews the request.",
-        ReasonCode.ESCALATE_RISK_SCORE: "A person reviews the request.",
+        ReasonCode.ESCALATE_FRAUD_CLAIM: "A person reviews this request.",
+        ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE: "A person reviews this request.",
+        ReasonCode.ESCALATE_REPEAT_COMPLAINER: "A person reviews this request.",
+        ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD: "A person reviews this request.",
+        ReasonCode.ESCALATE_AMOUNT_UNKNOWN: "A person reviews this request.",
+        ReasonCode.ESCALATE_RISK_SCORE: "A person reviews this request.",
     },
     and_word="and",
     or_word="or",
@@ -582,6 +596,7 @@ _EN = Messages(
     day_many="days",
 )
 
+# The message set of each language, keyed by the language code in LANGUAGES.
 MESSAGES: dict[str, Messages] = {"es": _ES, "pt": _PT, "en": _EN}
 
 
@@ -591,7 +606,10 @@ MESSAGES: dict[str, Messages] = {"es": _ES, "pt": _PT, "en": _EN}
 
 
 def _join(items: list[str], word: str) -> str:
-    """Join with commas and a final conjunction: ``a, b and c``."""
+    """Join with commas and a final conjunction (``word``): ``a, b and c``.
+
+    An empty list gives an empty string and a single item is returned as it is.
+    """
     if len(items) <= 1:
         return "".join(items)
     return f"{', '.join(items[:-1])} {word} {items[-1]}"
@@ -642,12 +660,20 @@ KNOWN_TRANSACTION_TYPES: tuple[str, ...] = (
 
 
 def _in_reading_order(accepted: frozenset[str], known: tuple[str, ...]) -> list[str]:
-    """The accepted codes, known ones first in their fixed order, then any others by name."""
+    """The accepted codes, known ones first in their fixed order, then any others by name.
+
+    A deterministic order keeps the rendered text identical between runs.
+    """
     return [code for code in known if code in accepted] + sorted(accepted - set(known))
 
 
 def _who_can_dispute(policy: Policy, m: Messages) -> str:
-    """The conditions a transaction must meet, and what the policy leaves out."""
+    """The conditions a transaction must meet, and what the policy leaves out.
+
+    Products and transaction types the policy accepts are listed; the known ones it does not
+    accept are stated as excluded, so a product or transaction-type exclusion appears only when
+    the policy makes it. The declined, pending and reversed statuses are always stated as excluded.
+    """
     accepted_products = _in_reading_order(policy.in_scope_product_types, KNOWN_PRODUCT_TYPES)
     other_products = [p for p in KNOWN_PRODUCT_TYPES if p not in policy.in_scope_product_types]
     accepted_types = _in_reading_order(policy.disputable_transaction_types, KNOWN_TRANSACTION_TYPES)
@@ -656,6 +682,7 @@ def _who_can_dispute(policy: Policy, m: Messages) -> str:
     ]
 
     def names(codes: list[str]) -> str:
+        """The display names of product codes, joined with the language's conjunction."""
         return _join([_label(m.product_names, code) for code in codes], m.and_word)
 
     charges = _join([_label(m.transaction_types_indefinite, t) for t in accepted_types], m.or_word)
@@ -679,7 +706,10 @@ def _who_can_dispute(policy: Policy, m: Messages) -> str:
 
 
 def _filing_windows(policy: Policy, m: Messages) -> str:
-    """The deadline rule with a worked example, then one line per category with its window."""
+    """The deadline rule with a worked example, then one line per category with its window.
+
+    The example uses the policy's shortest window: its last day is valid and the day after is not.
+    """
     windows = [policy.categories[category].filing_window_days for category in DisputeCategory]
     example = min(windows)
     intro = m.windows_intro.format(
@@ -696,7 +726,10 @@ def _filing_windows(policy: Policy, m: Messages) -> str:
 
 
 def _confirmation(policy: Policy, m: Messages) -> str:
-    """Which dispute categories the customer must confirm before filing."""
+    """Which dispute categories the customer must confirm before filing.
+
+    States that all, some (naming them) or none of the categories require confirmation.
+    """
     required = [c for c in DisputeCategory if policy.categories[c].requires_confirmation]
     if not required:
         return m.confirmation_none
@@ -752,7 +785,12 @@ def _decision_codes(m: Messages) -> str:
 
 
 def _render_language(policy: Policy, language: str, source: str) -> str:
-    """The whole document of one language."""
+    """The whole Markdown document of one language.
+
+    The document is a front matter block (language, policy version, generated flag and source
+    path), the title, and every section in ``SECTION_IDS`` order under a heading that carries the
+    stable ``{#section-id}`` anchor.
+    """
     m = MESSAGES[language]
     bodies = {
         "overview": m.overview,
