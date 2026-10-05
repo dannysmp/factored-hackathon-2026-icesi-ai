@@ -66,7 +66,8 @@ results still to come say so and name the command that completes them.
   Running `make judge-validation RATER1=<sheet> RATER2=<sheet>` scores the same cases with the real
   judge and patches that section and the matching limitations line of that report with rater-to-rater
   and rater-to-judge agreement per dimension, each with its pair count and weighted kappa, the
-  direction of the differences and the decision per dimension, and writes every case's scores to
+  direction of the differences and the decision per dimension, withholds the judge's mean in the judge-scored quality table for
+  each dimension it demotes (showing the raters' means beneath it), and writes every case's scores to
   `reports/judge-validation-cases.csv`, a local working file that is not tracked in the repository;
   this bullet is to be rewritten with those figures,
   and with any dimension the judge is demoted on, at the same time. The written analysis of where
