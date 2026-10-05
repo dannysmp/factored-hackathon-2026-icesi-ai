@@ -58,6 +58,7 @@ from contracts.service_v1.envelope import (
     CustomerReason,
     DateSource,
     Intent,
+    Lang,
     Slot,
 )
 from contracts.service_v1.handoff import HandoffPacket, HandoffTrigger
@@ -106,6 +107,7 @@ def _transaction(
     amount: Decimal | None = Decimal("100.00"),
     currency: str = "USD",
     last4: str = "1234",
+    original: tuple[Decimal, str] | None = None,
 ) -> TransactionFact:
     disclosed = (
         DisclosedAmount(
@@ -119,6 +121,9 @@ def _transaction(
         occurred_on=occurred_on,
         merchant=merchant,
         amount=disclosed,
+        original_amount=None
+        if original is None
+        else CaseMoney(amount=original[0], currency=original[1]),
         product=ProductLabel(name="Credit Card", last4=last4),
         status=TransactionStatus.APPROVED,
     )
@@ -451,6 +456,113 @@ def test_matches_hint_still_rejects_a_different_merchant_after_accent_folding() 
 def test_matches_hint_never_matches_an_unknown_amount_against_a_stated_one() -> None:
     fact = _transaction(amount=None)
     assert not _matches_hint(fact, TransactionHint(amount=Decimal("10.00")))
+
+
+@pytest.mark.parametrize(
+    ("original", "quoted"),
+    [
+        (
+            (Decimal("1914215.00"), "COP"),
+            TransactionHint(amount=Decimal("1914215.00"), currency="COP"),
+        ),
+        ((Decimal("1914215.00"), "COP"), TransactionHint(amount=Decimal("1914215.00"))),
+        (
+            (Decimal("3499939.11"), "ARS"),
+            TransactionHint(amount=Decimal("3499939.11"), currency="ARS"),
+        ),
+        (
+            (Decimal("250000.00"), "CLP"),
+            TransactionHint(amount=Decimal("250000.00"), currency="CLP"),
+        ),
+        ((Decimal("250000.00"), "CLP"), TransactionHint(currency="CLP")),
+    ],
+    ids=["cop", "cop-no-currency", "ars", "clp", "clp-currency-only"],
+)
+def test_matches_hint_reads_a_figure_quoted_in_the_currency_of_the_transaction(
+    original: tuple[Decimal, str], quoted: TransactionHint
+) -> None:
+    """The amount in dollars is no help to a customer who quotes pesos."""
+    with_dollars = _transaction(amount=Decimal("470.20"), currency="USD", original=original)
+    without_dollars = _transaction(amount=None, original=original)
+
+    assert _matches_hint(with_dollars, quoted)
+    assert _matches_hint(without_dollars, quoted)
+
+
+def test_matches_hint_still_reads_the_amount_in_dollars_of_a_transaction_made_in_pesos() -> None:
+    fact = _transaction(
+        amount=Decimal("470.20"), currency="USD", original=(Decimal("1914215.00"), "COP")
+    )
+
+    assert _matches_hint(fact, TransactionHint(amount=Decimal("470.20"), currency="USD"))
+    assert _matches_hint(fact, TransactionHint(amount=Decimal("470.20")))
+
+
+@pytest.mark.parametrize(
+    "quoted",
+    [
+        TransactionHint(amount=Decimal("1914215.01"), currency="COP"),
+        TransactionHint(amount=Decimal("1914215.00"), currency="ARS"),
+        TransactionHint(amount=Decimal("470.20"), currency="COP"),
+        TransactionHint(amount=Decimal("1914215.00"), currency="USD"),
+    ],
+    ids=["other-amount", "other-currency", "dollars-in-pesos", "pesos-in-dollars"],
+)
+def test_matches_hint_pairs_the_amount_with_the_currency_of_the_same_figure(
+    quoted: TransactionHint,
+) -> None:
+    fact = _transaction(
+        amount=Decimal("470.20"), currency="USD", original=(Decimal("1914215.00"), "COP")
+    )
+
+    assert not _matches_hint(fact, quoted)
+
+
+@pytest.mark.parametrize("language", ["es", "pt", "en"])
+@pytest.mark.parametrize(
+    "quoted",
+    [
+        TransactionHint(amount=Decimal("1914215.00"), currency="COP"),
+        TransactionHint(amount=Decimal("1914215.00")),
+    ],
+    ids=["with-currency", "amount-only"],
+)
+def test_a_figure_quoted_in_pesos_finds_a_transaction_that_has_no_dollar_amount(
+    language: Lang, quoted: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    controller = _two_transaction_controller(
+        [
+            NluResult(
+                intent=NluIntent.FILE_DISPUTE,
+                confidence=0.8,
+                language=language,
+                transaction=quoted,
+            )
+        ],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+        port=FakeToolPort(
+            transactions=(
+                _transaction("TX-1", merchant="Amazon", amount=Decimal("100.00")),
+                _transaction(
+                    "TX-2",
+                    merchant=None,
+                    amount=None,
+                    occurred_on=date(2026, 6, 10),
+                    last4="9876",
+                    original=(Decimal("1914215.00"), "COP"),
+                ),
+            )
+        ),
+    )
+
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert (state.selected_ref, state.pending_slot) == ("TX-2", Slot.TRANSACTION_CHOICE)
 
 
 def test_idempotency_key_is_deterministic_and_well_shaped() -> None:
