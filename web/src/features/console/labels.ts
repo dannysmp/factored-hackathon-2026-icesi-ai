@@ -155,18 +155,19 @@ export const ACTION_RESULT_LABELS: Record<string, string> = {
   decision_missing: 'Falta la decisión de la política',
 }
 
-/** An unlisted machine value written as plain words ("some_new_state" → "Some new state"), so a value added
- * on the backend never reaches the agent as an identifier. */
+/** An unlisted machine value, said in Spanish and followed by its plain words ("some_new_state" →
+ * "Sin etiqueta (some new state)"), so a value added on the backend reaches the agent neither as an
+ * identifier nor as a sentence in another language, and still says what it was. */
 export function humanize(value: string): string {
   const words = value.replaceAll('_', ' ').trim()
-  return words === '' ? '—' : words.charAt(0).toUpperCase() + words.slice(1)
+  return words === '' ? '—' : `Sin etiqueta (${words})`
 }
 
 function labelOf(labels: Readonly<Record<string, string>>, value: string): string {
   return Object.hasOwn(labels, value) ? (labels[value] ?? humanize(value)) : humanize(value)
 }
 
-/** The phase a conversation was in, or "—"-safe plain words for one this console does not know. */
+/** The phase a conversation was in, or the unlabelled form for one this console does not know. */
 export function phaseLabel(phase: string): string {
   return labelOf(PHASE_LABELS, phase)
 }
@@ -176,7 +177,7 @@ export function actionLabel(action: string): string {
   return labelOf(ACTION_LABELS, action)
 }
 
-/** How the step ended: a known outcome, a policy reason code, or plain words for anything else. */
+/** How the step ended: a known outcome, a policy reason code, or the unlabelled form for anything else. */
 export function actionResultLabel(result: string): string {
   if (Object.hasOwn(ACTION_RESULT_LABELS, result)) return labelOf(ACTION_RESULT_LABELS, result)
   return Object.hasOwn(REASON_CODE_LABELS, result)

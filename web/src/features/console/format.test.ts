@@ -42,6 +42,13 @@ describe('formatShare', () => {
   })
 })
 
+describe('formatShare rounding', () => {
+  it('rounds to the nearest whole percentage, in both directions', () => {
+    expect(formatShare(0.375).replaceAll('\u00a0', ' ')).toBe('38 %')
+    expect(formatShare(0.374).replaceAll('\u00a0', ' ')).toBe('37 %')
+  })
+})
+
 describe('formatAge', () => {
   it('writes zero days as today, one as a day and more as days', () => {
     expect(formatAge(0)).toBe('Hoy')

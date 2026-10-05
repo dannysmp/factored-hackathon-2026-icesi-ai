@@ -155,6 +155,72 @@ describe('PacketPanel', () => {
     expect(screen.getByText(`${fact.product.name} ····${fact.product.last4}`)).toBeInTheDocument()
   })
 
+  it('puts the request first, before the verified transactions and every other section', () => {
+    render(<PacketPanel packet={FIRST.packet} />)
+
+    const headings = screen
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent)
+    expect(headings).toEqual([
+      'Solicitud',
+      'Transacciones verificadas',
+      'Acciones',
+      'Evidencia',
+      'Preguntas abiertas',
+    ])
+  })
+
+  it('says each hand-off reason in the console’s own words, never the backend’s English sentence', () => {
+    render(<PacketPanel packet={{ ...FIRST.packet, trigger: 'card_loss' }} />)
+
+    expect(
+      screen.getByText('El cliente reportó la pérdida o el robo de su tarjeta.'),
+    ).toBeInTheDocument()
+  })
+
+  it('counts an open question’s attempts in the singular and the plural', () => {
+    render(
+      <PacketPanel
+        packet={{
+          ...FIRST.packet,
+          open_questions: [
+            { slot: 'reason', attempts: 1 },
+            { slot: 'confirmation', attempts: 2 },
+          ],
+        }}
+      />,
+    )
+
+    expect(screen.getByText('El motivo del reclamo (1 intento)')).toBeInTheDocument()
+    expect(screen.getByText('La confirmación (2 intentos)')).toBeInTheDocument()
+  })
+
+  it('falls back to the first title on record when the case’s language has none, and to a dash when there are none', () => {
+    const [source] = SECOND.packet.evidence.sources
+    if (source === undefined) throw new Error('fixture setup: SECOND needs a source')
+    const spanishOnly = { ...source, titles: [{ lang: 'es' as const, text: 'Solo en español' }] }
+    const { rerender } = render(
+      <PacketPanel
+        packet={{
+          ...SECOND.packet,
+          evidence: { ...SECOND.packet.evidence, sources: [spanishOnly] },
+        }}
+      />,
+    )
+    expect(screen.getByText('Solo en español')).toBeInTheDocument()
+
+    rerender(
+      <PacketPanel
+        packet={{
+          ...SECOND.packet,
+          evidence: { ...SECOND.packet.evidence, sources: [{ ...source, titles: [] }] },
+        }}
+      />,
+    )
+    expect(screen.queryByText('Solo en español')).not.toBeInTheDocument()
+    expect(screen.getByText('—', { selector: 'li' })).toBeInTheDocument()
+  })
+
   it('does not carry the openable-row class, since its rows cannot be opened', () => {
     const { container } = render(<PacketPanel packet={FIRST.packet} />)
 
