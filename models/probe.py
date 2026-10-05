@@ -364,7 +364,9 @@ class ExperimentResult(Protocol):
     A single method, `as_dict`, returning JSON-serialisable data for one log line.
     """
 
-    def as_dict(self) -> dict[str, object]: ...
+    def as_dict(self) -> dict[str, object]:
+        """The result as JSON-serialisable data: one line of the experiment log."""
+        ...
 
 
 def append_experiment(result: ExperimentResult, log_path: Path) -> None:
