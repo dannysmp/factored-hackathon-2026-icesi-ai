@@ -35,6 +35,7 @@ export const pt: Messages = {
   'chat.result.closedTitle': 'Conversa encerrada',
   'chat.result.caseNumberLabel': 'Número do caso',
   'chat.result.keepNumber': 'Guarde este número para qualquer dúvida sobre sua solicitação.',
+  'chat.result.filedEarlierLabel': 'Contestação registrada antes, número do caso',
   'signin.regionLabel': 'Acesso de demonstração',
   'signin.loading': 'Carregando o acesso de demonstração…',
   'signin.unreachable': 'Não foi possível carregar o acesso de demonstração.',
