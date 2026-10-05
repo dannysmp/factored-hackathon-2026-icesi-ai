@@ -86,6 +86,27 @@ describe('QueueTable', () => {
     )
   })
 
+  it('puts the priority bar on a priority row and on no other, and gives the mark an icon', () => {
+    render(
+      <QueueTable
+        items={[
+          item({ ticket_ref: 'T-20260618-AAAAAAAA', priority: true }),
+          item({ ticket_ref: 'T-20260618-BBBBBBBB', priority: false }),
+        ]}
+        onSelectTicket={vi.fn()}
+      />,
+    )
+
+    const priorityRow = screen.getByRole('rowheader', { name: /T-20260618-AAAAAAAA/ }).closest('tr')
+    const ordinaryRow = screen.getByRole('rowheader', { name: /T-20260618-BBBBBBBB/ }).closest('tr')
+    expect(priorityRow).toHaveClass('queue-row-priority')
+    expect(ordinaryRow).not.toHaveClass('queue-row-priority')
+    expect(
+      priorityRow?.querySelector('.queue-priority-badge svg[aria-hidden="true"]'),
+    ).not.toBeNull()
+    expect(ordinaryRow?.querySelector('.queue-priority-badge')).toBeNull()
+  })
+
   it('calls onSelectTicket with the ticket_ref when its reference is clicked', async () => {
     const user = userEvent.setup()
     const onSelectTicket = vi.fn()

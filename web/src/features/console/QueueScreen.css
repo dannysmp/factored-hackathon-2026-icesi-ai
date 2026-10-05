@@ -165,30 +165,39 @@ tbody th[scope='row'] {
   vertical-align: bottom;
 }
 
-/* The reference stays in view while the rest of the row scrolls under it, with a hairline so the
-   scrolled content is seen to pass beneath. */
-.queue-table-openable thead th:first-child,
-.queue-table-openable tbody th[scope='row'] {
-  position: sticky;
-  left: 0;
-  background-color: var(--color-bg);
-  box-shadow: inset calc(-1 * var(--border-width-thin)) 0 0 var(--color-border);
-}
-
-.queue-table-openable thead th:first-child {
-  background-color: var(--color-bg-subtle);
-}
-
-.queue-table-openable tbody tr:hover th[scope='row'] {
-  background-color: var(--color-bg-subtle);
-}
-
 /* A priority row is marked by a bar on its leading edge, as well as the badge and the word: the
    eye finds it while scanning, and it never depends on colour alone. */
 .queue-table-openable .queue-row-priority th[scope='row'] {
-  box-shadow:
-    inset var(--space-1) 0 0 var(--color-error),
-    inset calc(-1 * var(--border-width-thin)) 0 0 var(--color-border);
+  box-shadow: inset var(--space-1) 0 0 var(--color-error);
+}
+
+/* The reference stays in view while the rest of the row scrolls under it, with a hairline so the
+   scrolled content is seen to pass beneath. Only where the screen is wide enough to leave room for
+   the other columns: on a phone the reference cell alone fills most of the width, and pinning it
+   would leave a sliver for everything else. The breakpoint is a literal: a custom property cannot
+   be read inside a media query. */
+@media (min-width: 48rem) {
+  .queue-table-openable thead th:first-child,
+  .queue-table-openable tbody th[scope='row'] {
+    position: sticky;
+    left: 0;
+    background-color: var(--color-bg);
+    box-shadow: inset calc(-1 * var(--border-width-thin)) 0 0 var(--color-border);
+  }
+
+  .queue-table-openable thead th:first-child {
+    background-color: var(--color-bg-subtle);
+  }
+
+  .queue-table-openable tbody tr:hover th[scope='row'] {
+    background-color: var(--color-bg-subtle);
+  }
+
+  .queue-table-openable .queue-row-priority th[scope='row'] {
+    box-shadow:
+      inset var(--space-1) 0 0 var(--color-error),
+      inset calc(-1 * var(--border-width-thin)) 0 0 var(--color-border);
+  }
 }
 
 .queue-priority-badge {
