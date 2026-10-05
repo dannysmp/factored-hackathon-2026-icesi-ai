@@ -12,11 +12,13 @@
   padding: var(--space-4);
 }
 
-/* A quiet button has no visible edge, so its label should line up with the content below it; the
-   negative margin cancels the button's own horizontal padding and border. */
+/* A quiet button has no visible edge, so its label should line up with the content below it. The
+   button drops its own start padding and border rather than shifting outward, which would push
+   its focus ring and hover fill past the page gutter. */
 .ticket-detail-screen .ticket-back {
   align-self: flex-start;
-  margin-inline-start: calc(-1 * (var(--space-4) + var(--border-width-thin)));
+  padding-inline-start: 0;
+  border-inline-start-width: 0;
 }
 
 .ticket-detail-screen dl {
