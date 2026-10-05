@@ -1,5 +1,6 @@
 import { useId, useState } from 'react'
 import type { JSX, SyntheticEvent } from 'react'
+import { Button } from '../../../components/ui/Button'
 import { useT } from '../../../i18n/useT'
 import type { Lang } from '../../../i18n/lang'
 import styles from './TurnForm.module.css'
@@ -48,9 +49,9 @@ export function TurnForm({
           }}
         />
       </div>
-      <button type="submit" className={styles.submit} disabled={disabled || text.trim() === ''}>
+      <Button type="submit" variant="primary" disabled={disabled || text.trim() === ''}>
         {t('chat.send')}
-      </button>
+      </Button>
     </form>
   )
 }

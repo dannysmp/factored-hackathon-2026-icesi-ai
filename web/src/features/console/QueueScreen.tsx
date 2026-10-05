@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { JSX } from 'react'
 import './QueueScreen.css'
+import { Button } from '../../components/ui/Button'
 import { ReferenceBanner } from '../customer-chat/components/ReferenceBanner'
 import { QueueFilters } from './components/QueueFilters'
 import type { TriggerView } from './components/QueueFilters'
@@ -40,9 +41,9 @@ export function QueueScreen({
     return (
       <div className="queue-screen" role="alert">
         <p>No se pudo cargar la cola. Intente de nuevo.</p>
-        <button type="button" onClick={queue.retry}>
+        <Button variant="primary" onClick={queue.retry}>
           Intentar de nuevo
-        </button>
+        </Button>
       </div>
     )
   }

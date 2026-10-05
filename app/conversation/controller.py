@@ -92,21 +92,19 @@ do, so the customer's yes after such a reply still selects the presented transac
 unrelated reply itself files nothing; a case is filed only once the policy's confirmation
 requirement for the category is met. Two or more matches ask for more detail rather than
 presenting a numbered list, since ``DialogueState`` has no pending-candidate field and no
-multi-candidate list. A
-session identifies and evaluates at most one transaction/category pair: nothing here resets
-``selected_ref``/``category`` once set, so a second, different dispute needs a new session. The
-handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name.
-A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
-the original trigger-specific wording (fraud, card loss, a person requested) though it states the
-same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
-handoff packet: neither is available from the tools this module calls. A genuine concurrent
-duplicate (two requests racing on the same turn id, whether the session is brand new or already
-has prior turns) each read the same starting state, each run their own real model call, and each
-log their own ``turn_completed`` line before either attempts to save; the loser's save then
-replays the winner's state, so one client-visible turn can log cost twice. This is an honest
-account of both calls' real spend, not a bug in the log line itself, but it means "one
-client-visible turn" and "one logged turn_completed line" are not always the same count under this
-specific race.
+multi-candidate list. A session identifies and evaluates at most one transaction/category pair:
+nothing here resets ``selected_ref``/``category`` once set, so a second, different dispute needs a
+new session. The handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's
+first name. A duplicate turn's handoff replay always uses the generic reviewing wording, which may
+differ from the original trigger-specific wording (fraud, card loss, a person requested) though it
+states the same outcome and ticket. Contact-within-hours and structured risk evidence are not
+populated in a handoff packet: neither is available from the tools this module calls. A genuine
+concurrent duplicate (two requests racing on the same turn id, whether the session is brand new or
+already has prior turns) each read the same starting state, each run their own real model call, and
+each log their own ``turn_completed`` line before either attempts to save; the loser's save then
+replays the winner's state, so one client-visible turn can log cost twice. This is an honest account
+of both calls' real spend, not a bug in the log line itself, but it means "one client-visible turn"
+and "one logged turn_completed line" are not always the same count under this specific race.
 """
 
 from __future__ import annotations
@@ -277,11 +275,13 @@ def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -
     Every part of ``hint`` that was given must agree; a part the source data cannot answer (an
     absent merchant and description, an unknown amount) never matches a hint that names it. The
     merchant is compared ignoring accents and case, in both directions: a customer who types
-    "cafe" finds "Café Sol", and one who types "São Paulo" finds "SAO PAULO".
+    "cafe" finds "Café Sol", and one who types "São Paulo" finds "SAO PAULO". A merchant that is
+    empty once accents and surrounding blanks are removed names nothing, so it matches nothing.
     """
     if hint.merchant is not None:
         label = fact.merchant or fact.description
-        if label is None or _fold(hint.merchant) not in _fold(label):
+        wanted = _fold(hint.merchant).strip()
+        if label is None or not wanted or wanted not in _fold(label):
             return False
     money = fact.amount.money
     if hint.amount is not None and (money is None or money.amount != hint.amount):
