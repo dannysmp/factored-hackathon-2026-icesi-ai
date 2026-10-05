@@ -65,7 +65,7 @@ Every requirement is checked with a link to its evidence.
 | Controlled automation | The automation matrix; the authorization and confirmation tests | [ ] |
 | Handoff packet | A packet from a synthetic conversation shown in the console with identifiers masked; the packet completeness check | [ ] |
 | Repeatable data preparation | The pipeline commands, contracts, quality report and freshness fixture | [ ] |
-| Learned component against a baseline | The model card, the experiment log and the pre-registration | [ ] |
+| Learned component against a baseline | The model card and the experiment log | [ ] |
 | Held-out evaluation including failure conditions | The adversarial suite results | [ ] |
 | Successful, unsafe, handoff, latency and cost with sample sizes | The evaluation report | [ ] |
 | Outcome definitions honored | The metric definitions and the report | [ ] |

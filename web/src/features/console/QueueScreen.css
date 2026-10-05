@@ -67,13 +67,26 @@
   font: inherit;
   color: var(--color-text);
   background-color: var(--color-bg);
-  border: var(--border-width-thin) solid var(--color-border);
+  border: var(--border-width-thin) solid var(--color-border-control);
   border-radius: var(--radius-sm);
+  min-height: var(--size-touch-target);
   padding: var(--space-2) var(--space-3);
 }
 
 .queue-table-scroll {
   overflow-x: auto;
+  /* A soft edge on the side that still has content: the cover gradients scroll with the content
+     and hide the shadow once that edge is reached, so a cut-off table is never mistaken for a
+     complete one. */
+  background:
+    linear-gradient(to right, var(--color-bg) 30%, transparent) left center / 2rem 100% no-repeat
+      local,
+    linear-gradient(to left, var(--color-bg) 30%, transparent) right center / 2rem 100% no-repeat
+      local,
+    linear-gradient(to right, var(--color-border-control), transparent) left center / 0.5rem 100%
+      no-repeat scroll,
+    linear-gradient(to left, var(--color-border-control), transparent) right center / 0.5rem 100%
+      no-repeat scroll;
 }
 
 table {
@@ -129,6 +142,9 @@ tbody th[scope='row'] {
   color: inherit;
   background: none;
   border: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-touch-target);
   padding: 0;
   text-decoration: underline;
   cursor: pointer;
@@ -143,4 +159,83 @@ tbody th[scope='row'] {
 .queue-table-openable thead th {
   background-color: var(--color-bg-subtle);
   border-bottom-color: var(--color-border-control);
+  /* A long column title wraps instead of widening its column past what its values need, so the
+     whole table fits a desktop screen without scrolling. */
+  white-space: normal;
+  vertical-align: bottom;
+}
+
+/* A priority row is marked by a bar on its leading edge, as well as the badge and the word: the
+   eye finds it while scanning, and it never depends on colour alone. */
+.queue-table-openable .queue-row-priority th[scope='row'] {
+  box-shadow: inset var(--space-1) 0 0 var(--color-error);
+}
+
+/* The reference stays in view while the rest of the row scrolls under it, with a hairline so the
+   scrolled content is seen to pass beneath. Only where the screen is wide enough to leave room for
+   the other columns: on a phone the reference cell alone fills most of the width, and pinning it
+   would leave a sliver for everything else. The breakpoint is a literal: a custom property cannot
+   be read inside a media query. */
+@media (min-width: 48rem) {
+  .queue-table-openable thead th:first-child,
+  .queue-table-openable tbody th[scope='row'] {
+    position: sticky;
+    left: 0;
+    background-color: var(--color-bg);
+    box-shadow: inset calc(-1 * var(--border-width-thin)) 0 0 var(--color-border);
+  }
+
+  .queue-table-openable thead th:first-child {
+    background-color: var(--color-bg-subtle);
+  }
+
+  .queue-table-openable tbody tr:hover th[scope='row'] {
+    background-color: var(--color-bg-subtle);
+  }
+
+  .queue-table-openable .queue-row-priority th[scope='row'] {
+    box-shadow:
+      inset var(--space-1) 0 0 var(--color-error),
+      inset calc(-1 * var(--border-width-thin)) 0 0 var(--color-border);
+  }
+}
+
+.queue-priority-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-error);
+  background-color: var(--color-error-bg);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-emphasis);
+}
+
+.queue-priority-badge svg {
+  width: var(--space-3);
+  height: var(--space-3);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The audit trail has long values in every column, so its cells wrap; the moment stays on one
+   line, and the trace identifier, which has no break points of its own, may break anywhere. */
+.timeline-table th,
+.timeline-table td {
+  white-space: normal;
+}
+
+.timeline-table tbody th[scope='row'] {
+  white-space: nowrap;
+}
+
+.timeline-trace {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
 }

@@ -35,7 +35,7 @@ results still to come say so and name the command that completes them.
 ## Machine learning
 
 - **The transaction risk model does not route any case today.** Calibration ran, searched for a
-  threshold that clears the pre-registered precision floor at no more than a 5% routed share, and
+  threshold that clears the precision floor fixed in advance at no more than a 5% routed share, and
   found none: the model card records this as a negative result and keeps routing switched off. A
   fraud claim still always reaches a person regardless of this signal, since that rule does not
   depend on the risk score.
@@ -63,13 +63,13 @@ results still to come say so and name the command that completes them.
   the Judge validation section of `reports/evaluation.md` states that no agreement rate is
   reported. The judge's quality and correctness scores stay provisional until two raters return the
   50-case sheets.
-  Running `make judge-validation RATER1=<sheet> RATER2=<sheet>` scores the same cases with the real
-  judge and patches that section and the matching limitations line of that report with rater-to-rater
-  and rater-to-judge agreement per dimension, each with its pair count and weighted kappa, the
-  direction of the differences and the decision per dimension, withholds the judge's mean in the judge-scored quality table for
-  each dimension it demotes (showing the raters' means beneath it), and writes every case's scores to
-  `reports/judge-validation-cases.csv`, a local working file that is not tracked in the repository;
-  this bullet is to be rewritten with those figures,
+  Running `make judge-validation RATER1=<sheet> RATER2=<sheet>` scores the same cases with the
+  real judge and patches that section and the matching limitations line of that report with
+  rater-to-rater and rater-to-judge agreement per dimension, each with its pair count and weighted
+  kappa, the direction of the differences and the decision per dimension. It withholds the judge's
+  mean in the judge-scored quality table for each dimension it demotes, showing the raters' means
+  beneath it, and writes every case's scores to `reports/judge-validation-cases.csv`, a local
+  working file that is not tracked in the repository. This bullet is updated with those figures,
   and with any dimension the judge is demoted on, at the same time. The written analysis of where
   the raters and the judge disagree is a person's job and is not generated.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get

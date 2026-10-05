@@ -109,13 +109,14 @@ def test_audit_depends_on_nothing_outside_its_allowed_set() -> None:
 
 
 def test_no_tool_contract_file_imports_the_conversation_contracts() -> None:
-    """None of the five conversation-contract files is named by an import in a tool-side file."""
+    """None of the six conversation-contract files is named by an import in a tool-side file."""
     forbidden = {
         "contracts.service_v1.envelope",
         "contracts.service_v1.nlu",
         "contracts.service_v1.handoff",
         "contracts.service_v1.api",
         "contracts.service_v1.console",
+        "contracts.service_v1.verification",
     }
     for filename in _ALLOWED_LOCAL:
         imported = _imported_roots((_PACKAGE / filename).read_text(encoding="utf-8"))

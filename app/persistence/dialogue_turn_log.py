@@ -30,8 +30,9 @@ Design Principles
 
 Runtime Contract
 ----------------
-``PostgresDialogueTurnLog(dsn)`` with ``record(entry, *, session_id, turn_id) -> None`` and
-``timeline_for(trace_id) -> tuple[TimelineEntry, ...]``, ordered by ``occurred_at``.
+``PostgresDialogueTurnLog(dsn)`` with ``record(entry, *, session_id) -> None`` and
+``timeline_for(trace_id) -> tuple[TimelineEntry, ...]``, ordered by ``occurred_at`` and, for turns
+recorded at the same instant, by the order they were written.
 """
 
 from __future__ import annotations
@@ -54,14 +55,19 @@ _COLUMNS = (
     "policy_version"
 )
 
-# A conversation's turns are read by trace identifier and ordered by when they occurred. The
-# column list is a module constant, not request data.
-_SELECT = f"SELECT {_COLUMNS} FROM dialogue_turn_log WHERE trace_id = %s ORDER BY occurred_at_utc"  # noqa: S608
+# A conversation's turns are read by trace identifier and ordered by when they occurred, then by
+# the order they were written when two share an instant. The column list is a module constant,
+# not request data.
+_SELECT = (
+    f"SELECT turn_id, {_COLUMNS} FROM dialogue_turn_log "  # noqa: S608
+    "WHERE trace_id = %s ORDER BY occurred_at_utc, id"
+)
 
 
 def _row_to_entry(row: Any) -> TimelineEntry:
-    """A ``dialogue_turn_log`` row, in ``_COLUMNS`` order, as a ``TimelineEntry``."""
+    """A ``dialogue_turn_log`` row, ``turn_id`` then ``_COLUMNS`` order, as a ``TimelineEntry``."""
     (
+        turn_id,
         occurred_at,
         trace_id,
         intent,
@@ -74,6 +80,7 @@ def _row_to_entry(row: Any) -> TimelineEntry:
     return TimelineEntry(
         occurred_at=occurred_at,
         trace_id=trace_id,
+        turn_id=turn_id,
         intent=Intent(intent),
         state_before=state_before,
         state_after=state_after,
@@ -90,8 +97,8 @@ class PostgresDialogueTurnLog:
         """Keep the DSN; a connection is opened per call."""
         self._dsn = dsn
 
-    def record(self, entry: TimelineEntry, *, session_id: str, turn_id: str) -> None:
-        """Write ``entry``'s row for ``(session_id, turn_id)``; a repeat of the same pair is a
+    def record(self, entry: TimelineEntry, *, session_id: str) -> None:
+        """Write ``entry``'s row for ``(session_id, entry.turn_id)``; a repeat of the same pair is a
         no-op.
 
         The insert commits when the connection block exits without an error. The first write of a
@@ -119,7 +126,7 @@ class PostgresDialogueTurnLog:
                 """,  # noqa: S608
                 {
                     "session_id": session_id,
-                    "turn_id": turn_id,
+                    "turn_id": entry.turn_id,
                     "occurred_at": entry.occurred_at,
                     "trace_id": entry.trace_id,
                     "intent": entry.intent.value,

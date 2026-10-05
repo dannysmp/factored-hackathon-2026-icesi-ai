@@ -1,14 +1,17 @@
 /** Component test: the app shell walks sign-in into the live chat, with no accessibility
  * violations at either step. Both the sign-in and the turn endpoint are a mocked `fetch`. */
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
+import { findMessage } from './features/customer-chat/findMessage'
+import { en } from './i18n/en'
 import { es } from './i18n/es'
+import { pt } from './i18n/pt'
 
-const PERSONAS_BODY = {
-  personas: [{ slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' }],
+function personasBody(language: string): unknown {
+  return { personas: [{ slug: 'ana', display_name: 'Ana', language, audience: 'customer' }] }
 }
 const SESSION_BODY = {
   access_token: 'token-abc',
@@ -38,15 +41,18 @@ function jsonResponse(body: unknown): Response {
   })
 }
 
-function stubTheWholeFlow(): void {
+function stubTheWholeFlow(options: { personaLanguage?: string; turnLang?: string } = {}): void {
+  const { personaLanguage = 'es', turnLang = 'es' } = options
   // Every call this app makes passes a plain string path (never a Request or URL object), so the
   // mock only needs to handle that one shape.
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) => {
-      if (url === '/v1/auth/demo-personas') return Promise.resolve(jsonResponse(PERSONAS_BODY))
+      if (url === '/v1/auth/demo-personas')
+        return Promise.resolve(jsonResponse(personasBody(personaLanguage)))
       if (url === '/v1/auth/demo-sessions') return Promise.resolve(jsonResponse(SESSION_BODY))
-      if (url === '/v1/turns') return Promise.resolve(jsonResponse(TURN_BODY))
+      if (url === '/v1/turns')
+        return Promise.resolve(jsonResponse({ ...TURN_BODY, lang: turnLang }))
       throw new Error(`unexpected fetch: ${url}`)
     }),
   )
@@ -62,7 +68,7 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Customer chat' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: es['chat.regionLabel'] })).not.toBeInTheDocument()
   })
 
   it('shows the live chat, greeted for real, once sign-in succeeds', async () => {
@@ -74,8 +80,71 @@ describe('App', () => {
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
 
-    expect(await screen.findByRole('region', { name: 'Customer chat' })).toBeInTheDocument()
-    expect(await screen.findByText('Hola, ¿en qué puedo ayudarle?')).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: es['chat.regionLabel'] })).toBeInTheDocument()
+    expect(
+      await findMessage('Hola, ¿en qué puedo ayudarle?', es['chat.messagesLabel']),
+    ).toBeInTheDocument()
+  })
+
+  it('names the document in the language of the page', async () => {
+    stubTheWholeFlow()
+    render(<App />)
+
+    await screen.findByLabelText(es['signin.personaLabel'])
+    expect(document.documentElement.lang).toBe('es')
+    expect(document.title).toBe(es['app.title'])
+  })
+
+  it.each([
+    ['pt', pt],
+    ['en', en],
+  ] as const)(
+    'names the sign-in step in the selected persona’s language (%s) before anyone has signed in',
+    async (language, catalog) => {
+      stubTheWholeFlow({ personaLanguage: language })
+      render(<App />)
+
+      await screen.findByLabelText(catalog['signin.personaLabel'])
+      await waitFor(() => {
+        expect(document.documentElement.lang).toBe(language)
+      })
+      expect(document.title).toBe(catalog['app.title'])
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(catalog['app.title'])
+    },
+  )
+
+  it('follows the conversation’s own language once the chat has started, over the persona’s', async () => {
+    stubTheWholeFlow({ personaLanguage: 'es', turnLang: 'en' })
+    const user = userEvent.setup()
+    render(<App />)
+
+    await screen.findByLabelText(es['signin.personaLabel'])
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+
+    await screen.findByRole('region', { name: en['chat.regionLabel'] })
+    await waitFor(() => {
+      expect(document.documentElement.lang).toBe('en')
+    })
+    expect(document.title).toBe(en['app.title'])
+    expect(screen.getByRole('button', { name: en['app.signOut'] })).toBeInTheDocument()
+  })
+
+  it('signs the customer out and returns to the sign-in step', async () => {
+    stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<App />)
+
+    await screen.findByLabelText(es['signin.personaLabel'])
+    expect(screen.queryByRole('button', { name: es['app.signOut'] })).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    await screen.findByRole('region', { name: es['chat.regionLabel'] })
+
+    await user.click(screen.getByRole('button', { name: es['app.signOut'] }))
+
+    expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: es['chat.regionLabel'] })).not.toBeInTheDocument()
   })
 
   it('frames the sign-in step with a banner holding the page title and one main landmark', async () => {
@@ -85,7 +154,7 @@ describe('App', () => {
     await screen.findByLabelText(es['signin.personaLabel'])
     expect(screen.getAllByRole('banner')).toHaveLength(1)
     expect(screen.getByRole('banner')).toContainElement(
-      screen.getByRole('heading', { level: 1, name: 'Dispute intake' }),
+      screen.getByRole('heading', { level: 1, name: es['app.title'] }),
     )
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getAllByRole('main')).toHaveLength(1)
@@ -99,11 +168,11 @@ describe('App', () => {
     await screen.findByLabelText(es['signin.personaLabel'])
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
-    await screen.findByRole('region', { name: 'Customer chat' })
+    await screen.findByRole('region', { name: es['chat.regionLabel'] })
 
     expect(screen.getAllByRole('banner')).toHaveLength(1)
     expect(screen.getByRole('banner')).toContainElement(
-      screen.getByRole('heading', { level: 1, name: 'Dispute intake' }),
+      screen.getByRole('heading', { level: 1, name: es['app.title'] }),
     )
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getAllByRole('main')).toHaveLength(1)

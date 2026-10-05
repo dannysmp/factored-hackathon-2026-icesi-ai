@@ -1,6 +1,8 @@
+import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { JSX } from 'react'
 import type { TimelineEntry } from '../contracts'
-import { INTENT_LABELS, REASON_CODE_LABELS } from '../labels'
+import { formatDateTime } from '../format'
+import { INTENT_LABELS, REASON_CODE_LABELS, phaseLabel } from '../labels'
 
 /** The audit trail, in order by trace identifier (AC-E10-03) — the backend's own tuple order is
  * not itself specified to match, so this component orders it rather than assume. */
@@ -21,34 +23,34 @@ export function TimelinePanel({ entries }: { entries: readonly TimelineEntry[] }
   const sorted = [...entries].sort(byTraceId)
 
   return (
-    <div className="queue-table-scroll">
-      <table>
+    <ScrollRegion className="queue-table-scroll" label="Cronología de auditoría">
+      <table className="timeline-table">
         <caption className="sr-only">Cronología de auditoría</caption>
         <thead>
           <tr>
-            <th scope="col">Identificador de traza</th>
             <th scope="col">Momento</th>
-            <th scope="col">Tipo</th>
-            <th scope="col">Estado</th>
-            <th scope="col">Código de razón</th>
-            <th scope="col">Versión de política</th>
+            <th scope="col">Paso</th>
+            <th scope="col">Etapa</th>
+            <th scope="col">Motivo de la decisión</th>
+            <th scope="col">Versión de la política</th>
+            <th scope="col">Traza</th>
           </tr>
         </thead>
         <tbody>
           {sorted.map((entry) => (
             <tr key={entry.trace_id}>
-              <th scope="row">{entry.trace_id}</th>
-              <td>{entry.occurred_at}</td>
+              <th scope="row">{formatDateTime(entry.occurred_at)}</th>
               <td>{INTENT_LABELS[entry.intent]}</td>
               <td>
-                {entry.state_before} → {entry.state_after}
+                {phaseLabel(entry.state_before)} → {phaseLabel(entry.state_after)}
               </td>
               <td>{entry.reason_code === null ? '—' : REASON_CODE_LABELS[entry.reason_code]}</td>
               <td>{entry.policy_version ?? '—'}</td>
+              <td className="timeline-trace">{entry.trace_id}</td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   )
 }

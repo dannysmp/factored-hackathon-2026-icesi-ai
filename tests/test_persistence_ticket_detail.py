@@ -127,13 +127,13 @@ def _record_timeline_entry(dsn: str, *, trace_id: str, turn_id: str) -> None:
         TimelineEntry(
             occurred_at=_CREATED_AT,
             trace_id=trace_id,
+            turn_id=turn_id,
             intent=Intent.HANDOFF,
             state_before="started",
             state_after="handed_off",
             render_mode="template",
         ),
         session_id=f"s-{turn_id}",
-        turn_id=turn_id,
     )
 
 
@@ -375,6 +375,7 @@ def test_the_timeline_comes_from_the_conversation_the_ticket_was_recorded_under(
     assert detail is not None
     assert len(detail.timeline) == 1
     assert detail.timeline[0].intent is Intent.HANDOFF
+    assert detail.timeline[0].turn_id == "t-1"
 
 
 @pytest.mark.integration
