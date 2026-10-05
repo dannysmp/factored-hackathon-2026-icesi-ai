@@ -8,6 +8,8 @@ for ``prompts/`` where a test needs a file that is not the shipped ``nlu_v1``.
 
 from __future__ import annotations
 
+import csv
+import re
 from pathlib import Path
 
 import pytest
@@ -19,7 +21,7 @@ def test_the_shipped_nlu_prompt_loads_and_validates() -> None:
     """``prompts/nlu_v1.yaml`` is a real, valid prompt file, not just a fixture."""
     prompt = load_prompt("nlu_v1")
 
-    assert prompt.version == "5"
+    assert prompt.version == "6"
     assert prompt.system.strip()
     assert prompt.placeholders() == {"language_hint", "message"}
 
@@ -108,6 +110,13 @@ def test_the_shipped_nlu_prompt_teaches_the_choice_intent_and_its_limits(phrase:
         "£, or a currency word such as dollars, euros or reais",
         'The word "pesos" alone names no country',
         "unless the message says which pesos",
+        "only states a transaction the customer made",
+        "is the start of a dispute: use file_dispute",
+        '"I bought a pair of shoes online last week"',
+        '"Paguei a conta de luz ontem pelo aplicativo"',
+        '"Compré unos zapatos por internet la semana pasada"',
+        "list_transactions is for a customer who asks to see, list or review their transactions",
+        "with or without a date or an amount",
     ],
 )
 def test_the_shipped_nlu_prompt_keeps_a_transfer_already_made_disputable_and_states_currencies(
@@ -116,3 +125,34 @@ def test_the_shipped_nlu_prompt_keeps_a_transfer_already_made_disputable_and_sta
     """The extraction prompt separates a transfer to make from one already made, keeps a kind of
     transaction out of the merchant, and says which marks state a currency."""
     assert " ".join(load_prompt("nlu_v1").system.split()).find(phrase) >= 0
+
+
+_STATEMENT_EXAMPLES = (
+    "I bought a pair of shoes online last week",
+    "Paguei a conta de luz ontem pelo aplicativo",
+    "Compré unos zapatos por internet la semana pasada",
+)
+
+
+def _words(text: str) -> frozenset[str]:
+    return frozenset(re.sub(r"[\d$.,]+", " ", text.lower()).split())
+
+
+def _golden_user_turns() -> list[str]:
+    turns: list[str] = []
+    for path in sorted((PROMPTS_DIR.parent / "evals" / "golden" / "cases").glob("*.csv")):
+        with path.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                turns.extend(turn.strip() for turn in row["user_turns"].split(" | "))
+    return turns
+
+
+@pytest.mark.parametrize("example", _STATEMENT_EXAMPLES)
+def test_a_prompt_example_does_not_repeat_a_golden_turn(example: str) -> None:
+    """The evaluation measures generalisation, so no example may restate a turn it scores."""
+    assert example in load_prompt("nlu_v1").system.replace("\n  ", " ").replace("\n", " ")
+    example_words = _words(example)
+    for turn in _golden_user_turns():
+        turn_words = _words(turn)
+        overlap = len(example_words & turn_words) / len(example_words | turn_words)
+        assert overlap < 0.5, f"{example!r} resembles the golden turn {turn!r}"
