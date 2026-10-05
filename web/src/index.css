@@ -27,3 +27,11 @@ body {
   color: var(--color-text);
   background-color: var(--color-bg);
 }
+
+/* Smooth scrolling to the newest message, for a person who has not asked their system to reduce
+   motion; the reduced-motion rules live with the design tokens. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}

@@ -5,8 +5,8 @@ import styles from './ChoiceButtons.module.css'
 
 /**
  * The numbered options the assistant offered, each a real button (frontend standard, section 7:
- * semantic HTML first). A click sends the option's own label text, on the same terms as a
- * customer typing it.
+ * semantic HTML first). A click sends the option's number, exactly as a customer typing it would,
+ * while the conversation shows the option's full description as what the customer said.
  */
 export function ChoiceButtons({
   choices,
@@ -14,7 +14,7 @@ export function ChoiceButtons({
   disabled,
 }: {
   choices: readonly Choice[]
-  onChoose: (label: string) => void
+  onChoose: (sent: string, shown: string) => void
   disabled: boolean
 }): JSX.Element | null {
   if (choices.length === 0) {
@@ -28,7 +28,7 @@ export function ChoiceButtons({
             className={styles.choice}
             disabled={disabled}
             onClick={() => {
-              onChoose(choice.label)
+              onChoose(String(choice.number), choice.label)
             }}
           >
             {choice.number}. {choice.label}

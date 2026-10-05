@@ -7,6 +7,7 @@
  */
 import type { DemoPersonaSummary } from './contracts'
 import { DemoPersonaDirectorySchema, SessionResponseSchema } from './contracts'
+import { requestSignal } from '../../lib/failure'
 
 const DEMO_PERSONAS_PATH = '/v1/auth/demo-personas'
 const DEMO_SESSIONS_PATH = '/v1/auth/demo-sessions'
@@ -41,7 +42,7 @@ async function toError(response: Response): Promise<SignInError> {
 }
 
 async function fetchPersonas(audience: SignInAudience): Promise<readonly DemoPersonaSummary[]> {
-  const response = await fetch(DEMO_PERSONAS_PATH)
+  const response = await fetch(DEMO_PERSONAS_PATH, { signal: requestSignal() })
   if (!response.ok) {
     throw await toError(response)
   }
@@ -74,6 +75,7 @@ export async function signIn(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Demo-Access-Code': accessCode },
     body: JSON.stringify({ persona }),
+    signal: requestSignal(),
   })
   if (!response.ok) {
     throw await toError(response)
