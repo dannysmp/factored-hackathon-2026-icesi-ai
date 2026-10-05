@@ -4,29 +4,30 @@ Boosted Risk Model and Ablation
 
 Overview
 --------
-The full boosted-model comparison against the logistic baseline (AC-E6-01, AC-E6-02), and the
-with/without ablation of the two latest-snapshot features (`customer_country`,
-`country_mismatch`) that `models/README.md` promised. The comparison that selects between the two
-models is a customer-resampled paired bootstrap on the test period, read exactly once.
+The full comparison of an uncapped gradient-boosted classifier against the logistic baseline of
+`models.probe`, and the with/without ablation of the two latest-snapshot features
+(`customer_country`, `country_mismatch`) described in `models/README.md`. The comparison that
+selects between the two models is a customer-resampled paired bootstrap on the test period, read
+exactly once. The selection is appended to the experiment log, where `models.calibration` reads it.
 
 Scope
 -----
-In: an uncapped boosted fit (unlike the signal probe's own, time-boxed gate fit), the ablation
-report, the test-period bootstrap and the resulting selection, appended to the experiment log.
-Out: the precision floor, the threshold and the model card. Those belong to the calibration work
-that follows: this module only says which model — boosted or logistic — the threshold is chosen on.
+In: an uncapped boosted fit (unlike the signal probe's own, capped fit), the ablation report,
+the test-period bootstrap and the resulting selection, appended to the experiment log.
+Out: the precision floor, the threshold and the model card. Those belong to `models.calibration`:
+this module only says which model, boosted or logistic, the threshold is chosen on.
 
 Design Principles
 -----------------
 - **The boosting engine stays scikit-learn's own** (`HistGradientBoostingClassifier`, uncapped
-  this time). The architect's design note for this slice found no evidence that a different
-  engine (for example one needing a native library) would change the qualitative result: slice
-  3.1's DuckDB tabulation found every feature's fraud prevalence flat, and its capped boosted fit
-  already landed within noise of the logistic baseline and the base rate. Adding a native
+  this time). The signal tabulation in `pipelines.risk_signal` found every feature's fraud
+  prevalence flat, and the capped boosted fit of `models.probe` already landed within noise of the
+  logistic baseline and the base rate, so there is no evidence that a different engine (for
+  example one needing a native library) would change the qualitative result. Adding a native
   dependency for a benefit with no evidence behind it is not warranted; scikit-learn's own
-  implementation stays in the existing `ml` group, so no new dependency conformance is needed.
-- **The same preprocessing rule as the signal probe** (AC-E6-01): one `ColumnTransformer` per
-  feature set, fitted on training rows only, shared by both models.
+  implementation stays in the existing `ml` dependency group.
+- **The same preprocessing rule as the signal probe:** one `ColumnTransformer` per feature set,
+  fitted on training rows only, shared by both models.
 - **The ablation is diagnostic, not a gate.** Both feature sets are reported on validation; only
   the full feature set goes on to the test-period bootstrap and the selection.
 - **The test period is read exactly once, for scoring only.** Every model is fitted on the training
@@ -35,7 +36,7 @@ Design Principles
   one scoring pass, never refitting or rescoring a model.
 - **The customer identifier is for grouping only.** It is obtained by joining the mart's
   transaction identifier to the cleaned transactions table; it is never a model feature and never
-  leaves `_bootstrap_test`, so it cannot appear in the experiment log.
+  leaves `bootstrap_test`, so it cannot appear in the experiment log.
 - **Deterministic and runtime-capped.** A fixed seed and a fixed resample count
   (`BOOTSTRAP_RESAMPLES`) make the bootstrap reproducible and bound its running time regardless of
   the mart's size; it is a command, not a test, run on demand rather than on every change.
@@ -49,10 +50,9 @@ Runtime Contract
 Limitations
 -----------
 The bootstrap resamples customers, not the transactions within a customer, so a customer with many
-transactions weighs the interval by its transaction count, matching the pre-registration's own
-resampling unit. The ablation compares validation PR-AUC only; it does not itself decide whether
-the two snapshot features are kept — that judgement, and the threshold, belong to the calibration
-slice.
+transactions weighs the interval by its transaction count. The ablation compares validation PR-AUC
+only; it does not itself decide whether the two snapshot features are kept, and it does not set
+the threshold (`models.calibration` does).
 """
 
 from __future__ import annotations
@@ -94,6 +94,8 @@ from pipelines.silver import git_version  # Same code-version rule as the other 
 logger = logging.getLogger(__name__)
 
 DEFAULT_SILVER = Path("data/silver")
+# Features taken from the customer's latest recorded state rather than as of the transaction, so
+# they are the ones the ablation drops to see whether they carry the result.
 SNAPSHOT_FEATURES = ("customer_country", "country_mismatch")
 REDUCED_FEATURES = tuple(name for name in FEATURES if name not in SNAPSHOT_FEATURES)
 
@@ -101,6 +103,8 @@ REDUCED_FEATURES = tuple(name for name in FEATURES if name not in SNAPSHOT_FEATU
 # the mart's size.
 BOOTSTRAP_RESAMPLES = 300
 
+# The test period's features and label with the customer identifier, in one query so the three
+# line up row for row. The inner join drops any mart row without a cleaned transaction.
 _TEST_WITH_CUSTOMER_QUERY = """
 SELECT {columns}
 FROM read_parquet(?) AS m
@@ -111,7 +115,11 @@ WHERE m."split" = 'test'
 
 @dataclass(frozen=True, slots=True)
 class AblationTable:
-    """One feature set's validation PR-AUC for both models."""
+    """One feature set's validation PR-AUC for both models.
+
+    `feature_set` names the set (`full` or `without_snapshot`), `features` lists its columns and
+    `models` holds one `ModelResult` per model fitted on it.
+    """
 
     feature_set: str
     features: tuple[str, ...]
@@ -120,7 +128,11 @@ class AblationTable:
 
 @dataclass(frozen=True, slots=True)
 class BootstrapInterval:
-    """A 95% percentile interval from the customer-resampled bootstrap."""
+    """A metric's point estimate with the 95% percentile interval from the customer bootstrap.
+
+    `point` is computed on the full test period; `lower` and `upper` are the 2.5th and 97.5th
+    percentiles of the resampled values.
+    """
 
     point: float
     lower: float
@@ -129,7 +141,12 @@ class BootstrapInterval:
 
 @dataclass(frozen=True, slots=True)
 class BootstrapResult:
-    """The test-period comparison and the model it selects."""
+    """The test-period comparison and the model it selects.
+
+    Holds the PR-AUC interval of each model and of their difference (boosted minus logistic), the
+    number of resamples, the seed and the number of distinct customers resampled. `selected` is
+    `boosted` or `logistic` and `rationale` states the rule outcome in words.
+    """
 
     resamples: int
     seed: int
@@ -143,7 +160,11 @@ class BootstrapResult:
 
 @dataclass(frozen=True, slots=True)
 class BoostedResult:
-    """The full outcome of one boosted-model run: the ablation and the bootstrap selection."""
+    """The full outcome of one boosted-model run: the ablation and the bootstrap selection.
+
+    Carries the same provenance fields as `ProbeResult` (code version, the mart's version and
+    output digest, split and seed) alongside the ablation tables and the bootstrap result.
+    """
 
     timestamp: str
     code_version: str
@@ -155,7 +176,11 @@ class BoostedResult:
     bootstrap: BootstrapResult
 
     def as_dict(self) -> dict[str, object]:
-        """The result as JSON-serialisable data, one line of the experiment log."""
+        """The result as JSON-serialisable data, one line of the experiment log.
+
+        The `bootstrap` entry is what `models.calibration.latest_selected_model` looks for when it
+        reads the log back. Split dates are rendered as ISO strings.
+        """
         return {
             "timestamp": self.timestamp,
             "code_version": self.code_version,
@@ -199,7 +224,9 @@ def _fit_and_score(
 ) -> tuple[ModelResult, ...]:
     """Fit the logistic baseline and the uncapped boosted model on `train`, score on `validation`.
 
-    Identical to `models.probe`'s own `_fit_models`, except the boosted model is not capped.
+    Identical to `models.probe`'s own `_fit_models`, except the boosted model is not capped. The
+    preprocessor is fitted on `train` only. Returns the logistic then the boosted `ModelResult`,
+    each with its validation PR-AUC; nothing is written.
     """
     preprocessor = _preprocessor(train.categorical.shape[1], train.numeric.shape[1])
     x_train = preprocessor.fit_transform(np.hstack([train.categorical, train.numeric]))
@@ -236,7 +263,17 @@ def _fit_and_score(
 def run_ablation(
     con: duckdb.DuckDBPyConnection, mart: str, column_types: dict[str, str], *, seed: int
 ) -> tuple[AblationTable, ...]:
-    """Score both models on validation, with and without the two snapshot features."""
+    """Score both models on validation, with and without the two snapshot features.
+
+    Returns two `AblationTable`s: `full` (every feature in `FEATURES`) and `without_snapshot`
+    (`REDUCED_FEATURES`). Each set is loaded, preprocessed and fitted independently on the
+    training period and scored on validation; the test period is not read.
+
+    Raises
+    ------
+    duckdb.Error
+        When `mart` lacks a required column.
+    """
     tables = []
     feature_sets = (("full", tuple(FEATURES)), ("without_snapshot", REDUCED_FEATURES))
     for feature_set, feature_names in feature_sets:
@@ -248,7 +285,7 @@ def run_ablation(
 
 
 def _percentile_interval(values: np.ndarray) -> tuple[float, float]:
-    """The 95% percentile interval of `values`."""
+    """The 2.5th and 97.5th percentiles of `values`, the bounds of a 95% percentile interval."""
     return float(np.percentile(values, 2.5)), float(np.percentile(values, 97.5))
 
 
@@ -264,7 +301,11 @@ def bootstrap_test(
     """Fit both models on train, score the test period once, and bootstrap the comparison.
 
     The customer identifier is read only to group the resampling; it is never a feature and is
-    discarded once this function returns.
+    discarded once this function returns. Each of `resamples` draws picks as many customers as
+    there are in the test period, with replacement, and recomputes both models' PR-AUC and their
+    difference from the single scoring pass (rows are weighted by how often their customer was
+    drawn). The selection rule: `boosted` when the lower bound of the difference interval is above
+    zero, otherwise `logistic`, kept for parsimony. The point estimates use the whole test period.
 
     Raises
     ------
@@ -371,6 +412,12 @@ def run_boosted(
 ) -> BoostedResult:
     """Run the ablation and the test-period bootstrap on `mart`; return the combined result.
 
+    `manifest` is the mart's build manifest, read for its code version and output digest, which
+    are stamped on the result. `silver_dir` is the root of the cleaned layer, used to resolve the
+    customer identifier. `split` is recorded on the result and does not select rows (the mart is
+    already labelled by period). `now` is the run timestamp, supplied by the caller. Writes
+    nothing; the caller appends the result to the log.
+
     Raises
     ------
     FileNotFoundError
@@ -411,7 +458,12 @@ def run_boosted(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the boosted model, the ablation and the bootstrap; append to the experiment log."""
+    """Run the boosted model, the ablation and the bootstrap; append to the experiment log.
+
+    Options select the mart, its manifest, the cleaned layer, the split file, the log and the
+    seed. Returns `0` on success and `1` when the split file is invalid, an input is missing or
+    DuckDB cannot read it; the failure is logged by exception type only.
+    """
     parser = argparse.ArgumentParser(description="Run the boosted model, ablation and bootstrap.")
     parser.add_argument("--mart", type=Path, default=DEFAULT_MART)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)

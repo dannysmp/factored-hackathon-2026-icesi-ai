@@ -80,6 +80,7 @@ class Canonicalization:
     """Spellings of one value are rewritten to its canonical form before the checks run."""
 
     column: str
+    # Pairs of (spelling found, canonical spelling).
     mapping: tuple[tuple[str, str], ...]
 
 
@@ -88,6 +89,7 @@ class ReferenceRule:
     """The action for orphans of one foreign key."""
 
     column: str
+    # The table and column the reference points at.
     ref_table: str
     ref_column: str
     action: ReferenceAction
@@ -98,6 +100,7 @@ class TableContract:
     """Everything the cleaned layer requires of one table beyond its structure."""
 
     table: str
+    # The contract version these rules belong to.
     version: str
     allowed: tuple[AllowedValues, ...]
     ranges: tuple[ValueRange, ...]

@@ -5,8 +5,8 @@ Human-Agent Console Contract, Service Version 1
 Overview
 --------
 What the console shows an agent: the queue of open handoff tickets, one ticket with its whole
-packet, and the audit timeline of the conversation behind it. Also the narrow agent writes
-(ADR-17): claiming or releasing a ticket, adding a note, and setting a case's status.
+packet, and the audit timeline of the conversation behind it. Also the narrow agent writes:
+claiming or releasing a ticket, adding a note, and setting a case's status.
 
 Scope
 -----
@@ -25,9 +25,9 @@ Design Principles
   cannot disagree with the trigger.
 - A ticket's row and its packet agree, and every instant is UTC.
 - A claim is orthogonal to a ticket's own lifecycle status: ``claimed_by`` names who is currently
-  working a ticket, ``status`` (still seed-advanced) names where it stands; the two never conflate.
-- A note names its own author and instant, the same identity/timing shape every audited write in
-  this codebase already carries; it is never edited or removed once added.
+  working a ticket, ``status`` names where it stands; the two never conflate.
+- A note names its own author and instant, the same identity and timing every audited write
+  carries; it is never edited or removed once added.
 
 Runtime Contract
 ----------------
@@ -60,8 +60,10 @@ from contracts.service_v1.envelope import (  # Shared base and types
 )
 from contracts.service_v1.handoff import HandoffPacket, HandoffTrigger  # The packet
 
+# An agent's durable identifier: letters, digits, underscore and hyphen, at most 20 characters.
 _AGENT_ID_PATTERN = r"^[A-Za-z0-9_-]{1,20}$"
 
+# The triggers that sort a ticket first in the queue.
 _PRIORITY_TRIGGERS = frozenset({HandoffTrigger.FRAUD_REPORT, HandoffTrigger.CARD_LOSS})
 
 
@@ -77,6 +79,7 @@ class TicketStatus(StrEnum):
 class QueueFilters(ContractModel):
     """The filters a queue request may carry."""
 
+    # Each filter is optional; a filter left unset does not narrow the queue.
     language: Lang | None = None
     trigger: HandoffTrigger | None = None
 
@@ -89,11 +92,16 @@ class QueueItem(ContractModel):
     language: Lang
     category: DisputeCategory | None = None
     status: TicketStatus
+    # The real UTC instant the ticket was created, and the reference date in force then.
     created_at: UtcDatetime
     reference_date: date
+    # The date by which the customer was promised contact.
     promised_contact_by: date
+    # Days from the ticket's reference date to the queue's reference date.
     age_days: Annotated[int, Field(ge=0)]
+    # True exactly for a fraud or card-loss ticket (checked against ``trigger``).
     priority: bool
+    # The agent currently working the ticket, or ``None`` when it is unclaimed.
     claimed_by: Annotated[str, Field(pattern=_AGENT_ID_PATTERN)] | None = None
 
     @model_validator(mode="after")
@@ -107,6 +115,7 @@ class QueueItem(ContractModel):
 class QueueResponse(ContractModel):
     """The queue, priority tickets first."""
 
+    # The reference date the queue was computed at, and where that date came from.
     reference_date: date
     reference_date_origin: ReferenceDateOrigin
     items: tuple[QueueItem, ...]
@@ -117,10 +126,15 @@ class TimelineEntry(ContractModel):
 
     occurred_at: UtcDatetime
     trace_id: Annotated[str, Field(min_length=1, max_length=64)]
+    # The turn this entry records. Every entry of one conversation shares its trace identifier, so
+    # this is what tells two entries apart; it is unique within a trace.
+    turn_id: Annotated[str, Field(min_length=1, max_length=64)]
+    # The intent of the reply sent, and the conversation state before and after the step.
     intent: Intent
     state_before: Annotated[str, Field(min_length=1, max_length=48)]
     state_after: Annotated[str, Field(min_length=1, max_length=48)]
     render_mode: Literal["template", "model"]
+    # Set when a policy decision produced the step.
     reason_code: ReasonCode | None = None
     policy_version: Annotated[str, Field(min_length=1)] | None = None
 
@@ -138,7 +152,9 @@ class TicketDetail(ContractModel):
 
     item: QueueItem
     packet: HandoffPacket
+    # The audited steps of the conversation behind the ticket.
     timeline: tuple[TimelineEntry, ...]
+    # The agents' notes, in the order they were added.
     notes: tuple[Note, ...] = ()
 
     @model_validator(mode="after")

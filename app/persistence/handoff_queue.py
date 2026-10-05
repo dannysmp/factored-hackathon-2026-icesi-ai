@@ -1,13 +1,13 @@
 """
 Postgres Handoff Queue
-=======================
+======================
 
 Overview
 --------
-The read side of the handoff outbox the human-agent console needs (ADR-17): the queue of tickets
-still needing an agent's attention (a resolved or rejected ticket never appears), filtered by
-language and trigger, fraud and card-loss tickets sorted first. Backs
-``contracts/service_v1/console.py``'s ``QueueResponse``/``QueueItem``.
+The read side of the handoff outbox the human-agent console needs: the queue of tickets still
+needing an agent's attention (a resolved or rejected ticket never appears), filtered by language
+and trigger, fraud and card-loss tickets sorted first. Backs ``contracts/service_v1/console.py``'s
+``QueueResponse``/``QueueItem``.
 
 Scope
 -----
@@ -15,22 +15,21 @@ In: listing and filtering ``handoff_outbox`` rows into ``QueueItem``s, computing
 promised contact date against a supplied domain calendar.
 Out: one ticket's full packet and timeline (``app.persistence.ticket_detail``, needing live
 transaction re-resolution and corpus source titles this module never touches), the console's own
-routes and the audit-of-agent-reads write they must perform (ADR-17), writing to the outbox at all
-(``app.persistence.handoff_outbox``).
+routes and the audit of agent reads they must perform (``app.persistence.console_audit``), writing
+to the outbox at all (``app.persistence.handoff_outbox``).
 
 Design Principles
 -----------------
-- **The promised contact time is keyed by trigger, never by dispute category:** it is a separate,
-  synthetic configuration value with its own provenance, for a handoff ticket's own lifecycle,
-  distinct from
-  ``Policy.first_response_days``, which promises a response to a *filed dispute* — a different
-  event a handoff ticket, by construction, never reaches. Keying on ``trigger`` also
-  means a categoryless fraud-report or card-loss ticket (reachable in practice — a customer can
-  report either before any dispute category is ever established) needs no special case: the
-  priority flag and the promised date are derived from the same input and can never disagree.
+- **The promised contact time is keyed by trigger, never by dispute category:** it is a separate
+  configuration value for a handoff ticket's own lifecycle, distinct from
+  ``Policy.first_response_days``, which promises a response to a *filed dispute*, a different
+  event a handoff ticket, by construction, never reaches. Keying on ``trigger`` also means a
+  categoryless fraud-report or card-loss ticket (reachable in practice: a customer can report
+  either before any dispute category is ever established) needs no special case: the priority
+  flag and the promised date are derived from the same input and can never disagree.
 - **The age is measured on the domain calendar, not the real clock.** ``created_at`` (the real UTC
-  instant) is reported alongside it, unchanged, so the console can show both, labeled, as ADR-17
-  requires — this module only computes the domain-date age.
+  instant) is reported alongside it, unchanged, so the console can show both, labeled; this
+  module only computes the domain-date age.
 - **One connection per call**, matching every other module in ``app.persistence``.
 
 Runtime Contract
@@ -38,8 +37,8 @@ Runtime Contract
 ``PostgresHandoffQueue(dsn, *, contact_days_priority, contact_days_default)`` with
 ``list_tickets(filters, *, calendar) -> QueueResponse`` and
 ``get_ticket(ticket_ref, *, calendar) -> QueueItem | None`` (unlike ``list_tickets``, not filtered
-by status — a resolved or rejected ticket a console session already had selected must still
-resolve, AC-E10-08).
+by status: a resolved or rejected ticket a console session already had selected must still
+resolve).
 """
 
 from __future__ import annotations
@@ -71,6 +70,7 @@ _COLUMNS = (
 )
 
 
+# Statuses of a ticket that has left the queue.
 _CLOSED_STATUSES = (TicketStatus.RESOLVED.value, TicketStatus.REJECTED.value)
 
 
@@ -103,15 +103,26 @@ class PostgresHandoffQueue:
     """A ``HandoffQueue`` backed by the ``handoff_outbox`` table."""
 
     def __init__(self, dsn: str, *, contact_days_priority: int, contact_days_default: int) -> None:
+        """Keep the DSN and the promised contact windows.
+
+        ``contact_days_priority`` is the number of days promised for a priority trigger (fraud or
+        card loss) and ``contact_days_default`` for every other trigger.
+        """
         self._dsn = dsn
         self._contact_days_priority = contact_days_priority
         self._contact_days_default = contact_days_default
 
     def _promised_contact_by(self, trigger: HandoffTrigger, reference_date: date) -> date:
+        """The date an agent has promised to make contact: the ticket's reference date plus the
+        window for its trigger."""
         days = self._contact_days_priority if is_priority(trigger) else self._contact_days_default
         return reference_date + timedelta(days=days)
 
     def _row_to_item(self, row: Any, *, calendar: DomainCalendar) -> QueueItem:
+        """A ``handoff_outbox`` row, in ``_COLUMNS`` order, as a ``QueueItem``.
+
+        The age is the whole days between the calendar's reference date and the ticket's own.
+        """
         (
             ticket_ref,
             trigger,
@@ -139,7 +150,11 @@ class PostgresHandoffQueue:
 
     def list_tickets(self, filters: QueueFilters, *, calendar: DomainCalendar) -> QueueResponse:
         """The queue as of ``calendar``'s reference date, priority tickets first, then oldest
-        first."""
+        first.
+
+        Tickets of equal priority and age are ordered by ticket reference. The response carries
+        the calendar's reference date and origin so the console can label the ages.
+        """
         query, params = _build_query(filters)
         with (
             psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
@@ -156,9 +171,11 @@ class PostgresHandoffQueue:
         )
 
     def get_ticket(self, ticket_ref: str, *, calendar: DomainCalendar) -> QueueItem | None:
-        """One ticket by reference, whatever its status — a selected ticket that has since left
-        the open queue (resolved, rejected) must still resolve here (AC-E10-08), unlike
-        ``list_tickets``, which excludes both on purpose."""
+        """One ticket by reference, whatever its status, or ``None`` when no such ticket exists.
+
+        A selected ticket that has since left the open queue (resolved, rejected) must still
+        resolve here, unlike ``list_tickets``, which excludes both on purpose.
+        """
         with (
             psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
             conn.cursor() as cur,
