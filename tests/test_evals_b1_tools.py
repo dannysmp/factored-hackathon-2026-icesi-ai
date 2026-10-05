@@ -54,7 +54,7 @@ def test_the_duplicated_request_summary_table_agrees_with_the_controller_s_own()
     assert controller_module._REQUEST_SUMMARY_OF == _REQUEST_SUMMARY_OF
 
 
-def test_every_tool_schema_names_one_of_the_seven_tools() -> None:
+def test_every_tool_schema_names_one_of_the_eight_tools() -> None:
     names = {schema["name"] for schema in TOOL_SCHEMAS}
     assert names == {
         "list_transactions",
