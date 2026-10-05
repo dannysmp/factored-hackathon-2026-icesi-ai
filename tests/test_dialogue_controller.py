@@ -1687,6 +1687,24 @@ def test_a_retried_filing_turn_carries_the_same_case_number(
     assert dialogue.port.create_calls == 1
 
 
+def test_a_retried_later_turn_reports_the_session_case_after_a_fresh_read_back(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A replay reports the latest outcome, so a retry after a filing repeats the filed case."""
+    dialogue = _Dialogue(policy, retriever, _filing_port(cases=(_case(),)))
+    dialogue.present_amazon()
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    dialogue.say(_confirmation(ConfirmationAnswer.YES), turn_id="turn-filing")
+    later = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-later")
+    assert later.case_number is None
+
+    retried = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-later")
+
+    assert retried.case_number == "D-1"
+    assert dialogue.port.create_calls == 1
+
+
 def test_the_case_number_is_null_when_the_filing_could_not_be_verified(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
