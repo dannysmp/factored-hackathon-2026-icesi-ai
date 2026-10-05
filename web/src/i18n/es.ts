@@ -47,7 +47,7 @@ export const es: Messages = {
   'signin.unreachable': 'No se pudo cargar el inicio de sesión de demostración.',
   'signin.unavailable': 'La demostración no está disponible en este momento.',
   'signin.intro': 'Esta es una demostración. Inicie sesión con uno de los siguientes perfiles.',
-  'signin.productName': 'Disputa de transacciones',
+  'signin.heading': 'Elija un perfil para iniciar sesión',
   'signin.productTagline': 'Informe un problema con una transacción y reciba ayuda en su idioma.',
   'signin.agentTagline': 'Revise y resuelva los casos que el asistente deriva a una persona.',
   'signin.languageSwitcherLabel': 'Idioma',

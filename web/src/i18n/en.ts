@@ -45,7 +45,7 @@ export const en: Messages = {
   'signin.unreachable': 'The demonstration sign-in could not be loaded.',
   'signin.unavailable': 'The demonstration is not available at the moment.',
   'signin.intro': 'This is a demonstration. Sign in with one of the profiles below.',
-  'signin.productName': 'Transaction disputes',
+  'signin.heading': 'Choose a profile to sign in',
   'signin.productTagline': 'Report a problem with a transaction and get help in your language.',
   'signin.agentTagline': 'Review and resolve the cases the assistant passes to a person.',
   'signin.languageSwitcherLabel': 'Language',

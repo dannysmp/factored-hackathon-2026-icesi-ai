@@ -37,15 +37,18 @@ describe('SignInScreen product heading', () => {
     ['ana', es],
     ['joao', pt],
     ['emma', en],
-  ] as const)('names the product and describes it in the language of %s', async (slug, catalog) => {
-    const user = await renderCustomerScreen()
-    await user.click(getPersonaRadio(slug))
+  ] as const)(
+    'headlines the task and describes it in the language of %s',
+    async (slug, catalog) => {
+      const user = await renderCustomerScreen()
+      await user.click(getPersonaRadio(slug))
 
-    expect(
-      screen.getByRole('heading', { level: 2, name: catalog['signin.productName'] }),
-    ).toBeInTheDocument()
-    expect(screen.getByText(catalog['signin.productTagline'])).toBeInTheDocument()
-  })
+      expect(
+        screen.getByRole('heading', { level: 2, name: catalog['signin.heading'] }),
+      ).toBeInTheDocument()
+      expect(screen.getByText(catalog['signin.productTagline'])).toBeInTheDocument()
+    },
+  )
 
   it.each([
     ['ana', es],
@@ -56,9 +59,9 @@ describe('SignInScreen product heading', () => {
       const user = await renderCustomerScreen()
       await user.click(getPersonaRadio(slug))
 
-      expect(screen.queryByText(en['signin.productName'])).not.toBeInTheDocument()
+      expect(screen.queryByText(en['signin.heading'])).not.toBeInTheDocument()
       expect(screen.queryByText(/dispute intake/i)).not.toBeInTheDocument()
-      expect(screen.getByText(catalog['signin.productName'])).toBeInTheDocument()
+      expect(screen.getByText(catalog['signin.heading'])).toBeInTheDocument()
     },
   )
 })

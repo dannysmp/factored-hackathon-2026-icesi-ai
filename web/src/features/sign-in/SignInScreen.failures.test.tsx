@@ -228,9 +228,9 @@ describe('SignInScreen form', () => {
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
     await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
-    expect(screen.getByRole('region', { name: es['signin.productName'] })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: es['signin.heading'] })).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { level: 2, name: es['signin.productName'] }),
+      screen.getByRole('heading', { level: 2, name: es['signin.heading'] }),
     ).toBeInTheDocument()
   })
 

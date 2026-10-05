@@ -13,9 +13,14 @@
   padding: var(--space-3) var(--space-4);
 }
 
-/* The widths match the main content column's, so the header and that column share their edges. */
+/* The widths match the content column's, so the header and that column share their edges; the form
+   width is the sign-in card's own, plus the header's side padding. */
 .narrow {
   max-width: 40rem;
+}
+
+.form {
+  max-width: calc(34rem + 2 * var(--space-4));
 }
 
 .wide {

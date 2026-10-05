@@ -2802,6 +2802,138 @@ def test_unverified_filing_hands_off(policy: Policy, retriever: LexicalRetriever
     assert outbox.packets[0].trigger.value == "filing_unverified"
 
 
+def _unverified_filing_dialogue(
+    policy: Policy, retriever: LexicalRetriever
+) -> tuple[_Dialogue, TurnResponse]:
+    """A session whose filing could not be read back and was handed to a person."""
+    dialogue = _Dialogue(policy, retriever, _filing_port(cases=(), verified=False))
+    dialogue.present_amazon()
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    handed_off = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    assert handed_off.handoff_ticket is not None
+    assert dialogue.port.create_calls == 1
+    return dialogue, handed_off
+
+
+@pytest.mark.parametrize(
+    "evaluation",
+    [
+        _decision(Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True),
+        _decision(Outcome.ESCALATE, ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE),
+        _decision(Outcome.INELIGIBLE, ReasonCode.DUPLICATE_OPEN_CASE),
+        ToolFailure(tool=ToolName.EVALUATE_DISPUTE, cause="error"),
+    ],
+    ids=["eligible", "escalate", "duplicate_open_case", "tool_failure"],
+)
+def test_a_further_yes_after_an_unverified_filing_answers_with_the_ticket(
+    policy: Policy, retriever: LexicalRetriever, evaluation: object
+) -> None:
+    """Whatever the evaluation would say now, a conversation handed to a person files nothing,
+    opens no second ticket and keeps its state."""
+    dialogue, handed_off = _unverified_filing_dialogue(policy, retriever)
+    dialogue.port.evaluate_result = evaluation
+
+    again = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert dialogue.port.create_calls == 1
+    assert len(dialogue.outbox.packets) == 1
+    assert again.handoff_ticket == handed_off.handoff_ticket
+    assert again.end_session
+    saved = dialogue.store.get(_SESSION_ID)
+    assert saved is not None and saved.phase is ConversationPhase.HANDED_OFF
+
+
+def test_a_no_then_a_new_filing_after_an_unverified_filing_files_nothing(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue, handed_off = _unverified_filing_dialogue(policy, retriever)
+
+    dialogue.say(_confirmation(ConfirmationAnswer.NO))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    again = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert dialogue.port.create_calls == 1
+    assert len(dialogue.outbox.packets) == 1
+    assert again.handoff_ticket == handed_off.handoff_ticket
+
+
+def test_a_dispute_message_after_an_unverified_filing_without_confirmation_files_nothing(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The filing that needs no confirmation is stopped as well: a later message that names the
+    transaction and the reason again does not file it a second time."""
+    port = _filing_port(cases=(), verified=False)
+    port.evaluate_result = _decision(Outcome.ELIGIBLE, ReasonCode.ELIGIBLE)
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    handed_off = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    assert handed_off.handoff_ticket is not None
+    assert port.create_calls == 1
+
+    again = dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+
+    assert port.create_calls == 1
+    assert len(dialogue.outbox.packets) == 1
+    assert again.handoff_ticket == handed_off.handoff_ticket
+
+
+def test_an_unreachable_understanding_dependency_after_a_handoff_opens_no_second_ticket(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue, handed_off = _unverified_filing_dialogue(policy, retriever)
+    controller = DialogueController(
+        UnavailableNlu(),
+        store=dialogue.store,
+        tool_port=dialogue.port,
+        retriever=retriever,
+        policy=policy,
+        outbox=dialogue.outbox,
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+        max_turns=30,
+    )
+
+    for turn_id in ("turn-outage-1", "turn-outage-2"):
+        again = controller.handle_turn(_turn(turn_id), principal=_principal())
+
+        assert again.handoff_ticket == handed_off.handoff_ticket
+        assert again.state_version == handed_off.state_version
+    assert len(dialogue.outbox.packets) == 1
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.last_ticket_ref == handed_off.handoff_ticket
+
+
+def test_a_handoff_leaves_no_question_pending() -> None:
+    state = DialogueState(
+        session_id=_SESSION_ID,
+        lang="es",
+        phase=ConversationPhase.CONFIRMING,
+        pending_slot=Slot.CONFIRMATION,
+        clarification_attempts=1,
+        category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        selected_ref="TX-1",
+        updated_at=_NOW,
+    )
+
+    handed_off = state.with_handed_off("T-1")
+
+    assert handed_off.pending_slot is None
+    assert handed_off.selected_ref == "TX-1"
+    assert handed_off.category is DisputeCategory.UNRECOGNIZED_CHARGE
+
+
 def test_no_confirmation_required_files_immediately(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:

@@ -236,7 +236,7 @@ export function SignInScreen({
     <section aria-labelledby={headingId} className={styles.card}>
       <p className={styles.eyebrow}>{t('signin.regionLabel')}</p>
       <h2 id={headingId} className={styles.heading}>
-        {t('signin.productName')}
+        {t('signin.heading')}
       </h2>
       <p className={styles.tagline}>
         {t(audience === 'agent' ? 'signin.agentTagline' : 'signin.productTagline')}

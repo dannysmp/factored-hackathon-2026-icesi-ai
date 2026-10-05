@@ -46,6 +46,10 @@ function stubTheWholeFlow() {
   return fetchMock
 }
 
+function headerWidthClass(): string {
+  return screen.getByRole('banner').querySelector(':scope > div')?.className ?? ''
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -221,6 +225,8 @@ describe('ConsoleApp', () => {
     )
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(headerWidthClass()).toMatch(/form/)
+    expect(headerWidthClass()).not.toMatch(/narrow|wide/)
   })
 
   it('frames the queue and the ticket detail with the same banner, title and single main landmark', async () => {
@@ -240,6 +246,8 @@ describe('ConsoleApp', () => {
       )
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
       expect(screen.getAllByRole('main')).toHaveLength(1)
+      expect(headerWidthClass()).toMatch(/wide/)
+      expect(headerWidthClass()).not.toMatch(/form|narrow/)
     }
     expectFramed()
 
