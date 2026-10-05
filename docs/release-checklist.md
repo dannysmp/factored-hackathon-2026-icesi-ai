@@ -12,7 +12,7 @@ This checklist states each obligation of a release and names the evidence a revi
 | The README leads from the problem to a running demonstration without a question | A person who did not write it follows it from a clean checkout | [ ] |
 | Every model card, the limitations and remaining-work report and the demonstration scripts are present | [The model card](../models/model_card.json), [the limitations and remaining-work report](limitations.md) and [the demonstration scripts](demo-scripts.md), each at the release commit | [x] |
 | Inputs are labeled real, de-identified, synthetic or team-generated | [The data-use section of the README](../README.md#where-each-input-comes-from) | [x] |
-| No card number and no document-number-shaped value appears in the understanding step's request to an external model; the two shapes the document-number rule cannot separate from an amount are disclosed | [The request-capture test](../tests/test_request_capture_pii.py) for the understanding step's request, and [the security posture section of the limitations report](limitations.md#security-posture) for the disclosed gaps | [ ] |
+| No card number and no document-number-shaped value appears in the understanding step's request to an external model; the shapes the document-number rule cannot separate from an amount are disclosed | [The request-capture test](../tests/test_request_capture_pii.py) for the understanding step's request, and [the security posture section of the limitations report](limitations.md#security-posture) for the disclosed gaps | [ ] |
 
 ## Deployed system
 
@@ -72,7 +72,7 @@ Every requirement is checked with a link to its evidence.
 | Tracing, retries, safe fallback, reproducible setup | [The dialogue controller tests](../tests/test_dialogue_controller.py) and the [retry](../tests/test_reliability_retry.py), [breaker](../tests/test_reliability_breaker.py) and [tool port](../tests/test_reliability_tool_port.py) tests, run with `uv run pytest tests/test_dialogue_controller.py tests/test_reliability_retry.py tests/test_reliability_breaker.py tests/test_reliability_tool_port.py`; the quickstart | [ ] |
 | Capacity limits, monitoring, access, retention, remaining work | The capacity, retention and remaining-work sections | [ ] |
 | Explanations from records | The audit timeline of a synthetic conversation, identifiers masked | [ ] |
-| Provided data only; labeled inputs; no card number or document-number shape in the understanding step's external request, with the rule's two gaps disclosed | [The data-use section](../README.md#where-each-input-comes-from); [the request-capture test](../tests/test_request_capture_pii.py); [the security posture section of the limitations report](limitations.md#security-posture) | [ ] |
+| Provided data only; labeled inputs; no card number or document-number shape in the understanding step's external request, with the rule's gaps disclosed | [The data-use section](../README.md#where-each-input-comes-from); [the request-capture test](../tests/test_request_capture_pii.py); [the security posture section of the limitations report](limitations.md#security-posture) | [ ] |
 | Authentication and per-customer access | The authorization tests | [ ] |
 | Mock services documented | The contract and limitations of the case service and the demonstration sign-in | [ ] |
 | The model does not invent policy; risk separated from policy | The grounding checks; the model card | [ ] |
