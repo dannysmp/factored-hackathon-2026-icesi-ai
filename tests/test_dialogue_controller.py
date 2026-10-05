@@ -3769,6 +3769,53 @@ def test_handoff_not_registered_when_the_outbox_fails(
     assert "request_id=" in logged[0].getMessage()
 
 
+def test_a_conversation_whose_handoff_was_not_registered_files_nothing_on_a_later_turn(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The confirmation question left open when the handoff failed must not be answerable: the
+    conversation answers that nothing was registered and creates no case."""
+    store = InMemoryDialogueStore()
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        cases=(_case(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+    )
+
+    def run(result: NluResult, turn_id: str, *, failing: bool = False) -> TurnResponse:
+        controller, _ = _controller(
+            result,
+            store=store,
+            tool_port=port,
+            policy=policy,
+            outbox=FakeHandoffOutbox(fail=failing),
+            retriever=retriever,
+        )
+        return controller.handle_turn(_turn(turn_id), principal=_principal())
+
+    run(_file_dispute(transaction=TransactionHint(merchant="Amazon")), "turn-0001")
+    asked = run(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE), "turn-0002")
+    assert asked.next_expected is Slot.CONFIRMATION
+    abandoned = run(_plain(NluIntent.REQUEST_PERSON), "turn-0003", failing=True)
+    assert abandoned.end_session
+    saved = store.get(_SESSION_ID)
+    assert saved is not None
+    assert saved.phase is ConversationPhase.ABANDONED
+
+    later = run(_confirmation(ConfirmationAnswer.YES), "turn-0004")
+
+    assert later.reply == abandoned.reply
+    assert later.end_session
+    assert later.case_number is None
+    assert port.create_calls == 0
+    after = store.get(_SESSION_ID)
+    assert after is not None
+    assert after.version == saved.version
+    assert after.last_case_number is None
+
+
 def test_a_save_time_race_replays_the_winning_state(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:

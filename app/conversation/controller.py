@@ -463,6 +463,11 @@ class DialogueController:
         acted on (``_advance``), the cost line is logged, the new state is saved with
         optimistic concurrency, and the reply is rendered after the save.
 
+        Below the cap, a conversation whose handoff could not be registered is answered with that
+        same notice, whatever the message says, with no model call and nothing written, since no
+        person has it and the question it left open can no longer be answered. At the cap the next
+        message retries the registration.
+
         An unreachable understanding dependency becomes a handoff rather than a clarification
         attempt. A save that loses a race on the same turn id answers with the winner's result.
 
@@ -494,6 +499,14 @@ class DialogueController:
 
         if current is not None and current.turns_applied >= self._max_turns:
             return self._cap_reached(current)
+
+        if current is not None and current.phase is ConversationPhase.ABANDONED:
+            return self._respond(
+                current,
+                self._envelope(
+                    current, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
+                ),
+            )
 
         try:
             state, expected_version, result, accounting = self._start_turn(current, request)
