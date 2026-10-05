@@ -416,6 +416,12 @@ _GENERIC_MERCHANTS = frozenset(
         "shops",
         "online shop",
         "merchant",
+        "servicio",
+        "servicios",
+        "servico",
+        "servicos",
+        "service",
+        "services",
     }
 )
 
