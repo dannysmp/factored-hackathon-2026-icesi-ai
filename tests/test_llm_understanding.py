@@ -582,6 +582,11 @@ def test_a_currency_guessed_from_a_bare_dollar_sign_is_dropped(text: str) -> Non
         ("Não reconheço $ 2.763,79 reais.", "BRL"),
         ("No reconozco $ 2.763,79 pesos colombianos.", "COP"),
         ("No reconozco $ 2.763,79 peso mexicano.", "MXN"),
+        ("I don't recognize $2,763.79 Colombian pesos.", "COP"),
+        ("I don't recognize $2,763.79 Mexican pesos.", "MXN"),
+        ("I don't recognize $2,763.79 Argentine pesos.", "ARS"),
+        ("I don't recognize $2,763.79 Chilean pesos.", "CLP"),
+        ("I don't recognize $2,763.79 Uruguayan peso.", "UYU"),
         ("No reconozco $ 2.763,79 euros.", "EUR"),
         ("I don't recognize $2,763.79 in euro.", "EUR"),
         ("I don't recognize €2,763.79 or $3.", "EUR"),
@@ -605,6 +610,11 @@ def test_a_currency_guessed_from_a_bare_dollar_sign_is_dropped(text: str) -> Non
         "pt-reais",
         "es-pesos-colombianos",
         "es-peso-mexicano",
+        "en-colombian-pesos",
+        "en-mexican-pesos",
+        "en-argentine-pesos",
+        "en-chilean-pesos",
+        "en-uruguayan-peso",
         "es-euros",
         "en-euro",
         "euro-sign",
@@ -621,7 +631,12 @@ def test_a_currency_the_message_states_is_kept_beside_a_dollar_sign(
 
 
 @pytest.mark.parametrize(
-    "text", ["No reconozco $ 2.763,79 pesos.", "No reconozco $ 2.763,79 peso."]
+    "text",
+    [
+        "No reconozco $ 2.763,79 pesos.",
+        "No reconozco $ 2.763,79 peso.",
+        "I don't recognize $2,763.79 pesos.",
+    ],
 )
 def test_the_word_pesos_alone_is_not_a_stated_currency(text: str) -> None:
     result = _understand({"amount": "2763.79", "currency": "COP"}, text)
