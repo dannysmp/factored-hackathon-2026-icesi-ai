@@ -442,6 +442,7 @@ def _definition_sizes(mix: Sequence[Row]) -> list[tuple[str, float]]:
     """Cases under the primary definition and under each widening of it."""
 
     def cases(category: str, subcategory: str) -> float:
+        """Total case count for one category and subcategory pair."""
         return _total(
             [r for r in mix if (r["category"], r["subcategory"]) == (category, subcategory)],
             "cases",

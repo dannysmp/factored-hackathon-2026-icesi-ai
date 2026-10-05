@@ -212,5 +212,54 @@ describe('QueueTable', () => {
 
       expect(screen.getByLabelText('otro control')).toHaveFocus()
     })
+
+    it.each([
+      ['the case is in this view', 'T-20260618-BBBBBBBB'],
+      ['the case is not in this view', 'T-20260618-ZZZZZZZZ'],
+    ])('reports the request handled once when %s', (_label, ticketRef) => {
+      const onFocusHandled = vi.fn()
+      const { rerender } = render(
+        <QueueTable
+          items={rows}
+          onSelectTicket={vi.fn()}
+          focusTicketRef={ticketRef}
+          onFocusHandled={onFocusHandled}
+        />,
+      )
+      rerender(
+        <QueueTable
+          items={[...rows]}
+          onSelectTicket={vi.fn()}
+          focusTicketRef={ticketRef}
+          onFocusHandled={onFocusHandled}
+        />,
+      )
+
+      expect(onFocusHandled).toHaveBeenCalledTimes(1)
+    })
+
+    it('reports the request handled even when another control already holds focus', () => {
+      const onFocusHandled = vi.fn()
+      render(<input aria-label="otro control" />)
+      screen.getByLabelText('otro control').focus()
+
+      render(
+        <QueueTable
+          items={rows}
+          onSelectTicket={vi.fn()}
+          focusTicketRef="T-20260618-BBBBBBBB"
+          onFocusHandled={onFocusHandled}
+        />,
+      )
+
+      expect(onFocusHandled).toHaveBeenCalledTimes(1)
+    })
+
+    it('reports nothing when no case was returned from', () => {
+      const onFocusHandled = vi.fn()
+      render(<QueueTable items={rows} onSelectTicket={vi.fn()} onFocusHandled={onFocusHandled} />)
+
+      expect(onFocusHandled).not.toHaveBeenCalled()
+    })
   })
 })
