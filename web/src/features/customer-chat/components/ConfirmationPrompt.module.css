@@ -1,6 +1,6 @@
 /* Styles the confirmation button's container.
-   The chat's one primary action: a full-width, large primary button, which stays the
-   dominant control next to the outlined choices and the text form. */
+   A full-width, large primary button, so it stays the dominant control next to the outlined
+   choices. */
 .confirm {
   margin: var(--space-4) 0;
 }

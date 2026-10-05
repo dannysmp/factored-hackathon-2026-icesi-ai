@@ -23,8 +23,8 @@ in `src/styles/tokens.css`, and the shared components are in `src/components/ui/
 - ESLint is pinned to `^9` rather than the current `^10`, because `eslint-plugin-jsx-a11y@6.10.2`
   does not yet declare `10` in its peer range. Move both together once a jsx-a11y release
   supports it.
-- The `web` CI job has no dependency-vulnerability scan yet; add one once a real HTTP client adds
-  supply-chain surface beyond `react`/`react-dom`/`zod`.
+- The `web` CI job has no dependency-vulnerability scan yet; adding one would cover the runtime
+  dependencies (`react`, `react-dom`, `zod` and the Radix tabs primitive).
 
 ## Customer chat
 
