@@ -21,7 +21,7 @@ Every command below is written so that a secret value appears only on the mainta
 
 - The GitHub CLI is signed in to this repository (`gh auth status`): script `01` and the deploy commands use it.
 - The GitHub Actions repository secret `AWS_ACCOUNT_ID` holds the target account's numeric ID.
-- The operational seed is built on this machine from the raw data already in `data/raw` (`make pipeline && make seed`, which need no AWS profile), so `data/gold/ops_seed/` exists. It is never built in CI or on the host. The seed bucket must hold this same seed: step 4 publishes it and checks it.
+- The operational seed and the dispute-demand marts are built on this machine from the raw data already in `data/raw` (`make pipeline && make seed && make analyze`, which need no AWS profile), so `data/gold/ops_seed/` and `data/gold/dispute_demand/` exist. They are never built in CI or on the host. The seed bucket must hold these same two directories: step 4 publishes them and checks them.
 - The repository is on `main`, up to date, and CI is green on the commit that will be deployed.
 - The monthly cost alert and the model provider's spend limit are set. Neither is created by any script or visible in the repository; see [Cost controls outside the repository](#cost-controls-outside-the-repository).
 
@@ -36,9 +36,10 @@ infra/scripts/03-create-instance-role.sh
 infra/scripts/04-launch-instance.sh
 infra/scripts/11-create-seed-bucket.sh
 aws s3 sync data/gold/ops_seed/ "s3://$(infra/scripts/11-create-seed-bucket.sh)/ops_seed/"
+aws s3 sync --delete data/gold/dispute_demand/ "s3://$(infra/scripts/11-create-seed-bucket.sh)/dispute_demand/"
 ```
 
-Check: `aws s3 ls "s3://$(infra/scripts/11-create-seed-bucket.sh)/ops_seed/"` lists the seed files and their manifest.
+Check: `aws s3 ls "s3://$(infra/scripts/11-create-seed-bucket.sh)/ops_seed/"` lists the seed files and their manifest, and the same listing under `dispute_demand/` lists the marts and theirs.
 
 ## 2. Set the required secrets
 
@@ -74,13 +75,16 @@ Regenerating a code after a deployment is running changes nothing until the next
 
 ## 4. Publish the seed, then deploy
 
-Every deploy reloads the database from the seed bucket, so the bucket must hold the current seed before each dispatch. Refresh it whenever the seed's schema or inputs changed since the last publish, and confirm the bucket's manifest matches the local one (it prints a difference, or `seed bucket matches the local seed`):
+Every deploy reloads the database from the seed bucket, so the bucket must hold the current seed before each dispatch: the operational seed (`ops_seed/`) and the dispute-demand marts (`dispute_demand/`) that feed the Operations dashboard. Refresh both whenever their schema or inputs changed since the last publish, and confirm each bucket manifest matches the local one (each prints a difference, or `seed bucket matches the local seed` and `marts bucket matches the local marts`):
 
 ```sh
-make pipeline && make seed
+make pipeline && make seed && make analyze
 aws s3 sync data/gold/ops_seed/ "s3://$(infra/scripts/11-create-seed-bucket.sh)/ops_seed/" \
   && aws s3 cp "s3://$(infra/scripts/11-create-seed-bucket.sh)/ops_seed/manifest.json" - | diff - data/gold/ops_seed/manifest.json \
   && echo "seed bucket matches the local seed"
+aws s3 sync --delete data/gold/dispute_demand/ "s3://$(infra/scripts/11-create-seed-bucket.sh)/dispute_demand/" \
+  && aws s3 cp "s3://$(infra/scripts/11-create-seed-bucket.sh)/dispute_demand/manifest.json" - | diff - data/gold/dispute_demand/manifest.json \
+  && echo "marts bucket matches the local marts"
 ```
 
 A bucket built before a column existed leaves that column at its default in the deployed database, so a rule that depends on it never fires: without `customers.is_repeat_complainer`, repeat complainers are not handed to a person. The loader refuses a seed that lacks that column and names it in the error, but it guards only that column. The manifest comparison confirms the publish took effect, so the bucket holds exactly the seed just built.
@@ -102,7 +106,7 @@ gh run watch "$run_id" --exit-status
 
 Set `deploy_metabase=true` only when the Metabase parameters listed in `README.md` exist. For a clean-account reproduction that is then removed, leave `teardown_after` at its default (on).
 
-The run builds and scans both images, pushes them, deploys over SSM (the database is migrated and seeded before the rest of the stack is brought up), and runs the smoke test and the hardening check. Any failed step fails the run.
+The run builds and scans both images, pushes them, deploys over SSM (the database is migrated, seeded and loaded with the dispute-demand marts before the rest of the stack is brought up), and runs the smoke test, the hardening check and the analytics check, which fails when any table an Operations dashboard question reads holds no rows (`infra/scripts/13-verify-analytics.sh`). With `deploy_metabase=true` the dashboard job also removes Metabase's built-in sample content (its sample database and the "E-commerce Insights" example dashboard) and runs every dashboard question, failing when one returns no rows. Any failed step fails the run.
 
 The host name is public (`<address-with-dashes>.sslip.io`). It appears in the run log where the smoke test step is echoed with it (same `run_id` as above):
 
