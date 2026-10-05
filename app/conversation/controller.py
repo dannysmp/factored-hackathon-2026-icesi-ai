@@ -164,6 +164,7 @@ from app.conversation.guard import required_slot
 from app.conversation.handoff import HandoffContent
 from app.conversation.model_renderer import LlmRenderer
 from app.conversation.policy_answer import answer as policy_answer
+from app.conversation.quick_answers import read_quick_answer
 from app.conversation.renderer import RenderedReply, demo_notice, transaction_line
 from app.conversation.reply import render_reply
 from app.conversation.state import ConversationPhase, DialogueState
@@ -257,6 +258,22 @@ def _number_from_list(state: DialogueState, text: str) -> NluResult | None:
     if 1 <= number <= len(state.offered_refs):
         return NluResult(intent=NluIntent.CHOICE, confidence=1.0, choice=number)
     return NluResult(intent=NluIntent.LIST_TRANSACTIONS, confidence=1.0)
+
+
+def _answer_to_filing_question(state: DialogueState, text: str) -> NluResult | None:
+    """The understanding of a message that is exactly a yes or a no to the pending filing question.
+
+    The understanding step reads each message without the conversation, so it cannot tell that a
+    bare "no" or a quick-reply label such as "No, no registrar" answers a question. The controller
+    knows the question is pending, and reads only a whole-message match (``read_quick_answer``);
+    any longer or mixed message is left to the understanding step.
+    """
+    if state.pending_slot is not Slot.CONFIRMATION or state.phase in _PHASES_WITHOUT_SELECTION:
+        return None
+    answer = read_quick_answer(text)
+    if answer is None:
+        return None
+    return NluResult(intent=NluIntent.CONFIRMATION, confidence=1.0, confirmation=answer)
 
 
 # The question template that asks for each slot, except the transaction choice, which is
@@ -876,6 +893,8 @@ class DialogueController:
 
         A message that is only a number, sent while a list of transactions is on offer, is read by
         ``_number_from_list`` without a model call: it needs no interpretation and costs nothing.
+        So is a message that is exactly a yes or a no while the filing question is pending
+        (``_answer_to_filing_question``).
 
         A brand-new session starts at expected version 0 (a fresh insert, unconditional on it —
         ``DialogueStore.save``'s own documented behavior); its language is the first message's own,
@@ -891,6 +910,9 @@ class DialogueController:
             listed = _number_from_list(current, request.text)
             if listed is not None:
                 return current, current.version, listed, None
+            answered = _answer_to_filing_question(current, request.text)
+            if answered is not None:
+                return current, current.version, answered, None
             result, accounting = self._understanding.understand(
                 request.text, language_hint=current.lang, reference_date=self._domain_date
             )

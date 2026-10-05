@@ -76,6 +76,7 @@ from contracts.service_v1.tools import (
     TransactionPage,
 )
 from contracts.service_v1.tools import Tool as ToolName
+from tests.web_labels import web_label
 
 _DOMAIN_DATE = date(2026, 6, 18)
 _NOW = datetime(2026, 6, 18, 15, 0, tzinfo=UTC)
@@ -5942,3 +5943,94 @@ def test_naming_the_presented_card_amount_or_date_goes_ahead_with_it(
 
     assert selected == "TX-1"
     assert response.next_expected is Slot.REASON
+
+
+def _dialogue_awaiting_the_filing_answer(policy: Policy, retriever: LexicalRetriever) -> _Dialogue:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        cases=(_case(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    awaiting = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    assert awaiting.next_expected is Slot.CONFIRMATION
+    dialogue.understood.clear()
+    return dialogue
+
+
+_UNREAD_BY_THE_MODEL = _plain(NluIntent.UNCLEAR, language=None)
+
+
+@pytest.mark.parametrize("language", ["es", "pt", "en"])
+def test_the_decline_label_cancels_the_pending_filing_without_the_model(
+    policy: Policy, retriever: LexicalRetriever, language: str
+) -> None:
+    dialogue = _dialogue_awaiting_the_filing_answer(policy, retriever)
+    response = dialogue.say(_UNREAD_BY_THE_MODEL, text=web_label(language, "chat.decline"))
+    assert response.next_expected is None
+    assert dialogue.port.create_calls == 0
+    assert dialogue.understood == []
+
+
+@pytest.mark.parametrize("language", ["es", "pt", "en"])
+def test_the_confirm_label_files_the_pending_dispute_without_the_model(
+    policy: Policy, retriever: LexicalRetriever, language: str
+) -> None:
+    dialogue = _dialogue_awaiting_the_filing_answer(policy, retriever)
+    response = dialogue.say(_UNREAD_BY_THE_MODEL, text=web_label(language, "chat.confirm"))
+    assert "D-1" in response.reply
+    assert dialogue.port.create_calls == 1
+    assert dialogue.understood == []
+
+
+@pytest.mark.parametrize("text", ["yes", "no"])
+def test_a_bare_yes_or_no_answers_the_pending_filing_without_the_model(
+    policy: Policy, retriever: LexicalRetriever, text: str
+) -> None:
+    dialogue = _dialogue_awaiting_the_filing_answer(policy, retriever)
+    dialogue.say(_UNREAD_BY_THE_MODEL, text=text)
+    assert dialogue.port.create_calls == (1 if text == "yes" else 0)
+    assert dialogue.understood == []
+
+
+@pytest.mark.parametrize(
+    "text", ["no, no reconozco ese cargo", "sí, pero por otro monto", "no, la otra transacción"]
+)
+def test_a_longer_reply_to_the_pending_filing_still_goes_to_the_model(
+    policy: Policy, retriever: LexicalRetriever, text: str
+) -> None:
+    dialogue = _dialogue_awaiting_the_filing_answer(policy, retriever)
+    dialogue.say(_UNREAD_BY_THE_MODEL, text=text)
+    assert dialogue.understood == [text]
+    assert dialogue.port.create_calls == 0
+
+
+@pytest.mark.parametrize("text", ["yes", "no", "Sí, registrar", "No, no registrar"])
+def test_a_yes_or_no_with_no_filing_pending_goes_to_the_model(
+    policy: Policy, retriever: LexicalRetriever, text: str
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_plain(NluIntent.UNCLEAR), text="hola")
+    dialogue.understood.clear()
+    dialogue.say(_UNREAD_BY_THE_MODEL, text=text)
+    assert dialogue.understood == [text]
+
+
+def test_a_yes_to_the_presented_transaction_still_goes_to_the_model(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    presented = dialogue.present_amazon()
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    dialogue.understood.clear()
+    dialogue.say(_confirmation(ConfirmationAnswer.YES), text="sí")
+    assert dialogue.understood == ["sí"]
