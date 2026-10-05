@@ -27,18 +27,23 @@ const TRIGGER_VIEWS: readonly { value: TriggerView; label: string }[] = [
  * Copy is fixed Spanish, not a catalog entry (D91: the console stays fixed-Spanish and never
  * imports the trilingual `useT` hook chat and sign-in use).
  *
+ * Each tab shows how many cases it holds under the current language filter, so the agent knows
+ * what is behind a tab before opening it.
+ *
  * `renderTable` is called once per trigger view's `TabsContent`, filtered to that view by the
  * caller — this component owns the filter controls, never the table itself.
  */
 export function QueueFilters({
   language,
   onLanguageChange,
+  counts,
   triggerView,
   onTriggerViewChange,
   renderTable,
 }: {
   language: Lang | undefined
   onLanguageChange: (language: Lang | undefined) => void
+  counts: Readonly<Record<TriggerView, number>>
   triggerView: TriggerView
   onTriggerViewChange: (view: TriggerView) => void
   renderTable: (view: TriggerView) => JSX.Element
@@ -75,7 +80,7 @@ export function QueueFilters({
         <TabsList aria-label="Filtrar por motivo">
           {TRIGGER_VIEWS.map((view) => (
             <TabsTrigger key={view.value} value={view.value}>
-              {view.label}
+              {view.label} ({counts[view.value]})
             </TabsTrigger>
           ))}
         </TabsList>

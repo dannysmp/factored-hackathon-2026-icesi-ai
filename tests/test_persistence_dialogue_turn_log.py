@@ -106,6 +106,26 @@ def test_entries_are_ordered_by_when_they_occurred(turn_log: PostgresDialogueTur
 
 
 @pytest.mark.integration
+def test_turns_at_the_same_instant_are_read_in_the_order_they_were_written(dsn: str) -> None:
+    """Rows are inserted with their write order (``id``) out of step with their physical order,
+    so only an explicit tiebreak on ``id`` returns them in the order they were written."""
+    insert = """
+        INSERT INTO dialogue_turn_log (
+            id, session_id, turn_id, occurred_at_utc, trace_id, intent, state_before,
+            state_after, render_mode
+        ) OVERRIDING SYSTEM VALUE
+        VALUES (%s, 's-1', %s, %s, 's-1', 'clarify', 'started', 'clarifying', 'template')
+    """
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        for row_id, turn_id in ((3, "t-c"), (1, "t-a"), (2, "t-b")):
+            cur.execute(insert, (row_id, turn_id, _T1))
+
+    timeline = PostgresDialogueTurnLog(dsn).timeline_for("s-1")
+
+    assert [entry.turn_id for entry in timeline] == ["t-a", "t-b", "t-c"]
+
+
+@pytest.mark.integration
 def test_a_repeated_session_and_turn_id_is_a_no_op(turn_log: PostgresDialogueTurnLog) -> None:
     """A retried write for the same turn never doubles an entry, matching the table's own
     ``UNIQUE (session_id, turn_id)`` — the first write wins, a second attempt changes nothing."""
