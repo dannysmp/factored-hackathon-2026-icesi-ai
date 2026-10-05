@@ -7,7 +7,7 @@ Overview
 Fails when a pull request introduces a new migration file (``app/persistence/migrations/*.sql``)
 whose leading numeric prefix already belongs to a migration file already on the target branch.
 ``app.persistence.migrate`` orders and applies migrations by full filename, not by numeric prefix
-alone (ADR-9), so a same-prefix collision between two files that both survive review and whose SQL
+alone, so a same-prefix collision between two files that both survive review and whose SQL
 does not actually conflict is not unsafe by itself — but it is exactly the kind of coincidence that
 should be caught and looked at before merge, not discovered by luck twice in a row.
 

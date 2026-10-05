@@ -419,6 +419,7 @@ def test_matches_hint_ignores_case_in_an_accented_name_typed_with_its_accent() -
         ("São Paulo", "SAO PAULO"),
         ("SAO PAULO", "são paulo"),
         ("Pão de Açúcar", "pao de acucar"),
+        ("Señor Taco", "senor"),
     ],
 )
 def test_matches_hint_ignores_accents_whichever_side_carries_them(stored: str, typed: str) -> None:
@@ -426,7 +427,14 @@ def test_matches_hint_ignores_accents_whichever_side_carries_them(stored: str, t
     assert _matches_hint(_transaction(merchant=stored), TransactionHint(merchant=typed))
 
 
+@pytest.mark.parametrize("typed", ["\u0301", " ", "\u0301 \u0301"])
+def test_matches_hint_rejects_a_merchant_that_folds_to_nothing(typed: str) -> None:
+    """An accent mark or blank alone names no merchant, so it must not match every transaction."""
+    assert not _matches_hint(_transaction(merchant="Café Sol"), TransactionHint(merchant=typed))
+
+
 def test_matches_hint_still_rejects_a_different_merchant_after_accent_folding() -> None:
+    """Folding accents must not make unrelated names compare equal."""
     assert not _matches_hint(
         _transaction(merchant="Café Sol"), TransactionHint(merchant="Sol Luna")
     )
@@ -1727,6 +1735,26 @@ def test_policy_question_answers_or_abstains(policy: Policy, retriever: LexicalR
     assert abstained.reply
 
 
+def test_a_policy_question_answered_by_a_section_without_a_figure_cites_the_section(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    controller, _ = _controller(
+        _plain(NluIntent.POLICY_QUESTION, policy_query="que transacciones se pueden disputar"),
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+
+    response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.reply == (
+        "Puede consultarlo en la sección “Qué transacciones se pueden disputar” de nuestra "
+        "política de disputas."
+    )
+
+
 @pytest.mark.parametrize(
     "intent",
     [
@@ -2195,8 +2223,8 @@ def test_get_transaction_failure_while_presenting_confirmation_hands_off(
 def test_a_matchless_evaluate_dispute_result_hands_off_on_first_evaluation(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
-    """None (the reference stopped resolving, or stopped being this customer's own, between an
-    earlier read and this evaluation) is routed through the same fail-closed handoff
+    """None (the reference stopped resolving, or stopped being this customer's own,
+    between an earlier read and this evaluation) is routed through the same fail-closed handoff
     as a genuine ToolFailure, never re-interpreted as an ineligible or eligible decision."""
     store = InMemoryDialogueStore()
     outbox = FakeHandoffOutbox()

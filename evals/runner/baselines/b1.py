@@ -18,9 +18,9 @@ Scope
 In: ``build_b1_dependencies`` (B1's own client and tool dispatcher from ``Settings``, refused in
 production); ``run_case``, driving one case's turns; ``run_cases``, sequencing that over a batch,
 the same shape ``evals.runner.runner.run_cases`` already gives P and B0.
-Out: the tool schemas and dispatch themselves (``evals.runner.baselines.b1_tools``, already
-built); scoring a transcript (``evals.scoring``, unchanged); the ``make evaluate`` CLI wiring that
-will call ``run_cases`` for P, B0 or B1 alike (a following increment).
+Out: the tool schemas and dispatch themselves (``evals.runner.baselines.b1_tools``); scoring a
+transcript (``evals.scoring``, unchanged); the ``make evaluate`` CLI wiring that calls ``run_cases``
+for P, B0 or B1 alike.
 
 Design Principles
 -----------------
@@ -35,9 +35,8 @@ Design Principles
   else, matching ``evals.runner.baselines.b0.build_b0_app``'s own guard exactly.
 - **One tool-call round trip at a time, capped.** The model may call tools any number of times
   before replying in text; a hard round cap (``_MAX_TOOL_ROUNDS``) stops a pathological loop from
-  running forever against a real API budget — the evaluation plan's own token-budget-per-stage
-  discipline, applied to the one system variant with no other bound on how many times it can call
-  itself.
+  running forever against a real API budget — a token budget per stage, applied to the one system
+  variant with no other bound on how many times it can call itself.
 - **``next_expected`` is inferred from what happened this turn, not asked of the model.** A turn
   is tagged ``Slot.CONFIRMATION`` when this turn's last ``evaluate_dispute`` call returned an
   eligible decision and no ``create_dispute_case`` followed it in the same turn — regardless of
@@ -76,10 +75,9 @@ builds a fresh dispatcher and session id for, drives and scores each case in ord
 Limitations
 -----------
 The model id B1 calls with is the caller's own choice, passed to ``build_b1_dependencies``
-explicitly — the evaluation plan's "same model" wording does not say which of P's two configured
-models (understanding vs. rendering) that means for a single unified agent role, and this module
-does not decide it either; the caller (the CLI wiring, a following increment) names one from the
-allow-list.
+explicitly — B1 is specified to use the "same model" as P, which does not say which of P's two
+configured models (understanding vs. rendering) that means for a single unified agent role, and this
+module does not decide it either; the caller (the CLI wiring) names one from the allow-list.
 ``run_cases`` records a ``NaiveAgentRequestTooLarge`` (a case whose accumulated conversation grew
 past the provider's request-byte limit) against that case and continues, but still propagates any
 other ``LlmRequestRejected``: bad credentials or missing model access are account-level, recur for
@@ -232,11 +230,11 @@ def build_b1_dependencies(
 def _log_call_completed(session_id: str, turn_id: str, turn: NaiveAgentTurn) -> Decimal | None:
     """One stable-shaped log line per real B1 call, mirroring
     ``app.conversation.controller.DialogueController._log_turn_completed``'s own shape and its
-    "an unpriced model never aborts the run" rule: this is the only place B1's own spend is
-    recorded anywhere (``NaiveAgentTurn``'s token counts are otherwise discarded once this
-    function returns), so a real evaluation run's cost is computable from logs alone, the same
-    guarantee E9 already established for P. Returns the call's cost, ``None`` when its model is
-    unpriced, so the harness sums the same figure the log line carries.
+    "an unpriced model never aborts the run" rule: this is the only place B1's own spend is recorded
+    anywhere (``NaiveAgentTurn``'s token counts are otherwise discarded once this function returns),
+    so a real evaluation run's cost is computable from logs alone, the same guarantee P's own log
+    line gives. Returns the call's cost, ``None`` when its model is unpriced, so the harness sums
+    the same figure the log line carries.
     """
     try:
         cost = cost_usd(turn.model, turn.input_tokens, turn.output_tokens)

@@ -4,27 +4,27 @@ Case Runner
 
 Overview
 --------
-Ties the three pieces this slice has built so far into one pass over a set of cases: resolve each
-case's customer (``evals.runner.seed_resolution``), drive its scripted turns against the running
-system (``evals.runner.proposed_system``), and score the result (``evals.scoring``). This is the
-proposed system's (P) own runner; a baseline variant reuses the same shape once it exists.
+Ties three pieces into one pass over a set of cases: resolve each case's customer
+(``evals.runner.seed_resolution``), drive its scripted turns against the running system
+(``evals.runner.proposed_system``), and score the result (``evals.scoring``). This is the proposed
+system's (P) own runner; a baseline variant reuses the same shape.
 
 Scope
 -----
-In: ``run_cases``, sequencing the three already-built pieces over a batch.
+In: ``run_cases``, sequencing the three pieces over a batch.
 Out: building any of the three pieces themselves; the 3-repeated-runs-for-P and
 1-run-for-baselines protocol (``evals.golden``'s cases run once per call here; repetition is the
-caller's own loop); a report generator; the judge; CI wiring (``make evaluate``, later increments).
+caller's own loop); a report generator; the judge; CI wiring (``make evaluate``).
 
 Design Principles
 -----------------
-- **One case's failure never silences the rest of the batch.** A case that fails to resolve, run
-  or score (a malformed reference, a non-2xx response, an intent this module's scorer has not
-  been taught to read) is recorded as a named ``CaseResult.error`` (``evals.scoring.error_result``)
-  and the batch continues — the evaluation plan's own rule that "all results, including failures,
-  land in the report" means one case's failure is itself a fact worth recording, not one that
-  should hide every other case's own result behind it. A batch this size, run against a real
-  system and a real model, cannot afford one bad case aborting the other 134.
+- **One case's failure never silences the rest of the batch.** A case that fails to resolve, run or
+  score (a malformed reference, a non-2xx response, an intent this module's scorer has not been
+  taught to read) is recorded as a named ``CaseResult.error`` (``evals.scoring.error_result``) and
+  the batch continues — the rule that "all results, including failures, land in the report" means
+  one case's failure is itself a fact worth recording, not one that should hide every other case's
+  own result behind it. A batch this size, run against a real system and a real model, cannot afford
+  one bad case aborting the other 134.
 - **Only the three failure classes this module already names are ever caught.** ``ValueError``
   (a malformed or unresolvable ``seed_ref``), ``httpx.HTTPStatusError`` (a non-2xx turn response)
   and ``NotImplementedError`` (an ``expected_intent`` the scorer does not read) are the batch's
