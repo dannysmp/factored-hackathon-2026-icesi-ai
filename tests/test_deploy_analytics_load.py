@@ -3,8 +3,10 @@ Deploy-Time Analytics Load Tests
 ================================
 
 Component: the analytics load in ``infra/scripts/05-deploy.sh``, the compose mount that feeds it,
-the post-deploy table check ``infra/scripts/13-verify-analytics.sh`` and the rule that no deploy
-command can remove the dashboard container as an orphan of the base compose project.
+the post-deploy table check ``infra/scripts/13-verify-analytics.sh``, the dashboard step
+``infra/scripts/10-configure-metabase-dashboard.sh`` that shows what the host removed or reports a
+failure, and the rule that no deploy command can remove the dashboard container as an orphan of
+the base compose project.
 
 The deploy tests read the real scripts and compose file, so an edit that moves, drops or renames
 a step changes what they check. The check script is run for real against stubs of the ``aws``
@@ -231,6 +233,7 @@ def test_the_check_fails_on_a_table_that_does_not_exist(stubbed: Path) -> None:
 
     assert result.returncode != 0
     assert result.stdout == ""
+    assert f'relation "analytics.{marts[0]}" does not exist' in result.stderr
 
 
 def test_the_check_refuses_a_table_name_that_is_not_plain(stubbed: Path) -> None:
@@ -241,6 +244,8 @@ def test_the_check_refuses_a_table_name_that_is_not_plain(stubbed: Path) -> None
     assert not (stubbed / "payload.json").exists()
 
 
+# STDERR_MODE decides what the host's error stream answers: a notice, the literal "None" the CLI
+# prints for an empty field, nothing, or a failed call.
 _THEME_AWS_STUB = """#!/usr/bin/env bash
 case "$*" in
   *"sts get-caller-identity"*) exit 0 ;;
@@ -248,15 +253,21 @@ case "$*" in
   *"ssm send-command"*) echo cmd-stub; exit 0 ;;
   *"--query Status"*) echo Success; exit 0 ;;
   *"StandardOutputContent"*) echo "| Operations checklist |"; exit 0 ;;
-  *"StandardErrorContent"*) echo "removed sample database 'Sample Database'"; exit 0 ;;
+  *"StandardErrorContent"*)
+    case "$STDERR_MODE" in
+      notice) echo "removed sample database 'Sample Database'"; exit 0 ;;
+      none) echo None; exit 0 ;;
+      empty) echo; exit 0 ;;
+      *) exit 1 ;;
+    esac ;;
 esac
 exit 1
 """
 
+_NOTICE = "removed sample database 'Sample Database'"
 
-def test_the_sample_content_removed_is_shown_when_the_dashboard_step_succeeds(
-    tmp_path: Path,
-) -> None:
+
+def _run_theme(tmp_path: Path, stderr_mode: str) -> subprocess.CompletedProcess[str]:
     if shutil.which("jq") is None or shutil.which("bash") is None:
         pytest.skip("jq and bash are required to run the script")
     scripts = tmp_path / "infra" / "scripts"
@@ -265,11 +276,14 @@ def test_the_sample_content_removed_is_shown_when_the_dashboard_step_succeeds(
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _executable(bin_dir / "aws", _THEME_AWS_STUB)
-    env = {**_environment(), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    env = {
+        **_environment(),
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "STDERR_MODE": stderr_mode,
+    }
     env.pop("AWS_PROFILE", None)
     env.pop("AWS_REGION", None)
-
-    result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+    return subprocess.run(  # noqa: S603 - fixed argv, no shell
         ["bash", str(scripts / THEME_SCRIPT.name)],  # noqa: S607
         env=env,
         capture_output=True,
@@ -277,9 +291,30 @@ def test_the_sample_content_removed_is_shown_when_the_dashboard_step_succeeds(
         check=False,
     )
 
+
+def test_the_sample_content_removed_is_shown_when_the_dashboard_step_succeeds(
+    tmp_path: Path,
+) -> None:
+    result = _run_theme(tmp_path, "notice")
+
     assert result.returncode == 0, result.stderr
-    assert "removed sample database 'Sample Database'" in result.stderr
+    assert _NOTICE in result.stderr
     assert "| Operations checklist |" in result.stdout
+
+
+@pytest.mark.parametrize("stderr_mode", ["none", "empty", "failed"])
+def test_the_dashboard_step_shows_no_notice_when_the_host_reports_none(
+    tmp_path: Path, stderr_mode: str
+) -> None:
+    """An empty error stream, the CLI's literal "None" and a failed read of it all leave the
+    step succeeding with the checklist and nothing extra on the error stream."""
+    result = _run_theme(tmp_path, stderr_mode)
+
+    assert result.returncode == 0, result.stderr
+    assert "| Operations checklist |" in result.stdout
+    assert _NOTICE not in result.stderr
+    assert "None" not in result.stderr
+    assert all(line.strip() for line in result.stderr.splitlines())
 
 
 _OVERLAY_FLAG = "-f docker-compose.metabase.yml"
@@ -304,11 +339,14 @@ def _tracked_texts() -> list[tuple[Path, str]]:
         path = REPO_ROOT / name
         if not name or path == Path(__file__).resolve() or not path.is_file():
             continue
-        try:
-            found.append((path, path.read_text()))
-        except UnicodeDecodeError:
-            continue
+        found.append((path, path.read_text(errors="replace")))
     return found
+
+
+def test_the_orphan_scan_reads_the_deploy_script_and_the_production_compose_file() -> None:
+    scanned = {path.relative_to(REPO_ROOT).as_posix() for path, _ in _tracked_texts()}
+
+    assert {"infra/scripts/05-deploy.sh", "docker-compose.prod.yml"} <= scanned
 
 
 def test_no_command_can_remove_the_dashboard_container_as_an_orphan() -> None:

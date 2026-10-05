@@ -93,7 +93,7 @@ for _ in $(seq 1 60); do
     Success)
       log "dashboard theming succeeded; writing the checklist it printed"
       notes="$(aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${instance_id}" \
-        --query "StandardErrorContent" --output text)"
+        --query "StandardErrorContent" --output text 2>/dev/null)" || notes=""
       if [[ -n "${notes}" && "${notes}" != "None" ]]; then
         printf '%s\n' "${notes}" >&2
       fi
