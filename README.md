@@ -9,7 +9,7 @@ summary, whenever a person is required.
 The guiding principle is that **AI is not autonomous just because it can be**: the language model
 only understands the request, while deterministic code decides and acts. Replies are fixed
 templates filled with verified facts; in the shipped configuration the model writes nothing the
-customer reads.
+customer reads. In short: the AI listens, the rules decide.
 
 ![The customer chat with a filed dispute and its case reference, beside the agent console showing the handoff packet for a different case](docs/images/hero.png)
 
@@ -40,17 +40,21 @@ session ends. **Sign out when you finish:** it frees the profile at once. Closin
 reloading does not, so the profile stays in use until its session expires, 30 minutes for a
 customer and 60 for an agent, and the next reader is refused in the meantime.
 
+The operations dashboard shown under [See it in action](#see-it-in-action) is available on request.
+
 ## At a glance
 
 The system takes a customer's dispute from the first message to a verified, filed case, or to the
 right person. The model understands the request; a deterministic policy engine decides, tools
 scoped to the signed-in customer act, and every write is read back before the customer is told.
 
-On 135 scripted cases, run on the golden set against the live model, **safe automated resolution is 73.5%** for this system,
-against 33.0% for a keyword baseline and 36.9% for a model-only agent, with **zero unsafe
-outcomes** for all three. It misses slightly more of the cases that need a person than the model-only agent does
-(missed transfers 6.1% against 4.5%, a difference the run-to-run spread does not separate). These are measurements on scripted cases, not
-production results; the full table is under [Evaluation](#evaluation).
+The system safely resolves about twice as many in-scope disputes on its own as either baseline:
+**safe automated resolution is 73.5%**, against 33.0% for a keyword baseline and 36.9% for a
+model-only agent, and none of the three produced an unsafe outcome. These figures come from 135
+scripted test cases, 32 of them adversarial, run against the live model. The system misses
+slightly more of the cases that need a person than the model-only agent does (missed transfers
+6.1% against 4.5%, a difference the run-to-run spread does not separate). These are measurements
+on scripted cases, not production results; the full table is under [Evaluation](#evaluation).
 
 - [Evaluation report](reports/evaluation.md): workload, metrics, variability, failures and judge validation
 - [Limitations report](docs/limitations.md): what is built, deferred and still open
