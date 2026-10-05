@@ -28,9 +28,9 @@ results still to come say so and name the command that completes them.
   representative of real customers. Every case states its own provenance (observed, team-generated
   or injected) so a reader never has to guess it.
 - **The golden set has no case that expects a denial of an ineligible filing.** An independent
-  rater confirmed the labels of all 135 cases, but none of them declares an ineligible outcome:
-  the evaluation does not exercise the eight ineligibility reason codes, which only the policy
-  engine's own tests cover. See "Golden-set adjudication" in `evals/README.md`.
+  rater reviewed all 135 cases and changed none of their labels, but none of them declares an
+  ineligible outcome: the evaluation does not exercise the eight ineligibility reason codes,
+  which only the policy engine's own tests cover. See "Golden-set adjudication" in `evals/README.md`.
 
 ## Machine learning
 
@@ -66,11 +66,12 @@ results still to come say so and name the command that completes them.
   Running `make judge-validation RATER1=<sheet> RATER2=<sheet>` scores the same cases with the
   real judge and patches that section and the matching limitations line of that report with
   rater-to-rater and rater-to-judge agreement per dimension, each with its pair count and weighted
-  kappa, the direction of the differences and the decision per dimension. It also writes every
-  case's scores to `reports/judge-validation-cases.csv`, a local working file that is not tracked
-  in the repository. This bullet is updated with those figures, and with any dimension the judge is
-  demoted on, at the same time. The written analysis of where the raters and the judge disagree
-  is a person's job and is not generated.
+  kappa, the direction of the differences and the decision per dimension. It withholds the judge's
+  mean in the judge-scored quality table for each dimension it demotes, showing the raters' means
+  beneath it, and writes every case's scores to `reports/judge-validation-cases.csv`, a local
+  working file that is not tracked in the repository. This bullet is updated with those figures,
+  and with any dimension the judge is demoted on, at the same time. The written analysis of where
+  the raters and the judge disagree is a person's job and is not generated.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in

@@ -12,7 +12,13 @@ from collections.abc import Sequence
 import pytest
 
 from evals.judge import JudgeVerdict
-from evals.judge_validation import DEMOTION_THRESHOLD, RaterScore, compute_agreement, compute_detail
+from evals.judge_validation import (
+    DEMOTION_THRESHOLD,
+    RaterScore,
+    compute_agreement,
+    compute_detail,
+    compute_human_means,
+)
 
 _MODEL = "claude-sonnet-5"
 
@@ -253,3 +259,32 @@ def test_detail_pair_counts_are_the_denominators_of_the_agreement_rates() -> Non
     clarification = detail[2].rater1_to_judge
     assert clarification.compared == 0 and clarification.weighted_kappa == "not defined"
     assert agreement[2].rater1_to_judge == "not defined"
+
+
+def test_human_means_are_each_raters_own_mean_over_the_cases_they_scored() -> None:
+    rater1 = [
+        _rater("J-1", "Rater 1", grounding=2, language_quality=1, clarification=2),
+        _rater("J-2", "Rater 1", grounding=1, language_quality=1),
+    ]
+    rater2 = [
+        _rater("J-1", "Rater 2", grounding=0, language_quality=2, clarification=1),
+        _rater("J-2", "Rater 2", grounding=1, language_quality=2),
+    ]
+
+    means = {mean.dimension: mean for mean in compute_human_means(rater1, rater2)}
+
+    assert means["grounding"].rater1_mean == 1.5
+    assert means["grounding"].rater2_mean == 0.5
+    assert means["language_quality"].rater2_mean == 2.0
+    assert (means["clarification"].rater1_mean, means["clarification"].rater1_scored) == (2.0, 1)
+    assert (means["clarification"].rater2_mean, means["clarification"].rater2_scored) == (1.0, 1)
+
+
+def test_a_dimension_neither_rater_scored_has_no_human_mean() -> None:
+    rater1 = [_rater("J-1", "Rater 1", grounding=2, language_quality=1)]
+    rater2 = [_rater("J-1", "Rater 2", grounding=2, language_quality=1)]
+
+    means = {mean.dimension: mean for mean in compute_human_means(rater1, rater2)}
+
+    assert means["clarification"].rater1_mean is None
+    assert means["clarification"].rater2_scored == 0
