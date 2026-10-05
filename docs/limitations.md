@@ -68,9 +68,9 @@ results still to come say so and name the command that completes them.
   rater-to-rater and rater-to-judge agreement per dimension, each with its pair count and weighted
   kappa, the direction of the differences and the decision per dimension. It also writes every
   case's scores to `reports/judge-validation-cases.csv`, a local working file that is not tracked
-  in the repository. This bullet is updated with those figures, and with any dimension the judge is
-  demoted on, at the same time. The written analysis of where the raters and the judge disagree
-  is a person's job and is not generated.
+  in the repository. The command does not edit this bullet: a person then updates it with those
+  figures, and with any dimension the judge is demoted on. The written analysis of where the
+  raters and the judge disagree is likewise a person's job and is not generated.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in
