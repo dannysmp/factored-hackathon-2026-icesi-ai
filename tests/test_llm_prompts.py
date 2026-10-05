@@ -8,6 +8,8 @@ for ``prompts/`` where a test needs a file that is not the shipped ``nlu_v1``.
 
 from __future__ import annotations
 
+import csv
+import re
 from pathlib import Path
 
 import pytest
@@ -19,7 +21,7 @@ def test_the_shipped_nlu_prompt_loads_and_validates() -> None:
     """``prompts/nlu_v1.yaml`` is a real, valid prompt file, not just a fixture."""
     prompt = load_prompt("nlu_v1")
 
-    assert prompt.version == "5"
+    assert prompt.version == "9"
     assert prompt.system.strip()
     assert prompt.placeholders() == {"language_hint", "message"}
 
@@ -116,3 +118,78 @@ def test_the_shipped_nlu_prompt_keeps_a_transfer_already_made_disputable_and_sta
     """The extraction prompt separates a transfer to make from one already made, keeps a kind of
     transaction out of the merchant, and says which marks state a currency."""
     assert " ".join(load_prompt("nlu_v1").system.split()).find(phrase) >= 0
+
+
+_MIXED_LANGUAGE_RULE = (
+    "A message that mixes Spanish and Portuguese is in the language it opens in, even when a "
+    'later part switches ("Quanto custa, hmm, mantener la cuenta?" is Portuguese, "¿Cuánto '
+    'cuesta, hmm, manter a conta?" is Spanish): record that language, never null.'
+)
+
+_STATEMENT_PARAGRAPH = (
+    "One more case, and only this one: a message that is nothing but a plain statement of a "
+    "transaction the customer made, with no complaint, no question, no word of not recognizing it "
+    "and no request to report, dispute or list it "
+    '("I bought a pair of shoes online last week", "Paguei a conta de luz ontem pelo aplicativo", '
+    '"Compré unos zapatos por internet la semana pasada"), is the start of a dispute: use '
+    "file_dispute and record the detail it gives. Every other message, in particular one that "
+    'says the customer did not make or does not recognize a transaction ("no fui yo", "não fui '
+    'eu", "no reconozco", "I did not make this"), one that asks to report it, and one that asks '
+    "a question about a rule, a deadline or a fee, is read exactly as it would be without this "
+    "case."
+)
+
+# Sentences the prompt teaches by example; none may restate a turn the evaluation scores.
+_PROMPT_EXAMPLES = (
+    "I bought a pair of shoes online last week",
+    "Paguei a conta de luz ontem pelo aplicativo",
+    "Compré unos zapatos por internet la semana pasada",
+    "Quanto custa, hmm, mantener la cuenta?",
+    "¿Cuánto cuesta, hmm, manter a conta?",
+)
+
+
+def _system_text() -> str:
+    return " ".join(load_prompt("nlu_v1").system.split())
+
+
+def test_the_mixed_language_rule_is_exactly_the_reviewed_text() -> None:
+    assert _MIXED_LANGUAGE_RULE in _system_text()
+
+
+def test_the_plain_statement_paragraph_is_exactly_the_reviewed_text() -> None:
+    """Every clause of the paragraph is pinned: a deleted exclusion or counter-example fails."""
+    assert _STATEMENT_PARAGRAPH in _system_text()
+
+
+def test_the_added_paragraphs_follow_the_language_rule_in_order() -> None:
+    """The mixed-language rule extends the language paragraph; the statement rule comes last."""
+    system = _system_text()
+    language_rule = "When you cannot tell the language at all, record it as null."
+    assert system.index(language_rule) < system.index(_MIXED_LANGUAGE_RULE)
+    assert system.index(_MIXED_LANGUAGE_RULE) < system.index(_STATEMENT_PARAGRAPH)
+    assert system.endswith(_STATEMENT_PARAGRAPH)
+
+
+def _words(text: str) -> frozenset[str]:
+    return frozenset(re.sub(r"[\d$.,?¿]+", " ", text.lower()).split())
+
+
+def _golden_user_turns() -> list[str]:
+    turns: list[str] = []
+    for path in sorted((PROMPTS_DIR.parent / "evals" / "golden" / "cases").glob("*.csv")):
+        with path.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                turns.extend(turn.strip() for turn in row["user_turns"].split(" | "))
+    return turns
+
+
+@pytest.mark.parametrize("example", _PROMPT_EXAMPLES)
+def test_a_prompt_example_does_not_repeat_a_golden_turn(example: str) -> None:
+    """Jaccard similarity of the word sets stays below one half for every scored user turn."""
+    assert example in _system_text()
+    example_words = _words(example)
+    for turn in _golden_user_turns():
+        turn_words = _words(turn)
+        overlap = len(example_words & turn_words) / len(example_words | turn_words)
+        assert overlap < 0.5, f"{example!r} resembles the golden turn {turn!r}"

@@ -4,7 +4,7 @@
 # before changing a field name here: the tool schema, the loose intermediate model and this
 # prompt's field list must describe the same shape. Wording changes are a reviewed pull request,
 # the same as a code change; nothing here is read by the customer.
-version: "5"
+version: "9"
 
 system: |
   You read one message from a bank customer talking with an automated dispute assistant, and you
@@ -53,6 +53,19 @@ system: |
   Read the conversation's language from this message's own text, independently of the language hint
   you are given: the hint names the language the conversation is in so far, not what this message
   is in. When you cannot tell the language at all, record it as null.
+  A message that mixes Spanish and Portuguese is in the language it opens in, even when a later
+  part switches ("Quanto custa, hmm, mantener la cuenta?" is Portuguese, "¿Cuánto cuesta, hmm,
+  manter a conta?" is Spanish): record that language, never null.
+
+  One more case, and only this one: a message that is nothing but a plain statement of a
+  transaction the customer made, with no complaint, no question, no word of not recognizing it and
+  no request to report, dispute or list it ("I bought a pair of shoes online last week", "Paguei a
+  conta de luz ontem pelo aplicativo", "Compré unos zapatos por internet la semana pasada"), is the
+  start of a dispute: use file_dispute and record the detail it gives. Every other message, in
+  particular one that says the customer did not make or does not recognize a transaction ("no fui
+  yo", "não fui eu", "no reconozco", "I did not make this"), one that asks to report it, and one
+  that asks a question about a rule, a deadline or a fee, is read exactly as it would be without
+  this case.
 
 task_template: |
   Conversation language so far: {language_hint}
