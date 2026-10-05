@@ -74,12 +74,13 @@ against a fixed adversarial set (separator variants, adjacent non-digit characte
 card-like runs in one field) and a fixed false-positive set (order numbers, phone numbers,
 reference codes of card-like length), not proven exhaustively.
 
-The document-number rule has two known gaps, both chosen over the alternative of redacting
-amounts. An amount typed as seven or more unbroken digits (``1250000``) is redacted like an
-identifier; it is only a search hint for the customer's own transactions, and the stored amount is
-what policy reads, so the cost is one more question to the customer. A national identity number
-typed with thousands-style dots (``1.094.921.834``) has the shape of an amount and passes through
-unmasked. Identity numbers split by anything else, or written in words, are not detected.
+The document-number rule has three known limits; the first two were chosen over the alternative
+of redacting amounts. An amount typed as seven or more unbroken digits (``1250000``) is redacted
+like an identifier; it is only a search hint for the customer's own transactions, and the stored
+amount is what policy reads, so the cost is one more question to the customer. A national identity
+number typed with thousands-style dots (``1.094.921.834``) has the shape of an amount and passes
+through unmasked. Third, identity numbers split by anything else, or written in words, are not
+detected.
 """
 
 from __future__ import annotations
