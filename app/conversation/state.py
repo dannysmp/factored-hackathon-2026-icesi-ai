@@ -53,6 +53,11 @@ answered, or the conversation reaches a final phase.
 answered again (no cached reply text is stored, per the store's own idempotent-replay design): the
 caller re-derives the reply from the current record behind the identifier, never from a snapshot
 taken when it was first written.
+
+``closed_turn_id`` names the turn that ended a dispute without a case or a handoff (cancelled,
+ineligible or duplicate). ``last_case_number`` stays on the state after such a closing, so a
+repeat of the closing turn is told apart from a repeat of the filing turn by this id and is
+answered with the closing, not with the earlier case. A filing clears it.
 """
 
 from __future__ import annotations
@@ -181,10 +186,10 @@ class DialogueState(BaseModel):
         return self.model_copy(update={"phase": phase})
 
     def _closed(self) -> DialogueState:
-        """Nothing about the dispute stays open: the pending question, the clarification count, the
-        selected transaction, the reason and any list of numbered options are cleared, so a later
-        message neither answers the old question nor re-presents the dispute that just ended, and a
-        new dispute starts from its own transaction."""
+        """Close the dispute: nothing about it stays open. The pending question, the clarification
+        count, the selected transaction, the reason and any list of numbered options are cleared, so
+        a later message neither answers the old question nor re-presents the dispute that just
+        ended, and a new dispute starts from its own transaction."""
         return self.model_copy(
             update={
                 "phase": ConversationPhase.CLOSED,
@@ -207,7 +212,10 @@ class DialogueState(BaseModel):
         return self._closed().model_copy(update={"closed_turn_id": turn_id})
 
     def with_case_filed(self, case_number: str) -> DialogueState:
-        """A case was filed this turn: closed, with the case number a replay re-reads from."""
+        """A case was filed this turn: closed, with the case number a replay re-reads from.
+
+        Any closing turn recorded earlier is cleared, so the filing turn itself replays as a filing.
+        """
         return self._closed().model_copy(update={"last_case_number": case_number})
 
     def with_handed_off(self, ticket_ref: str) -> DialogueState:
