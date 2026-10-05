@@ -63,7 +63,9 @@ from contracts.service_v1.envelope import RenderEnvelope, TemplateId
 
 logger = logging.getLogger(__name__)
 
-# Every template eligible for model rendering. Deliberately excludes: NO_CASE_FOUND and
+# Every template eligible for model rendering. Deliberately excludes: PRESENT_LIST (its numbered
+# lines are the options the customer picks from, and a model-worded reply is free to drop or
+# reorder them, so the options stay fixed text); NO_CASE_FOUND and
 # HANDOFF_NOT_REGISTERED (the contract itself permits building a model-mode envelope for either
 # state from facts alone, but nothing here elects to render one through the model — an explicit
 # scope choice, not a contract-level impossibility); HANDOFF_CARD_LOSS, HANDOFF_REQUESTED and
@@ -79,7 +81,6 @@ logger = logging.getLogger(__name__)
 MODEL_ELIGIBLE_TEMPLATES = frozenset(
     {
         TemplateId.PRESENT_ONE,
-        TemplateId.PRESENT_LIST,
         TemplateId.PRESENT_NARROW,
         TemplateId.CONFIRM_FILING,
         TemplateId.FILING_RESULT,

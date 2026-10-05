@@ -33,8 +33,9 @@ Design Principles
 Runtime Contract
 ----------------
 ``render(envelope) -> RenderedReply``. ``reference_date_line(domain_date, lang)``.
-``demo_notice(lang)``. ``format_money``/``format_date``/``amount_text``/``CATEGORY_NAMES``/
-``INELIGIBLE_TEXT`` are exported so the model-rendered path's own slot values
+``demo_notice(lang)``. ``transaction_line(transaction, lang)`` is the one-line description of a
+transaction used for a numbered list. ``format_money``/``format_date``/``amount_text``/
+``CATEGORY_NAMES``/``INELIGIBLE_TEXT`` are exported so the model-rendered path's own slot values
 (``app.conversation.slot_values``) format a figure identically to the template path, rather than
 a second, independently maintained copy.
 
@@ -61,6 +62,7 @@ from contracts.service_v1.envelope import (  # The envelope and its typed facts
     Money,
     RenderEnvelope,
     TemplateId,
+    TransactionFact,
 )
 
 # -----------------------------------------------------------------------------
@@ -376,16 +378,30 @@ def _present_one(e: RenderEnvelope) -> str:
     return parts[e.lang]
 
 
+def transaction_line(transaction: TransactionFact, lang: Lang) -> str:
+    """One transaction as a short line: the amount, the merchant when known, and the date."""
+    merchant = (
+        f" {_MERCHANT_PREPOSITION[lang]} {transaction.merchant}" if transaction.merchant else ""
+    )
+    amount = amount_text(transaction.amount, lang)
+    return f"{amount}{merchant}, {format_date(transaction.occurred_on, lang)}"
+
+
 def _present_list(e: RenderEnvelope) -> str:
-    """Introduce a list of transactions that might match and ask which one the customer means."""
-    return {
-        "es": "Encontré varias transacciones que podrían coincidir. Elija el número de la que "
-        "quiere disputar.",
-        "pt": "Encontrei várias transações que podem coincidir. Escolha o número da que você "
-        "quer contestar.",
-        "en": "I found several transactions that might match. Choose the number of the one "
-        "you want to dispute.",
+    """Introduce the numbered list of recent transactions and ask which one the customer means."""
+    header = {
+        "es": "Estas son sus transacciones más recientes. Elija el número de la que quiere "
+        "disputar:",
+        "pt": "Estas são as suas transações mais recentes. Escolha o número da que você quer "
+        "contestar:",
+        "en": "These are your most recent transactions. Choose the number of the one you want "
+        "to dispute:",
     }[e.lang]
+    lines = (
+        f"{number}. {transaction_line(transaction, e.lang)}"
+        for number, transaction in enumerate(e.facts.transactions, start=1)
+    )
+    return "\n".join((header, *lines))
 
 
 def _present_narrow(e: RenderEnvelope) -> str:
