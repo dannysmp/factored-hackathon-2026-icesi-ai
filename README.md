@@ -71,7 +71,7 @@ Design rules that follow from this:
 | `evals/` | Golden set, adversarial cases, evaluation harness and judge rubric |
 | `web/` | React customer chat and human-agent console (a read-only viewer of the handoff queue) |
 | `infra/` | AWS provisioning and deployment scripts, the reverse-proxy configuration and the deployment runbook; the pipeline itself is `.github/workflows/deploy.yml` |
-| `docs/` | Limitations, the security checklist, the release checklist and the demonstration scripts |
+| `docs/` | Limitations, the security checklist, the release checklist, the demonstration scripts, the video script, the slide content and the delivery message |
 | `reports/` | Generated reports (data profile, analyses, operational seed, evaluation results) |
 | `Dockerfile`, `docker-compose*.yml` | The backend image, the local Postgres serving store, and the deployed stack composed on top of it |
 | `scripts/` | Repository tooling, such as the secret-scan self-test |
