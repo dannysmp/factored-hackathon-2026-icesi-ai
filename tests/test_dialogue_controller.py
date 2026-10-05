@@ -640,7 +640,7 @@ def test_a_message_that_says_nothing_reliable_about_the_language_does_not_switch
 
 
 def test_the_controller_passes_its_own_domain_date_as_the_understanding_reference_date() -> None:
-    """AC-E5-16: a customer-stated transaction date is resolved against the domain calendar's own
+    """A customer-stated transaction date is resolved against the domain calendar's own
     reference date, never the wall clock — proven by reading back exactly what the controller
     itself passed into ``understand``, not by trusting it silently matches."""
     store = InMemoryDialogueStore()
@@ -1349,7 +1349,7 @@ def test_replaying_an_ineligible_turn_never_re_evaluates_or_files(
 
 
 # -----------------------------------------------------------------------------
-# The console's own turn history (ADR-17)
+# The console's own turn history
 # -----------------------------------------------------------------------------
 
 
@@ -1725,6 +1725,26 @@ def test_policy_question_answers_or_abstains(policy: Policy, retriever: LexicalR
     )
     abstained = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert abstained.reply
+
+
+def test_a_policy_question_answered_by_a_section_without_a_figure_cites_the_section(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    controller, _ = _controller(
+        _plain(NluIntent.POLICY_QUESTION, policy_query="que transacciones se pueden disputar"),
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+
+    response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.reply == (
+        "Puede consultarlo en la sección “Qué transacciones se pueden disputar” de nuestra "
+        "política de disputas."
+    )
 
 
 @pytest.mark.parametrize(
@@ -2195,7 +2215,7 @@ def test_get_transaction_failure_while_presenting_confirmation_hands_off(
 def test_a_matchless_evaluate_dispute_result_hands_off_on_first_evaluation(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
-    """None (AC-E4-06: the reference stopped resolving, or stopped being this customer's own,
+    """None (the reference stopped resolving, or stopped being this customer's own,
     between an earlier read and this evaluation) is routed through the same fail-closed handoff
     as a genuine ToolFailure, never re-interpreted as an ineligible or eligible decision."""
     store = InMemoryDialogueStore()

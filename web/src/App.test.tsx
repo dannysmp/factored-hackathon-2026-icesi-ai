@@ -78,6 +78,37 @@ describe('App', () => {
     expect(await screen.findByText('Hola, ¿en qué puedo ayudarle?')).toBeInTheDocument()
   })
 
+  it('frames the sign-in step with a banner holding the page title and one main landmark', async () => {
+    stubTheWholeFlow()
+    render(<App />)
+
+    await screen.findByLabelText(es['signin.personaLabel'])
+    expect(screen.getAllByRole('banner')).toHaveLength(1)
+    expect(screen.getByRole('banner')).toContainElement(
+      screen.getByRole('heading', { level: 1, name: 'Dispute intake' }),
+    )
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+
+  it('frames the chat step with the same banner, title and single main landmark', async () => {
+    stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<App />)
+
+    await screen.findByLabelText(es['signin.personaLabel'])
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    await screen.findByRole('region', { name: 'Customer chat' })
+
+    expect(screen.getAllByRole('banner')).toHaveLength(1)
+    expect(screen.getByRole('banner')).toContainElement(
+      screen.getByRole('heading', { level: 1, name: 'Dispute intake' }),
+    )
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+
   it('has no automatically detectable accessibility violations at the sign-in step', async () => {
     stubTheWholeFlow()
     const { container } = render(<App />)
