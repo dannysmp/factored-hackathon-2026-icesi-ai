@@ -9,6 +9,7 @@ function entry(overrides: Partial<TimelineEntry> = {}): TimelineEntry {
   return {
     occurred_at: '2026-06-18T14:03:00Z',
     trace_id: 'trace-0001',
+    turn_id: 'turn-0001',
     intent: 'present_transactions',
     state_before: 'awaiting_transaction',
     state_after: 'awaiting_reason',
@@ -52,5 +53,11 @@ describe('TimelinePanel', () => {
 
     // Both the reason-code and the policy-version cells fall back to an em dash on this entry.
     expect(screen.getAllByRole('cell', { name: '—' })).toHaveLength(2)
+  })
+
+  it('does not carry the openable-row class, since its rows cannot be opened', () => {
+    const { container } = render(<TimelinePanel entries={[entry()]} />)
+
+    expect(container.querySelector('.queue-table-openable')).toBeNull()
   })
 })

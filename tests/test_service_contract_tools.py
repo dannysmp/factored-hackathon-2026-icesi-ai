@@ -56,7 +56,7 @@ def test_only_the_create_tool_enforces_a_permission_invariant() -> None:
 
 
 def test_the_create_tool_requires_every_permission_invariant() -> None:
-    """The full set of invariants ADR-3 assigns to the create tool, nothing assumed silently."""
+    """The create tool carries every invariant of the permission set, nothing assumed silently."""
     assert PERMISSIONS[Tool.CREATE_DISPUTE_CASE] == {
         Permission.CONFIRMED,
         Permission.IDEMPOTENT,
@@ -67,7 +67,7 @@ def test_the_create_tool_requires_every_permission_invariant() -> None:
 
 
 def test_no_tool_refusal_code_states_a_policy_verdict() -> None:
-    """not_eligible and requires_person are not codes of this tool (AC-E4-13).
+    """not_eligible and requires_person are not codes of this tool.
 
     ``duplicate_open_case`` is a deliberate exception: the policy's reason code names the same
     real condition the tool re-checks defensively at creation time, against a race between
@@ -97,7 +97,7 @@ def test_transaction_filters_refuse_a_window_that_starts_after_it_ends() -> None
 
 
 def test_transaction_filters_have_no_customer_field() -> None:
-    """The session supplies the customer; a filter cannot express a foreign one (AC-E4-07)."""
+    """The session supplies the customer; a filter cannot express a foreign one."""
     assert "customer_id" not in TransactionFilters.model_fields
 
 
@@ -185,7 +185,7 @@ def test_a_transaction_page_rejects_a_negative_total_count() -> None:
 
 
 def test_an_empty_transaction_page_is_a_valid_result() -> None:
-    """No match is a normal result, not an error (AC-E4-10)."""
+    """No match is a normal result, not an error."""
     page = TransactionPage()
 
     assert page.items == ()
@@ -200,6 +200,13 @@ def test_a_tool_failure_is_retryable_by_default() -> None:
 
 
 def _decision(**overrides: object) -> PolicyDecision:
+    """Build an eligible policy decision that requires confirmation, with ``overrides`` applied.
+
+    Parameters
+    ----------
+    **overrides : object
+        Field values that replace the defaults, so a test varies exactly one thing.
+    """
     fields: dict[str, object] = {
         "outcome": Outcome.ELIGIBLE,
         "reason_code": ReasonCode.ELIGIBLE,
@@ -214,6 +221,18 @@ def _decision(**overrides: object) -> PolicyDecision:
 
 
 def _create_request(**overrides: object) -> CreateDisputeCaseRequest:
+    """Build a confirmed create request carrying an eligible decision, with ``overrides`` applied.
+
+    Parameters
+    ----------
+    **overrides : object
+        Field values that replace the defaults, so a test varies exactly one thing.
+
+    Raises
+    ------
+    pydantic.ValidationError
+        The overrides make the request invalid.
+    """
     fields: dict[str, object] = {
         "transaction_ref": "TX-1",
         "category": DisputeCategory.UNRECOGNIZED_CHARGE,
@@ -226,14 +245,14 @@ def _create_request(**overrides: object) -> CreateDisputeCaseRequest:
 
 
 def test_a_create_request_may_carry_no_decision() -> None:
-    """A missing decision is representable, so fail-closed refusal (AC-E4-41) can be exercised."""
+    """A missing decision is representable, so a fail-closed refusal can be exercised."""
     request = _create_request(decision=None)
 
     assert request.decision is None
 
 
 def test_a_create_request_has_no_customer_field() -> None:
-    """The session supplies the customer; a create request cannot name a foreign one (AC-E4-07)."""
+    """The session supplies the customer; a create request cannot name a foreign one."""
     assert "customer_id" not in CreateDisputeCaseRequest.model_fields
 
 
@@ -263,7 +282,7 @@ def test_a_refused_result_carries_no_case_number() -> None:
 
 
 def test_a_duplicate_open_case_refusal_carries_the_existing_case_number() -> None:
-    """AC-E4-16: the customer is told which case is already on file for the transaction."""
+    """The customer is told which case is already on file for the transaction."""
     result = CreateDisputeCaseResult(
         created=False,
         refusal=ToolRefusalCode.DUPLICATE_OPEN_CASE,
@@ -320,7 +339,7 @@ def test_the_tool_port_declares_every_tool() -> None:
 
 
 def test_create_dispute_case_declares_a_store_failure_path() -> None:
-    """A store or audit-write failure fails the filing closed, never silently (AC-E4-19)."""
+    """A store or audit-write failure fails the filing closed, never silently."""
     hints = get_type_hints(ToolPort.create_dispute_case)
 
     assert hints["return"] == CreateDisputeCaseResult | ToolFailure

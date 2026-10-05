@@ -4,32 +4,33 @@ Risk Signal Probe
 
 Overview
 --------
-The pre-registered signal probe of `plan/product/preregistration-risk-probe.md`: a logistic
-regression baseline and a small, capped gradient-boosted classifier, both fitted on the training
-period of the risk feature mart on identical features (AC-E6-01), then scored on the validation
-period with the area under the precision-recall curve against the period's base rate. Every run is
-appended to the experiment log.
+The first modelling step on the risk feature mart: a logistic regression baseline and a small,
+capped gradient-boosted classifier, both fitted on the training period on identical features and
+then scored on the validation period with the area under the precision-recall curve (PR-AUC),
+set against the period's base rate (its fraud prevalence). The question it answers is whether the
+features carry any signal at all. Every run is appended to the experiment log. The shared
+loading, preprocessing and logging helpers defined here are reused by `models.boosted` and
+`models.calibration`.
 
 Scope
 -----
 In: loading the train and validation periods, one shared preprocessing step fitted on train only,
-fitting both models, the validation metric, the experiment-log entry, the command line
+fitting both models, the validation metric, the experiment-log entry and the command line
 ``python -m models.probe``.
-Out: the precision floor, the threshold, the bootstrap interval, the routing decision and the model
-card. Those belong to the boosted-model and calibration slices (E6 slices 2 and 3): this probe only
-decides, by its result, whether those slices proceed in their planned order or are reordered.
+Out: the precision floor, the threshold, the bootstrap interval, the routing decision and the
+model card. Those belong to `models.boosted` and `models.calibration`; this probe only reports
+whether the features separate fraud from non-fraud better than chance.
 
 Design Principles
 -----------------
 - **The test period is never read.** Only rows whose ``split`` is ``train`` or ``validation`` are
   queried; a test-period row cannot move a metric this probe reports.
-- **Identical features for both models** (AC-E6-01): one ``ColumnTransformer`` (one-hot encoding
-  for text columns, median imputation for numeric ones) is fitted on the training rows only and
-  used to transform both periods; both models are fitted on its output.
+- **Identical features for both models:** one ``ColumnTransformer`` (one-hot encoding for text
+  columns, median imputation for numeric ones) is fitted on the training rows only and used to
+  transform both periods; both models are fitted on its output.
 - **A capped fit, not a wall-clock timeout.** The boosted model's complexity (`BOOST_MAX_ITER`,
   `BOOST_MAX_DEPTH`) is fixed low so the fit finishes quickly on any machine, deterministically,
-  rather than racing a clock: the gate this probe decides must run every time, on every machine,
-  in bounded time.
+  rather than racing a clock: the probe must run every time, on every machine, in bounded time.
 - **Deterministic.** A fixed seed (`SEED`) is used for both models; the same mart and split give
   the same metrics.
 - **The experiment log is append-only** (`models/experiments.jsonl`): each run adds one line and
@@ -39,16 +40,17 @@ Design Principles
 
 Runtime Contract
 ----------------
-``load_period(mart, split_column_types, period) -> PeriodArrays``
-``run_probe(mart, *, split, seed, now) -> ProbeResult``
+``load_period(con, mart, column_types, period, feature_names) -> PeriodArrays``
+``run_probe(mart, manifest, *, split, seed, now) -> ProbeResult``
 ``append_experiment(result, log_path) -> None``
 
 Limitations
 -----------
-No feature ablation (the with/without comparison for ``customer_country`` and
-``country_mismatch`` promised in ``models/README.md``) runs here; that is the boosted-model slice's
-job. A validation PR-AUC clearly above the base rate is a necessary, not sufficient, condition for
-a usable score: the threshold and its precision floor are decided later, on the test period, once.
+No feature ablation runs here (the with/without comparison for ``customer_country`` and
+``country_mismatch`` described in ``models/README.md``); `models.boosted` runs it. A validation
+PR-AUC clearly above the base rate is a necessary, not sufficient, condition for a usable score:
+the threshold is chosen later, on the validation period, and its precision is confirmed once on
+the test period.
 """
 
 from __future__ import annotations
@@ -61,7 +63,7 @@ from collections.abc import Sequence  # Argument type of main
 from dataclasses import dataclass  # Immutable result objects
 from datetime import UTC, datetime  # The run timestamp, supplied by the caller
 from pathlib import Path  # Locations
-from typing import Protocol  # The experiment-log entry contract other slices reuse
+from typing import Protocol  # The experiment-log entry contract shared by every run type
 
 # Third-party libraries
 import duckdb  # Reading the mart
@@ -84,7 +86,8 @@ DEFAULT_MANIFEST = Path("data/gold/risk_features/manifest.json")
 DEFAULT_LOG = Path("models/experiments.jsonl")
 PERIODS = ("train", "validation")
 
-# Fixed for every run of this probe, so results are comparable across commits.
+# Fixed for every run of this probe, so results are comparable across commits. The boosted
+# model's cap keeps the fit bounded in time (see the module docstring).
 SEED = 20260926
 BOOST_MAX_ITER = 50
 BOOST_MAX_DEPTH = 3
@@ -95,7 +98,12 @@ _PERIOD_QUERY = "SELECT {columns} FROM read_parquet(?) WHERE split = ?"
 
 @dataclass(frozen=True, slots=True)
 class PeriodArrays:
-    """One period's feature matrix and label, in the column order of `FEATURES`."""
+    """One period's feature matrix and label, split by column type.
+
+    Text features go in `categorical` and numeric ones in `numeric`; each keeps the order its
+    names have in `FEATURES`, which is the column order `_preprocessor` addresses by position.
+    `rows` is the period's row count and `positives` its number of fraud-labelled rows.
+    """
 
     categorical: np.ndarray  # object, shape (rows, n_categorical)
     numeric: np.ndarray  # float64, shape (rows, n_numeric)
@@ -106,7 +114,7 @@ class PeriodArrays:
 
 @dataclass(frozen=True, slots=True)
 class ModelResult:
-    """One model's fixed parameters and its validation metric."""
+    """One model's name, the parameters it was fitted with and its validation PR-AUC."""
 
     name: str
     params: dict[str, object]
@@ -115,7 +123,12 @@ class ModelResult:
 
 @dataclass(frozen=True, slots=True)
 class ProbeResult:
-    """The full outcome of one probe run."""
+    """The full outcome of one probe run, ready to be appended to the experiment log.
+
+    Records the code version, the mart's own version and output digest, the split boundaries and
+    seed, the row and positive counts per period, the validation base rate (positives over rows,
+    `0.0` for an empty period) and each model's result.
+    """
 
     timestamp: str
     code_version: str
@@ -129,7 +142,10 @@ class ProbeResult:
     models: tuple[ModelResult, ...]
 
     def as_dict(self) -> dict[str, object]:
-        """The result as JSON-serialisable data, one line of the experiment log."""
+        """The result as JSON-serialisable data, one line of the experiment log.
+
+        Split dates are rendered as ISO strings; the keys match the dataclass fields.
+        """
         return {
             "timestamp": self.timestamp,
             "code_version": self.code_version,
@@ -151,7 +167,11 @@ class ProbeResult:
 
 
 def _column_types(con: duckdb.DuckDBPyConnection, mart: str) -> dict[str, str]:
-    """The DuckDB type of every column of `mart`, keyed by name."""
+    """The DuckDB type name of every column of the parquet file `mart`, keyed by column name.
+
+    `load_period` uses it to treat `VARCHAR` columns as text features and every other type as
+    numeric.
+    """
     return dict(con.execute(_TYPE_QUERY, [mart]).fetchall())
 
 
@@ -172,7 +192,11 @@ def _as_categorical(column: np.ndarray) -> np.ndarray:
 
 
 def _as_numeric(column: np.ndarray) -> np.ndarray:
-    """`column` as a float64 array, `nan` where the value is empty."""
+    """`column` as a float64 array, `nan` where the value is empty (masked).
+
+    Booleans become 0.0 or 1.0, so the label column can be converted with this and then cast back
+    to `bool`. The `nan` values are filled later by the preprocessor's median imputation.
+    """
     return np.asarray(np.ma.filled(column.astype(np.float64), np.nan))
 
 
@@ -185,8 +209,11 @@ def load_period(
 ) -> PeriodArrays:
     """Load one period's rows of `mart`; only `period` is read, never another one.
 
-    `feature_names` selects a subset of `FEATURES` (in `FEATURES`' own order), for an ablation
-    that trains without some of them; it defaults to every feature.
+    The query filters on the mart's own ``split`` column, so which rows belong to a period is
+    decided where the mart is built, not here. `column_types` (from `_column_types`) decides which
+    features are text and which numeric. `feature_names` selects a subset of `FEATURES` (in
+    `FEATURES`' own order), for an ablation that trains without some of them; it defaults to every
+    feature. Returns the period's arrays with its row and fraud-positive counts.
 
     Raises
     ------
@@ -214,7 +241,13 @@ def load_period(
 
 
 def _preprocessor(n_categorical: int, n_numeric: int) -> ColumnTransformer:
-    """The shared preprocessing step: one-hot text columns, median-impute numeric ones."""
+    """The shared preprocessing step: one-hot text columns, median-impute numeric ones.
+
+    Columns are addressed by position: the first `n_categorical` are text, the next `n_numeric`
+    numeric, matching the `np.hstack([categorical, numeric])` layout every caller builds. Text
+    categories unseen at fit time encode as all zeros instead of raising. The returned transformer
+    is unfitted; callers fit it on training rows only.
+    """
     categorical_columns = list(range(n_categorical))
     numeric_columns = list(range(n_categorical, n_categorical + n_numeric))
     return ColumnTransformer(
@@ -228,7 +261,12 @@ def _preprocessor(n_categorical: int, n_numeric: int) -> ColumnTransformer:
 def _fit_models(
     train: PeriodArrays, validation: PeriodArrays, *, seed: int
 ) -> tuple[ModelResult, ...]:
-    """Fit both models on `train`'s identical features and score them on `validation`."""
+    """Fit both models on `train`'s identical features and score them on `validation`.
+
+    The logistic baseline and the capped boosted model are both class-balanced and seeded with
+    `seed`; the preprocessor is fitted on `train` alone. Returns one `ModelResult` per model
+    (logistic, then boosted) holding the validation PR-AUC. Nothing is written.
+    """
     preprocessor = _preprocessor(train.categorical.shape[1], train.numeric.shape[1])
     x_train = preprocessor.fit_transform(np.hstack([train.categorical, train.numeric]))
     x_validation = preprocessor.transform(np.hstack([validation.categorical, validation.numeric]))
@@ -276,6 +314,13 @@ def run_probe(
 ) -> ProbeResult:
     """Run the probe on `mart` and return its result.
 
+    Opens a short-lived DuckDB connection to load the train and validation periods, fits both
+    models and scores them on validation. `manifest` is the mart's build manifest, read only for
+    its code version and output digest, which are stamped on the result. `split` is recorded on
+    the result and not used to select rows (the mart is already labelled by period). `now` is
+    the run timestamp, supplied by the caller. Writes nothing; the caller appends the result to
+    the log.
+
     Raises
     ------
     FileNotFoundError
@@ -314,13 +359,20 @@ def run_probe(
 
 
 class ExperimentResult(Protocol):
-    """What any slice's result needs to append to an experiment log: JSON-serialisable data."""
+    """What any run's result needs in order to be appended to an experiment log.
+
+    A single method, `as_dict`, returning JSON-serialisable data for one log line.
+    """
 
     def as_dict(self) -> dict[str, object]: ...
 
 
 def append_experiment(result: ExperimentResult, log_path: Path) -> None:
-    """Append `result` as one line of `log_path`; earlier lines are never touched."""
+    """Append `result` as one JSON line of `log_path`; earlier lines are never touched.
+
+    Creates the log's parent directory when missing. Keys are sorted so a line is stable for a
+    given result.
+    """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(result.as_dict(), sort_keys=True) + "\n")
@@ -332,8 +384,13 @@ def append_experiment(result: ExperimentResult, log_path: Path) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the probe and append its result to the experiment log; return the exit code."""
-    parser = argparse.ArgumentParser(description="Run the pre-registered risk signal probe.")
+    """Run the probe and append its result to the experiment log; return the exit code.
+
+    Options select the mart, its manifest, the split file, the log and the seed. Returns `0` on
+    success and `1` when the split file is invalid, the mart or manifest is missing, or DuckDB
+    cannot read the mart; the failure is logged by exception type only.
+    """
+    parser = argparse.ArgumentParser(description="Run the risk signal probe.")
     parser.add_argument("--mart", type=Path, default=DEFAULT_MART)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--split", type=Path, default=DEFAULT_SPLIT)

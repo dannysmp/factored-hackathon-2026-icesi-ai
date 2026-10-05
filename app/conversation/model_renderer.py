@@ -65,9 +65,11 @@ from contracts.service_v1.verification import CandidateReply  # What this module
 
 logger = logging.getLogger(__name__)
 
+# The versioned prompt this adapter loads when none is injected.
 _PROMPT_NAME = "render_v1"
 _MAX_TEXT_LENGTH = 2000  # CandidateReply.raw_text's own bound; the one repair truncates to it.
 
+# The forced tool call: the model answers with the reply text only, placeholders unresolved.
 _REPLY_TOOL = ToolSpec(
     name="write_reply",
     description="Record the reply to send the customer, with grounded values as placeholders.",
@@ -119,7 +121,11 @@ class RenderUnavailable(Exception):
 
 
 class LlmRenderer:
-    """Writes one candidate reply through the LLM port."""
+    """Writes one candidate reply through the LLM port.
+
+    Holds the port, the model id and the prompt; it keeps no per-conversation state, so one
+    instance serves every session.
+    """
 
     def __init__(self, llm: LlmClient, *, model: str, prompt: PromptTemplate | None = None) -> None:
         """
