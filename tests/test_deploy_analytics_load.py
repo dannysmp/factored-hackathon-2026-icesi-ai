@@ -244,6 +244,8 @@ def test_the_check_refuses_a_table_name_that_is_not_plain(stubbed: Path) -> None
     assert not (stubbed / "payload.json").exists()
 
 
+_NOTICE = "removed sample database 'Sample Database'"
+
 # STDERR_MODE decides what the host's error stream answers: a notice, the literal "None" the CLI
 # prints for an empty field, nothing, or a failed call.
 _THEME_AWS_STUB = """#!/usr/bin/env bash
@@ -255,16 +257,14 @@ case "$*" in
   *"StandardOutputContent"*) echo "| Operations checklist |"; exit 0 ;;
   *"StandardErrorContent"*)
     case "$STDERR_MODE" in
-      notice) echo "removed sample database 'Sample Database'"; exit 0 ;;
+      notice) echo "$NOTICE"; exit 0 ;;
       none) echo None; exit 0 ;;
       empty) echo; exit 0 ;;
-      *) exit 1 ;;
+      *) echo "$NOTICE" >&2; exit 1 ;;
     esac ;;
 esac
 exit 1
 """
-
-_NOTICE = "removed sample database 'Sample Database'"
 
 
 def _run_theme(tmp_path: Path, stderr_mode: str) -> subprocess.CompletedProcess[str]:
@@ -280,6 +280,7 @@ def _run_theme(tmp_path: Path, stderr_mode: str) -> subprocess.CompletedProcess[
         **_environment(),
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "STDERR_MODE": stderr_mode,
+        "NOTICE": _NOTICE,
     }
     env.pop("AWS_PROFILE", None)
     env.pop("AWS_REGION", None)
@@ -317,6 +318,15 @@ def test_the_dashboard_step_shows_no_notice_when_the_host_reports_none(
     assert all(line.strip() for line in result.stderr.splitlines())
 
 
+def test_the_dashboard_step_says_when_the_hosts_notices_could_not_be_read(
+    tmp_path: Path,
+) -> None:
+    result = _run_theme(tmp_path, "failed")
+
+    assert "notices could not be read" in result.stderr
+    assert _NOTICE not in result.stderr
+
+
 _OVERLAY_FLAG = "-f docker-compose.metabase.yml"
 _ORPHAN_REMOVAL = re.compile(r"--remove-orphans|COMPOSE_REMOVE_ORPHANS")
 
@@ -347,6 +357,7 @@ def test_the_orphan_scan_reads_the_deploy_script_and_the_production_compose_file
     scanned = {path.relative_to(REPO_ROOT).as_posix() for path, _ in _tracked_texts()}
 
     assert {"infra/scripts/05-deploy.sh", "docker-compose.prod.yml"} <= scanned
+    assert "docs/images/case-filed.png" in scanned
 
 
 def test_no_command_can_remove_the_dashboard_container_as_an_orphan() -> None:

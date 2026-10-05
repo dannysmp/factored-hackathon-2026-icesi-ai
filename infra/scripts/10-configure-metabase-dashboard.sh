@@ -92,8 +92,12 @@ for _ in $(seq 1 60); do
   case "${status}" in
     Success)
       log "dashboard theming succeeded; writing the checklist it printed"
+      # The notices only say what the host removed; reading them must never fail a finished step.
       notes="$(aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${instance_id}" \
-        --query "StandardErrorContent" --output text 2>/dev/null)" || notes=""
+        --query "StandardErrorContent" --output text 2>/dev/null)" || {
+        log "the host's notices could not be read; continuing without them"
+        notes=""
+      }
       if [[ -n "${notes}" && "${notes}" != "None" ]]; then
         printf '%s\n' "${notes}" >&2
       fi
