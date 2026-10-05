@@ -15,8 +15,7 @@ In: matching a closed, curated vocabulary of relative day terms, weekday names a
 phrases and month-and-day phrases ("June 3rd", "3 de junio", "21 de abril") per language, and a
 numeric day-first date pattern; resolving each against the reference date the caller supplies.
 Out: recognizing that a message mentions a date at all (the model's own job, recorded as
-``date_expression``); showing a resolved date back to the customer in words before it is used,
-which this module does not do.
+``date_expression``); this module only resolves a date and does not confirm it with the customer.
 
 Design Principles
 ------------------
@@ -36,7 +35,8 @@ Runtime Contract
 ``resolve(expression, *, language, reference_date) -> tuple[date, DateSource] | None``. A numeric
 date (``dd/mm`` or ``dd/mm/yyyy``) resolves with any ``language``, including ``None``; every other
 form needs the language to pick its vocabulary. ``DateSource.RELATIVE`` is a relative day term or a
-weekday, ``DateSource.PARTIAL`` a day of the month, ``DateSource.NUMERIC`` a numeric date.
+weekday, ``DateSource.PARTIAL`` a day of the month or a month and day with no year,
+``DateSource.ABSOLUTE`` a month and day that states a year, ``DateSource.NUMERIC`` a numeric date.
 """
 
 from __future__ import annotations

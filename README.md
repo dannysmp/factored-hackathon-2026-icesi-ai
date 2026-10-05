@@ -276,8 +276,10 @@ every pull request and blocks the merge on a failure.
 [`reports/evaluation.md`](reports/evaluation.md) is the committed result of the last full run:
 workload, versions, headline metrics per system, repeated-run variability, the failure gallery,
 unsafe outcomes, judge validation, learned components and limitations. Every figure is measured
-offline on the golden set. The judge's agreement with human raters is not yet measured: its section
-says so, and `make judge-validation` completes it once two raters return their sheets. See
+offline on the golden set. Two human raters and the judge scored the same 50 cases, and the judge
+agreed with them on too few to be trusted on any dimension, so the report states "not reportable by
+the judge" and shows the raters' means instead. The figures describe the commit the report names,
+not the current head, which carries later behaviour fixes. See
 [`docs/limitations.md`](docs/limitations.md).
 
 ### Configuration

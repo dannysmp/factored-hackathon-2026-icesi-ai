@@ -50,3 +50,10 @@
   margin: var(--space-3) 0 0;
   font-size: var(--font-size-sm);
 }
+
+.filedEarlier {
+  margin: var(--space-1) 0 0;
+  font-weight: var(--font-weight-emphasis);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}

@@ -1,3 +1,4 @@
+/* Styles for LiveAnnouncer: the live region is visually hidden but stays in the accessibility tree. */
 /* The standard visually-hidden idiom: kept in the accessibility tree, removed from the layout.
    Its 1px values are the technique's own constants, not design-scale values. */
 .announcer {

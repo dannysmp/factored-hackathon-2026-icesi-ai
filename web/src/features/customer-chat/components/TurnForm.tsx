@@ -1,3 +1,6 @@
+/**
+ * The free-text message form of the customer chat.
+ */
 import { useId, useState } from 'react'
 import type { JSX, RefObject, SyntheticEvent } from 'react'
 import { Button } from '../../../components/ui/Button'
@@ -26,7 +29,8 @@ function announceStep(remaining: number): number | null {
  * using a screen reader keeps their place instead of losing focus to the page. After a message
  * is sent, focus returns to the field. A hint with the remaining characters appears as the
  * limit gets close, so a long message is never refused without warning; a screen reader is told
- * at 200, 100 and 0 characters left, so a paste cut at the limit is never silent.
+ * at 200, 100 and 0 characters left, so a paste cut at the limit is never silent. Blank input is
+ * never submitted, and the text is trimmed before it is sent.
  */
 export function TurnForm({
   onSubmit,

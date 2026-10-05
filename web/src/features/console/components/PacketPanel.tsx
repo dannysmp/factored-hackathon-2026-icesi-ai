@@ -1,9 +1,10 @@
+/** The handoff packet panel: the summary, verified facts, actions, evidence and open questions. */
 import { useId } from 'react'
 import type { JSX } from 'react'
 import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { HandoffPacket, LocalizedTitle } from '../contracts'
 import type { Lang } from '../../customer-chat/contracts'
-import { formatDate, formatMoney, formatShare } from '../format'
+import { formatDate, formatMoney, formatScoreAgainstThreshold, formatShare } from '../format'
 import {
   CATEGORY_LABELS,
   LANGUAGE_LABELS,
@@ -16,9 +17,9 @@ import {
 } from '../labels'
 
 /** The title of a policy source in the case's own language — the customer's own words, never
- * the console's fixed Spanish (D91 draws that line at console chrome, not case content). Falls
- * back to the first title on record only if the exact language is somehow missing, which the
- * backend's own `SourceRef` validator (one title per language) should never actually produce. */
+ * the console's fixed Spanish (the fixed-Spanish rule covers console chrome, not case content).
+ * Falls back to the first title on record only if the exact language is missing, which the
+ * backend's `SourceRef` validator (one title per language) should never produce. */
 function titleInLanguage(titles: readonly LocalizedTitle[], language: Lang): string {
   return titles.find((title) => title.lang === language)?.text ?? titles[0]?.text ?? '—'
 }
@@ -26,12 +27,13 @@ function titleInLanguage(titles: readonly LocalizedTitle[], language: Lang): str
 /** What the system calls a customer it has no name for. */
 const UNKNOWN_FIRST_NAME = 'Customer'
 
+/** The customer's first name, or the Spanish word for "customer" when the system had no name. */
 function customerName(firstName: string): string {
   return firstName === UNKNOWN_FIRST_NAME ? 'Cliente' : firstName
 }
 
 /**
- * The packet (AC-E10-02): the request first, as a summary of who is asking and why, then the
+ * The packet: the request first, as a summary of who is asking and why, then the
  * verified facts, the actions taken or refused, the evidence (reason codes, policy version, source
  * sections, and the risk score with its uncertainty, base rate and routing threshold when there is
  * one), and the open questions. Every value is written for an agent reading Spanish: a known
@@ -43,11 +45,14 @@ function customerName(firstName: string): string {
  * and a visible cue, so a Spanish reader knows it is not the console speaking.
  *
  * `TransactionFact`/`ProductLabel` carry no document number or full card/account number at all
- * (`contracts/service_v1/envelope.py`) — nothing here can expose one (AC-E10-05).
+ * (`contracts/service_v1/envelope.py`) — nothing here can expose one; the customer shows as a
+ * first name and a masked id only.
  */
 export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element {
   const summaryId = useId()
   const customerLanguage = LANGUAGE_LABELS[packet.language]
+  const { risk } = packet.evidence
+  const riskShares = risk === null ? null : formatScoreAgainstThreshold(risk.score, risk.threshold)
 
   return (
     <div className="packet">
@@ -124,7 +129,7 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
           ))}
           {packet.attempted_action !== null && (
             <li>
-              {actionLabel(packet.attempted_action.action)} (intentada, no completada):{' '}
+              {actionLabel(packet.attempted_action.action)} — intento no completado:{' '}
               {actionResultLabel(packet.attempted_action.result)}
             </li>
           )}
@@ -161,21 +166,20 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
           </ul>
         </>
       )}
-      {packet.evidence.risk !== null && (
+      {risk !== null && riskShares !== null && (
         <>
           <h4>Puntaje de riesgo</h4>
           <dl>
             <dt>Puntaje</dt>
-            <dd>{formatShare(packet.evidence.risk.score)}</dd>
+            <dd>{riskShares.score}</dd>
             <dt>Intervalo</dt>
             <dd>
-              {formatShare(packet.evidence.risk.interval_low)} –{' '}
-              {formatShare(packet.evidence.risk.interval_high)}
+              {formatShare(risk.interval_low)} – {formatShare(risk.interval_high)}
             </dd>
             <dt>Tasa base</dt>
-            <dd>{formatShare(packet.evidence.risk.base_rate)}</dd>
+            <dd>{formatShare(risk.base_rate)}</dd>
             <dt>Umbral de escalamiento</dt>
-            <dd>{formatShare(packet.evidence.risk.threshold)}</dd>
+            <dd>{riskShares.threshold}</dd>
           </dl>
           <p className="packet-cue">
             Este puntaje es una estimación calculada con datos sintéticos, no con datos reales de

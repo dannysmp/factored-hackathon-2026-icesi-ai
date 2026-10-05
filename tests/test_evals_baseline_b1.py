@@ -32,10 +32,13 @@ from app.llm.client import LlmRequestRejected, LlmUnavailable
 from app.persistence.migrate import apply_migrations
 from app.retrieval.lexical import LexicalRetriever
 from contracts.service_v1.envelope import Intent, Slot
+from contracts.service_v1.tools import Tool
+from evals.injector import FailureInjectingToolPort
 from evals.metrics import CaseResult
-from evals.models import Case, CaseCategory
+from evals.models import Case, CaseCategory, InjectedToolFailure
 from evals.runner.baselines.b1 import (
     _MAX_TOOL_ROUNDS,
+    _build_dispatcher,
     _log_call_completed,
     _run_turn,
     build_b1_dependencies,
@@ -221,7 +224,7 @@ def test_run_case_logs_the_real_cost_of_every_call_it_makes(
 ) -> None:
     """Unlike P, B1's own client discards its token counts once send() returns; this is the only
     place that spend is ever recorded, so a real evaluation run's B1 cost must be computable from
-    these lines alone, the same guarantee E9 already established for P's own turn_completed."""
+    these lines alone, the same guarantee P's own turn_completed already gives."""
     stub = _StubAnthropic(
         [
             _response(
@@ -648,6 +651,7 @@ def test_run_cases_records_a_failed_case_as_a_named_error_and_continues(
         clock: object,
         customer_id: str,
         lang: str,
+        injected_failure: object,
     ) -> tuple[object, str]:
         return object(), "SESSION-B1-HERMETIC"
 
@@ -695,6 +699,91 @@ def test_run_cases_records_a_failed_case_as_a_named_error_and_continues(
     assert succeeded.correct_outcome is True
 
 
+class _NeverUsed:
+    """A persistence collaborator that accepts any construction and is never called."""
+
+    def __init__(self, *_args: Any, **_kwargs: Any) -> None: ...
+
+
+def _stub_dispatcher_collaborators(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("PostgresToolPort", "PostgresAuditSink", "PostgresHandoffOutbox"):
+        monkeypatch.setattr(f"evals.runner.baselines.b1.{name}", _NeverUsed)
+
+
+def test_a_dispatcher_built_for_an_injected_failure_fails_that_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_dispatcher_collaborators(monkeypatch)
+    failure = InjectedToolFailure(tool=Tool.LIST_TRANSACTIONS, cause="timeout")
+
+    dispatcher, _session_id = _build_dispatcher(
+        _settings(database_url=SecretStr("postgresql://unused")),
+        policy=load_policy(),
+        retriever=LexicalRetriever.from_corpus(),
+        calendar=DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING),
+        clock=lambda: _NOW,
+        customer_id="CUST-A",
+        lang="es",
+        injected_failure=failure,
+    )
+
+    assert isinstance(dispatcher.tool_port, FailureInjectingToolPort)
+    assert dispatcher.tool_port.failure == failure
+    assert isinstance(dispatcher.tool_port.inner, _NeverUsed)
+
+
+def test_run_cases_builds_each_cases_dispatcher_with_that_cases_own_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = InjectedToolFailure(tool=Tool.EVALUATE_DISPUTE, cause="error")
+    built: dict[str, object] = {}
+
+    def fake_build_dispatcher(
+        settings: Settings,
+        *,
+        policy: object,
+        retriever: object,
+        calendar: object,
+        clock: object,
+        customer_id: str,
+        lang: str,
+        injected_failure: object,
+    ) -> tuple[object, str]:
+        built[customer_id] = injected_failure
+        return object(), "SESSION-B1-HERMETIC"
+
+    monkeypatch.setattr("evals.runner.baselines.b1.resolve_customer_id", lambda dsn, ref: ref)
+    monkeypatch.setattr("evals.runner.baselines.b1._build_dispatcher", fake_build_dispatcher)
+    monkeypatch.setattr("evals.runner.baselines.b1.run_case", lambda *a, **k: "transcript")
+    monkeypatch.setattr(
+        "evals.runner.baselines.b1.score_case",
+        lambda dsn, transcript: CaseResult(
+            case_id="x",
+            is_adversarial=False,
+            expected_escalation=False,
+            observed_escalation=False,
+            automation_attempted=True,
+            correct_outcome=True,
+        ),
+    )
+
+    run_cases(
+        NaiveAgentClient(SecretStr("unused"), model=_MODEL, client=_StubAnthropic([])),  # type: ignore[arg-type]
+        _settings(database_url=SecretStr("postgresql://unused")),
+        "postgresql://unused",
+        (
+            _b1_case(case_id="healthy", seed_ref="ops_seed:HEALTHY"),
+            _b1_case(case_id="failing", seed_ref="ops_seed:FAILING", injected_failure=failure),
+        ),
+        policy=load_policy(),
+        retriever=LexicalRetriever.from_corpus(),
+        calendar=DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING),
+        clock=lambda: _NOW,
+    )
+
+    assert built == {"ops_seed:HEALTHY": None, "ops_seed:FAILING": failure}
+
+
 def test_run_cases_catches_a_transient_provider_failure_and_continues(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -721,6 +810,7 @@ def test_run_cases_catches_a_transient_provider_failure_and_continues(
         clock: object,
         customer_id: str,
         lang: str,
+        injected_failure: object,
     ) -> tuple[object, str]:
         return object(), "SESSION-B1-HERMETIC"
 
@@ -793,6 +883,7 @@ def test_run_cases_records_a_request_too_large_against_its_case_and_continues(
         clock: object,
         customer_id: str,
         lang: str,
+        injected_failure: object,
     ) -> tuple[object, str]:
         return object(), "SESSION-B1-HERMETIC"
 
@@ -867,6 +958,7 @@ def test_run_cases_still_propagates_an_account_level_provider_rejection(
         clock: object,
         customer_id: str,
         lang: str,
+        injected_failure: object,
     ) -> tuple[object, str]:
         return object(), "SESSION-B1-HERMETIC"
 

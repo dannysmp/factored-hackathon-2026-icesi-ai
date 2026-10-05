@@ -2,20 +2,21 @@
  * Queue client: the one seam between the console UI and a queue source.
  *
  * `FixtureQueueClient` replays a fixed queue and applies the same `language`/`trigger` filter
- * the real `GET /v1/agent/queue` route applies server side (`contracts/service_v1/console.py`'s
- * own filtering), so the screen behaves identically against either source. `LiveQueueClient` is
- * the real HTTP client, behind an agent's own demo session (now wired into `app/main.py`).
+ * the real `GET /v1/agent/queue` route applies on the server, so the screen behaves identically against either source. `LiveQueueClient` is
+ * the real HTTP client, behind an agent's own demo session. Both validate the payload against
+ * `QueueResponseSchema`, so a malformed response fails loudly instead of rendering partially.
  */
 import type { QueueFilters, QueueItem, QueueResponse } from './contracts'
 import { QueueResponseSchema } from './contracts'
 
 const QUEUE_PATH = '/v1/agent/queue'
 
+/** A source of the agent queue; the UI depends on this, never on a concrete client. */
 export interface QueueClient {
   fetchQueue: (filters: QueueFilters) => Promise<QueueResponse>
 }
 
-/** Raised when the queue route refuses a request; `message` is the problem document's own title,
+/** Raised when an agent route (the queue or a ticket) refuses a request; `message` is the problem document's own title,
  * safe to show an agent (never the raw response body). */
 export class AgentRequestError extends Error {
   readonly status: number
@@ -27,6 +28,10 @@ export class AgentRequestError extends Error {
   }
 }
 
+/**
+ * Builds an `AgentRequestError` from a failed response, using the problem document's `title` when
+ * the body has one and the HTTP status text otherwise. Shared by the queue and ticket-detail clients.
+ */
 export async function toAgentError(response: Response): Promise<AgentRequestError> {
   try {
     const problem: unknown = await response.json()
@@ -40,6 +45,7 @@ export async function toAgentError(response: Response): Promise<AgentRequestErro
   }
 }
 
+/** True when the item satisfies every filter that is set; an unset filter matches everything. */
 function matchesFilters(item: QueueItem, filters: QueueFilters): boolean {
   if (filters.language !== undefined && item.language !== filters.language) {
     return false
@@ -54,7 +60,7 @@ function matchesFilters(item: QueueItem, filters: QueueFilters): boolean {
  * Replays a fixed queue snapshot, filtered in the same terms as the real route.
  *
  * It does not track ticket state across calls (claim, resolve, ...): the console is a read-only
- * viewer (AC-E10-09), and a fixture has nothing to mutate in the first place.
+ * viewer, and a fixture has nothing to mutate in the first place.
  */
 export class FixtureQueueClient implements QueueClient {
   private readonly response: QueueResponse
@@ -71,7 +77,10 @@ export class FixtureQueueClient implements QueueClient {
   }
 }
 
-/** The real queue client, against `GET /v1/agent/queue` behind an agent's own demo session. */
+/**
+ * The real queue client, against `GET /v1/agent/queue` behind an agent's own demo session. Sends
+ * the agent's token as a bearer credential and turns any non-2xx answer into `AgentRequestError`.
+ */
 export class LiveQueueClient implements QueueClient {
   private readonly token: string
 

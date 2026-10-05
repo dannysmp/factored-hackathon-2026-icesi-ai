@@ -192,8 +192,8 @@ class RoutingRules(_Frozen):
     risk_score_threshold: Rate
     escalate_repeat_complainer: StrictBool
     escalate_unknown_amount: StrictBool
-    # Off unless a risk model has met the minimum precision required to route on its score; fraud
-    # claims escalate by category regardless of this flag.
+    # Off while no risk model has cleared its precision floor; fraud claims escalate by
+    # category regardless of this flag.
     risk_routing_enabled: StrictBool
     # Consecutive clarification attempts on the same missing element before the request
     # escalates with `escalate_low_nlu_confidence`; the conversation state carries the count.
@@ -353,9 +353,9 @@ class PolicyDecision(_Frozen):
     """The outcome of the policy for one request, with everything needed to explain it.
 
     ``transaction_ref`` and ``category`` identify the request the decision was made for. They
-    carry no rule of their own; they exist so the case-creation tool can refuse a
-    ``confirmation_mismatch`` by comparing them against a later filing call, without trusting
-    the caller and without re-running the policy itself.
+    carry no rule of their own; they exist so the case-creation tool can refuse
+    ``confirmation_mismatch`` by comparing them against a later filing call, without
+    trusting the caller and without re-running the policy itself.
 
     ``reason_code`` is the stable code of the decision; ``triggers`` lists every routing reason
     when the outcome is ``escalate`` (empty otherwise); ``requires_confirmation`` is meaningful

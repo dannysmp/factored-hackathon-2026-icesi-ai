@@ -1,3 +1,4 @@
+/* Styles for ErrorState: the title, the reason line and the row of actions inside the notice. */
 .title {
   margin: 0;
   font-weight: var(--font-weight-emphasis);

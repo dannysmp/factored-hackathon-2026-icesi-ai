@@ -13,8 +13,8 @@ import styles from './ResultCard.module.css'
  * Three outcomes read differently and look different: a dispute that was filed (success tone, its
  * case number), a request handed to a person (information tone, the reference to quote), and a
  * conversation that simply ended with no case (neutral). The number is set large in tabular
- * figures so it can be read aloud or copied without a mistake. Filing wins over hand-off when the
- * service reports both.
+ * figures so it can be read aloud or copied without a mistake. A hand-off that follows a filing
+ * leads with its own reference and lists the filed case beneath it.
  */
 export function ResultCard({
   lang,
@@ -27,7 +27,7 @@ export function ResultCard({
 }): JSX.Element {
   const t = useT(lang)
   const titleId = useId()
-  const { variant, reference } = resultOf(caseNumber, handoffTicket)
+  const { variant, reference, filedEarlier } = resultOf(caseNumber, handoffTicket)
   const title = t(`chat.result.${variant}Title`)
 
   return (
@@ -40,6 +40,12 @@ export function ResultCard({
           <p className={styles.label}>{t('chat.result.caseNumberLabel')}</p>
           <p className={styles.reference}>{reference}</p>
           <p className={styles.next}>{t('chat.result.keepNumber')}</p>
+        </>
+      )}
+      {filedEarlier !== null && (
+        <>
+          <p className={styles.label}>{t('chat.result.filedEarlierLabel')}</p>
+          <p className={styles.filedEarlier}>{filedEarlier}</p>
         </>
       )}
     </section>

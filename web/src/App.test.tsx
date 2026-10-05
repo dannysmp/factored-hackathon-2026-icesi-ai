@@ -1,5 +1,5 @@
 /** Component test: the app shell walks sign-in into the live chat, with no accessibility
- * violations at either step. Both the sign-in and the turn endpoint are a mocked `fetch`. */
+ * violations on the sign-in screen. Both the sign-in and the turn endpoint are a mocked `fetch`. */
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'

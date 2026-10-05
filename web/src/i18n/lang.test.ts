@@ -1,3 +1,4 @@
+/** Unit tests: the supported languages are exactly Spanish, Portuguese and English, each with a catalog. */
 import { describe, expect, it } from 'vitest'
 import { CATALOGS } from './catalogs'
 import { LANGUAGES } from './lang'

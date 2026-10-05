@@ -57,21 +57,25 @@ results still to come say so and name the command that completes them.
   access) runs on every change against the proposed system and B0 over synthetic seed data, and
   blocks merge on any case turning unsafe; the full adversarial set runs outside CI against the
   operational seed combined with the evaluation scenario bank (`app.persistence.load_eval_bank`).
-- **The judge's agreement with human raters is not yet measured on a real sample.** The agreement
-  code is tested against a disclosed synthetic placeholder
-  (`evals/golden/judge_validation_sample.py`, `PROVENANCE = "team_generated_synthetic"`), and
-  the Judge validation section of `reports/evaluation.md` states that no agreement rate is
-  reported. The judge's quality and correctness scores stay provisional until two raters return the
-  50-case sheets.
+- **The judge is not validated on any dimension, so its quality scores are not reported.** Two
+  raters and the judge scored the same 50 cases (6 for clarification, which only ambiguous cases
+  carry). Agreement is the share of cases scored identically, and a dimension is demoted to
+  human-only when the judge agrees with either rater below 80%. All three are demoted. Grounding:
+  judge-to-rater agreement 60% and 28%, and the raters agree with each other on only 38%.
+  Language quality: 62% and 60%, with the raters at 94%; the judge scores lower than both raters in
+  nearly every case where they differ. Clarification: 17% and 100% over six cases, a sample too
+  small to settle anything. The judge-scored quality section of `reports/evaluation.md` therefore
+  states "not reportable by the judge" in place of the judge's means and shows the raters' means
+  beside it. 46 of the 50 sheet rows told the raters no case-specific facts were on record, which
+  makes grounding a weaker test than a reply set beside the facts it should cite, and the
+  disagreement between the two raters on grounding is unexplained. The written analysis of where
+  raters and judge disagree is a person's job and is not generated.
   Running `make judge-validation RATER1=<sheet> RATER2=<sheet>` scores the same cases with the
-  real judge and patches that section and the matching limitations line of that report with
-  rater-to-rater and rater-to-judge agreement per dimension, each with its pair count and weighted
-  kappa, the direction of the differences and the decision per dimension. It withholds the judge's
-  mean in the judge-scored quality table for each dimension it demotes, showing the raters' means
-  beneath it, and writes every case's scores to `reports/judge-validation-cases.csv`, a local
-  working file that is not tracked in the repository. This bullet is updated with those figures,
-  and with any dimension the judge is demoted on, at the same time. The written analysis of where
-  the raters and the judge disagree is a person's job and is not generated.
+  real judge, patches that section and the matching limitations line of the report, and writes
+  every case's scores to `reports/judge-validation-cases.csv`, a local working file that is not
+  tracked in the repository.
+  The report's figures describe the commit it names, not the current head, which carries later
+  behaviour and scoring fixes.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in

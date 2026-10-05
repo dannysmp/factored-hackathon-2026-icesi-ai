@@ -5,13 +5,13 @@
 #   The FastAPI backend, built with `[project.dependencies]` in
 #   pyproject.toml plus the `data` group (`duckdb`, for the deploy-time
 #   seed and eval-bank loaders — see Design) and `pipelines/` (what those
-#   loaders import). The `dev` and `ml` groups stay out (ADR-6: risk
+#   loaders import). The `dev` and `ml` groups stay out (risk
 #   scores are computed offline and stored, never imported at serving
 #   time — the `ml` group's training dependencies have no reason to enter
-#   this image at all). Neither ADR-6 nor any other ADR excludes `data`:
-#   it is a single embedded read-only engine, already an accepted
-#   architecture component (Postgres for operational state; Parquet and
-#   DuckDB for analytics), not a training dependency.
+#   this image at all). The `data` group stays in: it is a single embedded
+#   read-only engine, a component of the architecture (Postgres for
+#   operational state; Parquet and DuckDB for analytics), not a training
+#   dependency.
 # Design:
 #   Multi-stage: uv resolves and installs into a virtual environment in the
 #   builder stage; the final stage copies only that environment and the

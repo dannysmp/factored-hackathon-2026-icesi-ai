@@ -42,6 +42,25 @@ describe('ResultCard', () => {
     })
   }
 
+  it('lists the case filed before a hand-off beneath the hand-off reference', () => {
+    render(<ResultCard lang="en" caseNumber="D-2001" handoffTicket="DEMO-1234" />)
+    const card = screen.getByRole('region', { name: 'A person will review your request' })
+    expect(card).toHaveTextContent('DEMO-1234')
+    expect(screen.getByText('Dispute filed earlier, case reference')).toBeInTheDocument()
+    expect(screen.getByText('D-2001')).toBeInTheDocument()
+  })
+
+  it('names the earlier case in each language', () => {
+    for (const [lang, label] of [
+      ['es', 'Disputa registrada antes, número de caso'],
+      ['pt', 'Contestação registrada antes, número do caso'],
+    ] as const) {
+      const { unmount } = render(<ResultCard lang={lang} caseNumber="D-2001" handoffTicket="H-1" />)
+      expect(screen.getByText(label)).toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it('labels the number and tells the customer to keep it', () => {
     render(<ResultCard lang="en" caseNumber="D-2001" handoffTicket={null} />)
     expect(screen.getByText('Case reference')).toBeInTheDocument()
@@ -54,6 +73,7 @@ describe('ResultCard', () => {
     for (const [caseNumber, handoffTicket] of [
       ['D-2001', null],
       [null, 'DEMO-1234'],
+      ['D-2001', 'DEMO-1234'],
       [null, null],
     ] as const) {
       const { container, unmount } = render(

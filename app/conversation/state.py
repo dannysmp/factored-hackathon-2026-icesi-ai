@@ -35,14 +35,20 @@ Design Principles
 Runtime Contract
 ----------------
 ``DialogueState`` with ``with_clarification(slot)``, ``with_slot_filled()``,
-``with_language(lang)``, ``with_phase(phase)``, ``with_case_filed(case_number)`` and
-``with_handed_off(ticket_ref)``, plus ``is_opening``, which is true while no dispute step has
-been taken yet, and ``turns_applied``, the number of customer turns the session has applied
-(equal to ``version``; the dialogue controller compares it with its turn cap).
+``with_dispute_closed()``, ``with_language(lang)``, ``with_phase(phase)``,
+``with_case_filed(case_number)`` and ``with_handed_off(ticket_ref)``, plus ``is_opening``, which is
+true while no dispute step has been taken yet, and ``turns_applied``, the number of customer turns
+the session has applied (equal to ``version``; the dialogue controller compares it with its turn
+cap).
 ``ConversationPhase`` names where the conversation stands.
 
 Limitations
 -----------
+``offered_refs`` holds the references of the transactions shown in the last list, in the order
+shown, so a numbered choice from that list resolves to the transaction the customer saw; it is
+empty until a list is shown, and again once a transaction is selected, the pending question is
+answered, or the conversation reaches a final phase.
+
 ``last_case_number``/``last_ticket_ref`` hold the identifier a repeated turn id needs to be
 answered again (no cached reply text is stored, per the store's own idempotent-replay design): the
 caller re-derives the reply from the current record behind the identifier, never from a snapshot
@@ -80,6 +86,11 @@ class ConversationPhase(StrEnum):
     ABANDONED = "abandoned"
 
 
+FINAL_PHASES = frozenset(
+    {ConversationPhase.CLOSED, ConversationPhase.HANDED_OFF, ConversationPhase.ABANDONED}
+)
+
+
 class DialogueState(BaseModel):
     """The structured state of one conversation, keyed by its session id.
 
@@ -99,6 +110,9 @@ class DialogueState(BaseModel):
     clarification_attempts: Annotated[int, Field(ge=0)] = 0
     category: DisputeCategory | None = None
     selected_ref: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    offered_refs: Annotated[
+        tuple[Annotated[str, Field(min_length=1, max_length=64)], ...], Field(max_length=5)
+    ] = ()
     pending_disputes: Annotated[int, Field(ge=0, le=5)] = 0
     last_turn_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     last_case_number: Annotated[str, Field(min_length=1, max_length=32)] | None = None
@@ -148,25 +162,52 @@ class DialogueState(BaseModel):
         )
 
     def with_slot_filled(self) -> DialogueState:
-        """The pending slot was answered: nothing is pending and the counter resets."""
-        return self.model_copy(update={"pending_slot": None, "clarification_attempts": 0})
+        """The pending slot was answered: nothing is pending, the counter resets and a list of
+        numbered options shown earlier no longer applies."""
+        return self.model_copy(
+            update={"pending_slot": None, "clarification_attempts": 0, "offered_refs": ()}
+        )
 
     def with_language(self, lang: Lang) -> DialogueState:
         """The conversation continues in ``lang``."""
         return self.model_copy(update={"lang": lang})
 
     def with_phase(self, phase: ConversationPhase) -> DialogueState:
-        """Move to ``phase`` without touching anything else."""
+        """Move to ``phase``; a phase the conversation does not leave also drops any numbered
+        options, so a late number cannot select from a list that no longer applies."""
+        if phase in FINAL_PHASES:
+            return self.model_copy(update={"phase": phase, "offered_refs": ()})
         return self.model_copy(update={"phase": phase})
+
+    def with_dispute_closed(self) -> DialogueState:
+        """The dispute ended without a handoff (filed, cancelled, ineligible or duplicate): closed.
+
+        Nothing about the dispute stays open: the pending question, the clarification count, the
+        selected transaction, the reason and any list of numbered options are cleared, so a later
+        message neither answers the old question nor re-presents the dispute that just ended, and a
+        new dispute starts from its own transaction.
+        """
+        return self.model_copy(
+            update={
+                "phase": ConversationPhase.CLOSED,
+                "pending_slot": None,
+                "clarification_attempts": 0,
+                "selected_ref": None,
+                "category": None,
+                "offered_refs": (),
+            }
+        )
 
     def with_case_filed(self, case_number: str) -> DialogueState:
         """A case was filed this turn: closed, with the case number a replay re-reads from."""
-        return self.model_copy(
-            update={"phase": ConversationPhase.CLOSED, "last_case_number": case_number}
-        )
+        return self.with_dispute_closed().model_copy(update={"last_case_number": case_number})
 
     def with_handed_off(self, ticket_ref: str) -> DialogueState:
         """The conversation was handed to a person: nothing about the ticket changes on replay."""
         return self.model_copy(
-            update={"phase": ConversationPhase.HANDED_OFF, "last_ticket_ref": ticket_ref}
+            update={
+                "phase": ConversationPhase.HANDED_OFF,
+                "last_ticket_ref": ticket_ref,
+                "offered_refs": (),
+            }
         )

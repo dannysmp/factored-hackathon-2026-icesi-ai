@@ -90,17 +90,30 @@ clarification budget. The question stays pending across a reply to an unrelated
 message (small talk, a policy question, a list request), as the reason and confirmation questions
 do, so the customer's yes after such a reply still selects the presented transaction. The
 unrelated reply itself files nothing; a case is filed only once the policy's confirmation
-requirement for the category is met. Two or more matches ask for more detail rather than
-presenting a numbered list — the same v1 scope decision already made for slot collection, since
-``DialogueState`` has no pending-candidate field and no multi-candidate list. A
-session identifies and evaluates at most one transaction/category pair: nothing here resets
-``selected_ref``/``category`` once set, so a second, different dispute needs a new session. The
+requirement for the category is met. A list request shows the customer's most recent
+transactions as numbered options and keeps their references, in order, in ``offered_refs``; a
+later number selects the transaction shown at that position, and its question about the reason or
+the filing follows. A message that is only a number of one or two digits, sent while the list is on
+offer, is read directly as that choice, without the model; a number past the end of the list shows
+the list again, as does a choice the model reads past its end. Two or more matches for a described
+transaction ask for more detail rather than presenting a numbered list.
+A session works on one transaction and reason at a time: the selected pair is kept from selection
+until the dispute ends (a case filed, or the filing cancelled, ineligible or refused as a
+duplicate), which clears it so the customer's next dispute starts from its own transaction and
+reason; a no to the transaction presented, a different transaction named while one awaits a yes, or
+a number from a list just shown replaces the transaction instead. A dispute that ends in a handoff
+keeps its pair. A policy question asked after a dispute has ended without a handoff is answered
+without a reason, so a figure that depends on one is declined with an offer of an advisor. The
 handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name.
 While the transaction is the pending question, a message that describes one is taken as the
 answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a category
-carried by such a message does not replace one already set, the same rule as above. A description
-that matches no transaction, or more than one, counts as one unsettled answer to the question,
-the same as any other reply that leaves it open.
+carried by such a message does not replace one already set. A description
+that matches no transaction, or more than one, is an unsettled answer to the question, the same
+as any other reply that leaves it open: a person is involved once the clarification budget of
+such answers has followed the question. When the opening message already described the
+transaction, that message is itself the question, so with the shipped budget of two the hand-off
+follows the third unmatched description. A request to list transactions that finds none never
+counts; a described transaction that finds none does, like any other unmatched description.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
@@ -134,7 +147,7 @@ from app.conversation.guard import required_slot
 from app.conversation.handoff import HandoffContent
 from app.conversation.model_renderer import LlmRenderer
 from app.conversation.policy_answer import answer as policy_answer
-from app.conversation.renderer import RenderedReply, demo_notice
+from app.conversation.renderer import RenderedReply, demo_notice, transaction_line
 from app.conversation.reply import render_reply
 from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DialogueStore, DuplicateTurn
@@ -148,7 +161,7 @@ from app.security.sessions import Clock, Principal
 from app.tools.create_dispatch import create_dispute_case
 from app.tools.dispatcher import dispatch
 from contracts.service_v1 import tools as tool_contracts
-from contracts.service_v1.api import TurnRequest, TurnResponse
+from contracts.service_v1.api import Choice, TurnRequest, TurnResponse
 from contracts.service_v1.console import TimelineEntry
 from contracts.service_v1.envelope import (
     CUSTOMER_REASON_OF,
@@ -176,7 +189,7 @@ from contracts.service_v1.tools import (
 
 logger = logging.getLogger(__name__)
 
-# A placeholder until a tool exposes the customer's first name (see Limitations): agent-facing
+# Stands in for the customer's first name, which no tool exposes (see Limitations): agent-facing
 # only, never shown to the customer.
 _UNKNOWN_FIRST_NAME = "Customer"
 
@@ -190,6 +203,39 @@ _EMPTY_FACTS = DisputeFacts()
 # Intents whose language says nothing reliable about the conversation's language: an unclear
 # message, or one that already names the language it wants.
 _LANGUAGE_NEUTRAL_INTENTS = frozenset({NluIntent.UNCLEAR, NluIntent.SWITCH_LANGUAGE})
+
+# The most digits a message can have and still be read as a position in the list. A longer number
+# is an amount, a card ending or a reference, which only the understanding step can place.
+_MAX_LIST_NUMBER_DIGITS = 2
+
+# The phases in which a conversation takes no further transaction. A conversation closed after its
+# dispute ended without a handoff is not among them: the customer can list their transactions and
+# pick one for the next dispute.
+_PHASES_WITHOUT_SELECTION = frozenset({ConversationPhase.HANDED_OFF, ConversationPhase.ABANDONED})
+
+
+def _number_from_list(state: DialogueState, text: str) -> NluResult | None:
+    """The understanding of a message that is only a number, sent while a list is on offer.
+
+    A number that is a position on the list is a choice; any other number is a request to see the
+    list again, since it names nothing on it. A message that is not only a number, a number sent
+    when no list is on offer, and any message once the conversation was handed to a person or
+    abandoned are left to the understanding step.
+    """
+    stripped = text.strip()
+    if (
+        not state.offered_refs
+        or state.phase in _PHASES_WITHOUT_SELECTION
+        or not stripped.isascii()
+        or not stripped.isdigit()
+        or len(stripped) > _MAX_LIST_NUMBER_DIGITS
+    ):
+        return None
+    number = int(stripped)
+    if 1 <= number <= len(state.offered_refs):
+        return NluResult(intent=NluIntent.CHOICE, confidence=1.0, choice=number)
+    return NluResult(intent=NluIntent.LIST_TRANSACTIONS, confidence=1.0)
+
 
 # The question template that asks for each slot, except the transaction choice, which is
 # rendered by presenting the selected transaction again (``_transaction_choice_envelope``).
@@ -274,6 +320,20 @@ def _fold(text: str) -> str:
     """``text`` without accents and case, so "cafe" and "Café" compare equal."""
     decomposed = unicodedata.normalize("NFKD", text)
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+
+
+def _without_blank_merchant(result: NluResult) -> NluResult:
+    """``result`` with an empty merchant description removed from its transaction hint.
+
+    A merchant that is empty once accents and surrounding blanks are removed describes nothing,
+    so the rest of the hint (an amount, a date, a card) is what identifies the transaction.
+    """
+    merchant = result.transaction.merchant
+    if merchant is None or _fold(merchant).strip():
+        return result
+    return result.model_copy(
+        update={"transaction": result.transaction.model_copy(update={"merchant": None})}
+    )
 
 
 def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -> bool:
@@ -382,10 +442,11 @@ class DialogueController:
         The flow is: load the session's state; a turn id already recorded on it is a replay and is
         answered without redoing anything unsafe; a session at its turn cap is answered with a
         handoff and no model call; otherwise the message is understood, the outcome is decided and
-        acted on (``_advance``), the cost line is logged, and the new state is saved with
-        optimistic concurrency, and the reply is rendered after the save. An unreachable
-        understanding dependency becomes a handoff rather than a clarification attempt. A save
-        that loses a race on the same turn id answers with the winner's result.
+        acted on (``_advance``), the cost line is logged, the new state is saved with
+        optimistic concurrency, and the reply is rendered after the save.
+
+        An unreachable understanding dependency becomes a handoff rather than a clarification
+        attempt. A save that loses a race on the same turn id answers with the winner's result.
 
         Parameters
         ----------
@@ -424,6 +485,7 @@ class DialogueController:
             )
         state_before = state.phase
         new_state, envelope = self._advance(state, result)
+        self._log_turn_decided(state, new_state, result, envelope)
         self._log_turn_completed(new_state, accounting)
 
         try:
@@ -551,6 +613,9 @@ class DialogueController:
         """The state to advance from, the version it was read at, this message's understanding,
         and what understanding it cost (``None`` for ``FakeNlu`` or a call that did not complete).
 
+        A message that is only a number, sent while a list of transactions is on offer, is read by
+        ``_number_from_list`` without a model call: it needs no interpretation and costs nothing.
+
         A brand-new session starts at expected version 0 (a fresh insert, unconditional on it —
         ``DialogueStore.save``'s own documented behavior); its language is the first message's own,
         or Spanish when the message is too ambiguous to tell.
@@ -562,6 +627,9 @@ class DialogueController:
         already names it.
         """
         if current is not None:
+            listed = _number_from_list(current, request.text)
+            if listed is not None:
+                return current, current.version, listed, None
             result, accounting = self._understanding.understand(
                 request.text, language_hint=current.lang, reference_date=self._domain_date
             )
@@ -585,6 +653,43 @@ class DialogueController:
             updated_at=self._now(),
         )
         return fresh, 0, result, accounting
+
+    def _log_turn_decided(
+        self,
+        state_before: DialogueState,
+        state_after: DialogueState,
+        result: NluResult,
+        envelope: RenderEnvelope,
+    ) -> None:
+        """One log line per turn that reaches the decision step, saying how it was understood and
+        where the dialogue went, so a surprising hand-off can be traced to its cause without the
+        customer's words.
+
+        A replayed turn is silent, and so are the hand-offs that never reach the decision step
+        (the turn cap, understanding unavailable), which log their own warnings. The line is
+        emitted before the save, so a turn that then loses a concurrent save still logs one.
+
+        It carries only closed-vocabulary values and counters: the intent the understanding
+        reported and its confidence, whether it carried a transaction hint (a flag, never the
+        hint), the pending slot and clarification count before and after, the reply's intent and
+        template, and the hand-off's first reason code (``None`` when the turn did not hand off).
+        """
+        logger.info(
+            "turn_decided session_id=%s understood=%s confidence=%.2f has_hint=%s "
+            "slot_before=%s attempts_before=%d slot_after=%s attempts_after=%d "
+            "reply=%s template=%s handoff_reason=%s",
+            state_after.session_id,
+            result.intent.value,
+            result.confidence,
+            not result.transaction.is_empty,
+            state_before.pending_slot.value if state_before.pending_slot else None,
+            state_before.clarification_attempts,
+            state_after.pending_slot.value if state_after.pending_slot else None,
+            state_after.clarification_attempts,
+            envelope.intent.value,
+            envelope.template_id.value if envelope.template_id else None,
+            self._handoff_reason.value if self._handoff_reason else None,
+        )
 
     def _log_turn_completed(self, state: DialogueState, accounting: TurnAccounting | None) -> None:
         """One stable-shaped log line per real turn: the real cost, if any, of understanding
@@ -669,6 +774,7 @@ class DialogueController:
         when a hint is available and none is selected, ask for the reason, and finally evaluate the
         dispute for the selected transaction and category.
         """
+        result = _without_blank_merchant(result)
         if result.category is not None and state.category is None:
             state = state.model_copy(update={"category": result.category})
 
@@ -717,8 +823,8 @@ class DialogueController:
     ) -> tuple[DialogueState, RenderEnvelope]:
         """List the customer's transactions.
 
-        A tool failure becomes a handoff and an empty list a not-found reply. The state does not
-        change.
+        A tool failure becomes a handoff and an empty list a not-found reply; neither changes the
+        state. A non-empty list records the references shown, in order, in ``offered_refs``.
         """
         page = dispatch(
             self._tool_port, tool_contracts.Tool.LIST_TRANSACTIONS, TransactionFilters()
@@ -731,9 +837,38 @@ class DialogueController:
             transactions=tuple(to_envelope_transaction(item) for item in page.items),
             candidate_count=page.total_count,
         )
-        return state, self._envelope(
-            state, Intent.PRESENT_TRANSACTIONS, TemplateId.PRESENT_LIST, facts=facts
+        offered = state.model_copy(
+            update={"offered_refs": tuple(fact.ref for fact in facts.transactions)}
         )
+        return offered, self._envelope(
+            offered, Intent.PRESENT_TRANSACTIONS, TemplateId.PRESENT_LIST, facts=facts
+        )
+
+    def _handle_choice(
+        self, state: DialogueState, result: NluResult
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """The customer picked a number from the list just shown: that transaction is selected."""
+        number = result.choice
+        if state.phase in _PHASES_WITHOUT_SELECTION:
+            return self._fallback(state, result)
+        if number is None:
+            return self._handle_unroutable(state, result)
+        if not 1 <= number <= len(state.offered_refs):
+            if state.offered_refs:
+                return self._handle_list_transactions(state, result)
+            return self._handle_unroutable(state, result)
+        selected = state.model_copy(
+            update={
+                "selected_ref": state.offered_refs[number - 1],
+                "offered_refs": (),
+                "pending_slot": None,
+                "clarification_attempts": 0,
+            }
+        )
+        assert selected.selected_ref is not None  # noqa: S101 - set on the line above
+        if selected.category is None:
+            return self._ask(selected, Slot.REASON)
+        return self._evaluate_and_present(selected, selected.selected_ref, selected.category)
 
     def _handle_dispute_status(
         self, state: DialogueState, _result: NluResult
@@ -793,7 +928,7 @@ class DialogueController:
         """The customer's yes or no to filing the evaluated dispute."""
         answer = result.confirmation
         if answer is ConfirmationAnswer.NO:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             return new_state, self._envelope(new_state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
         if answer is not ConfirmationAnswer.YES:
             return self._ask(state, Slot.CONFIRMATION)
@@ -900,10 +1035,10 @@ class DialogueController:
     def _handle_unroutable(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
-        """``choice`` and ``correction`` share ``unclear``'s fallback, except
-        when the transaction is what was just asked for and the message describes one: the model
-        reads each message on its own, so a plain answer to that question can come back under any
-        of these intents, and the description is the answer."""
+        """``correction`` shares ``unclear``'s fallback, and so does a ``choice`` that names no
+        listed transaction, except when the transaction is what was just asked for and the message
+        describes one: the model reads each message on its own, so a plain answer to that question
+        can come back under any of these intents, and the description is the answer."""
         if state.pending_slot is Slot.TRANSACTION and not result.transaction.is_empty:
             return self._handle_file_dispute(state, result)
         return self._fallback(state, result)
@@ -981,6 +1116,7 @@ class DialogueController:
         new_state = state.model_copy(
             update={
                 "selected_ref": fact.ref,
+                "offered_refs": (),
                 "pending_slot": Slot.TRANSACTION_CHOICE,
                 "clarification_attempts": 0,
             }
@@ -991,8 +1127,9 @@ class DialogueController:
         self, state: DialogueState, template: TemplateId
     ) -> tuple[DialogueState, RenderEnvelope]:
         """The description matched no transaction, or more than one: ask for it again, or hand
-        over once the clarification budget is spent. Each such reply counts as one unsettled
-        answer to the transaction question."""
+        over once the clarification budget is spent. Each such reply is an unsettled answer to the
+        transaction question; the count is zero on the first ask, so the budget is reached by the
+        second answer that follows a question already asked."""
         new_state = state.with_clarification(Slot.TRANSACTION)
         if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
             return self._handoff(
@@ -1066,7 +1203,7 @@ class DialogueController:
         list of codes, using the fraud wording when the reason is a fraud claim.
         """
         if decision.outcome is Outcome.INELIGIBLE:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             decisions = (
                 Decision(
                     outcome=Outcome.INELIGIBLE,
@@ -1169,7 +1306,7 @@ class DialogueController:
         the tool gave one.
         """
         if refusal is ToolRefusalCode.DUPLICATE_OPEN_CASE:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             decisions = (
                 Decision(
                     outcome=Outcome.INELIGIBLE,
@@ -1296,7 +1433,9 @@ class DialogueController:
         rendered directly from its stored ticket; a pending clarification is a pure re-render.
         The ticket takes precedence over a case when the session is handed off or filed no case,
         so a session holding both replays its handoff, which is the latest outcome but not
-        necessarily the one the replayed turn id originally produced.
+        necessarily the one the replayed turn id originally produced. The same holds for a
+        session with a filed case: a retried turn id that followed the filing, and answered
+        something other than the filing, replays the filing result.
         ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
         cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
         clears the pending slot and leaves no case or ticket behind, so it can never be confused
@@ -1356,10 +1495,17 @@ class DialogueController:
         assert request is not None  # noqa: S101 - set at the top of handle_turn
         # A replay's own re-understanding is not a new turn (per-turn accounting is scoped to
         # handle_turn's own call in _start_turn); its accounting, if any, is not logged again here.
+        # Only the "show the list again" reading is taken from the number: an in-range number
+        # always clears the list on the turn it selects, so a list still on offer beside one was
+        # left by a turn the model read, which the model reads again.
+        result = _number_from_list(state, request.text)
+        if result is not None and result.intent is not NluIntent.LIST_TRANSACTIONS:
+            result = None
         try:
-            result, _replay_accounting = self._understanding.understand(
-                request.text, language_hint=state.lang, reference_date=self._domain_date
-            )
+            if result is None:
+                result, _replay_accounting = self._understanding.understand(
+                    request.text, language_hint=state.lang, reference_date=self._domain_date
+                )
         except UnderstandingUnavailable:
             logger.warning(
                 "llm_understanding_unavailable_replay session_id=%s request_id=%s",
@@ -1436,6 +1582,7 @@ class DialogueController:
             demo_notice=demo_notice(state.lang),
             next_expected=envelope.next_expected,
             end_session=envelope.end_session,
+            choices=_choices_of(envelope),
             handoff_ticket=state.last_ticket_ref if envelope.intent is Intent.HANDOFF else None,
             case_number=state.last_case_number if envelope.intent is Intent.FILING_RESULT else None,
         )
@@ -1482,6 +1629,16 @@ class DialogueController:
             )
 
 
+def _choices_of(envelope: RenderEnvelope) -> tuple[Choice, ...]:
+    """The numbered options a list reply offers, one per transaction shown, in the order shown."""
+    if envelope.template_id is not TemplateId.PRESENT_LIST:
+        return ()
+    return tuple(
+        Choice(number=number, label=transaction_line(transaction, envelope.lang))
+        for number, transaction in enumerate(envelope.facts.transactions, start=1)
+    )
+
+
 # One route's handler: the unbound method, called with the controller, state and understanding.
 _Handler = Callable[
     [DialogueController, DialogueState, NluResult], tuple[DialogueState, RenderEnvelope]
@@ -1495,7 +1652,7 @@ _ROUTES: dict[NluIntent, _Handler] = {
     NluIntent.DISPUTE_STATUS: DialogueController._handle_dispute_status,
     NluIntent.POLICY_QUESTION: DialogueController._handle_policy_question,
     NluIntent.CONFIRMATION: DialogueController._handle_confirmation,
-    NluIntent.CHOICE: DialogueController._handle_unroutable,
+    NluIntent.CHOICE: DialogueController._handle_choice,
     NluIntent.CORRECTION: DialogueController._handle_unroutable,
     NluIntent.REPORT_FRAUD: DialogueController._handle_report_fraud,
     NluIntent.REPORT_CARD_LOSS: DialogueController._handle_report_card_loss,

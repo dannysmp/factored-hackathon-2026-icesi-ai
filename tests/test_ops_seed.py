@@ -361,7 +361,7 @@ def test_coverage_requirements_can_exceed_the_target_customer_count(
 
 
 def test_no_full_email_or_phone_appears_in_the_seed(tmp_path: Path) -> None:
-    """A test scans the written output for every full contact value the source held."""
+    """The written output is scanned for every full contact value the source held; none appears."""
     silver = _write_silver(tmp_path / "base")
     build_seed(silver, tmp_path / "gold", code_version="test")
     content = (tmp_path / "gold" / CUSTOMERS_NAME).read_bytes()

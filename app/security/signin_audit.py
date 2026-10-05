@@ -4,7 +4,7 @@ Sign-In Audit
 
 Overview
 --------
-One record per demo sign-in attempt (ADR-18): the fact that an attempt happened, its outcome, and
+One record per demo sign-in attempt: the fact that an attempt happened, its outcome, and
 enough to reconstruct why — before any session exists, which is what makes this a different kind
 of record from ``contracts.service_v1.audit``'s ``AuditRecord`` (scoped to a tool call, always
 inside an established session). Written before a token is ever returned; a write that cannot

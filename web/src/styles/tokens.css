@@ -1,13 +1,19 @@
 /**
- * Design tokens (ADR-19): the one source for every color, type size, spacing value, radius,
- * shadow and focus ring across the chat, the console and the sign-in screen. Nothing outside
- * this file declares a raw hex color, pixel spacing value or font size; every surface reads a
- * token, directly or through a class that resolves to one. A palette or scale change is a
- * one-file edit.
+ * Design tokens: the shared source for color, type size, spacing, radius, shadow, focus ring and
+ * transition timing across the chat, the console and the sign-in screen. Components read these
+ * custom properties rather than writing their own colors, type sizes and spacing, so a palette or
+ * scale change is a one-file edit. Values that belong to one component alone, such as a layout
+ * width, an animation's timing or the constants of the visually-hidden technique, stay in that
+ * component's own styles.
  *
- * Categories match ADR-19 exactly (color, type scale, spacing, radius, shadow, focus ring), one
- * custom property per concern, named by category so a later consumer (a build tool's theme, a
- * new component) can alias to these without a rename pass.
+ * The categories are color, typography, spacing and sizing, radius, shadow, focus ring and
+ * motion. Each property is named by its category (`--color-*`, `--space-*`, `--font-size-*`, ...)
+ * so a new component or a build tool's theme can alias to it without renaming anything.
+ *
+ * Colors are `light-dark()` pairs and `color-scheme` is `light dark`, so the interface follows
+ * the system setting. `tokens.contrast.test.ts` reads this file and enforces the WCAG contrast
+ * of the text and control-boundary pairs it lists, so a palette edit that loses legibility in one
+ * of them fails there.
  */
 
 :root {
@@ -16,15 +22,9 @@
   /* ---------------------------------------------------------------------------------------
    * Color: a restrained neutral ramp carries the interface; one accent hue for primary actions
    * and links; a small semantic set for status only, each with a tinted background for banners.
-   * No gradients, no decorative color.
+   * No decorative gradients or color.
    *
-   * Dark mode near-parity with the prior, tokenless page (before this file existed, the page
-   * declared only `color-scheme: light dark` and relied on the browser's own default dark canvas
-   * and text color): measured directly in Chromium via its `Canvas`/`CanvasText` system-color
-   * keywords under a dark color scheme, the browser's own default resolves to `#121212`/`#ffffff`.
-   * `--color-bg`/`--color-text` below (`#0f1115`/`#eef0f3`) differ by at most a few units per
-   * channel from that default — visually indistinguishable in normal use, confirmed by direct
-   * measurement rather than assumed.
+   * Dark mode uses a near-black page and near-white text rather than pure black and white.
    * --------------------------------------------------------------------------------------- */
   --color-bg: light-dark(#ffffff, #0f1115);
   --color-bg-subtle: light-dark(#f6f7f9, #171a20);
@@ -55,9 +55,9 @@
   --color-disabled-text: light-dark(#5f6671, #8f95a1);
 
   /* ---------------------------------------------------------------------------------------
-   * Typography: one system font stack (matching the previous global default so no font is
-   * downloaded), a fixed scale of five sizes, one weight for emphasis and one for body text.
-   * Numbers and dates use tabular figures so amounts don't jitter (ADR-19's trust principle).
+   * Typography: one system font stack (so no font is downloaded), a fixed scale of five sizes,
+   * one weight for emphasis and one for body text. Numbers and dates use tabular figures so
+   * amounts line up and do not jitter as they change.
    * --------------------------------------------------------------------------------------- */
   --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
@@ -74,8 +74,8 @@
   --line-height-base: 1.5;
 
   /* ---------------------------------------------------------------------------------------
-   * Spacing: an 8px scale, used for every margin, padding and gap, so density stays uniform
-   * across the chat and the console's queue.
+   * Spacing: a scale of multiples of 4px, used for every margin, padding and gap, so density
+   * stays uniform across the chat and the console's queue.
    * --------------------------------------------------------------------------------------- */
   --space-1: 0.25rem; /* 4px */
   --space-2: 0.5rem; /* 8px */
@@ -87,7 +87,8 @@
   --space-16: 4rem; /* 64px */
 
   /* ---------------------------------------------------------------------------------------
-   * Radius and shadow: restrained, used for interactive surfaces (cards, panels, tabs).
+   * Radius, sizing, borders and shadow: restrained, used for interactive surfaces (cards,
+   * panels, tabs). The touch-target token is the minimum size of anything a finger must hit.
    * --------------------------------------------------------------------------------------- */
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;
@@ -103,7 +104,8 @@
   --shadow-md: 0 4px 12px light-dark(rgb(20 22 26 / 12%), rgb(0 0 0 / 50%));
 
   /* ---------------------------------------------------------------------------------------
-   * Focus ring: always visible, never suppressed for aesthetics (ADR-19's trust principle).
+   * Focus ring: always visible, never suppressed for aesthetics, so keyboard users can always
+   * see where they are.
    * --------------------------------------------------------------------------------------- */
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
@@ -133,7 +135,7 @@
 
 /**
  * One shared focus-visible treatment so a focused control always gets the same ring, on every
- * surface, whatever element it is — the trust principle applies uniformly, not per component.
+ * surface, whatever element it is. Components may adjust the ring's offset but never remove it.
  */
 :focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);

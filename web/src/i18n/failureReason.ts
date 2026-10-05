@@ -1,6 +1,8 @@
+/** Maps a classified request failure to the sentence that explains it to the person. */
 import type { FailureKind } from '../lib/failure'
 import type { Messages } from './messages'
 
+/** The catalog key per failure kind; kinds absent here have no reason beyond the failure title. */
 const REASON_KEYS: Partial<Record<FailureKind, keyof Messages>> = {
   unauthorized: 'app.sessionExpired',
   rateLimited: 'failure.rateLimited',
