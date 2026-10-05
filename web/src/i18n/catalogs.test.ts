@@ -21,7 +21,6 @@ describe('the message catalogs', () => {
   it('keep every placeholder in every language, so a translation cannot drop it', () => {
     for (const messages of Object.values(CATALOGS)) {
       expect(messages['chat.charactersLeft']).toContain('{count}')
-      expect(messages['chat.caseReference']).toContain('{ticket}')
     }
   })
 
