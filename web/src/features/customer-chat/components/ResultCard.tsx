@@ -42,9 +42,9 @@ function OutcomeIcon({ variant }: { variant: ResultVariant }): JSX.Element {
  * case number), a request handed to a person (information tone, the reference to quote), and a
  * conversation that simply ended with no case (neutral); each has its own glyph and title. The
  * number sits in its own block, large and in tabular figures, so it can be read aloud or copied
- * without a mistake. `titleRef` lets the screen move focus to the outcome once the conversation
- * ends. A hand-off that follows a filing
- * leads with its own reference and lists the filed case beneath it.
+ * without a mistake. A hand-off that follows a filing leads with its own reference and lists the
+ * filed case beneath it. `titleRef` lets the screen move focus to the outcome once the
+ * conversation ends.
  */
 export function ResultCard({
   lang,

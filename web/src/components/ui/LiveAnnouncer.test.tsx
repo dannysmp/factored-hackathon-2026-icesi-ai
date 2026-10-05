@@ -23,6 +23,19 @@ describe('LiveAnnouncer', () => {
     expect(screen.queryByText('Primera respuesta')).not.toBeInTheDocument()
   })
 
+  it('replaces the text node when the key changes even though the words repeat', () => {
+    const { rerender } = render(<LiveAnnouncer message="Again" messageKey="turn-1" />)
+    const region = screen.getByRole('status')
+    const first = region.firstChild
+
+    rerender(<LiveAnnouncer message="Again" messageKey="turn-1" />)
+    expect(region.firstChild).toBe(first)
+
+    rerender(<LiveAnnouncer message="Again" messageKey="turn-2" />)
+    expect(region.firstChild).not.toBe(first)
+    expect(region).toHaveTextContent('Again')
+  })
+
   it('has no accessibility violations', async () => {
     const { container } = render(<LiveAnnouncer message="Hola" />)
 
