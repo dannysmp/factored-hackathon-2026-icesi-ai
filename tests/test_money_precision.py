@@ -22,6 +22,7 @@ from pydantic import ValidationError  # The refusal of an over-wide amount
 # Local modules
 from contracts.service_v1 import cases, envelope, nlu
 
+# The serving store's columns are declared in its first migration; no later migration alters them.
 MIGRATION = (
     Path(__file__).resolve().parents[1]
     / "app"
@@ -44,6 +45,7 @@ def _column_precision(column: str, table: str) -> tuple[int, int]:
 
 
 def _build(model: str, amount: Decimal) -> object:
+    """The named contract model holding the amount; too wide an amount raises ValidationError."""
     if model == "cases":
         return cases.Money(amount=amount, currency="USD")
     if model == "envelope":

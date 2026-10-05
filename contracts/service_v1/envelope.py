@@ -264,8 +264,7 @@ class Money(ContractModel):
     The bound is 14 digits in all with 2 after the point, so at most 12 before it. The serving
     store's amount columns are ``NUMERIC(15, 2)``, which holds 13 before the point: every amount
     this contract accepts fits the store, and the contract is the stricter side. A stored amount
-    wider than 12 integer digits could not be read back as ``Money``; the loaded data's largest
-    amount has 8.
+    wider than 12 integer digits could not be read back as ``Money``.
     """
 
     amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
