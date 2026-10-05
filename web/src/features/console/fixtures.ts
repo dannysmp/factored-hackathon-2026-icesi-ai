@@ -1,11 +1,12 @@
 /**
  * A scripted queue snapshot for the console's fixture client, shaped like a real
  * `GET /v1/agent/queue` response (priority tickets first) — one fraud ticket, one Portuguese
- * ticket among them (AC-E10-04), and a mix of ages and categories to exercise the table's own
- * range of values.
+ * ticket among them, and a mix of ages and categories to exercise the table's own range of values.
+ * Also holds the empty queue and two ticket details, used by the fixture clients and tests. Ticket references and customer data are invented; no document number appears.
  */
 import type { QueueItem, QueueResponse, TicketDetail } from './contracts'
 
+/** The demo queue: five tickets, two of them priority, dated against the reference day 2026-06-18. */
 export const DEMO_QUEUE: QueueResponse = {
   reference_date: '2026-06-18',
   reference_date_origin: 'setting',
@@ -78,13 +79,14 @@ export const DEMO_QUEUE: QueueResponse = {
   ],
 }
 
-/** A queue with no open tickets: the console's empty state (AC-E10-18). */
+/** A queue with no open tickets: the console's empty state. */
 export const EMPTY_QUEUE: QueueResponse = {
   reference_date: '2026-06-18',
   reference_date_origin: 'setting',
   items: [],
 }
 
+/** The `DEMO_QUEUE` row with this reference; throws if the fixture has none. */
 function queueItem(ticketRef: string): QueueItem {
   const item = DEMO_QUEUE.items.find((candidate) => candidate.ticket_ref === ticketRef)
   if (item === undefined) {
@@ -99,7 +101,8 @@ function queueItem(ticketRef: string): QueueItem {
  * reference_date/created_at, so each one reuses its exact `DEMO_QUEUE` item rather than
  * restating those fields and risking drift). The English one's own source title and request
  * summary stay in English — the ticket's own language, not the console's fixed Spanish — the
- * same distinction `SourceRef`'s own docstring draws for a reply's citation.
+ * same distinction `SourceRef` draws for a reply's citation. The Spanish one carries a risk
+ * score; the English one has none, an open question and an attempted action.
  */
 export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
   {

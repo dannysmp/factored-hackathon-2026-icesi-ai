@@ -1,4 +1,5 @@
-/* The chat's one primary action (AC-E10-17): a full-width, large primary button, which stays the
+/* Styles the confirmation button's container.
+   The chat's one primary action: a full-width, large primary button, which stays the
    dominant control next to the outlined choices and the text form. */
 .confirm {
   margin: var(--space-4) 0;

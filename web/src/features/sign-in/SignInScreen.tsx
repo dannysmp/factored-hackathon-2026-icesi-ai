@@ -1,3 +1,6 @@
+/**
+ * The demonstration sign-in screen for the customer chat and the agent console.
+ */
 import { useEffect, useId, useRef, useState } from 'react'
 import type { JSX, SyntheticEvent } from 'react'
 import type { DemoPersonaSummary } from './contracts'
@@ -14,6 +17,7 @@ import { classifyFailure } from '../../lib/failure'
 import type { FailureKind } from '../../lib/failure'
 import styles from './SignInScreen.module.css'
 
+/** Where the persona directory is: `unavailable` means sign-in is switched off or offers no persona. */
 type DirectoryStatus = 'loading' | 'ready' | 'unavailable' | 'error'
 
 /** Before any persona is selected (loading, the directory error), nothing has told this screen
@@ -29,7 +33,8 @@ function toLang(value: string): Lang {
   return (LANGUAGES as readonly string[]).includes(value) ? (value as Lang) : DEFAULT_LANG
 }
 
-/** A persona's name followed by the language it speaks, so the choice says who the conversation will be with and in what language. */
+/** A persona's name followed by the language it speaks, so the choice says who the conversation
+ * will be with and in what language. A language outside the three shown is left off. */
 function personaLabel(persona: DemoPersonaSummary): string {
   const lang = toLang(persona.language)
   return (LANGUAGES as readonly string[]).includes(persona.language)
@@ -67,8 +72,8 @@ function personaLabel(persona: DemoPersonaSummary): string {
  * changes, so the page around it can follow.
  *
  * `onSignedIn` receives the session token, the chosen persona's language and slug, so the caller
- * can hand them to the chat client and offer the same persona again. The token is held only for the moment it takes to pass it up;
- * nothing here ever writes it to storage.
+ * can hand them to the chat client and offer the same persona again. The token is held only for the moment it takes to
+ * pass it up; nothing here ever writes it to storage.
  *
  * The customer path follows the selected persona's language; the agent path stays in Spanish, like
  * the rest of the console. Before a persona is selected (loading, the directory error) the screen
@@ -105,7 +110,7 @@ export function SignInScreen({
   const personaRef = useRef<HTMLSelectElement>(null)
   const accessCodeRef = useRef<HTMLInputElement>(null)
   const selectedPersona = personas.find((candidate) => candidate.slug === selectedSlug)
-  // The console stays fixed-Spanish regardless of which agent persona is selected (D91); only
+  // The console stays fixed-Spanish regardless of which agent persona is selected; only
   // the customer path follows the selected persona's own language.
   const activeLang: Lang =
     audience === 'agent' || selectedPersona === undefined

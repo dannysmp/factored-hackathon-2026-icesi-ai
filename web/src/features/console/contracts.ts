@@ -1,13 +1,16 @@
 /**
- * Console API contract, client side.
+ * Console API contract, client side: zod schemas for the agent queue, the handoff packet and the
+ * ticket timeline.
  *
- * Mirrors `contracts/service_v1/console.py`'s `QueueFilters`/`QueueItem`/`QueueResponse` field
- * for field (customer-chat/contracts.ts's own convention): every object schema is `.strict()`,
- * matching `ContractModel`'s `extra="forbid"`.
+ * Mirrors `contracts/service_v1/console.py` and `contracts/service_v1/handoff.py` field for field
+ * (the same convention as `customer-chat/contracts.ts`): every object schema is `.strict()`,
+ * matching the backend's `extra="forbid"`, so an unexpected field fails parsing instead of being
+ * silently dropped. No schema carries a document number, a full card number or message text.
  */
 import { z } from 'zod'
 import { LangSchema } from '../customer-chat/contracts'
 
+/** Shape of a ticket reference: letters, digits, `_` and `-`, up to 32 characters. */
 const TicketRefPattern = /^[A-Za-z0-9_-]{1,32}$/
 
 /** `HandoffTrigger` (contracts/service_v1/handoff.py). */
@@ -23,6 +26,7 @@ export const HandoffTriggerSchema = z.enum([
   'tool_failure',
   'filing_unverified',
 ])
+/** A value that passes `HandoffTriggerSchema`. */
 export type HandoffTrigger = z.infer<typeof HandoffTriggerSchema>
 
 /** `DisputeCategory` (app/domain/policy/models.py). */
@@ -33,18 +37,21 @@ export const DisputeCategorySchema = z.enum([
   'service_not_received',
   'fraud_claim',
 ])
+/** A value that passes `DisputeCategorySchema`. */
 export type DisputeCategory = z.infer<typeof DisputeCategorySchema>
 
 /** `TicketStatus` (contracts/service_v1/console.py). */
 export const TicketStatusSchema = z.enum(['open', 'in_review', 'resolved', 'rejected'])
+/** A value that passes `TicketStatusSchema`. */
 export type TicketStatus = z.infer<typeof TicketStatusSchema>
 
-/** `ReferenceDateOrigin` (contracts/service_v1/api.py). */
+/** `ReferenceDateOrigin` (contracts/service_v1/api.py): where the server's reference date came from. */
 export const ReferenceDateOriginSchema = z.enum(['setting', 'seed', 'system'])
 
 /** The id an agent signs in with (`_AGENT_ID_PATTERN`, contracts/service_v1/console.py). */
 const AgentIdPattern = /^[A-Za-z0-9_-]{1,20}$/
 
+/** `QueueItem` (contracts/service_v1/console.py): one row of the agent queue. */
 export const QueueItemSchema = z
   .object({
     ticket_ref: z.string().regex(TicketRefPattern),
@@ -53,10 +60,9 @@ export const QueueItemSchema = z
     category: DisputeCategorySchema.nullable().default(null),
     status: TicketStatusSchema,
     created_at: z.iso.datetime(),
-    // A plain ISO date (`YYYY-MM-DD`), not just a non-empty string: `QueueTable.tsx`'s own
-    // overdue check compares `reference_date`/`promised_contact_by` lexicographically, which is
-    // only a correct date comparison for well-formed ISO dates — the schema now enforces the
-    // shape that comparison already assumed.
+    // A plain ISO date (`YYYY-MM-DD`), not just a non-empty string: `QueueTable.tsx`'s overdue
+    // check compares `reference_date`/`promised_contact_by` lexicographically, which is only a
+    // correct date comparison for well-formed ISO dates, so the schema enforces that shape.
     reference_date: z.iso.date(),
     promised_contact_by: z.iso.date(),
     age_days: z.number().int().min(0),
@@ -65,8 +71,13 @@ export const QueueItemSchema = z
     claimed_by: z.string().regex(AgentIdPattern).nullable(),
   })
   .strict()
+/** A value that passes `QueueItemSchema`. */
 export type QueueItem = z.infer<typeof QueueItemSchema>
 
+/**
+ * `QueueResponse` (contracts/service_v1/console.py): the queue plus the reference date the server
+ * computed ages and overdue status against, and where that date came from.
+ */
 export const QueueResponseSchema = z
   .object({
     reference_date: z.iso.date(),
@@ -74,6 +85,7 @@ export const QueueResponseSchema = z
     items: z.array(QueueItemSchema),
   })
   .strict()
+/** A value that passes `QueueResponseSchema`. */
 export type QueueResponse = z.infer<typeof QueueResponseSchema>
 
 /** The one filter combination the queue route accepts (`QueueFilters`); both fields optional. */
@@ -89,6 +101,7 @@ export const PRIORITY_TRIGGERS: ReadonlySet<HandoffTrigger> = new Set(['fraud_re
 // Ticket detail: the packet and the timeline (contracts/service_v1/handoff.py, envelope.py)
 // -----------------------------------------------------------------------------
 
+/** Shape of a transaction reference: letters, digits, `_` and `-`, up to 64 characters. */
 const RefPattern = /^[A-Za-z0-9_-]{1,64}$/
 
 /** `ReasonCode` (app/domain/policy/models.py). */
@@ -109,10 +122,12 @@ export const ReasonCodeSchema = z.enum([
   'escalate_amount_unknown',
   'escalate_risk_score',
 ])
+/** A value that passes `ReasonCodeSchema`. */
 export type ReasonCode = z.infer<typeof ReasonCodeSchema>
 
 /** `TransactionStatus` (app/domain/policy/models.py). */
 export const TransactionStatusSchema = z.enum(['Approved', 'Declined', 'Pending', 'Reversed'])
+/** A value that passes `TransactionStatusSchema`. */
 export type TransactionStatus = z.infer<typeof TransactionStatusSchema>
 
 /** `Intent` (contracts/service_v1/envelope.py). */
@@ -129,12 +144,14 @@ export const IntentSchema = z.enum([
   'handoff',
   'farewell',
 ])
+/** A value that passes `IntentSchema`. */
 export type Intent = z.infer<typeof IntentSchema>
 
 /** `Slot` (contracts/service_v1/envelope.py) — mirrors `customer-chat/contracts.ts`'s own
- * `SlotSchema` values; not imported from there, since that file's schema is customer-chat-scoped
- * and this one is independently versioned against the console's own contract. */
+ * `SlotSchema` values; not imported from there, since that schema belongs to the customer chat
+ * and this one is versioned against the console's own contract. */
 export const SlotSchema = z.enum(['transaction', 'transaction_choice', 'reason', 'confirmation'])
+/** A value that passes `SlotSchema`. */
 export type Slot = z.infer<typeof SlotSchema>
 
 /** `Money` (contracts/service_v1/envelope.py) — `amount` is a decimal string on the wire
@@ -143,26 +160,27 @@ export const MoneySchema = z
   .object({
     // `decimal_places=2` on the Python side bounds the fraction at *most* two digits; it is not
     // a fixed width, and Python's own `Decimal` serialization never pads trailing zeros back in
-    // (`Decimal('250')` emits `"250"`, not `"250.00"`) — confirmed against a live
-    // `Money(...).model_dump_json()` call, for 0, 1 and 2 fraction digits.
+    // (`Decimal('250')` emits `"250"`, not `"250.00"`), so 0, 1 and 2 fraction digits all occur.
     amount: z.string().regex(/^\d{1,12}(\.\d{1,2})?$/),
     currency: z.string().regex(/^[A-Z]{3}$/),
   })
   .strict()
+/** A value that passes `MoneySchema`. */
 export type Money = z.infer<typeof MoneySchema>
 
 /** `ProductLabel` (contracts/service_v1/envelope.py) — name and the last four digits only, never
- * a full account or card number (AC-E10-05). */
+ * a full account or card number. */
 export const ProductLabelSchema = z
   .object({
     name: z.string().min(1).max(60),
     last4: z.string().regex(/^\d{4}$/),
   })
   .strict()
+/** A value that passes `ProductLabelSchema`. */
 export type ProductLabel = z.infer<typeof ProductLabelSchema>
 
 /** `TransactionFact` (contracts/service_v1/envelope.py) — no document number field exists on this
- * contract at all; nothing here can leak one (AC-E10-05). */
+ * contract at all; nothing here can leak one. */
 export const TransactionFactSchema = z
   .object({
     ref: z.string().regex(RefPattern),
@@ -173,6 +191,7 @@ export const TransactionFactSchema = z
     status: TransactionStatusSchema,
   })
   .strict()
+/** A value that passes `TransactionFactSchema`. */
 export type TransactionFact = z.infer<typeof TransactionFactSchema>
 
 /** `LocalizedTitle` (contracts/service_v1/envelope.py). */
@@ -182,12 +201,13 @@ export const LocalizedTitleSchema = z
     text: z.string().min(1).max(120),
   })
   .strict()
+/** A value that passes `LocalizedTitleSchema`. */
 export type LocalizedTitle = z.infer<typeof LocalizedTitleSchema>
 
 /** `SourceRef` (contracts/service_v1/envelope.py) — one title per language; the console shows the
  * title in the *ticket's* language (the customer's own words), never the console's fixed Spanish
- * (D91 applies that fixed-Spanish rule to console chrome, not to case content in the customer's
- * own language). */
+ * (the fixed-Spanish rule covers console chrome, not case content in the customer's own
+ * language). */
 export const SourceRefSchema = z
   .object({
     section_id: z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/),
@@ -195,11 +215,11 @@ export const SourceRefSchema = z
     corpus_version: z.string().min(1).max(32),
   })
   .strict()
+/** A value that passes `SourceRefSchema`. */
 export type SourceRef = z.infer<typeof SourceRefSchema>
 
-/** `RiskEvidence` (contracts/service_v1/envelope.py) — AC-E10-02 requires the score, its
- * uncertainty interval, the base rate and the routing threshold shown together; never the score
- * alone. */
+/** `RiskEvidence` (contracts/service_v1/envelope.py) — the score, its uncertainty interval, the
+ * base rate and the routing threshold travel and are shown together; never the score alone. */
 export const RiskEvidenceSchema = z
   .object({
     score: z.number().min(0).max(1),
@@ -209,6 +229,7 @@ export const RiskEvidenceSchema = z
     threshold: z.number().min(0).max(1),
   })
   .strict()
+/** A value that passes `RiskEvidenceSchema`. */
 export type RiskEvidence = z.infer<typeof RiskEvidenceSchema>
 
 /** `Evidence` (contracts/service_v1/handoff.py). */
@@ -220,6 +241,7 @@ export const EvidenceSchema = z
     risk: RiskEvidenceSchema.nullable().default(null),
   })
   .strict()
+/** A value that passes `EvidenceSchema`. */
 export type Evidence = z.infer<typeof EvidenceSchema>
 
 /** `ActionRecord` (contracts/service_v1/handoff.py). */
@@ -229,6 +251,7 @@ export const ActionRecordSchema = z
     result: z.string().min(1).max(64),
   })
   .strict()
+/** A value that passes `ActionRecordSchema`. */
 export type ActionRecord = z.infer<typeof ActionRecordSchema>
 
 /** `OpenQuestion` (contracts/service_v1/handoff.py). */
@@ -238,19 +261,24 @@ export const OpenQuestionSchema = z
     attempts: z.number().int().min(0),
   })
   .strict()
+/** A value that passes `OpenQuestionSchema`. */
 export type OpenQuestion = z.infer<typeof OpenQuestionSchema>
 
 /** `CustomerLabel` (contracts/service_v1/handoff.py) — a first name and a masked identifier
- * only, never a document number (AC-E10-05). */
+ * only, never a document number. */
 export const CustomerLabelSchema = z
   .object({
     first_name: z.string().min(1).max(40),
     masked_id: z.string().regex(/^\*{4}[A-Za-z0-9]{2,4}$/),
   })
   .strict()
+/** A value that passes `CustomerLabelSchema`. */
 export type CustomerLabel = z.infer<typeof CustomerLabelSchema>
 
-/** `HandoffPacket` (contracts/service_v1/handoff.py). */
+/**
+ * `HandoffPacket` (contracts/service_v1/handoff.py): everything a human agent needs to take over a
+ * case without re-asking the customer. Customer identity is a first name and masked id only.
+ */
 export const HandoffPacketSchema = z
   .object({
     ticket_ref: z.string().regex(TicketRefPattern),
@@ -276,9 +304,10 @@ export const HandoffPacketSchema = z
   .refine((packet) => packet.needs_language_routing === (packet.language !== 'es'), {
     message: 'needs_language_routing must be true exactly when language is not es',
   })
+/** A value that passes `HandoffPacketSchema`. */
 export type HandoffPacket = z.infer<typeof HandoffPacketSchema>
 
-/** `TimelineEntry` (contracts/service_v1/console.py) — never message text (AC-E10-05). */
+/** `TimelineEntry` (contracts/service_v1/console.py) — one agent turn's trace; never message text. */
 export const TimelineEntrySchema = z
   .object({
     occurred_at: z.iso.datetime(),
@@ -291,6 +320,7 @@ export const TimelineEntrySchema = z
     policy_version: z.string().min(1).nullable().default(null),
   })
   .strict()
+/** A value that passes `TimelineEntrySchema`. */
 export type TimelineEntry = z.infer<typeof TimelineEntrySchema>
 
 /** `Note` (contracts/service_v1/console.py) — one agent's note on a ticket, never edited. */
@@ -301,9 +331,13 @@ export const NoteSchema = z
     created_at: z.iso.datetime(),
   })
   .strict()
+/** A value that passes `NoteSchema`. */
 export type Note = z.infer<typeof NoteSchema>
 
-/** `TicketDetail` (contracts/service_v1/console.py). */
+/**
+ * `TicketDetail` (contracts/service_v1/console.py): a queue row with its packet, timeline and
+ * notes; the row and the packet must agree on the fields they share.
+ */
 export const TicketDetailSchema = z
   .object({
     item: QueueItemSchema,
@@ -324,4 +358,5 @@ export const TicketDetailSchema = z
       detail.item.created_at === detail.packet.created_at,
     { message: 'the queue item does not describe the packet' },
   )
+/** A value that passes `TicketDetailSchema`. */
 export type TicketDetail = z.infer<typeof TicketDetailSchema>

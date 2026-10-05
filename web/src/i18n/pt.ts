@@ -1,7 +1,10 @@
-// Brazilian Portuguese for a bank customer: "você" throughout, native verbs ("entrar", "acesso")
-// instead of borrowed "login", and a first-person "Eu" for the customer's own messages.
+// Brazilian Portuguese catalog, for a bank customer: "você" throughout, native verbs ("entrar",
+// "acesso") instead of borrowed "login", and a first-person "Eu" for the customer's own messages.
+// Every key in `Messages` must be present and non-blank, and every `{placeholder}` must survive;
+// the catalog tests enforce both.
 import type { Messages } from './messages'
 
+/** Every interface message in Brazilian Portuguese. */
 export const pt: Messages = {
   'app.title': 'Contestação de transações',
   'app.signOut': 'Encerrar sessão',

@@ -34,6 +34,7 @@ describe('FixtureChatClient', () => {
   })
 })
 
+/** A contract-valid Spanish turn; `overrides` replaces individual fields. */
 function turnResponse(overrides: Partial<TurnResponse> = {}): TurnResponse {
   return {
     contract_version: '1',
@@ -52,6 +53,7 @@ function turnResponse(overrides: Partial<TurnResponse> = {}): TurnResponse {
   }
 }
 
+/** A JSON `Response` with the given status and body, like the service returns. */
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,

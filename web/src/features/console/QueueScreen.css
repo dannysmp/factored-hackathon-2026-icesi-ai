@@ -1,10 +1,11 @@
-/* The queue screen (AC-E10-01, AC-E10-17): the fraud/card-loss-first table is the visually
-   dominant element on this screen — every other control (filters, banner) reads smaller and in
-   the subtle text color, tokens throughout (ADR-19), nothing hardcoded. */
+/* Styles the queue screen and the tables shared with the ticket-detail screen. The
+   fraud/card-loss-first table is the visually dominant element on the screen — every other
+   control (filters, banner) reads smaller and in the subtle text color. Every value reads a
+   design token; nothing is hardcoded except where a comment says why. */
 
 /* The standard visually-hidden idiom (WebAIM): a fixed, universal technique, not a design-scale
-   value — its 1px/-1px literals are a deliberate, narrow exception to "every value reads a token"
-   (ADR-19), the same way `tokens.css` itself never tokenizes an idiom's own constants. */
+   value — its 1px/-1px literals are a deliberate, narrow exception to "every value reads a token",
+   the same way `tokens.css` itself never tokenizes an idiom's own constants. */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -17,9 +18,9 @@
   border: 0;
 }
 
-/* A class, not an `aria-label` selector: the accessible name is Spanish copy (D91) and must stay
-   free to change without silently detaching this layout — a plain "1440px-wide content flush to
-   the left edge" bug this very selector caused once, caught only by looking at a screenshot. */
+/* A class, not an `aria-label` selector: the accessible name is fixed-Spanish copy and must stay
+   free to change without silently detaching this layout (an unmatched selector would leave the
+   content flush to the left edge instead of centred). */
 .queue-screen {
   display: flex;
   flex-direction: column;
@@ -31,8 +32,7 @@
 
 /* A flex column's default cross-axis alignment is `stretch`: without this, a direct `<button>`
    child (the error state's "Intentar de nuevo", the ticket-detail screen's "Volver a la cola")
-   stretches to the container's full width — a plain browser default nothing here had overridden,
-   caught only by looking at a screenshot. Scoped to the button itself, not the container's own
+   stretches to the container's full width. Scoped to the button itself, not the container's own
    `align-items`, so the banner, the filters row and the table keep stretching to full width as
    they already correctly do. */
 .queue-screen > button,
@@ -76,7 +76,7 @@
 .queue-table-scroll {
   overflow-x: auto;
   /* A soft edge on the side that still has content: the cover gradients scroll with the content
-     and hide the shadow once that edge is reached, so a cut-off table is never mistaken for a
+     and hide the shadow when that edge is reached, so a cut-off table is never mistaken for a
      complete one. */
   background:
     linear-gradient(to right, var(--color-bg) 30%, transparent) left center / 2rem 100% no-repeat
@@ -133,7 +133,7 @@ tbody th[scope='row'] {
   font-weight: var(--font-weight-emphasis);
 }
 
-/* A real `<button>` (frontend standard, section 7), styled to read as the reference text it
+/* A real `<button>` (semantic HTML first), styled to read as the reference text it
    replaces, not as a UI-chrome button — the ticket's own reference stays the row's visual weight,
    not the fact that it happens to be clickable. */
 .queue-ticket-ref-button {

@@ -1,7 +1,9 @@
-// English for a bank customer: plain, courteous second person, and "profile" for the demonstration
-// identities rather than the internal term for them.
+// English catalog, for a bank customer: plain, courteous second person, and "profile" for the
+// demonstration identities rather than the internal term for them. Every key in `Messages` must be
+// present and non-blank, and every `{placeholder}` must survive; the catalog tests enforce both.
 import type { Messages } from './messages'
 
+/** Every interface message in English. */
 export const en: Messages = {
   'app.title': 'Transaction disputes',
   'app.signOut': 'Sign out',

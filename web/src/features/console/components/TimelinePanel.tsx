@@ -1,19 +1,21 @@
+/** The ticket timeline: a ticket's decisions and reasons as a table, in trace order. */
 import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { JSX } from 'react'
 import type { TimelineEntry } from '../contracts'
 import { formatDateTime } from '../format'
 import { INTENT_LABELS, REASON_CODE_LABELS, phaseLabel } from '../labels'
 
-/** The audit trail, in order by trace identifier (AC-E10-03) — the backend's own tuple order is
- * not itself specified to match, so this component orders it rather than assume. */
+/** Orders the audit trail by trace identifier — the backend's own tuple order is not specified
+ * to match, so this component orders it rather than assume. */
 function byTraceId(a: TimelineEntry, b: TimelineEntry): number {
   return a.trace_id.localeCompare(b.trace_id)
 }
 
 /**
- * The timeline (AC-E10-03): decisions and reasons, in order by trace identifier, never message
- * text — `TimelineEntry` (contracts/service_v1/console.py) has no message-text field at all, so
- * nothing here can expose one (AC-E10-05).
+ * The timeline: decisions and reasons, in order by trace identifier, never message text —
+ * `TimelineEntry` (contracts/service_v1/console.py) has no message-text field at all, so nothing
+ * here can expose one. Known intents, phases and reason codes read through their Spanish labels;
+ * an empty list renders a plain "no audit records" message instead of an empty table.
  */
 export function TimelinePanel({ entries }: { entries: readonly TimelineEntry[] }): JSX.Element {
   if (entries.length === 0) {

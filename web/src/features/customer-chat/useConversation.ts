@@ -1,9 +1,8 @@
 /**
  * Drives one conversation against a `ChatClient`.
  *
- * Server state (the turns) lives here, not copied into components (frontend standard, section
- * 4): a component reads `messages`/`latest`/`status` and calls `send`, and never talks to the
- * client itself.
+ * Server state (the turns) lives here, not copied into components: a component reads
+ * `messages`/`latest`/`status` and calls `send`, and never talks to the client itself.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatClient } from './client'
@@ -11,6 +10,7 @@ import type { TurnResponse } from './contracts'
 import { classifyFailure } from '../../lib/failure'
 import type { FailureKind } from '../../lib/failure'
 
+/** One line of the transcript, from the assistant or the customer. */
 export interface Message {
   id: string
   from: 'assistant' | 'customer'
@@ -23,8 +23,10 @@ export interface Message {
   turnId?: string
 }
 
+/** `loading` while a request is in flight, `error` after one failed, `ready` otherwise. */
 export type ConversationStatus = 'loading' | 'ready' | 'error'
 
+/** Everything the hook keeps; `latest` is the newest assistant turn, `null` before the first. */
 interface ConversationState {
   status: ConversationStatus
   messages: Message[]
@@ -33,6 +35,7 @@ interface ConversationState {
   failure: FailureKind | null
 }
 
+/** What a component sees of a conversation: its state plus the two actions it may take. */
 export interface Conversation extends ConversationState {
   /**
    * Send the customer's text; a no-op once the conversation has ended or is already loading.
@@ -50,10 +53,12 @@ export interface Conversation extends ConversationState {
   retry: () => void
 }
 
+/** The transcript line for an assistant turn, keyed by the turn's own id. */
 function assistantMessage(turn: TurnResponse): Message {
   return { id: turn.turn_id, from: 'assistant', text: turn.reply }
 }
 
+/** The state before the opening message arrives, and after a failed opening is retried. */
 const INITIAL_STATE: ConversationState = {
   status: 'loading',
   messages: [],
@@ -61,6 +66,11 @@ const INITIAL_STATE: ConversationState = {
   failure: null,
 }
 
+/**
+ * Runs a conversation against `client`: requests the opening message on mount, then one request
+ * per `send`. Responses that arrive after unmount are discarded. A failed send keeps the message
+ * in the transcript, marked `failed`, so `retry` can resend it under the same turn id.
+ */
 export function useConversation(client: ChatClient): Conversation {
   const [state, setState] = useState<ConversationState>(INITIAL_STATE)
 

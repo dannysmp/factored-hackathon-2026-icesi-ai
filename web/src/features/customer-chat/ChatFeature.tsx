@@ -1,3 +1,7 @@
+/**
+ * The customer chat screen: composes the conversation hook with the message list, the choice
+ * buttons, the confirmation button and the text form, and owns focus and announcement behavior.
+ */
 import { useEffect, useRef } from 'react'
 import type { JSX } from 'react'
 import { ChoiceButtons } from './components/ChoiceButtons'
@@ -18,7 +22,7 @@ import styles from './ChatFeature.module.css'
 /**
  * The customer chat, wired to whatever `ChatClient` its caller passes in.
  *
- * Renders every state deliberately (frontend standard, section 6): loading, error (with a
+ * Renders every state deliberately: loading, error (with a
  * retryable message, never a stack trace), and ready, where the confirmation button, the choice
  * buttons and the text form each appear only when the assistant's last turn calls for them.
  *
@@ -61,6 +65,8 @@ export function ChatFeature({
     onLanguageChange?.(activeLang)
   }, [activeLang, onLanguageChange])
 
+  // An expired session cannot be retried from here, so the Retry button is hidden and the
+  // parent is told to send the person back to sign-in.
   const expired = conversation.failure === 'unauthorized'
   useEffect(() => {
     if (expired) onSessionExpired?.()
@@ -107,6 +113,7 @@ export function ChatFeature({
   const ended = latest?.end_session === true
   const lastAssistantText =
     conversation.messages.findLast((m) => m.from === 'assistant')?.text ?? ''
+  // What a screen reader hears: the latest reply, plus the closing line once the conversation ends.
   const closing =
     ended && latest.handoff_ticket !== null
       ? `${t('chat.ended')} ${t('chat.caseReference').replace('{ticket}', latest.handoff_ticket)}`

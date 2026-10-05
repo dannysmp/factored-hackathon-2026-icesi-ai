@@ -11,6 +11,7 @@ import { findMessage } from './findMessage'
 import { en } from '../../i18n/en'
 import { pt } from '../../i18n/pt'
 
+/** The assistant's opening turn, shared by every failure scenario. */
 const OPENING = TurnResponseSchema.parse({
   contract_version: '1',
   turn_id: 'failure-turn-0001',
@@ -26,6 +27,7 @@ const OPENING = TurnResponseSchema.parse({
   handoff_ticket: null,
 })
 
+/** Each failure kind paired with the reason the chat must give for it. */
 const FAILURES = [
   ['a limit', new TurnRequestError(429, 'Too many'), en['failure.rateLimited']],
   ['a server error', new TurnRequestError(503, 'Unavailable'), en['failure.unavailable']],
@@ -33,6 +35,7 @@ const FAILURES = [
   ['a timeout', new DOMException('timed out', 'TimeoutError'), en['failure.timeout']],
 ] as const
 
+/** Opens the chat, sends a message the client rejects, and returns the resulting alert. */
 async function sendAndFail(client: ChatClient): Promise<HTMLElement> {
   const user = userEvent.setup()
   render(<ChatFeature client={client} lang="en" />)

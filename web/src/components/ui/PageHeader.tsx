@@ -1,3 +1,4 @@
+/** The page header shared by the customer chat, the sign-in screen and the agent console. */
 import type { JSX, ReactNode } from 'react'
 import { classNames } from './classNames'
 import styles from './PageHeader.module.css'

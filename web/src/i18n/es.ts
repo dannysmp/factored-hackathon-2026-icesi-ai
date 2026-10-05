@@ -1,7 +1,10 @@
-// Spanish for a bank customer across Latin America: the formal usted throughout, neutral
-// vocabulary, and a first-person "Yo" for the customer's own messages.
+// Spanish catalog, for a bank customer across Latin America: the formal usted throughout, neutral
+// vocabulary, and a first-person "Yo" for the customer's own messages. Every key in `Messages`
+// must be present and non-blank, and every `{placeholder}` must survive; the catalog tests enforce
+// both, and also that no informal address creeps in.
 import type { Messages } from './messages'
 
+/** Every interface message in Spanish. */
 export const es: Messages = {
   'app.title': 'Disputa de transacciones',
   'app.signOut': 'Cerrar sesión',

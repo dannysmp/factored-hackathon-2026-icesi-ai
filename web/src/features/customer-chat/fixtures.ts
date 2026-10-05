@@ -1,18 +1,18 @@
 /**
  * A scripted English conversation, in `TurnResponse` shape.
  *
- * Team-generated, not derived from a real customer: it exists to prove the chat UI end to end
+ * Synthetic, not derived from a real customer: it lets the chat UI be exercised end to end
  * (the reference-date line, the demonstration notice, numbered choices, the confirmation button,
- * a handoff ticket) before the live endpoint exists. It mirrors the shape of the "file dispute"
- * scenario stream 2 recorded as raw decision envelopes (`tests/fixtures/scripted_flows.en.json`,
- * Python-side, agent-only), but carries the rendered customer-facing text those envelopes
- * deliberately do not: rendering that text is the model-renderer slice's job, not this one's.
+ * a handoff ticket) without a server. It mirrors the "file dispute" scenario recorded as raw
+ * decision envelopes in `tests/fixtures/scripted_flows.en.json` (Python side), but carries the
+ * rendered customer-facing text those envelopes deliberately do not.
  */
 import type { TurnResponse } from './contracts'
 
 const REFERENCE_DATE_LINE = 'Today is Thursday, 18 June 2026.'
 const DEMO_NOTICE = 'This is a demonstration conversation, not your real account.'
 
+/** The full English "file a dispute" script, from greeting to the end of the session. */
 export const FILE_DISPUTE_EN: readonly TurnResponse[] = [
   {
     contract_version: '1',

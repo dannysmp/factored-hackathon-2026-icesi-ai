@@ -1,7 +1,9 @@
+/** The shared button: one look and one set of defaults for every action in the app. */
 import type { ComponentProps, JSX } from 'react'
 import styles from './Button.module.css'
 import { classNames } from './classNames'
 
+/** Emphasis levels a button can have; see `Button` for what each one means. */
 export type ButtonVariant = 'primary' | 'secondary' | 'quiet'
 
 /**

@@ -1,8 +1,7 @@
 /**
  * Chat client: the one seam between the UI and a turn source.
  *
- * Components never call a transport directly (frontend standard, section 5: "one HTTP client
- * module"). `FixtureChatClient` replays a script; `LiveChatClient` is the real HTTP client against
+ * Components never call a transport directly; this is the one HTTP client module. `FixtureChatClient` replays a script; `LiveChatClient` is the real HTTP client against
  * the turn endpoint, behind a demo session.
  */
 import type { Lang, TurnRequest, TurnResponse } from './contracts'
@@ -14,6 +13,7 @@ const TURNS_PATH = '/v1/turns'
 /** The word `_SMALL_TALK` (app/conversation/understanding.py) recognizes, one per language. */
 const GREETING_TRIGGER: Record<Lang, string> = { es: 'Hola', pt: 'Olá', en: 'Hello' }
 
+/** A source of turns: the opening message, then one reply per customer message. */
 export interface ChatClient {
   /** The assistant's opening message, before the customer has said anything. */
   start: () => Promise<TurnResponse>

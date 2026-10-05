@@ -1,4 +1,7 @@
-/** Component test: `QueueFilters`' language select and trigger tabs. */
+/**
+ * Component test: `QueueFilters` reports the chosen language, and shows one tab per trigger view
+ * with its case count, rendering only the active view's table and reporting a newly selected view.
+ */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
