@@ -166,6 +166,14 @@ tbody th[scope='row'] {
   vertical-align: bottom;
 }
 
+/* On a narrow screen the table already scrolls sideways, so a column title stays on one line
+   rather than stacking into a tall header band above the first row. */
+@media (not (min-width: 48rem)) {
+  .queue-table-openable thead th {
+    white-space: nowrap;
+  }
+}
+
 /* A priority row is marked by a bar on its leading edge, as well as the badge and the word: the
    eye finds it while scanning, and it never depends on colour alone. */
 .queue-table-openable .queue-row-priority th[scope='row'] {
