@@ -1,5 +1,6 @@
 /** Component test: the result card's three outcomes in each language, and its accessibility. */
 import { render, screen } from '@testing-library/react'
+import { createRef } from 'react'
 import { axe } from 'jest-axe'
 import { describe, expect, it } from 'vitest'
 import type { Lang } from '../../../i18n/lang'
@@ -41,6 +42,15 @@ describe('ResultCard', () => {
       expect(closed.querySelector('p')).toBeNull()
     })
   }
+
+  it('makes the title focusable by script only and hands it to the screen through titleRef', () => {
+    const titleRef = createRef<HTMLHeadingElement>()
+    render(<ResultCard lang="en" caseNumber={null} handoffTicket="H-1" titleRef={titleRef} />)
+
+    const title = screen.getByRole('heading', { name: 'A person will review your request' })
+    expect(title).toHaveAttribute('tabindex', '-1')
+    expect(titleRef.current).toBe(title)
+  })
 
   it('lists the case filed before a hand-off beneath the hand-off reference', () => {
     render(<ResultCard lang="en" caseNumber="D-2001" handoffTicket="DEMO-1234" />)

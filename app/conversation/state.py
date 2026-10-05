@@ -35,7 +35,7 @@ Design Principles
 Runtime Contract
 ----------------
 ``DialogueState`` with ``with_clarification(slot)``, ``with_slot_filled()``,
-``with_dispute_closed()``, ``with_language(lang)``, ``with_phase(phase)``,
+``with_dispute_closed(turn_id)``, ``with_language(lang)``, ``with_phase(phase)``,
 ``with_case_filed(case_number)`` and ``with_handed_off(ticket_ref)``, plus ``is_opening``, which is
 true while no dispute step has been taken yet, and ``turns_applied``, the number of customer turns
 the session has applied (equal to ``version``; the dialogue controller compares it with its turn
@@ -96,8 +96,8 @@ class DialogueState(BaseModel):
 
     Immutable and masked: it holds identifiers, the slots collected so far and the language, never
     the customer's text. ``version`` is the optimistic-concurrency token the store advances on every
-    saved turn; ``last_turn_id``, ``last_case_number`` and ``last_ticket_ref`` hold what a repeated
-    turn needs to be answered again.
+    saved turn; ``last_turn_id``, ``last_case_number``, ``last_ticket_ref`` and ``closed_turn_id``
+    hold what a repeated turn needs to be answered again.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -117,6 +117,7 @@ class DialogueState(BaseModel):
     last_turn_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     last_case_number: Annotated[str, Field(min_length=1, max_length=32)] | None = None
     last_ticket_ref: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+    closed_turn_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     updated_at: AwareDatetime
 
     @property
@@ -179,14 +180,11 @@ class DialogueState(BaseModel):
             return self.model_copy(update={"phase": phase, "offered_refs": ()})
         return self.model_copy(update={"phase": phase})
 
-    def with_dispute_closed(self) -> DialogueState:
-        """The dispute ended without a handoff (filed, cancelled, ineligible or duplicate): closed.
-
-        Nothing about the dispute stays open: the pending question, the clarification count, the
+    def _closed(self) -> DialogueState:
+        """Nothing about the dispute stays open: the pending question, the clarification count, the
         selected transaction, the reason and any list of numbered options are cleared, so a later
         message neither answers the old question nor re-presents the dispute that just ended, and a
-        new dispute starts from its own transaction.
-        """
+        new dispute starts from its own transaction."""
         return self.model_copy(
             update={
                 "phase": ConversationPhase.CLOSED,
@@ -195,12 +193,22 @@ class DialogueState(BaseModel):
                 "selected_ref": None,
                 "category": None,
                 "offered_refs": (),
+                "closed_turn_id": None,
             }
         )
 
+    def with_dispute_closed(self, turn_id: str) -> DialogueState:
+        """The dispute ended without a case or a handoff (cancelled, ineligible or duplicate).
+
+        ``turn_id`` is the turn that closed it. A case filed earlier in the session stays on the
+        state, so this id is what lets a repeat of this turn be told from a repeat of the filing
+        turn and answered with the closing, not with that earlier case.
+        """
+        return self._closed().model_copy(update={"closed_turn_id": turn_id})
+
     def with_case_filed(self, case_number: str) -> DialogueState:
         """A case was filed this turn: closed, with the case number a replay re-reads from."""
-        return self.with_dispute_closed().model_copy(update={"last_case_number": case_number})
+        return self._closed().model_copy(update={"last_case_number": case_number})
 
     def with_handed_off(self, ticket_ref: str) -> DialogueState:
         """The conversation was handed to a person: nothing about the ticket changes on replay.

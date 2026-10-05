@@ -204,7 +204,14 @@ TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
 
 
 def _str_arg(call: ToolCall, name: str) -> str:
-    """The argument ``name`` of ``call`` as a string; the schema marks it required."""
+    """The argument ``name`` of ``call`` as a string.
+
+    The schema marks it required, but the model is not bound by the schema, so a missing argument
+    raises ``ValueError``, a failure the harness records against one case; the ``KeyError`` that
+    indexing raises would stop the whole run.
+    """
+    if name not in call.input:
+        raise ValueError(f"tool {call.name!r} was called without its required argument {name!r}")
     return str(call.input[name])
 
 
@@ -274,7 +281,8 @@ class B1ToolDispatcher:
         Raises
         ------
         ValueError
-            ``call.name`` is not one of the seven tools this dispatcher knows.
+            ``call.name`` is not one of the tools this dispatcher knows, or ``call`` lacks an
+            argument its tool requires.
         """
         if call.name in _READ_TOOLS:
             return _to_json(_READ_TOOLS[call.name](self.tool_port, call))

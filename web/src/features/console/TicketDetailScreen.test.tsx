@@ -66,6 +66,14 @@ describe('TicketDetailScreen', () => {
     expect(onBack).toHaveBeenCalled()
   })
 
+  it('marks the back control so its label lines up with the content below it', async () => {
+    const client = new FixtureTicketDetailClient(DEMO_TICKET_DETAILS)
+    render(<TicketDetailScreen client={client} ticketRef={TICKET_REF} onBack={vi.fn()} />)
+    await screen.findByText(REQUEST_SUMMARY_LABELS[FIRST.packet.trigger])
+
+    expect(screen.getByRole('button', { name: 'Volver a la cola' })).toHaveClass('ticket-back')
+  })
+
   it('shows a message and a back control when the ticket does not resolve', async () => {
     const user = userEvent.setup()
     const onBack = vi.fn()

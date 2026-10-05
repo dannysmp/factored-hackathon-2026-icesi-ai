@@ -69,7 +69,7 @@ _CONNECT_TIMEOUT_SECONDS = 5
 _COLUMNS = (
     "version, lang, phase, pending_slot, clarification_attempts, category, selected_ref, "
     "offered_refs, pending_disputes, last_turn_id, last_case_number, last_ticket_ref, "
-    "updated_at_utc"
+    "closed_turn_id, updated_at_utc"
 )
 
 # Selects a session's own row by its primary key; the column list is a module constant, not
@@ -92,6 +92,7 @@ def _row_to_state(session_id: str, row: Any) -> DialogueState:
         last_turn_id,
         last_case_number,
         last_ticket_ref,
+        closed_turn_id,
         updated_at,
     ) = row
     return DialogueState(
@@ -108,6 +109,7 @@ def _row_to_state(session_id: str, row: Any) -> DialogueState:
         last_turn_id=last_turn_id,
         last_case_number=last_case_number,
         last_ticket_ref=last_ticket_ref,
+        closed_turn_id=closed_turn_id,
         updated_at=updated_at,
     )
 
@@ -247,12 +249,14 @@ class PostgresDialogueStore:
                     INSERT INTO dialogue_state (
                         session_id, version, lang, phase, pending_slot, clarification_attempts,
                         category, selected_ref, offered_refs, pending_disputes,
-                        last_turn_id, last_case_number, last_ticket_ref, updated_at_utc
+                        last_turn_id, last_case_number, last_ticket_ref, closed_turn_id,
+                        updated_at_utc
                     ) VALUES (
                         %(session_id)s, %(version)s, %(lang)s, %(phase)s, %(pending_slot)s,
                         %(clarification_attempts)s, %(category)s, %(selected_ref)s,
                         %(offered_refs)s, %(pending_disputes)s, %(last_turn_id)s,
-                        %(last_case_number)s, %(last_ticket_ref)s, %(updated_at)s
+                        %(last_case_number)s, %(last_ticket_ref)s, %(closed_turn_id)s,
+                        %(updated_at)s
                     )
                     ON CONFLICT (session_id) DO UPDATE SET
                         version = EXCLUDED.version,
@@ -267,6 +271,7 @@ class PostgresDialogueStore:
                         last_turn_id = EXCLUDED.last_turn_id,
                         last_case_number = EXCLUDED.last_case_number,
                         last_ticket_ref = EXCLUDED.last_ticket_ref,
+                        closed_turn_id = EXCLUDED.closed_turn_id,
                         updated_at_utc = EXCLUDED.updated_at_utc
                     WHERE dialogue_state.version = %(expected_version)s
                     RETURNING session_id
@@ -289,6 +294,7 @@ class PostgresDialogueStore:
                         "last_turn_id": to_save.last_turn_id,
                         "last_case_number": to_save.last_case_number,
                         "last_ticket_ref": to_save.last_ticket_ref,
+                        "closed_turn_id": to_save.closed_turn_id,
                         "updated_at": to_save.updated_at,
                         "expected_version": expected_version,
                     },

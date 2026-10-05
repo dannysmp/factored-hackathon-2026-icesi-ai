@@ -131,13 +131,14 @@ def test_with_dispute_closed_leaves_nothing_open_and_names_no_case() -> None:
     )
     state = state.with_clarification(Slot.CONFIRMATION)
 
-    closed = state.with_dispute_closed()
+    closed = state.with_dispute_closed("turn-9")
 
     assert closed.phase is ConversationPhase.CLOSED
     assert closed.pending_slot is None
     assert closed.clarification_attempts == 0
     assert closed.selected_ref is None
     assert closed.category is None
+    assert closed.closed_turn_id == "turn-9"
     assert closed.last_case_number is None
 
 

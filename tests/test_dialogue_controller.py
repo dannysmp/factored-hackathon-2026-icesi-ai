@@ -1202,11 +1202,14 @@ class _Dialogue:
         self.port = port or FakeToolPort(transactions=(_transaction(),))
         self.turns = 0
         self.understood: list[str] = []
+        self.language: str | None = None
 
     def say(
         self, result: NluResult, *, turn_id: str | None = None, text: str = "hola"
     ) -> TurnResponse:
         self.turns += 1
+        if self.language is not None:
+            result = result.model_copy(update={"language": self.language})
         controller, nlu = _controller(
             result,
             store=self.store,
@@ -1225,7 +1228,9 @@ class _Dialogue:
         return self.say(_file_dispute(transaction=TransactionHint(merchant="Amazon")))
 
 
-def _filed_dialogue(policy: Policy, retriever: LexicalRetriever) -> _Dialogue:
+def _filed_dialogue(
+    policy: Policy, retriever: LexicalRetriever, language: str | None = None
+) -> _Dialogue:
     port = FakeToolPort(
         transactions=(_transaction(),),
         cases=(_case(),),
@@ -1235,6 +1240,7 @@ def _filed_dialogue(policy: Policy, retriever: LexicalRetriever) -> _Dialogue:
         create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
     )
     dialogue = _Dialogue(policy, retriever, port)
+    dialogue.language = language
     dialogue.say(
         _file_dispute(
             transaction=TransactionHint(merchant="Amazon"),
@@ -1548,6 +1554,43 @@ def test_a_retried_turn_that_opened_a_second_dispute_asks_its_question_again(
     assert retried.reply == first.reply
     assert retried.next_expected is Slot.TRANSACTION_CHOICE
     assert dialogue.port.create_calls == 1
+
+
+@pytest.mark.parametrize("language", ["es", "pt", "en"])
+@pytest.mark.parametrize("closing", _CLOSINGS_WITHOUT_A_CASE)
+def test_a_retried_turn_that_closed_a_second_dispute_does_not_report_the_first_case(
+    policy: Policy, retriever: LexicalRetriever, closing: str, language: str
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever, language)
+    if closing == "ineligible":
+        dialogue.port.evaluate_result = _decision(
+            Outcome.INELIGIBLE, ReasonCode.FILING_WINDOW_EXPIRED
+        )
+    if closing == "duplicate":
+        dialogue.port.create_result = CreateDisputeCaseResult(
+            created=False,
+            refusal=ToolRefusalCode.DUPLICATE_OPEN_CASE,
+            existing_case_number="D-9",
+        )
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    confirmations = {"cancelled": 2, "ineligible": 1, "duplicate": 2}[closing]
+    answers = [ConfirmationAnswer.YES] * (confirmations - 1)
+    answers.append(ConfirmationAnswer.NO if closing == "cancelled" else ConfirmationAnswer.YES)
+    for answer in answers[:-1]:
+        dialogue.say(_confirmation(answer))
+    closed = dialogue.say(_confirmation(answers[-1]), turn_id="turn-close")
+    assert "D-1" not in closed.reply
+
+    retried = dialogue.say(_confirmation(answers[-1]), turn_id="turn-close")
+
+    assert "D-1" not in retried.reply
+    assert retried.case_number is None
+    assert dialogue.port.create_calls == (2 if closing == "duplicate" else 1)
 
 
 def test_the_status_of_a_filed_case_can_still_be_asked_for(
