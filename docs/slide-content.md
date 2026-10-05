@@ -77,7 +77,8 @@ This document states the content of each slide; it is not the slide file itself.
   two raters is 60% and 28% on grounding, 62% and 60% on language quality, and 17% and 100% over
   six cases on clarification, against an 80% bar. The evaluation report
   (`reports/evaluation.md`) therefore withholds the judge's quality scores and shows the raters'
-  means beside the headline metrics for all three systems. The figures describe the commit the
+  means from the validation sample in their place; only the proposed system's run is judge-scored,
+  so the baselines carry no quality scores. The figures describe the commit the
   report names, which predates later behaviour fixes.
 - Independent of the harness, the deterministic checks run in the test suite this release ships
   with: authorization tests, the confirmation and verification tests, and the reason-code coverage
