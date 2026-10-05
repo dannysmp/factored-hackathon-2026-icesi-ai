@@ -1,4 +1,8 @@
-/** Component test: the queue screen's states (AC-E10-18) and its accessibility. */
+/**
+ * Component test: the queue screen renders every state deliberately (loading, empty, updating,
+ * error, ready), filters by language and trigger view, opens a ticket on click, and has no
+ * automatically detectable accessibility violations in any of them.
+ */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
@@ -20,7 +24,7 @@ describe('QueueScreen', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Cargando la cola')
   })
 
-  it('shows the whole queue, priority tickets first, once it loads', async () => {
+  it('shows the whole queue, priority tickets first, when it loads', async () => {
     render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={vi.fn()} />)
 
     const rows = await screen.findAllByRole('row')
@@ -50,6 +54,29 @@ describe('QueueScreen', () => {
     render(<QueueScreen client={new FixtureQueueClient(EMPTY_QUEUE)} onSelectTicket={vi.fn()} />)
 
     expect(await screen.findByText('No hay casos abiertos en este momento.')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Idioma')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  })
+
+  it('keeps the filters when a language has no cases, so the filter can be undone', async () => {
+    const user = userEvent.setup()
+    const onlySpanish = {
+      ...DEMO_QUEUE,
+      items: DEMO_QUEUE.items.filter((i) => i.language === 'es'),
+    }
+    render(<QueueScreen client={new FixtureQueueClient(onlySpanish)} onSelectTicket={vi.fn()} />)
+    await screen.findAllByRole('row')
+
+    await user.selectOptions(screen.getByLabelText('Idioma'), 'en')
+
+    expect(await screen.findByText('Ningún caso coincide con este filtro.')).toBeInTheDocument()
+    expect(screen.queryByText('No hay casos abiertos en este momento.')).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Todos (0)' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Otros (0)' })).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Idioma'), 'all')
+
+    expect(await screen.findAllByRole('row')).toHaveLength(onlySpanish.items.length + 1)
   })
 
   it('narrows the table to the priority tab, then back to all', async () => {
@@ -111,7 +138,7 @@ describe('QueueScreen', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Actualizando')
     // The table itself is still the last-loaded (unfiltered) rows, not cleared or replaced: the
-    // language filter's own effect on the row count only lands once the refetch resolves, which
+    // language filter's own effect on the row count only lands when the refetch resolves, which
     // this test's second call deliberately never does.
     expect(screen.getAllByRole('row')).toHaveLength(DEMO_QUEUE.items.length + 1)
   })
@@ -133,12 +160,29 @@ describe('QueueScreen', () => {
     expect(screen.getByRole('button', { name: 'Intentar de nuevo' })).toBeInTheDocument()
   })
 
-  it('has no automatically detectable accessibility violations once ready', async () => {
+  it('has no automatically detectable accessibility violations when ready', async () => {
     const { container } = render(
       <QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={vi.fn()} />,
     )
 
     await screen.findAllByRole('row')
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('has no automatically detectable accessibility violations when a language has no cases', async () => {
+    const user = userEvent.setup()
+    const onlySpanish = {
+      ...DEMO_QUEUE,
+      items: DEMO_QUEUE.items.filter((i) => i.language === 'es'),
+    }
+    const { container } = render(
+      <QueueScreen client={new FixtureQueueClient(onlySpanish)} onSelectTicket={vi.fn()} />,
+    )
+    await screen.findAllByRole('row')
+
+    await user.selectOptions(screen.getByLabelText('Idioma'), 'en')
+
+    await screen.findByText('Ningún caso coincide con este filtro.')
     expect(await axe(container)).toHaveNoViolations()
   })
 

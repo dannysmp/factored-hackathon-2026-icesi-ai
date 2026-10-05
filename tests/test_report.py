@@ -479,7 +479,7 @@ def test_a_synthetic_sample_never_renders_an_agreement_rate() -> None:
     )
     section = text.split("## 9.")[1].split("## 10.")[0]
 
-    assert "Pending H4" in section
+    assert "Pending the human judge-validation sample" in section
     assert "1.000" not in section  # the agreement rate itself must not leak through
 
 
@@ -489,7 +489,7 @@ def test_a_human_sample_renders_the_real_agreement_table() -> None:
     )
     section = text.split("## 9.")[1].split("## 10.")[0]
 
-    assert "Pending H4" not in section
+    assert "Pending the human judge-validation sample" not in section
     assert "grounding" in section
     assert "1.000" in section
 
@@ -659,7 +659,7 @@ def test_the_detail_and_the_facts_limitation_never_reach_a_synthetic_sample() ->
         _agreement(), "team_generated_synthetic", _detail(), facts_coverage=(46, 50)
     )
 
-    assert "Pending H4" in section
+    assert "Pending the human judge-validation sample" in section
     assert "kappa" not in section and "46" not in section
 
 
@@ -674,12 +674,12 @@ def test_learned_components_points_at_the_experiment_log_not_a_fabricated_number
     assert "experiment log" in section
 
 
-def test_limitations_names_pending_h4_only_when_not_human() -> None:
+def test_limitations_names_the_pending_sample_only_when_not_human() -> None:
     synthetic = render_markdown(_report(judge_validation_provenance="team_generated_synthetic"))
     human = render_markdown(_report(judge_validation_provenance="human"))
 
-    assert "pending the real H4" in synthetic.split("## 11.")[1]
-    assert "pending the real H4" not in human.split("## 11.")[1]
+    assert "pending the human judge-validation sample" in synthetic.split("## 11.")[1]
+    assert "pending the human judge-validation sample" not in human.split("## 11.")[1]
 
 
 def test_limitations_states_what_a_cases_cost_covers_and_that_unknown_is_not_zero() -> None:

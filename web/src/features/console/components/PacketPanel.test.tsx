@@ -1,5 +1,8 @@
-/** Component test: `PacketPanel` renders the whole packet (AC-E10-02) and never a document
- * number or full card/account number (AC-E10-05). */
+/**
+ * Component test: `PacketPanel` renders the whole hand-off packet in the console's fixed Spanish,
+ * and never a document number or a full card or account number: products show only their last
+ * four digits.
+ */
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { DEMO_TICKET_DETAILS } from '../fixtures'
@@ -67,7 +70,23 @@ describe('PacketPanel', () => {
       screen.getByText('Evaluación de la disputa: Escalado: reclamo de fraude'),
     ).toBeInTheDocument()
     expect(
-      screen.getByText('Registro de la disputa (intentada, no completada): Requiere confirmación'),
+      screen.getByText('Registro de la disputa — intento no completado: Requiere confirmación'),
+    ).toBeInTheDocument()
+  })
+
+  it('words an attempted action the same way whatever the action is called', () => {
+    render(
+      <PacketPanel
+        packet={{
+          ...FIRST.packet,
+          actions: [],
+          attempted_action: { action: 'list_transactions', result: 'confirmation_required' },
+        }}
+      />,
+    )
+
+    expect(
+      screen.getByText('Consulta de transacciones — intento no completado: Requiere confirmación'),
     ).toBeInTheDocument()
   })
 
@@ -102,6 +121,35 @@ describe('PacketPanel', () => {
     expect(
       screen.getByText(`${formatShare(risk.interval_low)} – ${formatShare(risk.interval_high)}`),
     ).toBeInTheDocument()
+  })
+
+  it('writes a score under the escalation threshold at the decimals that tell them apart', () => {
+    const { risk } = FIRST.packet.evidence
+    if (risk === null) {
+      throw new Error('fixture setup: FIRST.packet.evidence.risk must be non-null for this test')
+    }
+    render(
+      <PacketPanel
+        packet={{
+          ...FIRST.packet,
+          evidence: {
+            ...FIRST.packet.evidence,
+            risk: {
+              ...risk,
+              score: 0.3996,
+              interval_low: 0.1,
+              interval_high: 0.9,
+              threshold: 0.4001,
+            },
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Puntaje').nextElementSibling).toHaveTextContent('39,96 %')
+    expect(screen.getByText('Umbral de escalamiento').nextElementSibling).toHaveTextContent(
+      '40,01 %',
+    )
   })
 
   it('discloses that the risk score is a synthetic-data estimate, in Spanish, wherever it appears', () => {
@@ -151,7 +199,7 @@ describe('PacketPanel', () => {
       throw new Error('fixture setup: FIRST.packet.verified_facts must be non-empty for this test')
     }
     // `ProductLabel` (contracts/service_v1/envelope.py) carries no full number at all — this
-    // pins the masked presentation the contract's own shape already guarantees (AC-E10-05).
+    // pins the masked presentation the contract's own shape already guarantees.
     expect(screen.getByText(`${fact.product.name} ····${fact.product.last4}`)).toBeInTheDocument()
   })
 

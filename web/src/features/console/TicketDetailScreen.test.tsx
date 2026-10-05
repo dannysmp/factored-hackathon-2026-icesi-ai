@@ -1,4 +1,8 @@
-/** Component test: the ticket-detail screen's states (AC-E10-18) and its accessibility. */
+/**
+ * Component test: the ticket-detail screen renders its loading, ready (packet and timeline tabs),
+ * not-found and error states, offers a back control, and has no automatically detectable
+ * accessibility violations when ready or failed.
+ */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
@@ -62,7 +66,7 @@ describe('TicketDetailScreen', () => {
     expect(onBack).toHaveBeenCalled()
   })
 
-  it('shows a message and a back control when the ticket no longer resolves', async () => {
+  it('shows a message and a back control when the ticket does not resolve', async () => {
     const user = userEvent.setup()
     const onBack = vi.fn()
     const client: TicketDetailClient = { fetchTicketDetail: () => Promise.resolve(null) }
@@ -80,7 +84,7 @@ describe('TicketDetailScreen', () => {
     expect(screen.getByRole('button', { name: 'Intentar de nuevo' })).toBeInTheDocument()
   })
 
-  it('has no automatically detectable accessibility violations once ready', async () => {
+  it('has no automatically detectable accessibility violations when ready', async () => {
     const client = new FixtureTicketDetailClient(DEMO_TICKET_DETAILS)
     const { container } = render(
       <TicketDetailScreen client={client} ticketRef={TICKET_REF} onBack={vi.fn()} />,

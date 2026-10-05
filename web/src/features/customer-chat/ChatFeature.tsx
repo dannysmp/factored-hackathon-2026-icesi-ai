@@ -1,3 +1,7 @@
+/**
+ * The customer chat screen: composes the conversation hook with the message list, the choice
+ * buttons, the confirmation button and the text form, and owns focus and announcement behavior.
+ */
 import { useEffect, useRef } from 'react'
 import type { JSX } from 'react'
 import { ChoiceButtons } from './components/ChoiceButtons'
@@ -20,9 +24,10 @@ import styles from './ChatFeature.module.css'
 /**
  * The customer chat, wired to whatever `ChatClient` its caller passes in.
  *
- * Renders every state deliberately (frontend standard, section 6): loading, error (with a
- * retryable message, never a stack trace), and ready, where the confirmation button, the choice
- * buttons and the text form each appear only when the assistant's last turn calls for them.
+ * Renders every state deliberately: loading, error (a message saying what failed and how to go
+ * on, never a stack trace; it offers Retry unless the session has expired), and ready. When
+ * ready, the choice buttons appear when the last turn offers choices, the confirmation button
+ * when it awaits confirmation, and the text form with every turn until the conversation ends.
  *
  * `lang` is the persona's selected language, known from sign-in before any turn exists; once a
  * turn arrives, its own `lang` (the server's grounded value) takes over, so the chrome never
@@ -64,6 +69,8 @@ export function ChatFeature({
     onLanguageChange?.(activeLang)
   }, [activeLang, onLanguageChange])
 
+  // An expired session cannot be retried from here, so the Retry button is hidden and the
+  // parent is told to send the person back to sign-in.
   const expired = conversation.failure === 'unauthorized'
   useEffect(() => {
     if (expired) onSessionExpired?.()

@@ -13,6 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.conversation.state import ConversationPhase, DialogueState
+from app.domain.policy.models import DisputeCategory
 from contracts.service_v1.envelope import Slot
 
 _NOW = datetime(2026, 9, 27, 12, 0, tzinfo=UTC)
@@ -106,7 +107,38 @@ def test_with_case_filed_closes_the_conversation_and_names_the_case() -> None:
 
     assert filed.phase is ConversationPhase.CLOSED
     assert filed.last_case_number == "D-1"
-    assert filed.pending_slot is Slot.CONFIRMATION
+
+
+def test_with_case_filed_leaves_nothing_of_the_filed_dispute_open() -> None:
+    """The filing question, the clarification count, the transaction and the reason are cleared."""
+    state = _state().model_copy(
+        update={"selected_ref": "TX-1", "category": DisputeCategory.UNRECOGNIZED_CHARGE}
+    )
+    state = state.with_clarification(Slot.CONFIRMATION)
+
+    filed = state.with_case_filed("D-1")
+
+    assert filed.pending_slot is None
+    assert filed.clarification_attempts == 0
+    assert filed.selected_ref is None
+    assert filed.category is None
+
+
+def test_with_dispute_closed_leaves_nothing_open_and_names_no_case() -> None:
+    """A dispute that ends without a case closes the conversation and clears its selections."""
+    state = _state().model_copy(
+        update={"selected_ref": "TX-1", "category": DisputeCategory.UNRECOGNIZED_CHARGE}
+    )
+    state = state.with_clarification(Slot.CONFIRMATION)
+
+    closed = state.with_dispute_closed()
+
+    assert closed.phase is ConversationPhase.CLOSED
+    assert closed.pending_slot is None
+    assert closed.clarification_attempts == 0
+    assert closed.selected_ref is None
+    assert closed.category is None
+    assert closed.last_case_number is None
 
 
 def test_with_handed_off_moves_to_handed_off_and_names_the_ticket() -> None:

@@ -1,3 +1,4 @@
+/** A wrapper that makes horizontally scrolling content reachable from the keyboard. */
 import { useEffect, useRef, useState } from 'react'
 import type { JSX, ReactNode } from 'react'
 
@@ -5,6 +6,10 @@ import type { JSX, ReactNode } from 'react'
  * A wrapper that lets wide content scroll sideways without scrolling the page. When the content
  * really overflows, the wrapper becomes a named, focusable region so a keyboard user can scroll it
  * with the arrow keys; when everything fits, it adds no tab stop and no landmark.
+ *
+ * `label` names the region for assistive technology and is used only while it is scrollable.
+ * Overflow is re-measured when the wrapper or any direct child is resized and when children are
+ * added or removed, so the region follows the content as it changes.
  */
 export function ScrollRegion({
   label,

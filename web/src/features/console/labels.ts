@@ -1,10 +1,10 @@
 /**
  * Human-readable labels for the console's enum values — display only, never sent anywhere.
  *
- * Fixed Spanish literals, not a catalog entry (D91): the console stays fixed-Spanish and never
- * imports the trilingual `useT` hook chat and sign-in use — a case's own language (`Lang`) is
- * shown to the agent through `LANGUAGE_LABELS`, a small fixed Spanish-name lookup, not translated
- * through any per-viewer language mechanism.
+ * Fixed Spanish literals, not catalog entries: the console is deliberately fixed-Spanish and never
+ * uses the per-language catalogs or the trilingual `useT` hook that chat and sign-in use. A case's
+ * own language (`Lang`) is shown to the agent through `LANGUAGE_LABELS`, a small fixed
+ * Spanish-name lookup. Lookups for values the backend may extend fall back to `humanize`.
  */
 import type {
   DisputeCategory,
@@ -17,6 +17,7 @@ import type {
 } from './contracts'
 import type { Lang } from '../customer-chat/contracts'
 
+/** Why a conversation was handed to a person, one label per `HandoffTrigger`. */
 export const TRIGGER_LABELS: Record<HandoffTrigger, string> = {
   fraud_report: 'Reporte de fraude',
   card_loss: 'Pérdida de tarjeta',
@@ -30,6 +31,7 @@ export const TRIGGER_LABELS: Record<HandoffTrigger, string> = {
   filing_unverified: 'Registro del caso sin verificar',
 }
 
+/** The kind of dispute the customer reported, one label per `DisputeCategory`. */
 export const CATEGORY_LABELS: Record<DisputeCategory, string> = {
   unrecognized_charge: 'Cargo no reconocido',
   duplicate_charge: 'Cargo duplicado',
@@ -38,6 +40,7 @@ export const CATEGORY_LABELS: Record<DisputeCategory, string> = {
   fraud_claim: 'Reclamo de fraude',
 }
 
+/** A ticket's lifecycle state, one label per `TicketStatus`. */
 export const STATUS_LABELS: Record<TicketStatus, string> = {
   open: 'Abierto',
   in_review: 'En revisión',
@@ -45,6 +48,7 @@ export const STATUS_LABELS: Record<TicketStatus, string> = {
   rejected: 'Rechazado',
 }
 
+/** The Spanish name of the language a case was conducted in. */
 export const LANGUAGE_LABELS: Record<Lang, string> = {
   es: 'Español',
   pt: 'Portugués',
@@ -52,7 +56,7 @@ export const LANGUAGE_LABELS: Record<Lang, string> = {
 }
 
 /** `ReasonCode` (app/domain/policy/models.py) — every code the policy engine can return, shown
- * verbatim to the agent (AC-E10-02: "evidence: reason codes"). */
+ * to the agent as the packet's evidence. */
 export const REASON_CODE_LABELS: Record<ReasonCode, string> = {
   eligible: 'Elegible',
   product_out_of_scope: 'Producto fuera de alcance',
@@ -163,6 +167,10 @@ export function humanize(value: string): string {
   return words === '' ? '—' : `Sin etiqueta (${words})`
 }
 
+/**
+ * Looks a value up in a label table, falling back to `humanize`. `Object.hasOwn` keeps inherited
+ * keys such as `constructor` from being mistaken for labels.
+ */
 function labelOf(labels: Readonly<Record<string, string>>, value: string): string {
   return Object.hasOwn(labels, value) ? (labels[value] ?? humanize(value)) : humanize(value)
 }

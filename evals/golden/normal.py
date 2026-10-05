@@ -605,7 +605,7 @@ _POLICY_ANSWER_CASES = (
         expected_intent=Intent.POLICY_ANSWER,
         expected_policy_section_id="human-review",
         description=(
-            "Grounded in the human-review section, stated qualitatively per ADR conventions."
+            "Grounded in the human-review section, stated qualitatively, as the corpus states it."
         ),
     ),
     Case(

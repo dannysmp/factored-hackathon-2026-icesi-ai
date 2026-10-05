@@ -808,6 +808,94 @@ def test_a_described_answer_that_matches_nothing_counts_whatever_the_intent_the_
     assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
 
 
+def test_an_empty_transaction_list_never_counts_toward_the_budget(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, port=FakeToolPort(transactions=()))
+
+    for _ in range(4):
+        reply = dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+        assert not reply.end_session
+
+    assert dialogue.outbox.packets == []
+    state = dialogue.store.get("sess-1")
+    assert state is not None
+    assert state.clarification_attempts == 0
+
+
+def test_each_turn_logs_how_it_was_understood_and_where_the_dialogue_went(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    with caplog.at_level(logging.INFO, logger="app.conversation.controller"):
+        dialogue.say(_file_dispute())
+        dialogue.say(_plain(NluIntent.UNCLEAR, transaction=_NOBODY))
+        dialogue.say(_plain(NluIntent.UNCLEAR, transaction=_NOBODY))
+
+    decided = [r.getMessage() for r in caplog.records if r.getMessage().startswith("turn_decided")]
+    assert len(decided) == 3
+    assert "understood=file_dispute" in decided[0]
+    assert "has_hint=False" in decided[0]
+    assert "slot_after=transaction attempts_after=0" in decided[0]
+    assert "understood=unclear" in decided[1]
+    assert "has_hint=True" in decided[1]
+    assert "slot_before=transaction attempts_before=0" in decided[1]
+    assert "attempts_after=1" in decided[1]
+    assert "handoff_reason=None" in decided[1]
+    assert "reply=handoff" in decided[2]
+    assert "template=handoff_review" in decided[2]
+    assert "handoff_reason=escalate_low_nlu_confidence" in decided[2]
+
+
+def test_the_turn_decision_log_never_carries_the_customers_description(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    described = TransactionHint(
+        merchant="Nobody",
+        amount=Decimal("1914215.00"),
+        currency="COP",
+        date_on=date(2026, 6, 3),
+        date_source=DateSource.ABSOLUTE,
+        product_last4="4417",
+    )
+
+    with caplog.at_level(logging.INFO, logger="app.conversation.controller"):
+        dialogue.say(_file_dispute(transaction=described))
+
+    assert any(r.getMessage().startswith("turn_decided") for r in caplog.records)
+    everything = " ".join(r.getMessage() for r in caplog.records)
+    for detail in ("Nobody", "1914215", "2026-06-03", "4417"):
+        assert detail not in everything
+
+
+def test_a_replayed_turn_does_not_log_a_second_decision(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute(), turn_id="turn-once")
+    caplog.clear()
+
+    with caplog.at_level(logging.INFO, logger="app.conversation.controller"):
+        dialogue.say(_file_dispute(), turn_id="turn-once")
+
+    assert not [r for r in caplog.records if r.getMessage().startswith("turn_decided")]
+
+
+def test_a_described_transaction_that_finds_none_counts_toward_the_budget(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, port=FakeToolPort(transactions=()))
+
+    assert not dialogue.say(_file_dispute(transaction=_NOBODY)).end_session
+    assert not dialogue.say(_file_dispute(transaction=_NOBODY)).end_session
+    assert dialogue.outbox.packets == []
+
+    assert dialogue.say(_file_dispute(transaction=_NOBODY)).end_session
+    assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+
+
 def test_after_a_description_that_matches_nothing_the_transaction_stays_the_open_question(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
@@ -1129,6 +1217,324 @@ class _Dialogue:
 
     def present_amazon(self) -> TurnResponse:
         return self.say(_file_dispute(transaction=TransactionHint(merchant="Amazon")))
+
+
+def _filed_dialogue(policy: Policy, retriever: LexicalRetriever) -> _Dialogue:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        cases=(_case(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    filed = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    assert "D-1" in filed.reply
+    assert port.create_calls == 1
+    return dialogue
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        _confirmation(ConfirmationAnswer.YES),
+        _confirmation(ConfirmationAnswer.NO),
+        _confirmation(ConfirmationAnswer.AMBIGUOUS),
+        _plain(NluIntent.UNCLEAR),
+        _plain(NluIntent.SMALL_TALK),
+        _plain(NluIntent.CORRECTION),
+    ],
+    ids=["yes", "no", "ambiguous", "unclear", "small-talk", "correction"],
+)
+def test_a_message_after_a_case_is_filed_never_reopens_the_filing_question(
+    policy: Policy, retriever: LexicalRetriever, message: NluResult
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+
+    reply = dialogue.say(message)
+
+    assert reply.next_expected is None
+    assert "Confirma" not in reply.reply
+    assert dialogue.port.create_calls == 1
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.phase is ConversationPhase.CLOSED
+    assert state.pending_slot is None
+    assert dialogue.outbox.packets == []
+
+
+def test_a_new_dispute_after_a_case_is_filed_starts_from_its_own_transaction(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+
+    reply = dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+
+    assert reply.next_expected is Slot.TRANSACTION
+    assert "Confirma" not in reply.reply
+    assert dialogue.port.create_calls == 1
+
+
+def test_a_new_dispute_with_another_reason_after_a_case_is_filed_is_evaluated_under_that_reason(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+
+    presented = dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.DUPLICATE_CHARGE,
+        )
+    )
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    confirm = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert confirm.next_expected is Slot.CONFIRMATION
+    assert "cargo duplicado" in confirm.reply
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.category is DisputeCategory.DUPLICATE_CHARGE
+    assert dialogue.port.create_calls == 1
+
+
+def test_starting_over_for_the_filed_transaction_is_refused_by_the_policy_not_filed_again(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+    dialogue.port.evaluate_result = _decision(Outcome.INELIGIBLE, ReasonCode.DUPLICATE_OPEN_CASE)
+
+    presented = dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    refused = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert refused.next_expected is None
+    assert "Ya existe una disputa abierta" in refused.reply
+    assert dialogue.port.create_calls == 1
+
+
+def _assert_dispute_cleared(dialogue: _Dialogue) -> None:
+    """The dispute's pending question, selection and reason are gone and the phase is closed."""
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.phase is ConversationPhase.CLOSED
+    assert state.pending_slot is None
+    assert state.clarification_attempts == 0
+    assert state.selected_ref is None
+    assert state.category is None
+
+
+def test_a_cancelled_filing_clears_the_selected_transaction_and_reason(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    dialogue.say(_confirmation(ConfirmationAnswer.NO))
+
+    _assert_dispute_cleared(dialogue)
+    assert port.create_calls == 0
+
+
+def test_an_ineligible_decision_clears_the_selected_transaction_and_reason(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(Outcome.INELIGIBLE, ReasonCode.FILING_WINDOW_EXPIRED),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    _assert_dispute_cleared(dialogue)
+
+
+def test_a_duplicate_open_case_refusal_clears_the_selected_transaction_and_reason(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+        create_result=CreateDisputeCaseResult(
+            created=False, refusal=ToolRefusalCode.DUPLICATE_OPEN_CASE, existing_case_number="D-9"
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    _assert_dispute_cleared(dialogue)
+
+
+def _dialogue_closed_without_a_case(
+    policy: Policy, retriever: LexicalRetriever, closing: str
+) -> _Dialogue:
+    """A dialogue whose dispute ended by ``closing``: cancelled, ineligible or duplicate."""
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=(
+            _decision(Outcome.INELIGIBLE, ReasonCode.FILING_WINDOW_EXPIRED)
+            if closing == "ineligible"
+            else _decision(Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True)
+        ),
+        create_result=(
+            CreateDisputeCaseResult(
+                created=False,
+                refusal=ToolRefusalCode.DUPLICATE_OPEN_CASE,
+                existing_case_number="D-9",
+            )
+            if closing == "duplicate"
+            else None
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    if closing == "cancelled":
+        dialogue.say(_confirmation(ConfirmationAnswer.YES))
+        dialogue.say(_confirmation(ConfirmationAnswer.NO))
+    elif closing == "duplicate":
+        dialogue.say(_confirmation(ConfirmationAnswer.YES))
+        dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    else:
+        dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    return dialogue
+
+
+_CLOSINGS_WITHOUT_A_CASE = ["cancelled", "ineligible", "duplicate"]
+
+
+@pytest.mark.parametrize("closing", _CLOSINGS_WITHOUT_A_CASE)
+def test_a_new_dispute_after_one_ended_asks_for_its_own_transaction(
+    policy: Policy, retriever: LexicalRetriever, closing: str
+) -> None:
+    """The dispute that ended is not presented again: a new request starts from its transaction."""
+    dialogue = _dialogue_closed_without_a_case(policy, retriever, closing)
+    filed_before = dialogue.port.create_calls
+
+    reply = dialogue.say(_file_dispute())
+
+    assert reply.next_expected is Slot.TRANSACTION
+    assert dialogue.port.create_calls == filed_before
+
+
+@pytest.mark.parametrize("closing", _CLOSINGS_WITHOUT_A_CASE)
+def test_a_policy_question_after_a_dispute_ended_is_declined_when_its_figure_needs_a_reason(
+    policy: Policy, retriever: LexicalRetriever, closing: str
+) -> None:
+    """With the reason cleared, a figure that depends on one is declined with an advisor offered."""
+    dialogue = _dialogue_closed_without_a_case(policy, retriever, closing)
+
+    reply = dialogue.say(
+        _plain(NluIntent.POLICY_QUESTION, policy_query="cuanto tiempo tienen para responder")
+    )
+
+    assert "No tengo esa información" in reply.reply
+    assert "asesor" in reply.reply
+
+
+@pytest.mark.parametrize("closing", _CLOSINGS_WITHOUT_A_CASE)
+def test_a_person_requested_after_a_dispute_ended_is_replayed_without_that_dispute_reason(
+    policy: Policy, retriever: LexicalRetriever, closing: str
+) -> None:
+    """The ticket reply names the reason only when the conversation still holds one."""
+    dialogue = _dialogue_closed_without_a_case(policy, retriever, closing)
+    dialogue.say(_plain(NluIntent.REQUEST_PERSON))
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.last_ticket_ref is not None
+    controller, _ = _controller(
+        _plain(NluIntent.SMALL_TALK),
+        store=dialogue.store,
+        tool_port=dialogue.port,
+        policy=policy,
+        outbox=dialogue.outbox,
+        retriever=retriever,
+    )
+
+    assert controller._ticket_envelope(state).facts.category is None
+
+
+def test_a_policy_question_after_a_case_is_filed_is_declined_when_its_figure_needs_a_reason(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+
+    reply = dialogue.say(
+        _plain(NluIntent.POLICY_QUESTION, policy_query="cuanto tiempo tienen para responder")
+    )
+
+    assert "No tengo esa información" in reply.reply
+    assert "asesor" in reply.reply
+    assert dialogue.port.create_calls == 1
+
+
+def test_a_retried_turn_after_a_case_is_filed_replays_the_filing_result(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+    first = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-late")
+    assert "D-1" not in first.reply
+
+    retried = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-late")
+
+    assert "D-1" in retried.reply
+    assert dialogue.port.create_calls == 1
+
+
+def test_the_status_of_a_filed_case_can_still_be_asked_for(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+
+    reply = dialogue.say(_plain(NluIntent.DISPUTE_STATUS))
+
+    assert "D-1" in reply.reply
+    assert dialogue.port.create_calls == 1
 
 
 def test_yes_to_the_presented_transaction_moves_on_to_the_reason(
@@ -3887,7 +4293,43 @@ def test_a_blank_merchant_does_not_keep_the_selection_when_another_amount_or_dat
         retriever=retriever,
     )
 
-    assert selected != "TX-1"
+    assert selected == "TX-2"
+
+
+@pytest.mark.parametrize(
+    ("hint", "selected", "pending"),
+    [
+        (TransactionHint(merchant=" ", amount=Decimal("15.99")), "TX-2", Slot.TRANSACTION_CHOICE),
+        (
+            TransactionHint(
+                merchant="\u0301", date_on=date(2026, 6, 10), date_source=DateSource.ABSOLUTE
+            ),
+            "TX-2",
+            Slot.TRANSACTION_CHOICE,
+        ),
+        (TransactionHint(merchant=" "), None, Slot.TRANSACTION),
+    ],
+    ids=["amount", "date", "nothing else"],
+)
+def test_a_first_message_with_a_blank_merchant_searches_by_the_rest_of_the_hint(
+    hint: TransactionHint,
+    selected: str | None,
+    pending: Slot,
+    policy: Policy,
+    retriever: LexicalRetriever,
+) -> None:
+    """A blank merchant adds nothing: the amount or date finds the transaction, and a hint with
+    nothing else asks which transaction the customer means."""
+    store = InMemoryDialogueStore()
+    controller = _two_transaction_controller(
+        [_file_dispute(transaction=hint)], store=store, policy=policy, retriever=retriever
+    )
+
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert (state.selected_ref, state.pending_slot) == (selected, pending)
 
 
 def test_naming_a_different_merchant_while_one_is_presented_presents_that_one(

@@ -1,3 +1,4 @@
+/** The shared failure message: title, optional reason and actions, announced as an alert. */
 import type { JSX, ReactNode } from 'react'
 import { Notice } from './Notice'
 import styles from './ErrorState.module.css'

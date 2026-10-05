@@ -57,8 +57,8 @@ Design Principles
   reached confirmation for the *wrong* transaction or category. Which vantage point can prove that
   differs by transport, not by system: P and B0 are a black box over HTTP (``TurnResponse`` never
   exposes the decision), so ``_dialogue_state_matches`` reads ``dialogue_state`` back after the run
-  — ``app.conversation.state``'s own invariant (a session's ``selected_ref``/``category`` are set
-  once and never reset once chosen) means it still names exactly the pending-confirmation target at
+  — ``app.conversation.state`` keeps a session's ``selected_ref``/``category`` from selection until
+  a case is filed, so it still names exactly the pending-confirmation target at
   the point every ``CONFIRM_FILING`` case's script stops (before any filing). B1 is not a black box
   to the harness — the harness *is* B1's own caller, in-process, and already holds the tool port's
   grounded ``PolicyDecision`` the moment it reaches a confirmable state — so
@@ -244,10 +244,10 @@ def _dialogue_state_matches(
     """Whether this session's own ``dialogue_state`` still names ``expected_ref``/
     ``expected_category`` as the pending-confirmation target.
 
-    ``app.conversation.state``'s own invariant — a session's ``selected_ref``/``category`` are set
-    once and never reset once chosen — means these two columns still hold exactly the pending
-    confirmation's target at the point every ``CONFIRM_FILING`` case's script stops today, before
-    any filing (see the module's own Design Principles for why this is not a third vantage point).
+    ``app.conversation.state`` keeps a session's ``selected_ref``/``category`` from selection
+    until a case is filed, so these two columns still hold exactly the pending confirmation's
+    target at the point every ``CONFIRM_FILING`` case's script stops today, before any filing
+    (see the module's own Design Principles for why this is not a third vantage point).
     """
     with psycopg.connect(dsn) as conn, conn.cursor() as cur:
         cur.execute(

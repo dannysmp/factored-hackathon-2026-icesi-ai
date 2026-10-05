@@ -152,7 +152,7 @@ def test_the_lifetime_is_the_configured_one(clock: Clock) -> None:
 def test_an_explicit_ttl_overrides_the_configured_default(
     service: SessionService, clock: Clock
 ) -> None:
-    """ADR-18: a demo customer session (30 minutes) can differ from the configured default."""
+    """A demo customer session (30 minutes) can differ from the configured default."""
     issued = service.issue("C1", audience="customer", ttl=timedelta(minutes=30))
 
     assert issued.expires_at == START + timedelta(minutes=30)
@@ -173,8 +173,8 @@ def test_issuing_for_an_unconfigured_audience_is_refused(service: SessionService
 def test_a_demo_flag_round_trips_and_an_agent_token_yields_an_agent_principal(
     service: SessionService,
 ) -> None:
-    """``AgentPrincipal`` is a distinct type from ``Principal`` (ADR-17, ADR-18), not a flag on
-    one shared type — a route written against one type cannot silently accept the other."""
+    """``AgentPrincipal`` is a distinct type from ``Principal``, not a flag on one shared type —
+    a route written against one type cannot silently accept the other."""
     issued = service.issue("A1", audience="agent", demo=True)
 
     principal = service.verify_agent(issued.token)
@@ -187,7 +187,7 @@ def test_a_demo_flag_round_trips_and_an_agent_token_yields_an_agent_principal(
 def test_a_customer_token_and_an_agent_token_use_different_keys(
     service: SessionService, clock: Clock
 ) -> None:
-    """Distinct audiences never share a signing key, per audience (ADR-18)."""
+    """Distinct audiences never share a signing key, per audience."""
     customer_token = service.issue("C1", audience="customer").token
     agent_token = service.issue("A1", audience="agent").token
 

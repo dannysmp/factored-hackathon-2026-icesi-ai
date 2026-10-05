@@ -71,7 +71,7 @@ def test_an_agent_token_reaches_an_agent_audience_path_as_an_agent_principal() -
 
 
 def test_an_agent_token_on_a_customer_audience_path_is_refused_like_no_session() -> None:
-    """ADR-18: a validly signed token of the wrong audience learns nothing about the path."""
+    """A validly signed token of the wrong audience learns nothing about the path."""
     sessions = _service()
     client = TestClient(_app(sessions, {"/v1": "customer"}))
     agent_token = sessions.issue("A1", audience="agent").token
