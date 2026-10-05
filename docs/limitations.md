@@ -83,8 +83,10 @@ results still to come say so and name the command that completes them.
   Spanish, Portuguese and English. A phrase outside it, or a merchant name the model guesses
   from the customer's words, still narrows the search to a merchant that may not exist and can
   answer "not found" for a transaction the customer owns. A currency the model supplies for an
-  amount written with only a bare `$` is discarded; a currency the customer states is kept. The
-  behavior was verified with scripted understanding results, not across live model output.
+  amount written with only a bare `$` is discarded; a currency the customer states is kept. An
+  amount is matched against the transaction's dollar figure or its amount in its own currency,
+  and the amount and currency must come from the same figure. The behavior was verified with
+  scripted understanding results, not across live model output.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in
