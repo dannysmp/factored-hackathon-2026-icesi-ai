@@ -39,6 +39,7 @@ export interface Queue extends QueueState {
   retry: () => void
 }
 
+/** The state before the first request answers: loading, with nothing to show. */
 const INITIAL_STATE: QueueState = {
   status: 'loading',
   items: [],
