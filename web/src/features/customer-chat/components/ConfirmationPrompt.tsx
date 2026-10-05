@@ -15,7 +15,7 @@ import styles from './ConfirmationPrompt.module.css'
  * summary of its own: the reply above already showed what is being confirmed. The conversation
  * shows the button's own label, in the customer's language, as what they said. Yes is the one
  * primary action; No is outlined beside it, so declining is as easy to reach as agreeing without
- * competing with it. The frame belongs to the buttons, not to a transcript message, so it can never
+ * outweighing it. The frame belongs to the buttons, not to a transcript message, so it can never
  * sit on a reply that is not the summary. The caller renders it only while a confirmation is
  * awaited and no turn is in flight, so a changed summary is never answered by a stale button.
  */

@@ -43,7 +43,7 @@
 
 /* A subtle, non-blocking affordance for a filter refetch over already-loaded data: the table it
    sits above stays visible with its stale rows rather than being replaced, so this reads as
-   "updating," never as a second, competing loading treatment. */
+   "updating," never as a second, parallel loading treatment. */
 .queue-updating {
   color: var(--color-text-subtle);
   font-size: var(--font-size-sm);

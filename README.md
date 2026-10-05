@@ -1,4 +1,4 @@
-# Dispute intake
+# Transaction Dispute Intake
 
 AI-first **transaction-dispute intake** for a LATAM retail bank. A customer reports a problem
 with a card or account transaction in Spanish, Portuguese or English. The system authenticates the
@@ -7,7 +7,46 @@ when it is permitted, verifies the filing and hands the case to a human agent, w
 summary, whenever a person is required.
 
 The guiding principle is that **AI is not autonomous just because it can be**: the language model
-understands and renders language, while deterministic code decides and acts.
+only understands the request, while deterministic code decides and acts. Replies are fixed
+templates filled with verified facts; in the shipped configuration the model writes nothing the
+customer reads.
+
+## Try it
+
+The system is deployed at **https://184-195-142-149.sslip.io**. It is a demonstration with
+simulated data: pick a profile on the sign-in page and enter its access code. The access codes are
+not in this repository; they come separately with the delivery.
+
+| Profile | Language | What it shows |
+|---|---|---|
+| Ana | Spanish | A savings account withdrawal the customer does not recognize, which policy allows: the case is filed and read back |
+| João | Portuguese | A credit card charge the customer does not recognize, which policy allows, in Portuguese |
+| Emma | English | A credit card purchase the customer does not recognize, which policy allows, in English |
+| Carlos | Spanish | A large transfer the customer does not recognize, which policy sends to a person, with a handoff packet |
+| Mariana | Portuguese | A customer with an earlier complaint, which policy routes to a person |
+| Beatriz (agent) | Portuguese, Spanish | The console: the handoff queue and the packet a person receives |
+| Diego (agent) | Spanish | The console as a fraud specialist |
+
+Customers use the chat at the address above; agents use the console at `/console.html`. A case
+handed over as Carlos or Mariana appears in the console's queue. A customer session lasts 30
+minutes and an agent session 60, and a profile that someone else is using is refused until that
+session ends.
+
+## At a glance
+
+The system takes a customer's dispute from the first message to a verified, filed case, or to the
+right person. The model understands the request; a deterministic policy engine decides, tools
+scoped to the signed-in customer act, and every write is read back before the customer is told.
+
+On 135 scripted cases, run on the golden set against the live model, **safe automated resolution is 72.5%** for this system,
+against 33.0% for a keyword baseline and 36.9% for a model-only agent, with **zero unsafe
+outcomes** for all three. It misses more of the cases that need a person than the model-only agent does
+(missed transfers 15.2% against 9.1%). These are measurements on scripted cases, not
+production results; the full table is under [Evaluation](#evaluation).
+
+- [Evaluation report](reports/evaluation.md): workload, metrics, variability, failures and judge validation
+- [Limitations report](docs/limitations.md): what is built, deferred and still open
+- [Architecture](#how-it-works): the five stages, the components and the design rules
 
 ## How it works
 
@@ -53,9 +92,23 @@ Design rules that follow from this:
 
 - Policy and permissions are enforced in code and in the tool layer, never in prompts.
 - A document number alone never proves identity; access is bound to an authenticated session.
-- The model may only use facts and sources that the decision layer put in its input, and its
-  wording must agree with the decisions taken.
+- Reply wording comes from fixed templates filled with verified facts. If the optional model
+  renderer is enabled, it may only use facts and sources that the decision layer put in its input,
+  and its wording must agree with the decisions taken.
 - A learned risk score can route a case to human review; it never decides an outcome.
+
+### Models
+
+The system calls the Claude API in two places, and the evaluation uses it in a third:
+
+| Use | Model | Role |
+|---|---|---|
+| Understanding | `claude-haiku-4-5-20251001` | Reads each customer message and returns language, intent and details in a strict schema. Not called, for example, when the message is only a position in a list the system just showed, when the conversation is already handed to a person or abandoned, once a session reaches `DIALOGUE_MAX_TURNS`, once the day's `LLM_DAILY_SPEND_LIMIT_USD` is reached, and with `LLM_PROVIDER=stub`. |
+| Rendering | `claude-sonnet-5` | Drafts an eligible reply when `MODEL_RENDERER_ENABLED=true`. Off by default: replies are fixed templates filled with verified facts. |
+| Evaluation judge | `claude-sonnet-5` | Scores replies in the evaluation harness only. Compared with two human raters, its agreement with at least one rater was below 80% on every dimension, so its scores are not reported. |
+
+The ids are the defaults of `NLU_MODEL`, `RENDER_MODEL` and `JUDGE_MODEL`; each must be in the
+allowed list in `app/config.py`. Card-shaped digit runs and document-number shapes in the customer's message are masked before any request to the model; numbers split across messages or written in words are not detected (see [`docs/limitations.md`](docs/limitations.md)).
 
 ## Repository structure
 
@@ -99,10 +152,10 @@ evidence of its state — not a status claim, but something a reader can open an
 
 | Tool | What it is used for | Install |
 |---|---|---|
-| [uv](https://docs.astral.sh/uv/) | Python package and environment manager. It downloads Python 3.11, installs the exact dependency versions pinned in `uv.lock` and runs every command in that environment, so every machine and CI run behaves the same. | `brew install uv` |
-| [gitleaks](https://github.com/gitleaks/gitleaks) | Secret scanner. `make secrets` and CI use it to make sure no credential or key is ever committed to the repository. | `brew install gitleaks` |
-| [Docker](https://docs.docker.com/get-docker/) | Runs the local Postgres serving store (`make db-up`) and builds the images. Not needed for a first look at the service. | Docker Desktop |
-| [Node.js](https://nodejs.org/) 22 | Builds, lints and tests `web/` (`web/.nvmrc`). Not needed for the backend. | `brew install node@22` |
+| [uv](https://docs.astral.sh/uv/) | Python package and environment manager. It downloads Python 3.11, installs the exact dependency versions pinned in `uv.lock` and runs every command in that environment, so every machine and CI run behaves the same. | `brew install uv`, or the [Linux and Windows installers](https://docs.astral.sh/uv/getting-started/installation/) |
+| [gitleaks](https://github.com/gitleaks/gitleaks) | Secret scanner. `make secrets` and CI use it to make sure no credential or key is ever committed to the repository. | `brew install gitleaks`, or the [Linux and Windows installs](https://github.com/gitleaks/gitleaks#installing) |
+| [Docker](https://docs.docker.com/get-docker/) | Runs the local Postgres serving store (`make db-up`) and builds the images. Not needed for a first look at the service. | [Docker Desktop](https://docs.docker.com/desktop/) for macOS, Linux or Windows |
+| [Node.js](https://nodejs.org/) 22 | Builds, lints and tests `web/` (`web/.nvmrc`). Not needed for the backend. | `brew install node@22`, or the [Linux and Windows downloads](https://nodejs.org/en/download) |
 
 ### Set up and run
 
@@ -171,7 +224,6 @@ commands are in [`web/README.md`](web/README.md).
 | `make corpus-check` | Fail when the committed corpus differs from what the policy generates |
 | `make evaluate` | Run the evaluation harness (see *Evaluation*) |
 | `make judge-validation RATER1=<csv> RATER2=<csv>` | Score the returned rater sheets with the real judge and patch `reports/evaluation.md` |
-| `make up` | A placeholder that exits with code 2; the deployed stack is composed by `infra/` |
 | `make help` | List every target |
 
 `make secrets` does not scan unstaged or untracked files: `git add` them first.
@@ -302,7 +354,10 @@ report states "not reportable by the judge" and shows the raters' means instead.
 
 P is the mean of its three runs; B0 and B1 ran once, so their figures carry no run-to-run range.
 Zero observed unsafe outcomes means none occurred in the case-runs counted, not that the risk is
-zero. B0 shares the dialogue controller with P and is not an unchanged control.
+zero. B0 keeps P's dialogue controller, policy engine and tools and replaces only the model with keyword
+matching, so P against B0 measures what the model adds to the same system, not a comparison with a
+system that has no controller. B1 is the contrast without a controller: the model alone chooses
+the tool calls and outcomes.
 [`reports/evaluation-comparison.md`](reports/evaluation-comparison.md) sets this run beside the two
 earlier ones and lists the cases that still fail. The figures describe the commit the report names
 (`6cea3b4`), not the current head, which carries later behaviour fixes and whose effect is not
@@ -396,8 +451,8 @@ security requirements, and which controls exist today, are in [SECURITY.md](SECU
 
 | Symptom | Fix |
 |---|---|
-| `uv: command not found` | Install uv: `brew install uv` or see the uv documentation |
-| `gitleaks: command not found` when running `make secrets` | `brew install gitleaks` |
+| `uv: command not found` | Install uv: `brew install uv`, or use the [Linux and Windows installers](https://docs.astral.sh/uv/getting-started/installation/) |
+| `gitleaks: command not found` when running `make secrets` | `brew install gitleaks`, or the [Linux and Windows installs](https://github.com/gitleaks/gitleaks#installing) |
 | `ConfigError: Invalid configuration — LOG_LEVEL: …` | The message names the bad key; fix it in `.env` (see `.env.example` for accepted values) |
 | `make setup` fails with a stale lockfile | Run `uv lock` and commit the updated `uv.lock` |
 | `make profile` finishes but a table is listed as not profiled, with `could not be parsed`, `InvalidHeader` or `HeaderMismatch` | The report names the table and the reason; check that its raw file matches the layout described under *Data* |
@@ -413,4 +468,3 @@ security requirements, and which controls exist today, are in [SECURITY.md](SECU
 | The service exits with `SESSION_SIGNING_KEY is required` | Set `SESSION_SIGNING_KEY` in `.env` (32 or more characters); only `APP_ENV=local` may start without it |
 | Every request answers `401` with `session_expired` | Sessions last `SESSION_TTL_SECONDS` (default 15 minutes) for the sandbox login, 30 minutes for a customer demonstration sign-in and 60 for an agent; sign in again |
 | `make evaluate` stops with a message naming `TEST_IDENTITY_ENABLED` | The harness signs in through the sandbox login and never enables it; set `TEST_IDENTITY_ENABLED=true` and a `TEST_IDENTITY_KEY` of at least 16 characters |
-| `make up` exits with code 2 | The target is a placeholder; the deployed stack is composed by `infra/` (see *Deployment*) |
