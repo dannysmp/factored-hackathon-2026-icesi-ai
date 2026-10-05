@@ -1,7 +1,8 @@
-# Local working files
+# Local files kept out of the repository: data downloads, notes and tooling configuration
 /CLAUDE.md
 /data/
 /plan/
+.thot/delivery.json
 
 # Secrets and local environment
 .env
@@ -33,7 +34,7 @@ htmlcov/
 !/reports/evaluation-comparison.md
 !/reports/secret-scan.md
 
-# Editor, OS and agent worktrees
+# Editor, OS and local tool state
 .DS_Store
 .claude/worktrees/
 .claude/settings.local.json

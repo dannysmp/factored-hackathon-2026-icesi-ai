@@ -146,6 +146,20 @@ filing decision was made by the system here.
 
 ---
 
+## Running the personas
+
+- A persona profile holds one session at a time. A second sign-in under the same profile is refused
+  as "in use" until the first session ends.
+- Signing out frees the profile at once. Sign out at the end of each path. Closing the tab does not
+  free it: the profile stays in use until its session expires, 30 minutes for a customer and 60 for
+  an agent.
+- A filing made under a persona is kept, and a transaction with an open case is refused a second
+  filing. If a path that files a case no longer works because it was already run, delete the
+  personas' accumulated cases with `make reset-demo-personas`, which needs `DATABASE_URL` pointing
+  at the database to restore.
+
+---
+
 ## Review status
 
 The Spanish wording review was performed on every Spanish line, and its corrections are applied in

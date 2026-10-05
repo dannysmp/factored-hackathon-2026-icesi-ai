@@ -5,11 +5,10 @@ series color back from the Metabase API after it was written — not hand-typed.
 Native application-wide theming (logo, app name, instance brand colors) is a paid
 Metabase feature this deployment doesn't have a license for; see `docs/limitations.md`.
 
-> This run is against a throwaway local Metabase instance seeded with fixture rows matching each
-> mart's real schema, to prove the script against a real API before it ever runs against the
-> deployed instance. `infra/scripts/10-configure-metabase-dashboard.sh` regenerates this file from
-> the real deployment's own data the next time it runs there — the numbers below are fixture
-> values, not the live figures.
+> The values below were read from a local Metabase instance loaded with fixture rows that follow
+> each mart's schema, so they are fixture values, not the live figures.
+> `infra/scripts/10-configure-metabase-dashboard.sh` regenerates this file from the deployed
+> instance's own data.
 
 | Panel | Mart | Business question | Chart | Series | Token | Confirmed hex |
 |---|---|---|---|---|---|---|

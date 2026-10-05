@@ -1,6 +1,6 @@
 # Deployment runbook
 
-The maintainer's procedure for standing the system up in an empty AWS account, setting the two demonstration access codes, verifying the result and reading the codes back to issue them to evaluators and testers. It complements [`README.md`](README.md), which describes what each script creates; this document orders the steps and states what to check after each.
+The maintainer's procedure for standing the system up in an empty AWS account, setting the two demonstration access codes, verifying the result and reading the codes back so they can be issued directly to each tester. It complements [`README.md`](README.md), which describes what each script creates; this document orders the steps and states what to check after each.
 
 ## Handling secrets
 
@@ -143,7 +143,7 @@ Which checks apply depends on the mode. With `teardown_after` left on, the host 
 
 ## 6. Read the codes to issue them
 
-This is the only way to get a code in a form that can be pasted (check 4 uses it too); check 3 reads the codes into a shell variable that is never displayed. Copy it straight to the clipboard so it is never printed, paste it into the message to the evaluator or tester, then clear the clipboard. The subshell fails loudly if the read fails, instead of leaving an empty clipboard. On macOS:
+This is the only way to get a code in a form that can be pasted (check 4 uses it too); check 3 reads the codes into a shell variable that is never displayed. Copy it straight to the clipboard so it is never printed, paste it into the message to the recipient, then clear the clipboard. The subshell fails loudly if the read fails, instead of leaving an empty clipboard. On macOS:
 
 ```sh
 ( set -o pipefail; aws ssm get-parameter --name /transaction-disputes/prod/demo-signin-access-code --with-decryption --query Parameter.Value --output text | tr -d '\n' | pbcopy ) || echo "read failed: nothing was copied"
@@ -155,7 +155,7 @@ The clipboard is not private: a clipboard manager may keep its history, and Univ
 
 Repeat for `demo-agent-access-code`. Send each code only in the direct message to its recipient; do not store it in a document, an issue or the repository.
 
-## 7. After the release window
+## 7. Taking the demonstration down
 
 Turn the sign-in off by following [Turning the demonstration sign-in off](README.md#turning-the-demonstration-sign-in-off), or remove the whole host with `infra/scripts/07-teardown.sh` (the roles, repositories and seed bucket remain).
 
@@ -186,10 +186,10 @@ aws budgets describe-notifications-for-budget --account-id "$account" --budget-n
 
 **Spend limit on the model provider.** In the Claude Console, open the organization's spend limit and notification settings (under *Settings*, then *Limits*; the screen names can differ by account) and set the monthly spend limit of the organization that owns the production key, with a notification below it and the automatic top-up the account offers. The values in force are a monthly limit of US$100, a notification at US$80 and an automatic reload of US$20 whenever the balance falls to US$5. They are set by the maintainer and are not verified from the repository: this limit lives in the provider's organization, so nothing the repository or the AWS account holds can read it back, and the screen is the only check. The monthly limit is the only ceiling on the model spend, because the automatic reload keeps the balance topped up until it is reached.
 
-| Control | Last checked | Role | What was seen |
+| Control | Last checked | Checked by | What was seen |
 |---|---|---|---|
-| AWS monthly cost alert | 2026-10-04 | Programmer, read-only commands above | One monthly cost budget of US$50 with notifications at 50 %, 80 % and 100 % of actual spend and at 100 % of forecast spend |
-| Model provider spend limit | 2026-10-04 | Maintainer, reported; not read back by the programmer | Monthly limit of US$100, notification at US$80, automatic reload of US$20 when the balance falls to US$5. Not verifiable from the repository |
+| AWS monthly cost alert | 2026-10-04 | Read-only commands above | One monthly cost budget of US$50 with notifications at 50 %, 80 % and 100 % of actual spend and at 100 % of forecast spend |
+| Model provider spend limit | 2026-10-04 | Reported; not read back by a command | Monthly limit of US$100, notification at US$80, automatic reload of US$20 when the balance falls to US$5. Not verifiable from the repository |
 
 ## Incidents and their prevention
 
@@ -224,8 +224,8 @@ Two failures on the deployed host, each with what caused it, how it was correcte
 
 One row per clean-account reproduction or persisting deployment, filled in by the maintainer after step 5. A row states only what its run did: a deployment onto an account that already holds the roles, repositories and seed bucket is not a clean-account reproduction and is not recorded as one.
 
-| Date | Role | Mode | Outcome |
+| Date | Run by | Mode | Outcome |
 |---|---|---|---|
-| 2026-10-04 | Programmer, dispatched at the maintainer's request | Persisting deployment from `main` at `2cad12d` (`teardown_after=false`, `deploy_metabase=true`) onto an account already provisioned; not a clean-account reproduction. Run `37227276409` | All jobs green: build and scan, deploy and smoke test, Metabase. Host `184-195-142-149.sslip.io`, dashboard on its `dashboard.` subdomain. The smoke test and both hardening checks passed. Checked by hand afterwards: a wrong access code is refused (401), a second sign-in of the same persona is refused (429), and the dashboard answers over a valid certificate with HSTS and a content security policy |
-| 2026-10-04 | Dispatched from the maintainer's account | Persisting deployment from `main` at `79341e3` (`teardown_after=false`, `deploy_metabase=true`) onto an account already provisioned; not a clean-account reproduction. Run `37239401385` | All jobs green: build and scan, deploy and smoke test, Metabase; teardown skipped. Same host as the previous row |
-| 2026-10-04 | Maintainer's dispatch | Persisting deployment from `main` at `ae78942` (`teardown_after=false`, `deploy_metabase=true`) onto an account already provisioned; not a clean-account reproduction. Run `37241751541` | All jobs green: build and scan, deploy and smoke test, Metabase; teardown skipped. Checked by hand afterwards: the persona list answers 200 and an unused customer persona signs in with a 201. Same host as the previous row |
+| 2026-10-04 | Dispatched on request | Persisting deployment from `main` at `2cad12d` (`teardown_after=false`, `deploy_metabase=true`) onto an account already provisioned; not a clean-account reproduction. Run `37227276409` | All jobs green: build and scan, deploy and smoke test, Metabase. Host `184-195-142-149.sslip.io`, dashboard on its `dashboard.` subdomain. The smoke test and both hardening checks passed. Checked by hand afterwards: a wrong access code is refused (401), a second sign-in of the same persona is refused (429), and the dashboard answers over a valid certificate with HSTS and a content security policy |
+| 2026-10-04 | Dispatched manually | Persisting deployment from `main` at `79341e3` (`teardown_after=false`, `deploy_metabase=true`) onto an account already provisioned; not a clean-account reproduction. Run `37239401385` | All jobs green: build and scan, deploy and smoke test, Metabase; teardown skipped. Same host as the previous row |
+| 2026-10-04 | Dispatched manually | Persisting deployment from `main` at `ae78942` (`teardown_after=false`, `deploy_metabase=true`) onto an account already provisioned; not a clean-account reproduction. Run `37241751541` | All jobs green: build and scan, deploy and smoke test, Metabase; teardown skipped. Checked by hand afterwards: the persona list answers 200 and an unused customer persona signs in with a 201. Same host as the previous row |

@@ -20,7 +20,7 @@ This pull request <states in one or two sentences what it delivers and why it ma
 
 ### Motivation and Context
 
-<The problem or requirement this solves. Link the issue, ADR or plan step. Note any decision a reviewer should know about.>
+<The problem or requirement this solves. Link the issue or ADR. Note any decision a reviewer should know about.>
 
 ### Claims
 
