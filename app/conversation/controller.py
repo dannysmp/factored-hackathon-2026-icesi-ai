@@ -190,7 +190,7 @@ from contracts.service_v1.envelope import (
     TemplateId,
 )
 from contracts.service_v1.envelope import TransactionFact as EnvelopeTransactionFact
-from contracts.service_v1.handoff import ActionRecord, HandoffPacket, HandoffTrigger
+from contracts.service_v1.handoff import ActionRecord, HandoffPacket, HandoffTrigger, OpenQuestion
 from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult, TransactionHint
 from contracts.service_v1.tools import (
     CreateDisputeCaseRequest,
@@ -476,6 +476,11 @@ def _escalate_decision(policy: Policy) -> Decision:
         policy_version=policy.version,
         requires_confirmation=False,
     )
+
+
+def _unanswered(state: DialogueState, slot: Slot) -> OpenQuestion:
+    """The element still missing when a conversation is handed over, and how often it was asked."""
+    return OpenQuestion(slot=slot, attempts=state.clarification_attempts)
 
 
 class DialogueController:
@@ -1225,6 +1230,17 @@ class DialogueController:
             return self._handle_file_dispute(state, result)
         return self._fallback(state, result)
 
+    def _handle_unclear(
+        self, state: DialogueState, result: NluResult
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """Text that could not be understood, before any dispute step, asks which transaction it
+        is about, naming the missing element, rather than repeating the menu; once a dispute has
+        ended, or while a question is open, it is handled as any message that fits no intent. A
+        greeting or small talk has its own handler and keeps the menu."""
+        if state.pending_slot is None and state.phase is ConversationPhase.STARTED:
+            return self._ask(state, Slot.TRANSACTION)
+        return self._handle_unroutable(state, result)
+
     def _handle_correction(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
@@ -1283,6 +1299,7 @@ class DialogueController:
                 trigger=HandoffTrigger.LOW_UNDERSTANDING,
                 reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
                 template=TemplateId.HANDOFF_REVIEW,
+                open_questions=(_unanswered(new_state, slot),),
             )
         if template is not None:
             return new_state, self._envelope(new_state, Intent.CLARIFY, template)
@@ -1358,6 +1375,7 @@ class DialogueController:
                 trigger=HandoffTrigger.LOW_UNDERSTANDING,
                 reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
                 template=TemplateId.HANDOFF_REVIEW,
+                open_questions=(_unanswered(new_state, Slot.TRANSACTION),),
             )
         return new_state, self._envelope(new_state, Intent.CLARIFY, template)
 
@@ -1584,6 +1602,7 @@ class DialogueController:
         verified_facts: tuple[EnvelopeTransactionFact, ...] = (),
         actions: tuple[ActionRecord, ...] = (),
         existing_case_number: str | None = None,
+        open_questions: tuple[OpenQuestion, ...] = (),
     ) -> tuple[DialogueState, RenderEnvelope]:
         """Register a handoff and render its outcome, or ``HANDOFF_NOT_REGISTERED`` if it fails."""
         request = self._request
@@ -1604,6 +1623,7 @@ class DialogueController:
             verified_facts=verified_facts,
             actions=actions,
             existing_case_number=existing_case_number,
+            open_questions=open_questions,
         )
         try:
             packet = self._outbox.record(
@@ -1894,5 +1914,5 @@ _ROUTES: dict[NluIntent, _Handler] = {
     NluIntent.SWITCH_LANGUAGE: DialogueController._handle_switch_language,
     NluIntent.SMALL_TALK: DialogueController._handle_small_talk,
     NluIntent.FAREWELL: DialogueController._handle_farewell,
-    NluIntent.UNCLEAR: DialogueController._handle_unroutable,
+    NluIntent.UNCLEAR: DialogueController._handle_unclear,
 }
