@@ -864,8 +864,8 @@ def judge_validation_section(
     """
     if provenance != "human":
         return (
-            "**Pending H4.** The judge-validation sample used to produce this section is "
-            f"labeled `{provenance}`, not `human` — the real double-scored sample "
+            "**Pending the human judge-validation sample.** The sample used to produce this "
+            f"section is labeled `{provenance}`, not `human` — the real double-scored sample "
             "(see the judge rubric) has not landed yet. No agreement rate "
             "is reported here; presenting a synthetic sample's numbers as the real validation "
             "would misstate how well the judge actually agrees with human raters."
@@ -923,7 +923,7 @@ def _limitations_section(report: EvaluationReport) -> str:
     ]
     if report.judge_validation_provenance != "human":
         lines.append(
-            "- The judge-validation section is pending the real H4 human sample; see that "
+            "- The judge-validation section is pending the human judge-validation sample; see that "
             "section for detail."
         )
     if report.scope_note:

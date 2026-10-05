@@ -2,10 +2,11 @@
 Judge Validation Sample Tests
 ===============================
 
-Component: ``evals.golden.judge_validation_sample``. Hermetic and pure: proves the synthetic H4
-placeholder actually exercises all three of ``evals.judge_validation.compute_agreement``'s decision
-branches (full agreement, a genuine demotion, and the NA-exclusion path) — not just that
-``compute_agreement`` runs against it without crashing.
+Component: ``evals.golden.judge_validation_sample``. Hermetic and pure: proves the synthetic
+human judge-validation sample placeholder actually exercises all three of
+``evals.judge_validation.compute_agreement``'s decision branches (full agreement, a genuine
+demotion, and the NA-exclusion path) — not just that ``compute_agreement`` runs against it without
+crashing.
 """
 
 from __future__ import annotations
