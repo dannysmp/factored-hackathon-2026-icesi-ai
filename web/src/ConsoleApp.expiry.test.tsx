@@ -75,7 +75,7 @@ describe('ConsoleApp session expiry', () => {
     await signIn(user)
 
     expect(await screen.findByLabelText(es['signin.accessCodeLabel'])).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('Su sesión terminó')
+    expect(screen.getByRole('status')).toHaveTextContent('Su sesión expiró')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(calls.filter((call) => call.url === SESSIONS_PATH)).toHaveLength(1)
@@ -85,7 +85,7 @@ describe('ConsoleApp session expiry', () => {
 
     const [firstItem] = DEMO_QUEUE.items
     expect(await screen.findByText(firstItem?.ticket_ref ?? '')).toBeInTheDocument()
-    expect(screen.queryByText('Su sesión terminó. Inicie sesión de nuevo.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Su sesión expiró. Inicie sesión de nuevo.')).not.toBeInTheDocument()
   })
 
   it('keeps a failure that is not a session ending as a retryable error', async () => {
@@ -122,7 +122,7 @@ describe('ConsoleApp session expiry', () => {
     await user.click(await screen.findByText(ticketRef))
 
     expect(await screen.findByLabelText(es['signin.accessCodeLabel'])).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('Su sesión terminó')
+    expect(screen.getByRole('status')).toHaveTextContent('Su sesión expiró')
 
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
