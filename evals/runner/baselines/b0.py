@@ -61,9 +61,8 @@ from __future__ import annotations
 # Third-party libraries
 from fastapi import FastAPI
 
-from app.api.turns import ToolPortDecorator  # The tool port hook the harness injects failures by
-
 # Local modules
+from app.api.turns import ToolPortDecorator  # The tool port hook the harness injects failures by
 from app.config import AppEnvironment, ConfigError, LlmProvider, Settings  # Provider and env
 from app.main import create_app  # The one application both P and B0 are built from
 

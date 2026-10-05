@@ -11,7 +11,8 @@ layer itself knowing anything about the evaluation harness.
 
 Scope
 -----
-In: ``FailureInjectingToolPort``, wrapping any ``ToolPort`` implementation.
+In: ``FailureInjectingToolPort``, wrapping any ``ToolPort`` implementation, and
+``FailureSchedule``, the failure the running case declares, read when a system builds its port.
 Out: choosing which tool a case fails (``evals.models.InjectedToolFailure``, stated on the case),
 running a case end to end (the runner), and the tool layer's own implementation (``app.tools``,
 untouched by this module).
@@ -21,9 +22,11 @@ Design Principles
 - **A decorator, not a fork.** Every method delegates to the wrapped port unchanged except the one
   tool a case names; there is exactly one real `ToolPort` implementation, here or in `app`, per
   the rule against duplicate implementations of the same thing.
-- **Pure and stateless.** No call this makes has a side effect of its own: it either forwards to
-  the inner port or returns a `ToolFailure` built from the case's own declared cause. A frozen
-  dataclass, matching every other harness module's own rule against hidden state.
+- **A pure wrapper, and one deliberately mutable schedule.** ``FailureInjectingToolPort`` has no
+  side effect of its own: it either forwards to the inner port or returns a `ToolFailure` built
+  from the case's own declared cause, and is a frozen dataclass. ``FailureSchedule`` is the one
+  piece of state, a single slot a sequential runner sets per case and clears when the batch ends;
+  it is owned by the caller, never a module-level instance.
 - **Every call to the named tool fails, not just the first.** A case that declares
   `injected_failure` is testing what happens when that tool is down for the whole case, which is
   the condition every tool-failure case in the golden set actually describes.

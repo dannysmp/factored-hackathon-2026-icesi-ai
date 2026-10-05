@@ -342,6 +342,32 @@ def test_the_failure_schedule_holds_each_cases_own_failure_while_it_runs(
     assert schedule.failure is None
 
 
+def test_the_failure_schedule_is_cleared_when_a_case_raises_an_unanticipated_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = InjectedToolFailure(tool=Tool.LIST_TRANSACTIONS, cause="timeout")
+    schedule = FailureSchedule()
+
+    def raising_run_case(
+        client: object, case: Case, *, customer_id: str, test_login_key: str
+    ) -> RunTranscript:
+        raise RuntimeError("unanticipated")
+
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", lambda dsn, ref: "CUST-A")
+    monkeypatch.setattr("evals.runner.runner.run_case", raising_run_case)
+
+    with pytest.raises(RuntimeError, match="unanticipated"):
+        run_cases(
+            cast(httpx.Client, object()),
+            "unused-dsn",
+            (_case(case_id="failing", injected_failure=failure),),
+            test_login_key=LOGIN_KEY,
+            failure_schedule=schedule,
+        )
+
+    assert schedule.failure is None
+
+
 def test_without_a_cost_ledger_no_cost_is_attached(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("evals.runner.runner.resolve_customer_id", lambda dsn, ref: "CUST-A")
     monkeypatch.setattr(

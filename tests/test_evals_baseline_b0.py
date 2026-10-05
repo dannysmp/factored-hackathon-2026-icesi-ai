@@ -25,7 +25,9 @@ from pydantic import SecretStr
 # Local modules
 from app.config import AppEnvironment, ConfigError, LlmProvider, Settings, load_settings
 from app.persistence.migrate import apply_migrations
+from app.security.sessions import Principal
 from contracts.service_v1.envelope import Intent
+from contracts.service_v1.tools import ToolPort
 from evals.models import Case, CaseCategory
 from evals.runner.baselines.b0 import build_b0_app
 from evals.runner.runner import run_cases
@@ -60,12 +62,12 @@ def test_build_b0_app_hands_the_tool_port_decorator_to_the_application_it_builds
         received.update(kwargs)
         return "app"
 
-    def decorator(principal: object, port: object) -> object:
+    def decorator(principal: Principal, port: ToolPort) -> ToolPort:
         return port
 
     monkeypatch.setattr("evals.runner.baselines.b0.create_app", fake_create_app)
 
-    build_b0_app(load_settings(env_file=None), tool_port_decorator=decorator)  # type: ignore[arg-type]
+    build_b0_app(load_settings(env_file=None), tool_port_decorator=decorator)
 
     assert received == {"tool_port_decorator": decorator}
 

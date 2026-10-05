@@ -142,28 +142,32 @@ def run_cases(
         far regardless (see Limitations (capture)).
     """
     results = []
-    for case in cases:
-        if failure_schedule is not None:
-            failure_schedule.failure = case.injected_failure
-        try:
-            customer_id = resolve_customer_id(dsn, case.seed_ref)
-            transcript = run_case(
-                client, case, customer_id=customer_id, test_login_key=test_login_key
-            )
-            if cost_ledger is not None:
-                transcript = dataclasses.replace(
-                    transcript, cost_usd=cost_ledger.cost_for(transcript.session_id)
-                )
-            result = score_case(dsn, transcript)
-        except _CASE_FAILURES as exc:
-            results.append(error_result(case, exc))
-            continue
-        if capture_transcripts:
+    try:
+        for case in cases:
+            if failure_schedule is not None:
+                failure_schedule.failure = case.injected_failure
             try:
-                result = attach_masked_transcript(dsn, transcript, result)
-            except _CAPTURE_FAILURES as exc:
-                logger.warning("transcript_capture_failed case_id=%s error=%s", case.case_id, exc)
-        results.append(result)
-    if failure_schedule is not None:
-        failure_schedule.failure = None
+                customer_id = resolve_customer_id(dsn, case.seed_ref)
+                transcript = run_case(
+                    client, case, customer_id=customer_id, test_login_key=test_login_key
+                )
+                if cost_ledger is not None:
+                    transcript = dataclasses.replace(
+                        transcript, cost_usd=cost_ledger.cost_for(transcript.session_id)
+                    )
+                result = score_case(dsn, transcript)
+            except _CASE_FAILURES as exc:
+                results.append(error_result(case, exc))
+                continue
+            if capture_transcripts:
+                try:
+                    result = attach_masked_transcript(dsn, transcript, result)
+                except _CAPTURE_FAILURES as exc:
+                    logger.warning(
+                        "transcript_capture_failed case_id=%s error=%s", case.case_id, exc
+                    )
+            results.append(result)
+    finally:
+        if failure_schedule is not None:
+            failure_schedule.failure = None
     return tuple(results)
