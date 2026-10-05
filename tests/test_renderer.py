@@ -17,6 +17,8 @@ import pytest  # Test runner and parametrisation
 
 # Local modules
 from app.conversation.renderer import (
+    CASE_STATUS_NAMES,
+    case_status_label,
     demo_notice,
     format_date,
     format_money,
@@ -24,6 +26,7 @@ from app.conversation.renderer import (
     render,
 )
 from app.domain.policy.models import DisputeCategory, Outcome, TransactionStatus
+from contracts.service_v1.cases import CaseStatus
 from contracts.service_v1.envelope import (
     CaseFact,
     CustomerReason,
@@ -654,3 +657,54 @@ def test_dispute_status_grounds_a_case_without_an_expected_response_date() -> No
     rendered = render(envelope)
 
     assert case.case_number in rendered.reply
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_every_case_status_has_non_empty_wording_in_every_language(lang: Lang) -> None:
+    assert set(CASE_STATUS_NAMES[lang]) == set(CaseStatus)
+    assert all(CASE_STATUS_NAMES[lang][status].strip() for status in CaseStatus)
+
+
+def test_case_status_wording_is_distinct_within_each_language() -> None:
+    for names in CASE_STATUS_NAMES.values():
+        assert len(set(names.values())) == len(CaseStatus)
+
+
+def test_a_status_the_case_service_does_not_state_has_no_wording() -> None:
+    with pytest.raises(ValueError):
+        case_status_label("Archived", "en")
+
+
+@pytest.mark.parametrize(
+    ("lang", "status", "expected"),
+    [
+        ("es", "Open", "Caso D-9: abierto, presentado el 12 de junio de 2026."),
+        ("es", "In Review", "Caso D-9: en revisión, presentado el 12 de junio de 2026."),
+        ("es", "Resolved", "Caso D-9: resuelto, presentado el 12 de junio de 2026."),
+        ("es", "Rejected", "Caso D-9: rechazado, presentado el 12 de junio de 2026."),
+        ("pt", "Open", "Caso D-9: aberto, apresentado em 12 de junho de 2026."),
+        ("pt", "In Review", "Caso D-9: em análise, apresentado em 12 de junho de 2026."),
+        ("pt", "Resolved", "Caso D-9: resolvido, apresentado em 12 de junho de 2026."),
+        ("pt", "Rejected", "Caso D-9: rejeitado, apresentado em 12 de junho de 2026."),
+        ("en", "Open", "Case D-9: open, filed on June 12, 2026."),
+        ("en", "In Review", "Case D-9: in review, filed on June 12, 2026."),
+        ("en", "Resolved", "Case D-9: resolved, filed on June 12, 2026."),
+        ("en", "Rejected", "Case D-9: rejected, filed on June 12, 2026."),
+    ],
+)
+def test_dispute_status_states_each_case_status_in_the_reply_language(
+    lang: Lang, status: str, expected: str
+) -> None:
+    case = CaseFact(
+        case_number="D-9", status=status, filed_on=date(2026, 6, 12), transaction_ref="tx-1001"
+    )
+    envelope = _envelope(
+        lang=lang,
+        intent=Intent.DISPUTE_STATUS,
+        template_id=TemplateId.DISPUTE_STATUS,
+        facts=DisputeFacts(cases=(case,)),
+    )
+
+    lines = render(envelope).reply.splitlines()
+
+    assert lines[1:] == [expected]
