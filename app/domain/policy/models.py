@@ -316,8 +316,8 @@ class PolicyDecision(_Frozen):
 
     ``transaction_ref`` and ``category`` identify the request the decision was made for. They
     carry no rule of their own; they exist so the case-creation tool can refuse
-    ``confirmation_mismatch`` (AC-E4-14) by comparing them against a later filing call, without
-    trusting the caller and without re-running the policy itself (ADR-3).
+    ``confirmation_mismatch`` by comparing them against a later filing call, without
+    trusting the caller and without re-running the policy itself.
     """
 
     outcome: Outcome
