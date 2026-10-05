@@ -24,11 +24,13 @@ import pytest
 # Local modules
 from app.conversation.controller import (
     _ESCALATE_TRIGGER_OF,
+    _LEADING_DETERMINERS,
     _REQUEST_SUMMARY_OF,
     _ROUTES,
     DialogueController,
     _idempotency_key,
     _matches_hint,
+    _names_no_merchant,
 )
 from app.conversation.handoff import HandoffContent, build_packet
 from app.conversation.llm_understanding import LlmNlu
@@ -5482,6 +5484,31 @@ _GENERIC_MERCHANTS = [
     "a transfer",
     "una tienda en línea",
     "the online store",
+    "mi tienda",
+    "su servicio",
+    "este servicio",
+    "esa transferencia",
+    "mis pagos",
+    "meu serviço",
+    "sua loja",
+    "esse pagamento",
+    "nossa transferência",
+    "my store",
+    "your payment",
+    "this service",
+    "that transfer",
+    "one transfer",
+    "some services",
+    "unos pagos",
+    "meus pagamentos",
+    "minhas compras",
+    "suas transferencias",
+    "essas lojas",
+    "nuestras compras",
+    "tus pagos",
+    "estes servicos",
+    "uns serviços",
+    "las transferencias",
     "Transferencia ",
     "  LA TIENDA ",
 ]
@@ -5513,6 +5540,108 @@ def _transfer_controller(
             )
         ),
     )
+
+
+_DETERMINERS = (
+    "a",
+    "an",
+    "aquel",
+    "aquela",
+    "aquelas",
+    "aquele",
+    "aqueles",
+    "aquella",
+    "aquellas",
+    "aquellos",
+    "as",
+    "el",
+    "esa",
+    "esas",
+    "ese",
+    "esos",
+    "essa",
+    "essas",
+    "esse",
+    "esses",
+    "esta",
+    "estas",
+    "este",
+    "estes",
+    "estos",
+    "her",
+    "his",
+    "its",
+    "la",
+    "las",
+    "los",
+    "meu",
+    "meus",
+    "mi",
+    "minha",
+    "minhas",
+    "mis",
+    "my",
+    "nossa",
+    "nossas",
+    "nosso",
+    "nossos",
+    "nuestra",
+    "nuestras",
+    "nuestro",
+    "nuestros",
+    "o",
+    "one",
+    "os",
+    "our",
+    "seu",
+    "seus",
+    "some",
+    "su",
+    "sua",
+    "suas",
+    "sus",
+    "teu",
+    "teus",
+    "that",
+    "the",
+    "their",
+    "these",
+    "this",
+    "those",
+    "tu",
+    "tua",
+    "tuas",
+    "tus",
+    "um",
+    "uma",
+    "umas",
+    "un",
+    "una",
+    "unas",
+    "unos",
+    "uns",
+    "vuestra",
+    "vuestras",
+    "vuestro",
+    "vuestros",
+    "your",
+)
+
+
+@pytest.mark.parametrize("determiner", _DETERMINERS)
+def test_every_leading_determiner_is_dropped_before_a_generic_word(determiner: str) -> None:
+    assert _names_no_merchant(f"{determiner} servicio")
+
+
+def test_the_leading_determiners_are_exactly_the_listed_ones() -> None:
+    assert sorted(_LEADING_DETERMINERS) == sorted(_DETERMINERS)
+
+
+@pytest.mark.parametrize("hint", ["su", "this", "Su Casa", "One Medical", "El Corte Inglés"])
+def test_a_hint_that_is_not_a_determiner_before_a_generic_word_stays_a_merchant(
+    hint: str,
+) -> None:
+    assert not _names_no_merchant(hint)
 
 
 @pytest.mark.parametrize("typed", _GENERIC_MERCHANTS)
