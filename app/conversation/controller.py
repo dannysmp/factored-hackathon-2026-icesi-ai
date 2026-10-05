@@ -749,8 +749,8 @@ class DialogueController:
     ) -> tuple[DialogueState, RenderEnvelope]:
         """List the customer's transactions.
 
-        A tool failure becomes a handoff and an empty list a not-found reply. The state does not
-        change.
+        A tool failure becomes a handoff and an empty list a not-found reply; neither changes the
+        state. A non-empty list records the references shown, in order, in ``offered_refs``.
         """
         page = dispatch(
             self._tool_port, tool_contracts.Tool.LIST_TRANSACTIONS, TransactionFilters()
@@ -959,7 +959,7 @@ class DialogueController:
     def _handle_unroutable(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
-        """``correction`` shares ``unclear``'s fallback (see Limitations)."""
+        """A ``correction`` message is treated like an unclear one and gets the same fallback."""
         return self._fallback(state, result)
 
     # -------------------------------------------------------------------------------------
