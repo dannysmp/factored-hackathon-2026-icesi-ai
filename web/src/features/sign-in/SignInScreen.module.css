@@ -74,27 +74,3 @@
   color: var(--color-error);
   font-size: var(--font-size-sm);
 }
-
-.submit {
-  padding: var(--space-3) var(--space-6);
-  border: none;
-  border-radius: var(--radius-md);
-  background: var(--color-accent);
-  color: var(--color-accent-contrast);
-  font-family: var(--font-family);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-emphasis);
-  cursor: pointer;
-  transition:
-    background var(--motion-duration-fast) var(--motion-easing),
-    opacity var(--motion-duration-fast) var(--motion-easing);
-}
-
-.submit:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-}
-
-.submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
