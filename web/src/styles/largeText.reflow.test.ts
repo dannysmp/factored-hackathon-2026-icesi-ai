@@ -1,3 +1,7 @@
+/** Unit test: the stylesheet declarations that let a layout reflow when the reader enlarges the
+ * browser's text size. jsdom applies no layout, so these pin the declarations: rows that wrap
+ * instead of pushing a control off the screen, flex children that may shrink below their content,
+ * and long words that may break. */
 import { describe, expect, it } from 'vitest'
 import turnFormCss from '../features/customer-chat/components/TurnForm.module.css?raw'
 import resultCardCss from '../features/customer-chat/components/ResultCard.module.css?raw'
@@ -14,11 +18,6 @@ function declarations(css: string, selector: string): string {
   return rule?.[1] ?? ''
 }
 
-/*
- * jsdom applies no layout, so these pin the declarations that let a layout reflow when the reader
- * enlarges the browser's text size: rows that wrap instead of pushing a control off the screen,
- * flex children that may shrink below their content, and long words that may break.
- */
 describe('layout under enlarged text', () => {
   it('wraps the message bar so the send button drops below the field instead of leaving the screen', () => {
     expect(declarations(turnFormCss, '.form')).toMatch(/flex-wrap:\s*wrap/)
@@ -44,8 +43,10 @@ describe('layout under enlarged text', () => {
     expect(declarations(queueCss, '.queue-table-scroll')).toMatch(/position:\s*relative/)
   })
 
-  it('lets a long case reference break rather than overflow a narrow screen', () => {
+  it('moves a long case reference whole to its own line, and breaks it only when it cannot fit', () => {
     const ref = declarations(ticketDetailCss, '.ticket-detail-screen .ticket-ref')
+    expect(ref).toMatch(/display:\s*inline-block/)
+    expect(ref).toMatch(/max-width:\s*100%/)
     expect(ref).toMatch(/overflow-wrap:\s*anywhere/)
     expect(ref).not.toMatch(/white-space:\s*nowrap/)
   })

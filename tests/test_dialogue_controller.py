@@ -289,6 +289,7 @@ class FakeHandoffOutbox:
             actions=content.actions,
             attempted_action=content.attempted_action,
             existing_case_number=content.existing_case_number,
+            open_questions=content.open_questions,
         )
         self.packets.append(packet)
         return packet
@@ -1007,6 +1008,7 @@ def test_a_described_transaction_that_finds_none_counts_toward_the_budget(
 
     assert dialogue.say(_file_dispute(transaction=_NOBODY)).end_session
     assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+    assert _unanswered_in(dialogue) == [(Slot.TRANSACTION, 2)]
 
 
 def test_after_a_description_that_matches_nothing_the_transaction_stays_the_open_question(
@@ -1850,6 +1852,13 @@ def test_an_unclear_answer_to_the_presented_transaction_asks_again_then_escalate
     escalated = dialogue.say(_confirmation(ConfirmationAnswer.AMBIGUOUS))
     assert escalated.end_session
     assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
+    assert _unanswered_in(dialogue) == [(Slot.TRANSACTION_CHOICE, 2)]
+
+
+def _unanswered_in(dialogue: _Dialogue) -> list[tuple[Slot, int]]:
+    """The open questions of the one packet a conversation handed over."""
+    [packet] = dialogue.outbox.packets
+    return [(question.slot, question.attempts) for question in packet.open_questions]
 
 
 def _awaiting_filing_confirmation(
@@ -1920,6 +1929,7 @@ def test_two_changes_in_a_row_hand_off_once_the_clarification_budget_is_spent(
     assert second.reply != first.reply
     assert len(dialogue.outbox.packets) == 1
     assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
+    assert _unanswered_in(dialogue) == [(Slot[pending.upper()], 2)]
 
 
 def _awaiting_filing_confirmation_of_two(policy: Policy, retriever: LexicalRetriever) -> _Dialogue:
@@ -2197,6 +2207,98 @@ def test_a_correction_at_a_question_that_is_not_a_change_target_reads_like_an_un
     assert "No logré identificar qué desea cambiar" not in correction.reply
 
 
+_UNCLEAR_QUESTION_WORDING = {
+    "es": ("comercio", "monto", "fecha"),
+    "pt": ("estabelecimento", "valor", "data"),
+    "en": ("merchant", "amount", "date"),
+}
+
+
+@pytest.mark.parametrize("language", ["es", "pt", "en"])
+def test_unclear_first_text_asks_which_transaction_instead_of_repeating_the_menu(
+    policy: Policy, retriever: LexicalRetriever, language: str
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    menu = dialogue.say(_plain(NluIntent.SMALL_TALK, language=language))
+
+    reply = _Dialogue(policy, retriever).say(_plain(NluIntent.UNCLEAR, language=language))
+
+    assert reply.next_expected is Slot.TRANSACTION
+    assert reply.reply != menu.reply
+    assert all(word in reply.reply for word in _UNCLEAR_QUESTION_WORDING[language])
+    assert not reply.end_session
+    assert reply.handoff_ticket is None
+    assert reply.case_number is None
+
+
+def test_a_greeting_then_a_vague_request_asks_for_the_transaction_only_the_second_time(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    greeting = dialogue.say(_plain(NluIntent.SMALL_TALK))
+    request = dialogue.say(_plain(NluIntent.UNCLEAR))
+
+    assert greeting.next_expected is None
+    assert request.next_expected is Slot.TRANSACTION
+    assert request.reply != greeting.reply
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.pending_slot is Slot.TRANSACTION
+
+
+@pytest.mark.parametrize("intent", [NluIntent.SMALL_TALK, NluIntent.FAREWELL])
+def test_a_greeting_or_thanks_never_opens_the_transaction_question(
+    policy: Policy, retriever: LexicalRetriever, intent: NluIntent
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    reply = dialogue.say(_plain(intent))
+
+    assert reply.next_expected is None
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.pending_slot is None
+
+
+@pytest.mark.parametrize("language", ["es", "pt", "en"])
+def test_two_unusable_replies_hand_over_with_the_missing_transaction_recorded(
+    policy: Policy, retriever: LexicalRetriever, language: str
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    first = dialogue.say(_plain(NluIntent.UNCLEAR, language=language))
+    second = dialogue.say(_plain(NluIntent.UNCLEAR, language=language))
+    assert first.next_expected is Slot.TRANSACTION
+    assert second.next_expected is Slot.TRANSACTION
+    assert second.reply == first.reply
+    assert dialogue.outbox.packets == []
+
+    third = dialogue.say(_plain(NluIntent.UNCLEAR, language=language))
+
+    assert third.end_session
+    assert third.next_expected is None
+    assert third.handoff_ticket is not None
+    [packet] = dialogue.outbox.packets
+    assert packet.trigger.value == "low_understanding"
+    assert [code.value for code in packet.evidence.reason_codes] == ["escalate_low_nlu_confidence"]
+    assert [(q.slot, q.attempts) for q in packet.open_questions] == [(Slot.TRANSACTION, 2)]
+
+
+def test_a_vague_message_answered_with_a_description_goes_on_to_the_transaction(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    asked = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert asked.next_expected is Slot.TRANSACTION
+
+    found = dialogue.say(_file_dispute(transaction=TransactionHint(merchant="Amazon")))
+
+    assert found.next_expected is not Slot.TRANSACTION
+    assert not found.end_session
+    assert dialogue.outbox.packets == []
+
+
 def test_a_correction_with_no_open_question_falls_back_to_the_greeting(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
@@ -2446,6 +2548,7 @@ def test_the_reason_question_is_asked_twice_before_a_person_is_involved(
     third = dialogue.say(_plain(NluIntent.UNCLEAR))
     assert third.end_session
     assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+    assert _unanswered_in(dialogue) == [(Slot.REASON, 2)]
 
 
 def test_a_described_reply_after_an_unsettled_answer_starts_the_count_again(

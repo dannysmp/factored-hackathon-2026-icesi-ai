@@ -83,8 +83,10 @@ results still to come say so and name the command that completes them.
   Spanish, Portuguese and English. A phrase outside it, or a merchant name the model guesses
   from the customer's words, still narrows the search to a merchant that may not exist and can
   answer "not found" for a transaction the customer owns. A currency the model supplies for an
-  amount written with only a bare `$` is discarded; a currency the customer states is kept. The
-  behavior was verified with scripted understanding results, not across live model output.
+  amount written with only a bare `$` is discarded; a currency the customer states is kept. An
+  amount is matched against the transaction's dollar figure or its amount in its own currency,
+  and the amount and currency must come from the same figure. The behavior was verified with
+  scripted understanding results, not across live model output.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in
@@ -167,7 +169,7 @@ results still to come say so and name the command that completes them.
 Every control's actual implementation status, not just its design intent, is tracked in
 [SECURITY.md](../SECURITY.md), which this document defers to rather than duplicating.
 
-**A document number typed unprompted into a free-text message is redacted by shape, with two known
+**A document number typed unprompted into a free-text message is redacted by shape, with known
 gaps.** The conversation never asks a customer for a document number. The understanding contract
 has exactly three free-text fields with no restriction on what they hold — a transaction's
 merchant as the customer describes it, the dispute detail, and a policy question — any of which can
@@ -180,13 +182,19 @@ punctuated Brazilian tax-number shapes (a personal tax number such as `123.456.7
 company tax number such as `12.345.678/0001-95`) are replaced with a fixed placeholder, the same
 way a card number is. A document number has no checksum, so the rule is by shape, and it is chosen
 so that a money amount written with separators (`$27.556.276,44`, `1,475,202.64`) is never
-touched. That choice leaves two gaps. A national identity number typed with thousands-style dots
+touched. That choice leaves gaps. A national identity number typed with thousands-style dots
 (`1.094.921.834`) has the shape of an amount and reaches the model unmasked. An amount typed as
 seven or more unbroken digits (`1250000`) is redacted like an identifier; it is only a search hint
 for the customer's own transactions, and policy reads the stored amount, so the cost is one more
-question to the customer. An identity number split by other characters, or written in words, is
-not detected. The customer's own message text is the only thing this rule applies to; the
-controller's own parsing always reads the original text.
+question to the customer. A tax number written with a hyphen and short dotted groups (`900.123.456-7`,
+`12.345.678-5`) has no recognized shape and reaches the model unmasked; typed without dots it is an
+unbroken run and is redacted, leaving only its check digit. An unbroken decimal amount (`1250000.50`)
+loses its whole part and keeps the decimal part, and a date typed as eight unbroken digits
+(`20260612`) is redacted, so it is not available as a search hint. A longer run of digits around a
+tax-number shape (`123.456.789-091`) is a different figure and is left alone. An identity number
+split by other characters, or written in words, is not detected. The customer's own message text
+is the only thing this rule applies to; the controller's own parsing always reads the original
+text.
 
 ## Not attempted
 

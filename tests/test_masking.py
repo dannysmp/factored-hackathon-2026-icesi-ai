@@ -428,5 +428,30 @@ def test_an_unbroken_amount_of_seven_digits_is_redacted_like_an_identifier() -> 
     assert redact_document_numbers("1250000 pesos").masked == f"{DOCUMENT_PLACEHOLDER} pesos"
 
 
+@pytest.mark.parametrize("text", ["123.456.789-091", "9123.456.789-09", "12.345.678/0001-950"])
+def test_a_longer_digit_run_around_a_tax_number_shape_is_a_different_figure(text: str) -> None:
+    result = redact_document_numbers(text)
+
+    assert not result.found
+    assert result.masked == text
+
+
+@pytest.mark.parametrize("text", ["900.123.456-7", "12.345.678-5"])
+def test_a_hyphenated_tax_number_with_short_dotted_groups_is_not_detected(text: str) -> None:
+    assert redact_document_numbers(text).masked == text
+
+
+def test_the_same_tax_number_typed_without_dots_is_redacted_but_for_its_check_digit() -> None:
+    assert redact_document_numbers("900123456-7").masked == f"{DOCUMENT_PLACEHOLDER}-7"
+
+
+def test_an_unbroken_decimal_amount_keeps_only_its_decimal_part() -> None:
+    assert redact_document_numbers("1250000.50").masked == f"{DOCUMENT_PLACEHOLDER}.50"
+
+
+def test_a_date_typed_as_eight_unbroken_digits_is_redacted_like_an_identifier() -> None:
+    assert redact_document_numbers("el 20260612").masked == f"el {DOCUMENT_PLACEHOLDER}"
+
+
 def test_the_card_detector_alone_leaves_a_document_number_for_the_document_rule() -> None:
     assert not redact_pan("1094921834").found

@@ -5,9 +5,10 @@ Request-Capture PII Tests
 Component: the egress boundary the understanding step's outbound model request passes through
 (``app.conversation.llm_understanding.LlmNlu``). Hermetic: ``FakeLlm``, no network.
 
-Where ``tests/test_masking.py`` proves ``redact_pan`` itself is correct in isolation, this module
-proves two guarantees on the *real call path* a customer's message travels through: a card number
-never reaches the request the process sends out, and no log line that path emits carries the
+Where ``tests/test_masking.py`` proves the redaction functions themselves are correct in isolation,
+this module proves three guarantees on the *real call path* a customer's message travels through: a
+card number never reaches the request the process sends out, a document number typed in a shape
+the rule recognizes never reaches it either, and no log line that path emits carries the
 customer's raw text. It also pins the shape of the structured transaction hint the step extracts:
 the hint has no document-number, email or phone field. ``FakeLlm.requests`` is the request-capture
 fixture the tests read.
