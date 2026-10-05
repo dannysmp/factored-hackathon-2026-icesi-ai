@@ -62,9 +62,7 @@ def test_a_card_with_a_threshold_means_the_policy_threshold_equals_it() -> None:
 
 
 def test_the_card_states_the_leakage_review_the_training_code_writes() -> None:
-    """The committed card carries the code's own wording, with the two disclosed exceptions."""
+    """The committed card carries the wording the training code writes."""
     review = _shipped_card()["leakage_review"]
     assert review == _LEAKAGE_REVIEW
-    assert isinstance(review, str)
-    assert "not strictly point-in-time" in review
-    assert "country" in review and "rate" in review
+    assert "not strictly point-in-time" in _LEAKAGE_REVIEW

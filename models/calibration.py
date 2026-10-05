@@ -518,10 +518,12 @@ _LEAKAGE_REVIEW = (
     "Each feature is a field of the transaction itself or is computed from the same customer's "
     "strictly earlier transactions. The source's own fraud score, authorisation response code and "
     "transaction status, which are known only after the outcome or carry the label, are excluded, "
-    "and so are the label and the identifiers. Two inputs are not strictly point-in-time: the "
-    "customer's country is the latest recorded one, and an amount is converted at the rate of the "
-    "transaction's day. The review compares each feature with the label; it cannot show a link to "
-    "the excluded outcome columns themselves. The full review is in reports/risk-features.md."
+    "and so are the label and the identifiers. Three inputs are not strictly point-in-time: the "
+    "customer's country, and the country-mismatch flag built from it, is the latest recorded one; "
+    "an amount is converted at the rate of the transaction's day; and a window total treats an "
+    "amount that could not be converted as zero. The reports compare a subset of the features "
+    "with the label; that comparison cannot show a link to the excluded outcome columns "
+    "themselves. The full review is in reports/risk-features.md and reports/risk-signal.md."
 )
 _BASE_LIMITATIONS = (
     "Both models are fitted with class_weight='balanced' for the severe imbalance; their scores "
