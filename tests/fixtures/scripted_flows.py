@@ -225,7 +225,7 @@ def _fraud_handoff(lang: Lang) -> list[Envelope]:
             intent=Intent.HANDOFF,
             end_session=True,
             template_id=TemplateId.HANDOFF_FRAUD,
-            facts=DisputeFacts(ticket_ref="T-100", contact_within_hours=24),
+            facts=DisputeFacts(ticket_ref="T-100"),
             decisions=(
                 Decision(
                     outcome=Outcome.ESCALATE,

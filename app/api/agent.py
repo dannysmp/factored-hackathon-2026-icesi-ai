@@ -236,7 +236,7 @@ def build_agent_router(
     ticket_detail : TicketDetailPort
         Answers one ticket's whole detail.
     calendar : DomainCalendar
-        The domain date every age and promised-contact computation reads against; built once at
+        The domain date every age and contact-target computation reads against; built once at
         start-up, matching every other reader of it in this codebase.
     audit : ConsoleAuditSink
         Where every packet or timeline read is recorded; see the protocol's own docstring for why

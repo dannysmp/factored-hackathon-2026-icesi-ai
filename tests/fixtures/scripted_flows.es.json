@@ -466,7 +466,7 @@
         "search_terms": [],
         "date_to_confirm": null,
         "pending_disputes": 0,
-        "contact_within_hours": 24,
+        "contact_within_hours": null,
         "ticket_ref": "T-100"
       },
       "decisions": [

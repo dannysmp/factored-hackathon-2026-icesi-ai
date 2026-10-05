@@ -12,7 +12,7 @@ and trigger, fraud and card-loss tickets sorted first. Backs ``contracts/service
 Scope
 -----
 In: listing and filtering ``handoff_outbox`` rows into ``QueueItem``s, computing each one's age and
-promised contact date against a supplied domain calendar.
+contact-target date against a supplied domain calendar.
 Out: one ticket's full packet and timeline (``app.persistence.ticket_detail``, needing live
 transaction re-resolution and corpus source titles this module never touches), the console's own
 routes and the audit of agent reads they must perform (``app.persistence.console_audit``), writing
@@ -20,13 +20,13 @@ to the outbox at all (``app.persistence.handoff_outbox``).
 
 Design Principles
 -----------------
-- **The promised contact time is keyed by trigger, never by dispute category:** it is a separate
+- **The contact target is keyed by trigger, never by dispute category:** it is a separate
   configuration value for a handoff ticket's own lifecycle, distinct from
   ``Policy.first_response_days``, which promises a response to a *filed dispute*, a different
   event a handoff ticket, by construction, never reaches. Keying on ``trigger`` also means a
   categoryless fraud-report or card-loss ticket (reachable in practice: a customer can report
   either before any dispute category is ever established) needs no special case: the priority
-  flag and the promised date are derived from the same input and can never disagree.
+  flag and the target date are derived from the same input and can never disagree.
 - **The age is measured on the domain calendar, not the real clock.** ``created_at`` (the real UTC
   instant) is reported alongside it, unchanged, so the console can show both, labeled; this
   module only computes the domain-date age.
@@ -44,7 +44,7 @@ resolve).
 from __future__ import annotations
 
 # Standard libraries
-from datetime import date, timedelta  # Promised contact date, ticket age
+from datetime import date, timedelta  # Contact-target date, ticket age
 from typing import Any  # Raw driver rows
 
 # Third-party libraries
@@ -103,9 +103,9 @@ class PostgresHandoffQueue:
     """A ``HandoffQueue`` backed by the ``handoff_outbox`` table."""
 
     def __init__(self, dsn: str, *, contact_days_priority: int, contact_days_default: int) -> None:
-        """Keep the DSN and the promised contact windows.
+        """Keep the DSN and the contact-target windows.
 
-        ``contact_days_priority`` is the number of days promised for a priority trigger (fraud or
+        ``contact_days_priority`` is the number of days targeted for a priority trigger (fraud or
         card loss) and ``contact_days_default`` for every other trigger.
         """
         self._dsn = dsn
@@ -113,8 +113,8 @@ class PostgresHandoffQueue:
         self._contact_days_default = contact_days_default
 
     def _promised_contact_by(self, trigger: HandoffTrigger, reference_date: date) -> date:
-        """The date an agent has promised to make contact: the ticket's reference date plus the
-        window for its trigger."""
+        """The date an agent is expected to make contact by: the ticket's reference date plus
+        the window for its trigger."""
         days = self._contact_days_priority if is_priority(trigger) else self._contact_days_default
         return reference_date + timedelta(days=days)
 

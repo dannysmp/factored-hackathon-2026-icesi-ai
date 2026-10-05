@@ -306,7 +306,7 @@ def _every_template_envelope(lang: str) -> dict[TemplateId, RenderEnvelope]:
             intent=Intent.HANDOFF,
             end_session=True,
             template_id=TemplateId.HANDOFF_REVIEW,
-            facts=DisputeFacts(ticket_ref="T-100", contact_within_hours=24),
+            facts=DisputeFacts(ticket_ref="T-100"),
             decisions=(
                 Decision(
                     outcome=Outcome.ESCALATE,
@@ -319,7 +319,7 @@ def _every_template_envelope(lang: str) -> dict[TemplateId, RenderEnvelope]:
             intent=Intent.HANDOFF,
             end_session=True,
             template_id=TemplateId.HANDOFF_FRAUD,
-            facts=DisputeFacts(ticket_ref="T-101", contact_within_hours=24),
+            facts=DisputeFacts(ticket_ref="T-101"),
             decisions=(
                 Decision(
                     outcome=Outcome.ESCALATE,
@@ -804,6 +804,33 @@ def test_a_policy_answer_without_a_figure_cites_the_section_alone(
 
     assert rendered.reply == expected
     assert ": ." not in rendered.reply
+
+
+@pytest.mark.parametrize("template_id", [TemplateId.HANDOFF_REVIEW, TemplateId.HANDOFF_FRAUD])
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_a_handoff_reply_promises_no_contact_time_even_when_the_facts_carry_one(
+    lang: Lang, template_id: TemplateId
+) -> None:
+    """When a person reaches out is not the system's to promise, so no figure appears."""
+    envelope = _envelope(
+        lang=lang,
+        intent=Intent.HANDOFF,
+        end_session=True,
+        template_id=template_id,
+        facts=DisputeFacts(ticket_ref="T-100", contact_within_hours=24),
+        decisions=(
+            Decision(
+                outcome=Outcome.ESCALATE,
+                customer_reason=CustomerReason.NEEDS_REVIEW,
+                policy_version="2",
+            ),
+        ),
+    )
+
+    reply = render(envelope).reply
+
+    assert "T-100" in reply
+    assert "24" not in reply
 
 
 def test_dispute_status_grounds_a_case_without_an_expected_response_date() -> None:

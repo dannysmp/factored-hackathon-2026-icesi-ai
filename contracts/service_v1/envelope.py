@@ -366,7 +366,7 @@ class DisputeFacts(ContractModel):
     # How many further disputes the customer has mentioned beyond the current one (at most five);
     # zero when none are set.
     pending_disputes: Annotated[int, Field(ge=0, le=5)] = 0
-    # The contact promise made in a handoff, in hours, and the handoff ticket's number.
+    # The handoff's contact window in hours (not stated in the reply), and the ticket's number.
     contact_within_hours: Annotated[int, Field(ge=1)] | None = None
     ticket_ref: Annotated[str, Field(pattern=NUMBER_PATTERN)] | None = None
 

@@ -195,11 +195,11 @@ def test_policy_answer_lists_one_entry_per_value_with_no_name_prefix() -> None:
     assert all("filing_window_days" not in entry for entry in policy_entries)
 
 
-def test_handoff_omits_contact_within_hours_when_absent() -> None:
+def test_handoff_never_grounds_a_contact_time() -> None:
     envelope = _envelope(
         intent=Intent.HANDOFF,
         end_session=True,
-        facts=DisputeFacts(ticket_ref="T-100"),
+        facts=DisputeFacts(ticket_ref="T-100", contact_within_hours=24),
         decisions=(
             Decision(
                 outcome=Outcome.ESCALATE,

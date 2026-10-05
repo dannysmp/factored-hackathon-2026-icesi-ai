@@ -714,50 +714,29 @@ def _refuse_reversal(e: RenderEnvelope) -> str:
 def _handoff_review(e: RenderEnvelope) -> str:
     """Tell the customer a person must review the request and give the ticket reference.
 
-    The contact-within-hours sentence is included only when ``facts`` carries that figure.
+    No contact time is promised: when a person reaches out is not something the system controls.
     """
-    hours = e.facts.contact_within_hours
     ticket = e.facts.ticket_ref
-    contact = (
-        {
-            "es": f" Le contactarán en un plazo de {hours} horas.",
-            "pt": f" Um atendente entrará em contato com você em até {hours} horas.",
-            "en": f" You'll be contacted within {hours} hours.",
-        }[e.lang]
-        if hours is not None
-        else ""
-    )
     return {
-        "es": f"Un asesor debe revisar esto.{contact} Su referencia es {ticket}.",
-        "pt": f"Um atendente precisa analisar isso.{contact} Sua referência é {ticket}.",
-        "en": f"A person must review this.{contact} Your reference is {ticket}.",
+        "es": f"Un asesor debe revisar esto. Su referencia es {ticket}.",
+        "pt": f"Um atendente precisa analisar isso. Sua referência é {ticket}.",
+        "en": f"A person must review this. Your reference is {ticket}.",
     }[e.lang]
 
 
 def _handoff_fraud(e: RenderEnvelope) -> str:
     """Tell the customer a person handles a possible fraud right away, with no promised outcome.
 
-    States the ticket reference, and the contact-within-hours sentence only when ``facts`` carries
-    it.
+    States the ticket reference and no contact time.
     """
-    hours = e.facts.contact_within_hours
     ticket = e.facts.ticket_ref
-    contact = (
-        {
-            "es": f" Le contactarán en un plazo de {hours} horas.",
-            "pt": f" Um atendente entrará em contato com você em até {hours} horas.",
-            "en": f" You'll be contacted within {hours} hours.",
-        }[e.lang]
-        if hours is not None
-        else ""
-    )
     return {
         "es": f"Esto lo atiende un asesor de inmediato por ser un posible fraude. No "
-        f"prometo un resultado.{contact} Su referencia es {ticket}.",
+        f"prometo un resultado. Su referencia es {ticket}.",
         "pt": f"Como pode se tratar de fraude, um atendente cuida disso de imediato. "
-        f"Não posso prometer um resultado.{contact} Sua referência é {ticket}.",
+        f"Não posso prometer um resultado. Sua referência é {ticket}.",
         "en": f"A person handles this right away since it may be fraud. I can't promise an "
-        f"outcome.{contact} Your reference is {ticket}.",
+        f"outcome. Your reference is {ticket}.",
     }[e.lang]
 
 

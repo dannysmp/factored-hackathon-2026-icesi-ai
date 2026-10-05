@@ -95,7 +95,7 @@ class QueueItem(ContractModel):
     # The real UTC instant the ticket was created, and the reference date in force then.
     created_at: UtcDatetime
     reference_date: date
-    # The date by which the customer was promised contact.
+    # The date by which an agent is expected to contact the customer.
     promised_contact_by: date
     # Days from the ticket's reference date to the queue's reference date.
     age_days: Annotated[int, Field(ge=0)]
