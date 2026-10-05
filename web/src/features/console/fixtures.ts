@@ -158,6 +158,7 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
       {
         occurred_at: '2026-06-18T14:03:00Z',
         trace_id: 'trace-0001',
+        turn_id: 'turn-0001',
         intent: 'present_transactions',
         state_before: 'started',
         state_after: 'clarifying',
@@ -168,6 +169,7 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
       {
         occurred_at: '2026-06-18T14:05:00Z',
         trace_id: 'trace-0002',
+        turn_id: 'turn-0002',
         intent: 'handoff',
         state_before: 'clarifying',
         state_after: 'handed_off',
@@ -233,6 +235,7 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
       {
         occurred_at: '2026-06-16T18:12:00Z',
         trace_id: 'trace-1001',
+        turn_id: 'turn-1001',
         intent: 'present_transactions',
         state_before: 'started',
         state_after: 'clarifying',
@@ -243,6 +246,7 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
       {
         occurred_at: '2026-06-16T18:15:00Z',
         trace_id: 'trace-1002',
+        turn_id: 'turn-1002',
         intent: 'handoff',
         state_before: 'clarifying',
         state_after: 'handed_off',

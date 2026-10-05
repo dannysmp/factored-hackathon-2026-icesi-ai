@@ -16,11 +16,11 @@ In: parsing a ``seed_ref``'s source and identifier, and resolving a transaction 
 reference to its owning customer id from the store — ``ops_seed`` and ``eval_bank`` alike, since
 both sources land in the same ``transactions`` table by the time a case runs (``eval_bank``'s own
 design: "anything that reads a seed_ref treats an eval_bank row exactly like a seed row").
-Out: minting the session itself (the runner's HTTP layer, a later module, calls the sandbox login
+Out: minting the session itself (the runner's HTTP layer calls the sandbox login
 with the id this module returns); loading the seed data in the first place — ``ops_seed`` via
 ``app.persistence.load_seed``, run once per harness run before any case executes; an
 ``eval_bank``-anchored case's row is the caller's own responsibility to have loaded first (a
-CI-only synthetic substitute for the smoke slice, or a real loader before a full run).
+CI-only synthetic substitute for the smoke subset, or a real loader before a full run).
 
 Design Principles
 -----------------

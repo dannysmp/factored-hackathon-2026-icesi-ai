@@ -312,6 +312,7 @@ export const TimelineEntrySchema = z
   .object({
     occurred_at: z.iso.datetime(),
     trace_id: z.string().min(1).max(64),
+    turn_id: z.string().min(1).max(64),
     intent: IntentSchema,
     state_before: z.string().min(1).max(48),
     state_after: z.string().min(1).max(48),

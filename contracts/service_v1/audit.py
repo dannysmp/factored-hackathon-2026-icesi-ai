@@ -12,15 +12,15 @@ to answer, for one action, who did it, on what basis, and when.
 Scope
 -----
 In: the audit record, its closed set of actions, and the sink port a tool call writes it to.
-Out: the store that makes a record append-only (a database constraint, from the serving-store
-slice on), and reading a timeline back (the case service and console, later slices).
+Out: the store that makes a record append-only (database triggers in the serving store), and
+reading a timeline back (the case service and the console).
 
 Design Principles
 -----------------
 - Two clocks, both required: the real UTC instant the action occurred, and the domain date in
-  force when it did (ADR-15). Session and audit code read only the real clock; the domain date
-  reaches them as a value passed in, never read from the domain calendar directly, so an audit
-  timestamp can never be back-dated by a setting.
+  force when it did. Session and audit code read only the real clock; the domain date reaches
+  them as a value passed in, never read from the domain calendar directly, so an audit timestamp
+  can never be back-dated by a setting.
 - Only what the invariant needs. A reason code and a policy version are recorded exactly when a
   policy decision produced the action; a read that carries neither still identifies who read what.
 - No raw material: a document number, a full card number, a name or a message's own text is never
@@ -33,8 +33,8 @@ Runtime Contract
 
 Limitations
 -----------
-Append-only is enforced at the store, starting with the serving-store slice; this contract shapes
-the record, not the guarantee that one, once written, cannot be changed or removed.
+Append-only is enforced at the store; this contract shapes the record, not the guarantee that
+one, once written, cannot be changed or removed.
 """
 
 from __future__ import annotations
@@ -59,22 +59,21 @@ from contracts.service_v1.cases import NUMBER_PATTERN, ContractModel, SafeText, 
 class AuditAction(StrEnum):
     """What happened. One entry per tool call that decides, acts, or is asked to and cannot.
 
-    ``TRANSACTION_PROBED`` and ``CASE_PROBED`` are a compatible addition after this contract
-    froze: a reference call whose reference exists but belongs to another customer answers the
-    session's customer exactly as a genuine not-found would (same code, message and shape), but
-    is audited distinguishably from one, so enumeration is visible in the trail even though it is
-    invisible to the caller. ``CASE_CREATION_REPLAYED`` is the same kind of addition: a repeated
-    confirmation with the same idempotency key and payload answers the customer exactly as the
-    original filing did, but the trail still shows a distinct entry for it, so a trace built from
-    audit records alone accounts for every filing call the customer actually made.
-    ``PACKET_VIEWED`` and ``TIMELINE_VIEWED`` are a further compatible addition: an agent opening a
-    handoff packet or a conversation's audit timeline is a customer-data access like any other
-    (ADR-17), so it is audited under the same fail-closed rule — ``customer_id`` names the
-    customer whose packet or timeline was opened, and ``session_id`` the agent's own session,
-    never a customer one. ``TICKET_CLAIMED``, ``TICKET_RELEASED``, ``TICKET_NOTE_ADDED`` and
-    ``CASE_STATUS_SET`` are the narrow agent writes (ADR-17): each carries ``agent_id`` the
-    same way the two read actions above do, since a session alone cannot answer who made the
-    write once it expires.
+    ``TRANSACTION_PROBED`` and ``CASE_PROBED``: a reference call whose reference exists but
+    belongs to another customer answers the session's customer exactly as a genuine not-found
+    would (same code, message and shape), but is audited distinguishably from one, so enumeration
+    is visible in the trail even though it is invisible to the caller.
+    ``CASE_CREATION_REPLAYED``: a repeated confirmation with the same idempotency key and payload
+    answers the customer exactly as the original filing did, but the trail still shows a distinct
+    entry for it, so a trace built from audit records alone accounts for every filing call the
+    customer actually made.
+    ``PACKET_VIEWED`` and ``TIMELINE_VIEWED``: an agent opening a handoff packet or a
+    conversation's audit timeline is a customer-data access like any other, so it is audited under
+    the same fail-closed rule — ``customer_id`` names the customer whose packet or timeline was
+    opened, and ``session_id`` the agent's own session, never a customer one.
+    ``TICKET_CLAIMED``, ``TICKET_RELEASED``, ``TICKET_NOTE_ADDED`` and ``CASE_STATUS_SET`` are the
+    narrow agent writes: each carries ``agent_id`` the same way the two read actions above do,
+    since a session alone cannot answer who made the write once it expires.
     """
 
     TRANSACTIONS_LISTED = "transactions_listed"
@@ -103,18 +102,23 @@ class AuditRecord(ContractModel):
     ``case_creation_refused`` for a decision the tool itself rejected, and
     ``case_creation_replayed`` for the decision the original filing rested on); a plain read of
     the customer's own data carries neither. ``agent_id`` is set exactly when an agent, not a
-    customer, is the one who acted (ADR-17: every agent read or write is audited with the agent's
-    own identity, not only the session that carried it) — ``None`` for every customer-originated
+    customer, is the one who acted (every agent read or write is audited with the agent's own
+    identity, not only the session that carried it) — ``None`` for every customer-originated
     action, where ``session_id`` alone already identifies the actor.
     """
 
+    # Ties the record to one conversation; every record of that conversation shares it.
     trace_id: Annotated[str, Field(pattern=NUMBER_PATTERN)]
+    # The customer whose data the action touched, by internal identifier.
     customer_id: Annotated[SafeText, Field(min_length=1, max_length=20)]
+    # The session that carried the action: the customer's, or the agent's for an agent action.
     session_id: Annotated[SafeText, Field(min_length=1, max_length=64)]
     action: AuditAction
     reason_code: ReasonCode | None = None
     policy_version: Annotated[str, Field(min_length=1)] | None = None
+    # Lowercase SHA-256 hex digest of the tool result: identifies it without holding its content.
     tool_result_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    # The real UTC instant of the action, and the domain date in force when it happened.
     occurred_at: UtcDatetime
     domain_date: date
     agent_id: Annotated[SafeText, Field(min_length=1, max_length=20)] | None = None
@@ -129,5 +133,8 @@ class AuditSink(Protocol):
     """Where a tool call writes its audit record; never read from here, only written."""
 
     def record(self, entry: AuditRecord) -> None:
-        """Append ``entry``. Implementations fail closed: a record that cannot be written is an
-        error the caller must not swallow, not a dropped entry."""
+        """Append ``entry``.
+
+        Implementations fail closed: a record that cannot be written is an error the caller must
+        not swallow, not a dropped entry.
+        """

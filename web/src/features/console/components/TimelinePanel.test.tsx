@@ -12,6 +12,7 @@ function entry(overrides: Partial<TimelineEntry> = {}): TimelineEntry {
   return {
     occurred_at: '2026-06-18T14:03:00Z',
     trace_id: 'trace-0001',
+    turn_id: 'turn-0001',
     intent: 'present_transactions',
     state_before: 'started',
     state_after: 'clarifying',

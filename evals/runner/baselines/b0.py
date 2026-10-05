@@ -4,23 +4,22 @@ B0 Baseline: Deterministic Scripted Flow
 
 Overview
 --------
-Builds the B0 baseline the evaluation plan names: "deterministic scripted flow: keyword/menu NLU,
-same policy engine and tools, no LLM." B0 is not a second implementation of the dialogue
-controller — it is the proposed system's own application, with its understanding port forced to
-the deterministic, keyword-based classifier instead of the LLM, so the comparison measures exactly
-one thing that changed. That swap already exists in ``app.main._understanding``, selected by
-``LlmProvider.STUB`` (added for the CI smoke slice's own network-free run); this module names that
-same construction as B0's own definition, rather than leaving every caller to remember the
-provider setting an evaluation run needs.
+Builds the B0 baseline, a "deterministic scripted flow: keyword/menu NLU, same policy engine and
+tools, no LLM." B0 is not a second implementation of the dialogue controller — it is the proposed
+system's own application, with its understanding port forced to the deterministic, keyword-based
+classifier instead of the LLM, so the comparison measures exactly one thing that changed. That swap
+already exists in ``app.main._understanding``, selected by ``LlmProvider.STUB`` (added for the CI
+smoke job's own network-free run); this module names that same construction as B0's own definition,
+rather than leaving every caller to remember the provider setting an evaluation run needs.
 
 Scope
 -----
 In: ``build_b0_app``, forcing ``llm_provider`` to the value that already selects the deterministic
 classifier.
 Out: everything else about the running application — the tool port, the retriever, the policy, the
-handoff outbox and the store are untouched, exactly as the evaluation plan requires for this
-comparison to isolate the LLM's own contribution; running a case against the result
-(``evals.runner.proposed_system.run_case``, already generic over any client and reused as-is).
+handoff outbox and the store are untouched, exactly as the comparison requires to isolate the LLM's
+own contribution; running a case against the result (``evals.runner.proposed_system.run_case``,
+already generic over any client and reused as-is).
 
 Design Principles
 -----------------
@@ -28,11 +27,10 @@ Design Principles
   already build exactly the application B0 needs once ``llm_provider`` selects the deterministic
   classifier; this module reuses them unchanged rather than re-implementing controller
   construction under ``evals/``.
-- **The enum member, never its string value.** ``Settings.model_copy`` skips pydantic validation
-  on the fields it updates, so passing the literal string ``"stub"`` would leave ``llm_provider``
-  as a plain ``str`` instead of the ``LlmProvider`` member ``app.main._understanding``'s identity
-  check requires — the exact bug found and fixed while building the runner
-  (``evals.runner.runner``). This module passes the enum member itself.
+- **The enum member, never its string value.** ``Settings.model_copy`` skips pydantic validation on
+  the fields it updates, so passing the literal string ``"stub"`` would leave ``llm_provider`` as a
+  plain ``str`` instead of the ``LlmProvider`` member ``app.main._understanding``'s identity check
+  requires. This module passes the enum member itself.
 - **The prod restriction is re-asserted here, not only trusted from validation.** ``Settings``'s
   own ``_stub_llm_rules`` model validator refuses ``llm_provider=stub`` when ``app_env=prod`` — but
   only when ``Settings`` is actually constructed through validation. ``model_copy`` never

@@ -7,12 +7,13 @@ Overview
 Loads the built operational seed (``pipelines.ops_seed``'s gold output) into the serving
 store's ``customers``, ``products`` and ``transactions`` tables, and records the seed's
 reference date in ``ops_meta.data_as_of`` so the running service's domain calendar can read it
-without a ``DATA_AS_OF_DATE`` override (ADR-15).
+without a ``DATA_AS_OF_DATE`` override.
 
 Scope
 -----
-In: reading the seed's Parquet files and its manifest, truncating and reloading the four
-serving-store tables and ``ops_meta`` in one transaction, the command line
+In: reading the seed's Parquet files and its manifest, truncating the four seed-related
+serving-store tables (``cases``, ``transactions``, ``products``, ``customers``), reloading the
+three the seed carries and writing ``ops_meta`` in one transaction, the command line
 ``python -m app.persistence.load_seed``.
 Out: building the seed itself (``pipelines.ops_seed``), running the migrations that create the
 tables (``app.persistence.migrate``, which must already have run against this database).
@@ -23,7 +24,7 @@ Design Principles
   order) before loading, so re-running the loader against a changed seed never leaves stale rows
   behind; ``CASCADE`` covers a foreign key this loader does not itself enumerate.
 - ``cases`` is truncated but never repopulated: a case is a live artifact of the case-service
-  tool, not seed content (``pipelines.ops_seed``'s own Limitations record why).
+  tool, not seed content.
 - One transaction: the truncate, every insert and the ``ops_meta`` write commit together, or none
   of them do, so a failed load never leaves the store half-seeded.
 - The reference date loaded into ``ops_meta`` is the manifest's own, not re-derived: the seed
@@ -33,7 +34,7 @@ Design Principles
   edit, a stale copy) is refused rather than silently loaded as if it still matched.
 
 Runtime Contract
------------------
+----------------
 ``load_seed(dsn, gold_dir) -> LoadResult``
 The command line ``python -m app.persistence.load_seed``.
 
@@ -77,7 +78,7 @@ _TABLES_IN_LOAD_ORDER = (CUSTOMERS_NAME, PRODUCTS_NAME, TRANSACTIONS_NAME)
 
 @dataclass(frozen=True, slots=True)
 class LoadResult:
-    """What the load wrote."""
+    """What the load wrote: the row count per loaded table and the reference date recorded."""
 
     rows: dict[str, int]
     data_as_of: str
@@ -178,6 +179,16 @@ def _verify_output_digests(gold_dir: Path) -> None:
 
 def load_seed(dsn: str, gold_dir: Path) -> LoadResult:
     """Truncate the serving store and load the seed, in one transaction.
+
+    The manifest digests are verified first and every Parquet file is read before the database
+    is touched, so a bad seed fails without truncating anything. The truncate, the inserts and
+    the ``data_as_of`` upsert then commit together.
+
+    Returns
+    -------
+    LoadResult
+        Rows loaded per table (keyed by table name) and the reference date written to
+        ``ops_meta``.
 
     Raises
     ------
