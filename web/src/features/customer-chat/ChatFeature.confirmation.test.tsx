@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { ChatFeature } from './ChatFeature'
 import type { ChatClient } from './client'
-import { CONFIRMATION_TEXT, TurnResponseSchema } from './contracts'
+import { CONFIRMATION_TEXT, DECLINE_TEXT, TurnResponseSchema } from './contracts'
 import type { TurnResponse } from './contracts'
 import { es } from '../../i18n/es'
 import { pt } from '../../i18n/pt'
@@ -73,7 +73,7 @@ describe('ChatFeature confirmation button', () => {
     render(<ChatFeature client={recordingClient([]).client} lang="en" />)
     await findMessage(OPENING.reply)
 
-    expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Yes, file it' })).not.toBeInTheDocument()
   })
 
   it('sends only the fixed confirmation text, never a summary of its own', async () => {
@@ -83,7 +83,7 @@ describe('ChatFeature confirmation button', () => {
     await findMessage(OPENING.reply)
     await sendText(user, 'the Tienda Sol one')
 
-    await user.click(await screen.findByRole('button', { name: 'Confirm' }))
+    await user.click(await screen.findByRole('button', { name: 'Yes, file it' }))
 
     await findMessage(FILED.reply)
     expect(sent).toEqual(['the Tienda Sol one', CONFIRMATION_TEXT])
@@ -95,16 +95,16 @@ describe('ChatFeature confirmation button', () => {
     render(<ChatFeature client={client} lang="en" />)
     await findMessage(OPENING.reply)
     await sendText(user, 'the Tienda Sol one')
-    await screen.findByRole('button', { name: 'Confirm' })
+    await screen.findByRole('button', { name: 'Yes, file it' })
 
     // The customer changes the amount instead of confirming: the old summary no longer applies.
     await sendText(user, 'no, the amount is wrong')
     await findMessage(CHANGED.reply)
-    expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Yes, file it' })).not.toBeInTheDocument()
 
     await sendText(user, '180')
     await findMessage(SUMMARY_180.reply)
-    await user.click(await screen.findByRole('button', { name: 'Confirm' }))
+    await user.click(await screen.findByRole('button', { name: 'Yes, file it' }))
 
     await findMessage(FILED.reply)
     expect(sent).toEqual([
@@ -113,7 +113,7 @@ describe('ChatFeature confirmation button', () => {
       '180',
       CONFIRMATION_TEXT,
     ])
-    expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Yes, file it' })).not.toBeInTheDocument()
   })
 
   it('is offered again, once, when a second summary follows the first without a change turn', async () => {
@@ -122,13 +122,13 @@ describe('ChatFeature confirmation button', () => {
     render(<ChatFeature client={client} lang="en" />)
     await findMessage(OPENING.reply)
     await sendText(user, 'the Tienda Sol one')
-    await screen.findByRole('button', { name: 'Confirm' })
+    await screen.findByRole('button', { name: 'Yes, file it' })
 
     await sendText(user, 'make it 180')
     await findMessage(SUMMARY_180.reply)
-    expect(screen.getAllByRole('button', { name: 'Confirm' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Yes, file it' })).toHaveLength(1)
 
-    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    await user.click(screen.getByRole('button', { name: 'Yes, file it' }))
     await findMessage(FILED.reply)
     expect(sent).toEqual(['the Tienda Sol one', 'make it 180', CONFIRMATION_TEXT])
   })
@@ -159,6 +159,69 @@ describe('ChatFeature confirmation button', () => {
     },
   )
 
+  it('offers a No beside the Yes that sends only the fixed decline text', async () => {
+    const user = userEvent.setup()
+    const { client, sent } = recordingClient([SUMMARY_250, CHANGED])
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    await sendText(user, 'the Tienda Sol one')
+    const group = await screen.findByRole('group', { name: 'Quick replies' })
+    expect(group).toContainElement(screen.getByRole('button', { name: 'Yes, file it' }))
+
+    await user.click(screen.getByRole('button', { name: 'No' }))
+
+    await findMessage(CHANGED.reply)
+    expect(sent).toEqual(['the Tienda Sol one', DECLINE_TEXT])
+    expect(screen.getByText((_c, el) => el?.textContent === 'You: No')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Quick replies' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['es', es],
+    ['pt', pt],
+  ] as const)('labels the No in the customer language (%s)', async (lang, catalog) => {
+    const user = userEvent.setup()
+    const { client, sent } = recordingClient([
+      { ...SUMMARY_250, lang },
+      { ...CHANGED, lang },
+    ])
+    const opening = { ...OPENING, lang }
+    render(
+      <ChatFeature client={{ ...client, start: () => Promise.resolve(opening) }} lang={lang} />,
+    )
+    await findMessage(opening.reply, catalog['chat.messagesLabel'])
+    await user.type(screen.getByLabelText(catalog['chat.messageLabel']), 'x')
+    await user.click(screen.getByRole('button', { name: catalog['chat.send'] }))
+
+    await user.click(await screen.findByRole('button', { name: catalog['chat.decline'] }))
+
+    await findMessage(CHANGED.reply, catalog['chat.messagesLabel'])
+    expect(sent).toEqual(['x', DECLINE_TEXT])
+    expect(
+      screen.getByText(
+        (_c, el) =>
+          el?.textContent === `${catalog['chat.customerLabel']} ${catalog['chat.decline']}`,
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('presents the summary as a review with its hint, and only while confirmation is awaited', async () => {
+    const user = userEvent.setup()
+    const { client } = recordingClient([SUMMARY_250, FILED])
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    expect(screen.queryByText('Review before filing')).not.toBeInTheDocument()
+    await sendText(user, 'the Tienda Sol one')
+
+    const summary = (await findMessage(SUMMARY_250.reply)).closest('li')
+    expect(summary).toHaveTextContent('Review before filing')
+    expect(summary).toHaveTextContent('Nothing is filed until you say yes.')
+
+    await user.click(screen.getByRole('button', { name: 'Yes, file it' }))
+    await findMessage(FILED.reply)
+    expect(screen.queryByText('Review before filing')).not.toBeInTheDocument()
+  })
+
   it('is disabled while a turn is in flight and confirms once', async () => {
     const user = userEvent.setup()
     const sent: string[] = []
@@ -178,7 +241,7 @@ describe('ChatFeature confirmation button', () => {
     render(<ChatFeature client={client} lang="en" />)
     await findMessage(OPENING.reply)
     await sendText(user, 'the Tienda Sol one')
-    const confirm = await screen.findByRole('button', { name: 'Confirm' })
+    const confirm = await screen.findByRole('button', { name: 'Yes, file it' })
 
     await user.click(confirm)
     await waitFor(() => {

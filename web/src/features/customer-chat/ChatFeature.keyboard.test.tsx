@@ -60,8 +60,10 @@ describe('ChatFeature keyboard traversal', () => {
     await user.tab()
     await user.keyboard('{Enter}')
 
-    // The confirmation button also precedes the field, and Enter on it files the case.
-    const confirm = await screen.findByRole('button', { name: 'Confirm' })
+    // The yes and no replies also precede the field, yes first, and Enter on yes files the case.
+    const confirm = await screen.findByRole('button', { name: 'Yes, file it' })
+    await user.tab({ shift: true })
+    expect(screen.getByRole('button', { name: 'No' })).toHaveFocus()
     await user.tab({ shift: true })
     expect(confirm).toHaveFocus()
     await user.keyboard('{Enter}')

@@ -26,6 +26,10 @@ export interface Messages {
   'chat.assistantLabel': string
   'chat.customerLabel': string
   'chat.confirm': string
+  'chat.decline': string
+  'chat.quickReplies': string
+  'chat.review.title': string
+  'chat.review.hint': string
   'chat.send': string
   'chat.assistantTyping': string
   'chat.notSent': string

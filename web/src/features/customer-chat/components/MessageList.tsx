@@ -15,10 +15,12 @@ import styles from './MessageList.module.css'
  * component reads correctly on its own regardless of whatever loading text a caller shows
  * alongside it.
  *
- * The customer's messages sit on the right in a tinted bubble and the assistant's on the left,
- * each with a quiet sender label so the speaker never depends on position or color alone. While
- * a reply is awaited a typing row closes the list; it lives in an always-present status region so
- * it is announced once, politely, when it appears. When a message is added or the typing row
+ * The customer's messages sit on the right in a filled accent bubble and the assistant's on the
+ * left in a quiet outlined one, each with a sender label so the speaker never depends on position
+ * or color alone. The message that asks for confirmation (`reviewId`) is set apart as a review
+ * card, headed by what it is and followed by the reassurance that nothing is filed until the
+ * customer says yes. While a reply is awaited a typing bubble closes the list; it lives in an
+ * always-present status region so it is announced once, politely, when it appears. When a message is added or the typing row
  * appears, the newest content is scrolled into view: a reply from its first line, the person's
  * own message and the typing row at the nearest edge.
  */
@@ -26,10 +28,12 @@ export function MessageList({
   messages,
   lang,
   pending,
+  reviewId = null,
 }: {
   messages: readonly Message[]
   lang: Lang
   pending: boolean
+  reviewId?: string | null
 }): JSX.Element {
   const t = useT(lang)
   const lastRef = useRef<HTMLLIElement>(null)
@@ -66,26 +70,33 @@ export function MessageList({
               styles.message,
               message.from === 'customer' ? styles.customer : styles.assistant,
               message.failed === true && styles.failed,
+              message.id === reviewId && styles.review,
             )}
           >
+            {message.id === reviewId && (
+              <span className={styles.reviewTitle}>{t('chat.review.title')}</span>
+            )}
             <span className={styles.from}>
               {message.from === 'assistant' ? t('chat.assistantLabel') : t('chat.customerLabel')}
             </span>{' '}
             <span className={styles.text}>{message.text}</span>
             {message.failed === true && <span className={styles.notSent}>{t('chat.notSent')}</span>}
+            {message.id === reviewId && (
+              <span className={styles.reviewHint}>{t('chat.review.hint')}</span>
+            )}
           </li>
         ))}
       </ol>
       <div role="status" ref={typingRef} className={styles.typing}>
         {pending && (
-          <>
+          <span className={styles.typingBubble}>
             <span className={styles.dots} aria-hidden="true">
               <span />
               <span />
               <span />
             </span>
             {t('chat.assistantTyping')}
-          </>
+          </span>
         )}
       </div>
     </>

@@ -261,13 +261,14 @@ describe('ChatFeature around a turn', () => {
     render(<ChatFeature client={client} lang="en" />)
     await findMessage(OPENING.reply)
     await typeAndSend(user, 'the Tienda Sol one')
-    await user.click(await screen.findByRole('button', { name: 'Confirm' }))
+    await user.click(await screen.findByRole('button', { name: 'Yes, file it' }))
 
     await findMessage('Your dispute was filed.')
     expect(sent.map((record) => record.text)).toEqual(['the Tienda Sol one', CONFIRMATION_TEXT])
     expect(
       screen.getByText(
-        (_content, element) => element?.tagName === 'LI' && element.textContent === 'You: Confirm',
+        (_content, element) =>
+          element?.tagName === 'LI' && element.textContent === 'You: Yes, file it',
       ),
     ).toBeInTheDocument()
     expect(

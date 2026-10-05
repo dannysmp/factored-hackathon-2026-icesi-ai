@@ -1,5 +1,12 @@
-/* The chat's one primary action (AC-E10-17): a full-width, large primary button, which stays the
-   dominant control next to the outlined choices and the text form. */
+/* The chat's one primary action (AC-E10-17) beside its outlined counterpart: two equal, large
+   targets that share the row and stack on a screen too narrow for both. */
 .confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
   margin: var(--space-4) 0;
+}
+
+.confirm > * {
+  flex: 1 1 10rem;
 }

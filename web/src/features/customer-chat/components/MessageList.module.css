@@ -12,8 +12,9 @@
   flex-direction: column;
   gap: var(--space-1);
   max-width: min(32rem, 88%);
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-lg);
+  line-height: var(--line-height-base);
   /* A pasted address or token has no break opportunity; wrap it rather than widen the page. */
   overflow-wrap: anywhere;
   scroll-margin-block: var(--space-4);
@@ -29,22 +30,58 @@
 .customer {
   align-self: flex-end;
   border-bottom-right-radius: var(--radius-sm);
-  background: var(--color-info-bg);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  box-shadow: var(--shadow-sm);
+}
+
+.customer .from {
+  color: inherit;
 }
 
 .failed {
   border: var(--border-width-thin) solid var(--color-error);
   background: var(--color-error-bg);
+  color: var(--color-text);
+  box-shadow: none;
+}
+
+.failed .from {
+  color: var(--color-text);
+}
+
+/* The summary the customer is asked to confirm: wider than a bubble and marked by an accent edge,
+   so it reads as a document to check rather than one more line of chat. */
+.review {
+  max-width: min(36rem, 100%);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-left: var(--space-1) solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.reviewTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-emphasis);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.review .text {
+  font-size: var(--font-size-md);
+}
+
+.reviewHint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-subtle);
 }
 
 .from {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-emphasis);
   color: var(--color-text-subtle);
-}
-
-.failed .from {
-  color: var(--color-text);
 }
 
 .notSent {
@@ -54,15 +91,25 @@
 }
 
 .typing {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
   min-height: 0;
   margin: 0 0 var(--space-3);
   color: var(--color-text-subtle);
   font-size: var(--font-size-sm);
   /* Leaves room for the pinned message field when this row is scrolled into view. */
   scroll-margin-bottom: 6rem;
+}
+
+/* The pending reply is shaped like the assistant's own bubble, so the answer arrives where the
+   typing was. */
+.typingBubble {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
 }
 
 .typing:empty {

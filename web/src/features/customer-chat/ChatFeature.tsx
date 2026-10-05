@@ -139,7 +139,16 @@ export function ChatFeature({
       )}
       {latest === null && <p className={styles.status}>{t('chat.starting')}</p>}
       {latest !== null && (
-        <MessageList messages={conversation.messages} lang={activeLang} pending={busy} />
+        <MessageList
+          messages={conversation.messages}
+          lang={activeLang}
+          pending={busy}
+          reviewId={
+            latest.next_expected === 'confirmation' && !ended
+              ? (conversation.messages.findLast((m) => m.from === 'assistant')?.id ?? null)
+              : null
+          }
+        />
       )}
       {conversation.status === 'error' && (
         <div className={styles.failure}>
