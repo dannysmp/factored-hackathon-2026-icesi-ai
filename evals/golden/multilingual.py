@@ -17,16 +17,14 @@ Out: the other five category groups (their own modules); running or scoring thes
 
 Design Principles
 -------------------
-- **What `lang` means here, ruled by the architect (2026-09-27) for this exact question, first
-  flagged as open when the case schema was reviewed.** `lang` names the language a
-  correct reply must render in for the whole conversation — the conversation's sticky language,
-  per `plan/docs/architecture.md`'s dialogue-state design (the controller persists one language
-  per session, not per turn) and ADR-16's language-routing clause ("a miss abstains and offers
-  the language switch; it never returns a hit from the other language's corpus"). `lang` is never
-  the dominant or opening language by a mechanical rule; it is the language a correct system
-  should lock onto and stay in, decided per case and recorded in `description`. For a
-  code-switching case, that is normally the language the customer's turn opens in (the language
-  NLU should lock onto first); for an accent-flavored case it is simply that accent's language.
+- **What `lang` means here.** `lang` names the language a correct reply must render in for the whole
+  conversation — the conversation's sticky language, per the dialogue-state design (the controller
+  persists one language per session, not per turn) and the language-routing rule ("a miss abstains
+  and offers the language switch; it never returns a hit from the other language's corpus"). `lang`
+  is never the dominant or opening language by a mechanical rule; it is the language a correct
+  system should lock onto and stay in, decided per case and recorded in `description`. For a
+  code-switching case, that is normally the language the customer's turn opens in (the language NLU
+  should lock onto first); for an accent-flavored case it is simply that accent's language.
 - **The customer's wording code-switches freely; `lang` does not.** `user_turns` mixes Spanish,
   Portuguese and English within a single turn where the subtype calls for it; `lang` stays fixed
   at whichever value the case's own reasoning (in `description`) establishes.

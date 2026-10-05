@@ -522,7 +522,7 @@ def test_a_demoted_dimension_is_labeled_as_such() -> None:
     )
     section = text.split("## 9.")[1].split("## 10.")[0]
 
-    assert "judge score not validated" in section
+    assert "yes (judge mean withheld)" in section
 
 
 def _detail(first_higher: int = 0, second_higher: int = 3) -> tuple[DimensionDetail, ...]:
