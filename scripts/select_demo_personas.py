@@ -235,6 +235,7 @@ def select_personas(
 
 
 def main() -> int:
+    """Select the demonstration personas from the seed and log each slug's customer."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     mapping = select_personas()
     for slug, customer_id in mapping.items():

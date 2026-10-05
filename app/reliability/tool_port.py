@@ -131,25 +131,34 @@ class RetriedToolPort:
             return result
 
     def list_transactions(self, filters: TransactionFilters) -> TransactionPage | ToolFailure:
+        """List the session customer's transactions through the retry and breaker policy."""
         return self._call(Tool.LIST_TRANSACTIONS, lambda: self._inner.list_transactions(filters))
 
     def get_transaction(self, ref: str) -> TransactionFact | ToolFailure | None:
+        """Read one of the session customer's transactions through the retry and breaker policy."""
         return self._call(Tool.GET_TRANSACTION, lambda: self._inner.get_transaction(ref))
 
     def list_dispute_cases(self) -> tuple[CaseRecord, ...] | ToolFailure:
+        """List the session customer's dispute cases through the retry and breaker policy."""
         return self._call(Tool.LIST_DISPUTE_CASES, self._inner.list_dispute_cases)
 
     def get_case(self, case_number: str) -> CaseRecord | ToolFailure | None:
+        """Read one of the session customer's cases through the retry and breaker policy."""
         return self._call(Tool.GET_CASE, lambda: self._inner.get_case(case_number))
 
     def evaluate_dispute(
         self, request: EvaluateDisputeRequest
     ) -> PolicyDecision | ToolFailure | None:
+        """Evaluate a dispute against policy through the retry and breaker policy."""
         return self._call(Tool.EVALUATE_DISPUTE, lambda: self._inner.evaluate_dispute(request))
 
     def create_dispute_case(
         self, request: CreateDisputeCaseRequest
     ) -> CreateDisputeCaseResult | ToolFailure:
+        """File a confirmed dispute through the retry and breaker policy.
+
+        The request carries its idempotency key, so a retried attempt cannot file a second case.
+        """
         return self._call(
             Tool.CREATE_DISPUTE_CASE, lambda: self._inner.create_dispute_case(request)
         )

@@ -431,6 +431,10 @@ def _controller_factory(
     )
 
     def build(principal: Principal) -> DialogueController:
+        """Assemble a controller for one principal; its tool port is scoped to that customer.
+
+        The dialogue store and the audit sink are opened per request and carry no customer scope.
+        """
         dsn = settings.require_database_url().get_secret_value()
         store = PostgresDialogueStore(dsn)
         current = store.get(principal.session_id)
@@ -502,10 +506,12 @@ def _register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(ProblemError)
     async def handle_problem(request: Request, error: ProblemError) -> Response:
+        """Render a deliberately raised problem as its own document."""
         return problem_response(error, _request_id(request))
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation(request: Request, error: RequestValidationError) -> Response:
+        """Answer a malformed request with a 422 that lists the offending fields only."""
         problem = ProblemError(
             ErrorCode.VALIDATION_ERROR,
             422,
@@ -517,6 +523,7 @@ def _register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(StarletteHTTPException)
     async def handle_http(request: Request, error: StarletteHTTPException) -> Response:
+        """Map framework HTTP errors onto the stable error codes, keeping the status they carry."""
         known = {
             404: (ErrorCode.NOT_FOUND, "Not found"),
             405: (ErrorCode.METHOD_NOT_ALLOWED, "Method not allowed"),
@@ -527,6 +534,7 @@ def _register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def handle_unexpected(request: Request, error: Exception) -> Response:
+        """Answer any uncaught exception with a generic 500 that exposes no internal detail."""
         # The one place an unexpected failure is logged, with its stack trace; the client gets
         # only the code and the request identifier.
         logger.error("unhandled_error request_id=%s", _request_id(request), exc_info=error)
