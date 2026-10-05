@@ -4,7 +4,7 @@ Golden Set Corpus
 
 Overview
 --------
-The 135 authored cases of the held-out golden set, one module per category-group slice, plus the
+The 135 authored cases of the held-out golden set, one module per category group, plus the
 generated CSV case sheet built from them. `evals.models.Case` defines the record shape; this
 package holds the data itself.
 
@@ -20,7 +20,7 @@ Design Principles
 -------------------
 Importing this package has no side effects and touches no file outside itself. Each category
 module exports a `CASES: tuple[Case, ...]` constant; nothing here decides how many categories
-exist beyond what has already landed.
+exist.
 """
 
 from __future__ import annotations

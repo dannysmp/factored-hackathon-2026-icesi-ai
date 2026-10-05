@@ -4,8 +4,7 @@ Model-Rendering Smoke Test
 
 Component: ``app.conversation.reply.render_reply`` driven across every step of the six committed
 scripted flows (``tests/fixtures/scripted_flows.py``), in Spanish, Portuguese and English. Hermetic
-and fast: ``FakeLlm``, no network — the CI-safe net the evaluation harness runs before its
-expensive, real-model evaluation.
+and fast: ``FakeLlm``, no network — the CI-safe net run before the expensive, real-model evaluation.
 """
 
 from __future__ import annotations

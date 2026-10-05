@@ -259,8 +259,8 @@ def test_load_marts_raises_when_the_marts_have_not_been_built(tmp_path: Path) ->
 
 @pytest.mark.integration
 def test_analytics_reader_role_can_read_but_not_write_the_analytics_schema(gold: Path) -> None:
-    """The dashboard's own role (read-only, limited to `analytics`) never gets a grant this
-    test does not see: SELECT on every mart table, nothing on the operational tables."""
+    """The dashboard's own role (read-only, limited to `analytics`) never gets a grant
+    this test does not see: SELECT on every mart table, nothing on the operational tables."""
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
         pytest.skip("DATABASE_URL is not set")

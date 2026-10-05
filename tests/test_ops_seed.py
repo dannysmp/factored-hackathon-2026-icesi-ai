@@ -175,8 +175,8 @@ class _Silver:
 
 def _write_silver(root: Path) -> Path:
     """A cleaned layer with a small pool of Active customers, one per segment-country pair,
-    plus one customer distinctly tagged per stratum, and three excluded (not Active) customers
-    who carry every stratum flag, to prove Active-only holds regardless.
+    plus one customer distinctly tagged per stratum, and three excluded (not Active)
+    customers who carry every stratum flag, to prove Active-only holds regardless.
 
     Segment-country filler customers: ``FILL-<segment>-<country>`` (12 of them).
     Stratum customers: ``STRAT-<flag>`` (one per entry of ``STRATUM_FLAGS``).

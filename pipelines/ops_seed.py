@@ -4,7 +4,7 @@ Operational Seed
 
 Overview
 --------
-Builds the curated ~500-customer seed the running service reads from (ADR-9): a deterministic,
+Builds the curated ~500-customer seed the running service reads from: a deterministic,
 written stratification rule selects Active customers so that every situation the policy
 distinguishes is present, then every selected customer's own products and transactions are
 carried with them. It also writes ``reports/ops-seed.md``, stating plainly that the seed is
@@ -12,7 +12,7 @@ curated and comparing its mix and null rates with the full source's.
 
 Scope
 -----
-In: reading the cleaned layer, the selection rule (``AC-E4-44``), masking the two contact fields
+In: reading the cleaned layer, the selection rule, masking the two contact fields
 the serving store keeps, the command line ``python -m pipelines.ops_seed``.
 Out: applying the migrations that create the serving-store tables (``app.persistence.migrate``),
 loading the built seed into Postgres (``app.persistence.load_seed``), the ``cases`` table (see
@@ -27,18 +27,17 @@ Design Principles
   ``TARGET_CUSTOMERS`` is a floor the padding step brings the selection up to, not a ceiling: the
   stratum and segment-country guarantees run first and are never trimmed back down to fit it, so
   the final count can exceed it when coverage demands more customers than the target alone would
-  hold (about 500 in practice, per AC-E4-44's own wording; coverage is what AC-E4-44 requires,
-  not an exact count).
+  hold (about 500 in practice; coverage is what the rule requires, not an exact count).
 - **One amount rule.** ``amount_usd`` and its provenance are computed with
   ``pipelines.amounts``, the same module the risk-feature mart uses, so a transaction shared by
   both never gets two answers.
-- **Repeat complainer is a point-in-time fact** (ADR-15): a customer carries the flag only when
+- **Repeat complainer is a point-in-time fact**: a customer carries the flag only when
   their latest complaint filed on or before the reference date carries it; a later complaint is
   never consulted.
 - **No PII beyond what the store is allowed to hold.** Document number, birth date, address and
   full email or phone are never read into the seed; email and phone are masked before they reach
-  a Parquet file, not after (``AC-E4-46``).
-- **Active only** (``AC-E4-48``): the selection reads only customers whose ``customer_status`` is
+  a Parquet file, not after.
+- **Active only**: the selection reads only customers whose ``customer_status`` is
   ``Active``; a suspended, blocked or closed customer or product never appears, by construction.
 
 Runtime Contract
@@ -83,7 +82,7 @@ logger = logging.getLogger(__name__)
 
 SILVER_INPUTS = ("customers", "products", "transactions", "complaints", "daily_exchange_rates")
 
-# The written selection rule (AC-E4-44). Changing any of these constants changes the seed and
+# The written selection rule. Changing any of these constants changes the seed and
 # needs a new checksum in the test that pins it.
 RANK_SEED = "20260618-ops-seed"  # Arbitrary, fixed forever; part of the rule, not the data.
 TARGET_CUSTOMERS = 500
@@ -95,7 +94,7 @@ NEAR_TRANSFER_TOLERANCE_USD = 250.0
 SEGMENTS = ("Basic", "Plus", "Premium", "Student")
 COUNTRIES = ("México", "Colombia", "Argentina")
 
-# One flag per AC-E4-44 criterion that is a property of a transaction or a complaint; segment and
+# One flag per selection criterion that is a property of a transaction or a complaint; segment and
 # country coverage is handled separately, over the customer's own two fields.
 STRATUM_FLAGS: tuple[str, ...] = (
     "is_repeat_complainer",
@@ -121,7 +120,7 @@ def _sha256(path: Path) -> str:
 
 
 # -----------------------------------------------------------------------------
-# Masking (AC-E4-46): applied before a row ever reaches a Parquet file
+# Masking: applied before a row ever reaches a Parquet file
 # -----------------------------------------------------------------------------
 
 
@@ -153,12 +152,12 @@ def _register_masks(con: duckdb.DuckDBPyConnection) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Selection (AC-E4-44)
+# Selection
 # -----------------------------------------------------------------------------
 
 
 def _flags_query(reference_date: str) -> str:
-    """One row per Active customer: every AC-E4-44 stratum flag and a deterministic rank key."""
+    """One row per Active customer: every stratum flag and a deterministic rank key."""
     ref = quote_literal(reference_date)
     usd_expr = usd_amount_expr(
         amount="t.amount",
@@ -246,7 +245,7 @@ def _flags_query(reference_date: str) -> str:
 def _select_customers(
     con: duckdb.DuckDBPyConnection, reference_date: str
 ) -> tuple[tuple[str, ...], dict[str, int]]:
-    """The stratified customer selection: deterministic, covers every AC-E4-44 criterion.
+    """The stratified customer selection: deterministic, covers every selection criterion.
 
     Ranks every Active customer by a stable hash of their identifier, then takes the
     lowest-ranked customers that satisfy each stratum (at least ``MIN_PER_STRATUM``, or every
@@ -313,10 +312,10 @@ def _select_customers(
 
 
 def _customers_query(reference_date: str) -> str:
-    """One row per chosen customer, including their point-in-time repeat-complainer flag
-    (ADR-15): the same ``complaints`` lookup ``_flags_query`` uses to select candidates, re-run
-    here since selection and output are independent queries and a candidate's flag is not
-    otherwise carried between them."""
+    """One row per chosen customer, including their point-in-time repeat-complainer flag: the
+    same ``complaints`` lookup ``_flags_query`` uses to select candidates, re-run here since
+    selection and output are independent queries and a candidate's flag is not otherwise carried
+    between them."""
     ref = quote_literal(reference_date)
     return f"""
     WITH complaint_rank AS (
@@ -473,7 +472,7 @@ def _source_provenance_query() -> str:
 
 
 def _measure_mix(con: duckdb.DuckDBPyConnection, gold_dir: Path) -> dict[str, Any]:
-    """Null and mix rates of the seed's transactions beside the full source's (AC-E4-45).
+    """Null and mix rates of the seed's transactions beside the full source's.
 
     Segment and country mix are not measured here: the serving store keeps no ``segment``
     column (migration 0001 only mirrors what a tool may read back), so the seed's own segment and
@@ -666,9 +665,9 @@ def render_report(manifest: SeedManifest) -> str:
         "same rate measured on the full cleaned layer.",
         "",
         f"Reference date `{manifest.reference_date}` (the newest transaction instant in the "
-        "seed, read by the running service as `ops_meta.data_as_of`, ADR-15).",
+        "seed, read by the running service as `ops_meta.data_as_of`).",
         "",
-        f"{manifest.selected_customers:,} customers selected, all `Active` (AC-E4-48). "
+        f"{manifest.selected_customers:,} customers selected, all `Active`. "
         f"{manifest.rows.get(PRODUCTS_NAME, 0):,} products, "
         f"{manifest.rows.get(TRANSACTIONS_NAME, 0):,} transactions.",
         "",
@@ -691,7 +690,7 @@ def render_report(manifest: SeedManifest) -> str:
         "",
         "## 3. What the seed does not contain",
         "",
-        "No document number, birth date, address, full email or full phone (AC-E4-46): the seed "
+        "No document number, birth date, address, full email or full phone: the seed "
         "never reads those source columns, and the two contact fields it keeps are masked before "
         "they reach a Parquet file. `cases` starts empty; see the module's Limitations.",
         "",
