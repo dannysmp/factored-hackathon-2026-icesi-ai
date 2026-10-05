@@ -53,45 +53,6 @@
   color: var(--color-text);
 }
 
-/* The summary the customer is asked to confirm: as wide as the quick replies beneath it and marked
-   by an accent edge, so it reads as a document to check rather than one more line of chat. Its
-   speaker label stays for assistive technology; the title above already says what it is. */
-.review {
-  align-self: stretch;
-  max-width: none;
-  border: var(--border-width-thin) solid var(--color-border);
-  border-left: var(--space-1) solid var(--color-accent);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  box-shadow: var(--shadow-sm);
-}
-
-.review .from {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.reviewTitle {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-emphasis);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-accent);
-}
-
-.review .text {
-  font-size: var(--font-size-md);
-}
-
-.reviewHint {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-subtle);
-}
-
 .from {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-emphasis);

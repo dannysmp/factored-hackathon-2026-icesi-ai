@@ -92,43 +92,6 @@ describe('MessageList', () => {
     })
   })
 
-  describe('review', () => {
-    const conversation: Message[] = [
-      { id: 'a', from: 'assistant', text: 'Opening' },
-      { id: 'b', from: 'assistant', text: 'File this dispute?' },
-    ]
-
-    it('marks only the message named by reviewId, with its title and hint', () => {
-      render(<MessageList messages={conversation} lang="en" pending={false} reviewId="b" />)
-      const review = screen.getByText('File this dispute?').closest('li')
-      const other = screen.getByText('Opening').closest('li')
-
-      expect(review?.className).toMatch(/review/)
-      expect(review).toHaveTextContent('Review before filing')
-      expect(review).toHaveTextContent('Nothing is filed until you say yes.')
-      expect(other?.className).not.toMatch(/review/)
-      expect(other).not.toHaveTextContent('Review before filing')
-    })
-
-    it('marks nothing by default', () => {
-      render(<MessageList messages={conversation} lang="en" pending={false} />)
-      expect(screen.queryByText('Review before filing')).not.toBeInTheDocument()
-    })
-
-    it('words the title and hint in the conversation language', () => {
-      render(<MessageList messages={conversation} lang="pt" pending={false} reviewId="b" />)
-      expect(screen.getByText('Revise antes de registrar')).toBeInTheDocument()
-      expect(screen.getByText('Nada é registrado até que você confirme.')).toBeInTheDocument()
-    })
-
-    it('has no accessibility violations', async () => {
-      const { container } = render(
-        <MessageList messages={conversation} lang="es" pending={false} reviewId="b" />,
-      )
-      expect(await axe(container)).toHaveNoViolations()
-    })
-  })
-
   describe('awaiting a reply', () => {
     it('shows a typing row in a status region while pending, and nothing when not', () => {
       const messages: Message[] = [{ id: 'a', from: 'customer', text: 'Hello' }]

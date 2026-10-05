@@ -1,12 +1,37 @@
-/* The chat's one primary action beside its outlined counterpart: two equal, large
-   targets that share the row and stack on a screen too narrow for both. */
+/* The review frame: an accent edge marks the one step that files something, and the title and the
+   reassurance sit above the two equal, large targets, which share the row and stack on a screen
+   too narrow for both. */
+.review {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-left: var(--border-width-emphasis) solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-emphasis);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.hint {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-subtle);
+}
+
 .confirm {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-  margin: var(--space-4) 0;
+  margin-top: var(--space-3);
 }
 
 .confirm > * {
-  flex: 1 1 10rem;
+  flex: 1 1 calc(var(--size-touch-target) * 4);
 }

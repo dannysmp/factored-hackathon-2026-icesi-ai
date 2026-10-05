@@ -1,4 +1,4 @@
-/** Component test: the confirmation button never confirms anything but the summary on screen. */
+/** Component test: the confirmation quick replies and their review frame. */
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
@@ -212,7 +212,7 @@ describe('ChatFeature confirmation button', () => {
     ).toBeInTheDocument()
   })
 
-  it('presents the summary as a review with its hint, and only while confirmation is awaited', async () => {
+  it('shows the review frame with the quick replies, only while confirmation is awaited', async () => {
     const user = userEvent.setup()
     const { client } = recordingClient([SUMMARY_250, FILED])
     render(<ChatFeature client={client} lang="en" />)
@@ -221,12 +221,51 @@ describe('ChatFeature confirmation button', () => {
     await sendText(user, 'the Tienda Sol one')
 
     const summary = (await findMessage(SUMMARY_250.reply)).closest('li')
-    expect(summary).toHaveTextContent('Review before filing')
-    expect(summary).toHaveTextContent('Nothing is filed until you say yes.')
+    expect(summary).not.toHaveTextContent('Review before filing')
+    const group = await screen.findByRole('group', { name: 'Your answer' })
+    const frame = screen.getByText('Review before filing').parentElement
+    expect(frame).toContainElement(group)
+    expect(group).toHaveAccessibleDescription('Nothing is filed until you say yes.')
 
     await user.click(screen.getByRole('button', { name: 'Yes, file it' }))
     await findMessage(FILED.reply)
     expect(screen.queryByText('Review before filing')).not.toBeInTheDocument()
+  })
+
+  it('keeps one review frame beside the quick replies through replies that do not answer it', async () => {
+    const user = userEvent.setup()
+    const clarify = turn(3, 'The dispute covers a single charge. Shall I file it?', 'confirmation')
+    const smallTalk = turn(4, 'Happy to help with anything else too.', 'confirmation')
+    const { client } = recordingClient([SUMMARY_250, clarify, smallTalk])
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    await sendText(user, 'the Tienda Sol one')
+    await findMessage(SUMMARY_250.reply)
+
+    for (const reply of [clarify.reply, smallTalk.reply]) {
+      await sendText(user, 'what does that mean?')
+      const message = await findMessage(reply)
+      await screen.findByRole('group', { name: 'Your answer' })
+      expect(screen.getAllByText('Review before filing')).toHaveLength(1)
+      expect(message.closest('li')).not.toHaveTextContent('Review before filing')
+      expect(screen.getByRole('list')).not.toHaveTextContent('Review before filing')
+    }
+  })
+
+  it('shows one review frame when a changed summary is issued while confirmation is pending', async () => {
+    const user = userEvent.setup()
+    const { client } = recordingClient([SUMMARY_250, SUMMARY_180])
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    await sendText(user, 'the Tienda Sol one')
+    await findMessage(SUMMARY_250.reply)
+
+    await sendText(user, 'actually it was 180')
+    await findMessage(SUMMARY_180.reply)
+
+    await screen.findByRole('group', { name: 'Your answer' })
+    expect(screen.getAllByText('Review before filing')).toHaveLength(1)
+    expect(screen.getByRole('list')).not.toHaveTextContent('Review before filing')
   })
 
   it('is withdrawn while a turn is in flight, so it confirms once', async () => {

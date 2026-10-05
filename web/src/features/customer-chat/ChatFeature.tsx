@@ -115,8 +115,8 @@ export function ChatFeature({
   const latest = conversation.latest
   const busy = conversation.status === 'loading'
   const ended = latest?.end_session === true
-  const lastAssistant = conversation.messages.findLast((m) => m.from === 'assistant')
-  const lastAssistantText = lastAssistant?.text ?? ''
+  const lastAssistantText =
+    conversation.messages.findLast((m) => m.from === 'assistant')?.text ?? ''
   // A dispute is filed on a turn that does not end the conversation, and the farewell that ends
   // it carries no case number: the card shows the filing from the moment it happens and keeps its
   // number to the end. A hand-off after a filing leads with its own reference and lists the case.
@@ -150,14 +150,7 @@ export function ChatFeature({
       )}
       {latest === null && <p className={styles.status}>{t('chat.starting')}</p>}
       {latest !== null && (
-        <MessageList
-          messages={conversation.messages}
-          lang={activeLang}
-          pending={busy}
-          reviewId={
-            latest.next_expected === 'confirmation' && !ended ? (lastAssistant?.id ?? null) : null
-          }
-        />
+        <MessageList messages={conversation.messages} lang={activeLang} pending={busy} />
       )}
       {conversation.status === 'error' && (
         <div className={styles.failure}>
