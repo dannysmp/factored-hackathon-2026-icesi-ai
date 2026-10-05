@@ -22,7 +22,7 @@ from pathlib import Path  # Where the web tests read the payloads from
 
 # Local modules
 from app.api.auth import SessionResponse
-from app.api.demo_signin import DemoPersonaDirectory, DemoPersonaSummary
+from app.api.demo_signin import DemoPersonaDirectory, DemoPersonaSummary, ReferenceDateLines
 from app.domain.policy.models import DisputeCategory, ReasonCode, TransactionStatus
 from contracts.service_v1.api import Choice, ReferenceDateOrigin, TurnResponse
 from contracts.service_v1.console import (
@@ -233,7 +233,12 @@ def build_payloads() -> dict[str, object]:
                 DemoPersonaSummary(
                     slug="agent-beatriz", display_name="Beatriz", language="pt", audience="agent"
                 ),
-            )
+            ),
+            reference_date_lines=ReferenceDateLines(
+                es="Fecha de referencia de los datos: 18 de junio de 2026",
+                pt="Data de referência dos dados: 18 de junho de 2026",
+                en="Reference date of the data: June 18, 2026",
+            ),
         ),
         "SessionResponse": SessionResponse(
             access_token="token", expires_at=_CREATED, expires_in=1800

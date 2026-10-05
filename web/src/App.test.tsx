@@ -9,9 +9,13 @@ import { findMessage } from './features/customer-chat/findMessage'
 import { en } from './i18n/en'
 import { es } from './i18n/es'
 import { pt } from './i18n/pt'
+import { REFERENCE_DATE_LINES } from './features/sign-in/personaDirectory'
 
 function personasBody(language: string): unknown {
-  return { personas: [{ slug: 'ana', display_name: 'Ana', language, audience: 'customer' }] }
+  return {
+    personas: [{ slug: 'ana', display_name: 'Ana', language, audience: 'customer' }],
+    reference_date_lines: REFERENCE_DATE_LINES,
+  }
 }
 const SESSION_BODY = {
   access_token: 'token-abc',

@@ -8,6 +8,7 @@ import { en } from '../../i18n/en'
 import { es } from '../../i18n/es'
 import { pt } from '../../i18n/pt'
 import { getPersonaRadio } from './personaRadios'
+import { directoryOf } from './personaDirectory'
 
 /** One customer persona per language, so the notice is checked in each. */
 const PERSONAS = [
@@ -22,7 +23,7 @@ afterEach(() => {
 
 describe('SignInScreen demonstration notice', () => {
   it('is shown before any persona is chosen and offers no way to dismiss it', async () => {
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
     expect(await screen.findByText(es['signin.intro'])).toBeInTheDocument()
@@ -43,7 +44,7 @@ describe('SignInScreen demonstration notice', () => {
   ] as const)(
     'follows the language of the chosen persona (%s) and stays',
     async (slug, catalog) => {
-      vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+      vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
       const user = userEvent.setup()
       render(<SignInScreen onSignedIn={vi.fn()} />)
       await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
@@ -55,7 +56,7 @@ describe('SignInScreen demonstration notice', () => {
   )
 
   it('stays after a refused sign-in, so a retry is made with the notice still in view', async () => {
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
     vi.spyOn(api, 'signIn').mockRejectedValue(new api.SignInError(401, 'Wrong access code'))
     const user = userEvent.setup()
     render(<SignInScreen onSignedIn={vi.fn()} />)
@@ -69,9 +70,11 @@ describe('SignInScreen demonstration notice', () => {
   })
 
   it('is shown on the agent console sign-in too, with no way to dismiss it', async () => {
-    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue([
-      { slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' as const },
-    ])
+    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue(
+      directoryOf([
+        { slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' as const },
+      ]),
+    )
     render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
 
     expect(await screen.findByText(es['signin.intro'])).toBeInTheDocument()

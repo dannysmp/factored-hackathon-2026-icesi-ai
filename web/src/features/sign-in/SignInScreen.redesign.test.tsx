@@ -10,6 +10,7 @@ import { en } from '../../i18n/en'
 import { es } from '../../i18n/es'
 import { pt } from '../../i18n/pt'
 import { getPersonaRadio } from './personaRadios'
+import { directoryOf } from './personaDirectory'
 
 const CUSTOMERS = [
   { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' as const },
@@ -25,7 +26,7 @@ afterEach(() => {
 async function renderCustomerScreen(
   personas: readonly DemoPersonaSummary[] = CUSTOMERS,
 ): Promise<ReturnType<typeof userEvent.setup>> {
-  vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(personas)
+  vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(personas))
   const user = userEvent.setup()
   render(<SignInScreen onSignedIn={vi.fn()} />)
   await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
@@ -144,7 +145,7 @@ describe('SignInScreen language switcher', () => {
   })
 
   it('tells the page around it which language was chosen', async () => {
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(CUSTOMERS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(CUSTOMERS))
     const onLanguageChange = vi.fn()
     const user = userEvent.setup()
     render(<SignInScreen onSignedIn={vi.fn()} onLanguageChange={onLanguageChange} />)
@@ -163,14 +164,16 @@ describe('SignInScreen language switcher', () => {
   })
 
   it('is not offered on the agent console, which stays in Spanish', async () => {
-    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue([
-      {
-        slug: 'agent-beatriz',
-        display_name: 'Beatriz',
-        language: 'pt',
-        audience: 'agent' as const,
-      },
-    ])
+    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue(
+      directoryOf([
+        {
+          slug: 'agent-beatriz',
+          display_name: 'Beatriz',
+          language: 'pt',
+          audience: 'agent' as const,
+        },
+      ]),
+    )
     render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
 
     await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
@@ -252,7 +255,7 @@ describe('SignInScreen access code control', () => {
 
   it('keeps the show and hide control out of the sign-in submit', async () => {
     const onSignedIn = vi.fn()
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(CUSTOMERS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(CUSTOMERS))
     const signIn = vi.spyOn(api, 'signIn')
     const user = userEvent.setup()
     render(<SignInScreen onSignedIn={onSignedIn} />)

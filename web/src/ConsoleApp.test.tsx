@@ -10,9 +10,11 @@ import { ConsoleApp } from './ConsoleApp'
 import { es } from './i18n/es'
 import { DEMO_QUEUE, DEMO_TICKET_DETAILS } from './features/console/fixtures'
 import { REQUEST_SUMMARY_LABELS } from './features/console/labels'
+import { REFERENCE_DATE_LINES } from './features/sign-in/personaDirectory'
 
 const PERSONAS_BODY = {
   personas: [{ slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' }],
+  reference_date_lines: REFERENCE_DATE_LINES,
 }
 const SESSION_BODY = {
   access_token: 'agent-token',

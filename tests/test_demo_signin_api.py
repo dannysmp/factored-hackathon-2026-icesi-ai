@@ -805,6 +805,34 @@ def test_an_agent_persona_shows_its_first_language_as_a_single_value(
     assert sum(1 for p in response.json()["personas"] if p["slug"] == "agent-beatriz") == 1
 
 
+def test_the_persona_directory_states_the_reference_date_as_the_chat_words_it(
+    client: TestClient,
+) -> None:
+    lines = client.get(DEMO_PERSONAS).json()["reference_date_lines"]
+
+    assert lines == {
+        "es": "Fecha de referencia de los datos: 18 de junio de 2026",
+        "pt": "Data de referência dos dados: 18 de junho de 2026",
+        "en": "Reference date of the data: June 18, 2026",
+    }
+
+
+def test_the_persona_directory_follows_the_configured_domain_date(
+    clock: Clock, audit: _RecordingAuditSink
+) -> None:
+    app = create_app(
+        _settings(data_as_of_date="2026-03-05"),
+        clock=clock,
+        customer_lookup=_always_active,
+        signin_audit=audit,
+    )
+
+    lines = TestClient(app).get(DEMO_PERSONAS).json()["reference_date_lines"]
+
+    assert lines["en"] == "Reference date of the data: March 5, 2026"
+    assert lines["pt"] == "Data de referência dos dados: 5 de março de 2026"
+
+
 def test_the_persona_directory_is_absent_when_both_brokers_are_disabled(clock: Clock) -> None:
     plain = TestClient(create_app(_settings(demo_signin_enabled=False), clock=clock))
 

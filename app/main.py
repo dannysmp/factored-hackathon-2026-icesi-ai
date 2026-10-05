@@ -674,6 +674,7 @@ def create_app(
             include_customers=resolved.demo_signin_enabled,
             include_agents=resolved.demo_agent_signin_enabled,
             attempt_limiter=AttemptLimiter(clock=clock),
+            reference_date=calendar.reference_date,
         )
 
     # The console's own routes, gated on the same flag as the only broker that can ever mint an

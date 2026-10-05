@@ -3,9 +3,10 @@
  */
 import { useEffect, useId, useRef, useState } from 'react'
 import type { JSX, SyntheticEvent } from 'react'
-import type { DemoPersonaSummary } from './contracts'
+import type { DemoPersonaSummary, ReferenceDateLines } from './contracts'
 import type { Lang } from '../customer-chat/contracts'
 import type { SignInAudience } from './api'
+import { ReferenceBanner } from '../customer-chat/components/ReferenceBanner'
 import { Button } from '../../components/ui/Button'
 import { ErrorState } from '../../components/ui/ErrorState'
 import { Notice } from '../../components/ui/Notice'
@@ -48,6 +49,10 @@ function isShownLanguage(value: string): value is Lang {
  * the case the persona represents. The language switcher selects the first persona who speaks the
  * chosen language, unless the selected persona already does; a language no persona speaks is
  * offered but disabled. The access code can be shown or hidden.
+ *
+ * Under the description the screen states the date the data is as of, in the selected language, in
+ * the same banner the chat uses. The service words it (it arrives with the persona directory, in all
+ * three languages) and this screen only chooses which one to show, so it never computes the date.
  *
  * `audience` selects the persona list and the access code this screen asks for: `'customer'` (the
  * default) or `'agent'`.
@@ -101,6 +106,7 @@ export function SignInScreen({
 }): JSX.Element {
   const [directoryStatus, setDirectoryStatus] = useState<DirectoryStatus>('loading')
   const [personas, setPersonas] = useState<readonly DemoPersonaSummary[]>([])
+  const [referenceDateLines, setReferenceDateLines] = useState<ReferenceDateLines | null>(null)
   const [selectedSlug, setSelectedSlug] = useState('')
   const [accessCode, setAccessCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -135,9 +141,11 @@ export function SignInScreen({
     let cancelled = false
     const fetchPersonas = audience === 'agent' ? fetchAgentPersonas : fetchCustomerPersonas
     fetchPersonas().then(
-      (fetched) => {
+      (directory) => {
         if (cancelled) return
+        const fetched = directory.personas
         setPersonas(fetched)
+        setReferenceDateLines(directory.referenceDateLines)
         const inPreferredLang = fetched.filter(
           (persona) => audience === 'customer' && toLang(persona.language) === startLang,
         )
@@ -241,6 +249,11 @@ export function SignInScreen({
         {t('signin.heading')}
       </h2>
       <p className={styles.intro}>{t('signin.intro')}</p>
+      {referenceDateLines !== null && (
+        <div className={styles.referenceDate}>
+          <ReferenceBanner referenceDateLine={referenceDateLines[activeLang]} demoNotice={null} />
+        </div>
+      )}
       {audience === 'customer' && (
         <div className={styles.languageSwitcher}>
           <span id={languageLabelId} className={styles.label}>

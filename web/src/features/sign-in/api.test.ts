@@ -2,6 +2,7 @@
  * `fetch`. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SignInError, fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
+import { REFERENCE_DATE_LINES } from './personaDirectory'
 
 /** A JSON `Response` with the given status and body, like the broker returns. */
 function jsonResponse(status: number, body: unknown): Response {
@@ -23,15 +24,17 @@ describe('fetchCustomerPersonas', () => {
           { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' },
           { slug: 'agent-diego', display_name: 'Diego', language: 'es', audience: 'agent' },
         ],
+        reference_date_lines: REFERENCE_DATE_LINES,
       }),
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const personas = await fetchCustomerPersonas()
+    const directory = await fetchCustomerPersonas()
 
-    expect(personas).toEqual([
+    expect(directory.personas).toEqual([
       { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' },
     ])
+    expect(directory.referenceDateLines).toEqual(REFERENCE_DATE_LINES)
     expect(fetchMock).toHaveBeenCalledWith('/v1/auth/demo-personas', {
       signal: expect.any(AbortSignal) as AbortSignal,
     })
@@ -59,18 +62,35 @@ describe('fetchAgentPersonas', () => {
           { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' },
           { slug: 'diego', display_name: 'Diego', language: 'pt', audience: 'agent' },
         ],
+        reference_date_lines: REFERENCE_DATE_LINES,
       }),
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const personas = await fetchAgentPersonas()
+    const directory = await fetchAgentPersonas()
 
-    expect(personas).toEqual([
+    expect(directory.personas).toEqual([
       { slug: 'diego', display_name: 'Diego', language: 'pt', audience: 'agent' },
     ])
+    expect(directory.referenceDateLines).toEqual(REFERENCE_DATE_LINES)
     expect(fetchMock).toHaveBeenCalledWith('/v1/auth/demo-personas', {
       signal: expect.any(AbortSignal) as AbortSignal,
     })
+  })
+})
+
+describe('a directory the service sent without its reference date', () => {
+  it('is refused rather than shown without the date', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          personas: [{ slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' }],
+        }),
+      ),
+    )
+
+    await expect(fetchCustomerPersonas()).rejects.toThrow()
   })
 })
 

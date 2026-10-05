@@ -4,7 +4,7 @@
  * Both calls are plain `fetch`, matching `customer-chat/client.ts`'s `LiveChatClient`: the two
  * features hit different, small surfaces, so a shared HTTP wrapper would be premature.
  */
-import type { DemoPersonaSummary } from './contracts'
+import type { DemoPersonaSummary, ReferenceDateLines } from './contracts'
 import { DemoPersonaDirectorySchema, SessionResponseSchema } from './contracts'
 import { requestSignal } from '../../lib/failure'
 
@@ -41,23 +41,32 @@ async function toError(response: Response): Promise<SignInError> {
   }
 }
 
+/** The personas of one audience and the reference-date line the service words in each language. */
+export interface PersonaDirectory {
+  readonly personas: readonly DemoPersonaSummary[]
+  readonly referenceDateLines: ReferenceDateLines
+}
+
 /** Fetches the persona directory and keeps only the personas of one audience. */
-async function fetchPersonas(audience: SignInAudience): Promise<readonly DemoPersonaSummary[]> {
+async function fetchPersonas(audience: SignInAudience): Promise<PersonaDirectory> {
   const response = await fetch(DEMO_PERSONAS_PATH, { signal: requestSignal() })
   if (!response.ok) {
     throw await toError(response)
   }
   const directory = DemoPersonaDirectorySchema.parse(await response.json())
-  return directory.personas.filter((persona) => persona.audience === audience)
+  return {
+    personas: directory.personas.filter((persona) => persona.audience === audience),
+    referenceDateLines: directory.reference_date_lines,
+  }
 }
 
 /** The customer personas the demo broker currently accepts. */
-export function fetchCustomerPersonas(): Promise<readonly DemoPersonaSummary[]> {
+export function fetchCustomerPersonas(): Promise<PersonaDirectory> {
   return fetchPersonas('customer')
 }
 
 /** The agent personas the demo broker currently accepts — the console's own sign-in. */
-export function fetchAgentPersonas(): Promise<readonly DemoPersonaSummary[]> {
+export function fetchAgentPersonas(): Promise<PersonaDirectory> {
   return fetchPersonas('agent')
 }
 

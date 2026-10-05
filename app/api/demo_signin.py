@@ -69,7 +69,7 @@ import hashlib  # Client address hashed before it reaches the audit record
 import hmac  # Constant-time comparison of the shared access code
 import logging  # Structured events about demo sign-ins
 import re  # Strict persona-slug pattern
-from datetime import datetime, timedelta  # Session lifetimes and reservation TTLs
+from datetime import date, datetime, timedelta  # Session lifetimes, reservation TTLs, data date
 from typing import Annotated, Literal  # Header and field declarations, closed audience values
 
 # Third-party libraries
@@ -78,6 +78,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr  # Validated models
 
 # Local modules
 from app.api.auth import SessionResponse  # Shared response shape with the sandbox login
+from app.conversation.renderer import reference_date_line  # The chat's own date wording
 from app.security.client_address import client_address  # The real connecting address
 from app.security.demo_personas import PersonaList  # The validated, seed-checked persona list
 from app.security.errors import ErrorCode, ProblemError  # Failure format
@@ -144,12 +145,23 @@ class DemoPersonaSummary(BaseModel):
     audience: Literal["customer", "agent"]
 
 
+class ReferenceDateLines(BaseModel):
+    """The data's reference date as the chat words it, once per language."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    es: str
+    pt: str
+    en: str
+
+
 class DemoPersonaDirectory(BaseModel):
-    """The whole listing the sign-in screen's picker renders."""
+    """The whole listing the sign-in screen's picker renders, with the data's reference date."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     personas: tuple[DemoPersonaSummary, ...]
+    reference_date_lines: ReferenceDateLines
 
 
 def _address_hash(address: str) -> str:
@@ -537,6 +549,7 @@ def build_demo_persona_directory_router(
     include_customers: bool,
     include_agents: bool,
     attempt_limiter: AttemptLimiter,
+    reference_date: date,
 ) -> APIRouter:
     """Build the read-only persona directory a sign-in picker renders.
 
@@ -560,8 +573,16 @@ def build_demo_persona_directory_router(
     attempt_limiter : AttemptLimiter
         This route's own instance — never one of the two sign-in brokers' own limiters, which
         count wrong access codes, a different contract.
+    reference_date : date
+        The domain date the service runs on; the directory words it in each language with the
+        same function the chat uses, so the sign-in screen never computes or guesses it.
     """
     router = APIRouter()
+    reference_date_lines = ReferenceDateLines(
+        es=reference_date_line(reference_date, "es"),
+        pt=reference_date_line(reference_date, "pt"),
+        en=reference_date_line(reference_date, "en"),
+    )
 
     @router.get(DEMO_PERSONAS_PATH)
     def list_demo_personas(request: Request) -> DemoPersonaDirectory:
@@ -594,6 +615,8 @@ def build_demo_persona_directory_router(
                 )
                 for persona in personas.agents
             )
-        return DemoPersonaDirectory(personas=tuple(summaries))
+        return DemoPersonaDirectory(
+            personas=tuple(summaries), reference_date_lines=reference_date_lines
+        )
 
     return router
