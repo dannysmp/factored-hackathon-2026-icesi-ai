@@ -46,7 +46,23 @@ export interface Messages {
   'signin.unreachable': string
   'signin.unavailable': string
   'signin.intro': string
-  'signin.personaLabel': string
+  'signin.productName': string
+  'signin.productTagline': string
+  'signin.agentTagline': string
+  'signin.languageSwitcherLabel': string
+  'signin.personaGroupLabel': string
+  'signin.personaLanguage.es': string
+  'signin.personaLanguage.pt': string
+  'signin.personaLanguage.en': string
+  'signin.persona.ana.case': string
+  'signin.persona.joao.case': string
+  'signin.persona.emma.case': string
+  'signin.persona.carlos.case': string
+  'signin.persona.mariana.case': string
+  'signin.persona.agent-beatriz.case': string
+  'signin.persona.agent-diego.case': string
+  'signin.accessCodeShow': string
+  'signin.accessCodeHide': string
   'signin.accessCodeLabel': string
   'signin.refused': string
   'signin.accessCodeHint': string

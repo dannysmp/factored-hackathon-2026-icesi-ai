@@ -67,7 +67,9 @@ describe('App', () => {
     stubTheWholeFlow()
     render(<App />)
 
-    expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
+    expect(
+      await screen.findByRole('group', { name: es['signin.personaGroupLabel'] }),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: es['chat.regionLabel'] })).not.toBeInTheDocument()
   })
 
@@ -76,7 +78,7 @@ describe('App', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
 
@@ -90,7 +92,7 @@ describe('App', () => {
     stubTheWholeFlow()
     render(<App />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     expect(document.documentElement.lang).toBe('es')
     expect(document.title).toBe(es['app.title'])
   })
@@ -104,7 +106,7 @@ describe('App', () => {
       stubTheWholeFlow({ personaLanguage: language })
       render(<App />)
 
-      await screen.findByLabelText(catalog['signin.personaLabel'])
+      await screen.findByRole('group', { name: catalog['signin.personaGroupLabel'] })
       await waitFor(() => {
         expect(document.documentElement.lang).toBe(language)
       })
@@ -118,7 +120,7 @@ describe('App', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
 
@@ -135,7 +137,7 @@ describe('App', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     expect(screen.queryByRole('button', { name: es['app.signOut'] })).not.toBeInTheDocument()
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
@@ -143,7 +145,9 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: es['app.signOut'] }))
 
-    expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
+    expect(
+      await screen.findByRole('group', { name: es['signin.personaGroupLabel'] }),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: es['chat.regionLabel'] })).not.toBeInTheDocument()
   })
 
@@ -151,7 +155,7 @@ describe('App', () => {
     stubTheWholeFlow()
     render(<App />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     expect(screen.getAllByRole('banner')).toHaveLength(1)
     expect(screen.getByRole('banner')).toContainElement(
       screen.getByRole('heading', { level: 1, name: es['app.title'] }),
@@ -165,7 +169,7 @@ describe('App', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
     await screen.findByRole('region', { name: es['chat.regionLabel'] })
@@ -182,7 +186,7 @@ describe('App', () => {
     stubTheWholeFlow()
     const { container } = render(<App />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     expect(await axe(container)).toHaveNoViolations()
   })
 })

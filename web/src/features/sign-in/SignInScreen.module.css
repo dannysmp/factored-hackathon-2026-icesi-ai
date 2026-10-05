@@ -1,9 +1,10 @@
-/* Styles the demonstration sign-in screen: the card, its form fields, and the loading and
-   unavailable states. */
+/* Styles the demonstration sign-in screen: the centered card, the language switcher, the persona
+   cards, the access code field with its show and hide control, and the loading and unavailable
+   states. */
 
 .card {
   width: calc(100% - 2 * var(--space-4));
-  max-width: 26rem;
+  max-width: 34rem;
   margin: var(--space-6) auto var(--space-8);
   padding: var(--space-6);
   border: var(--border-width-thin) solid var(--color-border);
@@ -12,13 +13,64 @@
   box-shadow: var(--shadow-sm);
 }
 
+.eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-emphasis);
+}
+
 .heading {
   margin: 0 0 var(--space-2);
   font-size: var(--font-size-lg);
 }
 
-.intro {
+.tagline {
   margin: 0 0 var(--space-6);
+  font-size: var(--font-size-md);
+  color: var(--color-text-subtle);
+}
+
+.languageSwitcher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-6);
+}
+
+.languageButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.languageButton {
+  flex: 1 1 0;
+  min-height: var(--size-touch-target);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-width-thin) solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+}
+
+.languageButton[aria-pressed='true'] {
+  border: var(--border-width-emphasis) solid var(--color-accent);
+  background: var(--color-info-bg);
+  font-weight: var(--font-weight-emphasis);
+}
+
+.languageButton:disabled {
+  background: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+  cursor: not-allowed;
+}
+
+.intro {
+  margin: 0 0 var(--space-4);
   color: var(--color-text-subtle);
 }
 
@@ -54,20 +106,121 @@
   color: var(--color-text-subtle);
 }
 
-.select {
+.personas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.personas > legend {
+  padding: 0;
+  margin: 0 0 var(--space-2);
+}
+
+.persona {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
   min-height: var(--size-touch-target);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: var(--border-width-thin) solid var(--color-border-control);
   border-radius: var(--radius-md);
   background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-family);
-  font-size: var(--font-size-base);
+  cursor: pointer;
+}
+
+.persona:hover {
+  background: var(--color-bg-subtle);
+}
+
+.personaSelected {
+  border-color: var(--color-accent);
+  background: var(--color-info-bg);
+  box-shadow: inset 0 0 0 var(--border-width-thin) var(--color-accent);
+}
+
+/* The native radio stays in the page, invisible, so it keeps keyboard and assistive-technology
+   behavior; the card around it shows the selection and the focus ring. */
+.personaRadio {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.persona:has(.personaRadio:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.persona:has(.personaRadio:disabled) {
+  background: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+  cursor: not-allowed;
+}
+
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-touch-target);
+  height: var(--size-touch-target);
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-weight: var(--font-weight-emphasis);
+}
+
+.personaText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.personaHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.personaName {
+  font-weight: var(--font-weight-emphasis);
+}
+
+.personaLanguage {
+  padding: 0 var(--space-2);
+  border: var(--border-width-thin) solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-sm);
+}
+
+.personaCase {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-sm);
+}
+
+.accessCodeRow {
+  display: flex;
+  gap: var(--space-2);
 }
 
 /* The one primary field: larger type and a heavier accent border make it the dominant control,
-   ahead of the persona picker above it. */
+   ahead of the persona cards above it. */
 .accessCode {
+  flex: 1;
+  min-width: 0;
   min-height: var(--size-touch-target);
   padding: var(--space-3) var(--space-4);
   border: var(--border-width-emphasis) solid var(--color-accent);
@@ -76,6 +229,25 @@
   color: var(--color-text);
   font-family: var(--font-family);
   font-size: var(--font-size-md);
+}
+
+.accessCodeToggle {
+  min-width: var(--size-touch-target);
+  min-height: var(--size-touch-target);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-width-thin) solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+}
+
+.accessCodeToggle:disabled {
+  background: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+  cursor: not-allowed;
 }
 
 .hint {
