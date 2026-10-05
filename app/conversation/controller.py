@@ -340,14 +340,73 @@ def _fold(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
 
 
-def _without_blank_merchant(result: NluResult) -> NluResult:
-    """``result`` with an empty merchant description removed from its transaction hint.
+# What a customer calls a kind of transaction or of place rather than a merchant, folded: a
+# merchant hint made only of one of these names nothing a transaction could be searched by. A
+# transfer, for one, has no merchant at all, so the word describing it would rule it out.
+_GENERIC_MERCHANTS = frozenset(
+    {
+        "transferencia",
+        "transferencia bancaria",
+        "transfer",
+        "bank transfer",
+        "transaccion",
+        "transacao",
+        "transaction",
+        "movimiento",
+        "movimento",
+        "cargo",
+        "cobro",
+        "cobranca",
+        "charge",
+        "compra",
+        "purchase",
+        "pago",
+        "pagamento",
+        "payment",
+        "retiro",
+        "saque",
+        "withdrawal",
+        "deposito",
+        "deposit",
+        "tienda",
+        "tienda en linea",
+        "tienda online",
+        "comercio",
+        "establecimiento",
+        "estabelecimento",
+        "loja",
+        "loja online",
+        "loja virtual",
+        "store",
+        "online store",
+        "shop",
+        "online shop",
+        "merchant",
+    }
+)
 
-    A merchant that is empty once accents and surrounding blanks are removed describes nothing,
-    so the rest of the hint (an amount, a date, a card) is what identifies the transaction.
+# Words that may open a generic merchant description ("una tienda en línea", "the store").
+_LEADING_ARTICLES = frozenset({"un", "una", "el", "la", "o", "a", "um", "uma", "the", "an", "my"})
+
+
+def _names_no_merchant(merchant: str) -> bool:
+    """Whether ``merchant`` is empty or only a generic word for a kind of transaction or place."""
+    words = "".join(ch if ch.isalnum() else " " for ch in _fold(merchant)).split()
+    while words and words[0] in _LEADING_ARTICLES:
+        words.pop(0)
+    return not words or " ".join(words) in _GENERIC_MERCHANTS
+
+
+def _without_unnamed_merchant(result: NluResult) -> NluResult:
+    """``result`` with a merchant that names nothing removed from its transaction hint.
+
+    A merchant that is empty once accents and surrounding blanks are removed, or that is only a
+    generic word for a kind of transaction or place ("transferência", "tienda en línea"),
+    describes nothing, so the rest of the hint (an amount, a date, a card) is what identifies the
+    transaction.
     """
     merchant = result.transaction.merchant
-    if merchant is None or _fold(merchant).strip():
+    if merchant is None or not _names_no_merchant(merchant):
         return result
     return result.model_copy(
         update={"transaction": result.transaction.model_copy(update={"merchant": None})}
@@ -836,7 +895,7 @@ class DialogueController:
         search for it when a hint is available and none is selected, ask for the reason, and
         finally evaluate the dispute for the selected transaction and category.
         """
-        result = _without_blank_merchant(result)
+        result = _without_unnamed_merchant(result)
         if state.pending_slot is Slot.CONFIRMATION:
             return self._handle_restated_dispute(state, result)
 
@@ -887,9 +946,9 @@ class DialogueController:
         going ahead with it. A hint that names a different merchant, amount, card or date means
         they rejected the one shown and are pointing at another. When the presented transaction
         cannot be read back, the hint is searched for afresh rather than assumed to match. A
-        merchant that is empty once accents and blanks are removed says nothing, so it is ignored.
+        merchant that names nothing (empty, or only a generic word) says nothing, so it is ignored.
         """
-        if hint.merchant is not None and not _fold(hint.merchant).strip():
+        if hint.merchant is not None and _names_no_merchant(hint.merchant):
             hint = hint.model_copy(update={"merchant": None})
         if hint.is_empty:
             return False

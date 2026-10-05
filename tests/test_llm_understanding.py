@@ -547,6 +547,40 @@ def _understand(extraction: dict[str, object], text: str = "hola") -> NluResult:
     return result
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Não reconheço $2.763,79 do dia 15 de abril.",
+        "I don't recognize a charge of $2,763.79.",
+        "No reconozco un cobro de $ 2.763,79.",
+    ],
+    ids=["pt", "en", "es"],
+)
+def test_a_currency_guessed_from_a_bare_dollar_sign_is_dropped(text: str) -> None:
+    result = _understand({"amount": "2763.79", "currency": "BRL"}, text)
+
+    assert result.transaction.currency is None
+    assert result.transaction.amount == Decimal("2763.79")
+
+
+@pytest.mark.parametrize(
+    ("text", "currency"),
+    [
+        ("Não reconheço R$ 2.763,79.", "BRL"),
+        ("I don't recognize US$2,763.79.", "USD"),
+        ("I don't recognize a charge of $2,763.79 USD.", "USD"),
+        ("No reconozco 2.763,79 pesos.", "COP"),
+        ("No reconozco 2763.79 COP.", "COP"),
+        ("No reconozco 2763.79", "COP"),
+    ],
+    ids=["pt-prefix", "en-prefix", "en-code", "es-word", "es-code", "no-dollar-sign"],
+)
+def test_a_currency_the_message_states_is_kept(text: str, currency: str) -> None:
+    result = _understand({"amount": "2763.79", "currency": currency}, text)
+
+    assert result.transaction.currency == currency
+
+
 def test_a_lowercase_currency_code_is_read_in_capitals() -> None:
     result = _understand({"merchant": "Cine Premium", "amount": "1914215", "currency": "cop"})
 

@@ -5139,6 +5139,140 @@ def test_a_first_message_with_a_blank_merchant_searches_by_the_rest_of_the_hint(
     assert (state.selected_ref, state.pending_slot) == (selected, pending)
 
 
+_GENERIC_MERCHANTS = [
+    "transferencia",
+    "una transferencia",
+    "transferência",
+    "uma transferência",
+    "transfer",
+    "a transfer",
+    "tienda en línea",
+    "una tienda en línea",
+    "loja online",
+    "the online store",
+]
+
+
+def _transfer_controller(
+    results: list[NluResult],
+    *,
+    store: InMemoryDialogueStore,
+    policy: Policy,
+    retriever: LexicalRetriever,
+) -> DialogueController:
+    """A customer with one purchase and one transfer, which has no merchant."""
+    return _two_transaction_controller(
+        results,
+        store=store,
+        policy=policy,
+        retriever=retriever,
+        port=FakeToolPort(
+            transactions=(
+                _transaction("TX-1", merchant="Amazon", amount=Decimal("100.00")),
+                _transaction(
+                    "TX-2",
+                    merchant=None,
+                    amount=Decimal("2763.79"),
+                    occurred_on=date(2026, 6, 10),
+                    last4="9876",
+                ),
+            )
+        ),
+    )
+
+
+@pytest.mark.parametrize("typed", _GENERIC_MERCHANTS)
+@pytest.mark.parametrize(
+    "rest",
+    [
+        TransactionHint(amount=Decimal("2763.79"), currency="USD"),
+        TransactionHint(date_on=date(2026, 6, 10), date_source=DateSource.ABSOLUTE),
+        TransactionHint(
+            amount=Decimal("2763.79"),
+            date_on=date(2026, 6, 10),
+            date_source=DateSource.ABSOLUTE,
+        ),
+    ],
+    ids=["amount", "date", "amount-and-date"],
+)
+def test_a_word_for_a_kind_of_transaction_is_not_searched_for_as_a_merchant(
+    typed: str, rest: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A transfer has no merchant, so the word the customer uses for it must not rule it out."""
+    store = InMemoryDialogueStore()
+    controller = _transfer_controller(
+        [_file_dispute(transaction=rest.model_copy(update={"merchant": typed}))],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+    )
+
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert (state.selected_ref, state.pending_slot) == ("TX-2", Slot.TRANSACTION_CHOICE)
+
+
+@pytest.mark.parametrize("typed", _GENERIC_MERCHANTS)
+def test_a_word_for_a_kind_of_transaction_alone_asks_which_transaction(
+    typed: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """It names nothing to search by, so the customer is asked, not told nothing was found."""
+    store = InMemoryDialogueStore()
+    controller = _transfer_controller(
+        [_file_dispute(transaction=TransactionHint(merchant=typed))],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+    )
+    nothing_found = _transfer_controller(
+        [_file_dispute(transaction=_NOBODY)],
+        store=InMemoryDialogueStore(),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    asked = controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+    missed = nothing_found.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    assert asked.next_expected is Slot.TRANSACTION
+    assert asked.reply != missed.reply
+
+
+@pytest.mark.parametrize("typed", _GENERIC_MERCHANTS)
+def test_a_word_for_a_kind_of_transaction_keeps_the_presented_transaction(
+    typed: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, _reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(merchant=typed),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected == "TX-1"
+
+
+def test_a_merchant_that_merely_contains_a_generic_word_is_still_searched_for(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """Only a description made of the generic word alone is dropped."""
+    store = InMemoryDialogueStore()
+    controller = _two_transaction_controller(
+        [_file_dispute(transaction=TransactionHint(merchant="Store Amazon"))],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+    )
+
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref is None
+
+
 def test_naming_a_different_merchant_while_one_is_presented_presents_that_one(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
