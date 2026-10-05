@@ -120,6 +120,9 @@ has no deterministic controller. The safe-resolution target is 40% or more.
 - By language, the correct outcome is reached in 92% of Spanish cases (n = 50), 94% of Portuguese
   (n = 36) and 94% of English (n = 17). No language is flagged; small samples are not proof of
   equal treatment.
+- By customer segment, from a separate single run of the proposed system (94 of 103 in-scope cases
+  correct), no segment is flagged. Premium and Student hold 10 and 7 in-scope cases, under the 30
+  the report treats as a usable sample, so the absence of a flag is not evidence of equal treatment.
 
 ## Slide 6 — What it does not do yet, and what resolves each
 
