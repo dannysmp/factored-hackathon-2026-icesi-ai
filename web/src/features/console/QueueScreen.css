@@ -200,6 +200,42 @@ tbody th[scope='row'] {
   }
 }
 
+/* Forced colours (Windows high contrast) drop `box-shadow`, so the priority bar and the pinned
+   column's hairline would vanish there. Both are redrawn as real elements the mode keeps, coloured
+   with system colours: the bar on the leading edge of a priority row's reference, the hairline on
+   the trailing edge of the pinned reference column. The cell is made a positioning box below the
+   pinning breakpoint; above it the cell is already sticky, so it is left alone. */
+@media (forced-colors: active) {
+  .queue-table-openable .queue-row-priority th[scope='row']::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inline-size: var(--space-1);
+    background-color: Highlight;
+    forced-color-adjust: none;
+  }
+}
+
+@media (forced-colors: active) and (max-width: 47.9375rem) {
+  .queue-table-openable .queue-row-priority th[scope='row'] {
+    position: relative;
+  }
+}
+
+@media (forced-colors: active) and (min-width: 48rem) {
+  .queue-table-openable thead th:first-child::after,
+  .queue-table-openable tbody th[scope='row']::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    inline-size: var(--border-width-thin);
+    background-color: CanvasText;
+    forced-color-adjust: none;
+  }
+}
+
 .queue-priority-badge {
   display: inline-flex;
   align-items: center;
