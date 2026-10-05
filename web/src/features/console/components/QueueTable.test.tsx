@@ -86,6 +86,17 @@ describe('QueueTable', () => {
     )
   })
 
+  it('separates the reference from the priority word, so a screen reader does not run them together', () => {
+    render(
+      <QueueTable
+        items={[item({ ticket_ref: 'T-20260618-AAAAAAAA', priority: true })]}
+        onSelectTicket={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('rowheader')).toHaveTextContent('T-20260618-AAAAAAAA, Prioritario')
+  })
+
   it('puts the priority bar on a priority row and on no other, and gives the mark an icon', () => {
     render(
       <QueueTable

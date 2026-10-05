@@ -3,7 +3,7 @@ import type { JSX } from 'react'
 import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { HandoffPacket, LocalizedTitle } from '../contracts'
 import type { Lang } from '../../customer-chat/contracts'
-import { formatDate, formatMoney, formatShare } from '../format'
+import { formatDate, formatMoney, formatScore, formatShare } from '../format'
 import {
   CATEGORY_LABELS,
   LANGUAGE_LABELS,
@@ -124,7 +124,7 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
           ))}
           {packet.attempted_action !== null && (
             <li>
-              {actionLabel(packet.attempted_action.action)} (intentada, no completada):{' '}
+              {actionLabel(packet.attempted_action.action)} — intento no completado:{' '}
               {actionResultLabel(packet.attempted_action.result)}
             </li>
           )}
@@ -166,7 +166,7 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
           <h4>Puntaje de riesgo</h4>
           <dl>
             <dt>Puntaje</dt>
-            <dd>{formatShare(packet.evidence.risk.score)}</dd>
+            <dd>{formatScore(packet.evidence.risk.score, packet.evidence.risk.threshold)}</dd>
             <dt>Intervalo</dt>
             <dd>
               {formatShare(packet.evidence.risk.interval_low)} –{' '}
