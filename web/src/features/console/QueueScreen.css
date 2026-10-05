@@ -67,8 +67,9 @@
   font: inherit;
   color: var(--color-text);
   background-color: var(--color-bg);
-  border: var(--border-width-thin) solid var(--color-border);
+  border: var(--border-width-thin) solid var(--color-border-control);
   border-radius: var(--radius-sm);
+  min-height: var(--size-touch-target);
   padding: var(--space-2) var(--space-3);
 }
 
@@ -129,7 +130,21 @@ tbody th[scope='row'] {
   color: inherit;
   background: none;
   border: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-touch-target);
   padding: 0;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* Rows answer the pointer, so the eye can follow a row across a wide table. */
+/* Scoped to the queue table: the packet and timeline tables hold no row that can be opened. */
+.queue-table-openable tbody tr:hover {
+  background-color: var(--color-bg-subtle);
+}
+
+.queue-table-openable thead th {
+  background-color: var(--color-bg-subtle);
+  border-bottom-color: var(--color-border-control);
 }

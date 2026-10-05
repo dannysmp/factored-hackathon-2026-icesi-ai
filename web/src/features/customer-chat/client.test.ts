@@ -105,6 +105,21 @@ describe('LiveChatClient', () => {
     expect(firstId).toMatch(/^[A-Za-z0-9_-]{8,64}$/)
   })
 
+  it('sends the turn id it is given, so a resend is recognised as the same message', async () => {
+    const sentTurnIds: string[] = []
+    const fetchMock = vi.fn((url: string, init: RequestInit) => {
+      sentTurnIds.push(String(requestBody([url, init]).turn_id))
+      return Promise.resolve(jsonResponse(200, turnResponse()))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client: ChatClient = new LiveChatClient({ token: 'tok', lang: 'en' })
+
+    await client.sendTurn('same message', 'turn-id-from-the-caller')
+    await client.sendTurn('same message', 'turn-id-from-the-caller')
+
+    expect(sentTurnIds).toEqual(['turn-id-from-the-caller', 'turn-id-from-the-caller'])
+  })
+
   it('sends the customer text verbatim on sendTurn, not the greeting word', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, turnResponse()))
     vi.stubGlobal('fetch', fetchMock)

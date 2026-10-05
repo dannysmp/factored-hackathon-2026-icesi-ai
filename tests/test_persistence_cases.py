@@ -3,13 +3,13 @@ Case Creation Tests
 ====================
 
 Component: ``app.persistence.reads.PostgresToolPort.create_dispute_case``. Needs a real, migrated
-Postgres — the constraints under test (migration 0004's reason-code check and the partial unique
-index), the race-losing paths and the genuine two-thread races only exist at the store; marked
+Postgres — the constraints under test (the reason-code check and the partial unique index on open
+cases), the race-losing paths and the genuine two-thread races only exist at the store; marked
 ``integration``, skipped when ``DATABASE_URL`` is not set. Mirrors
 ``tests/test_persistence_reads.py``'s fixture style: a self-contained seed, not shared through a
 ``conftest.py``.
 
-The create tool never evaluates policy (ADR-3): every test hands it an already-decided
+The create tool never evaluates policy: every test hands it an already-decided
 ``PolicyDecision`` built by ``_decision`` below, exactly as the controller would after evaluating
 one itself, and checks only the permission invariants the tool enforces on top of it.
 
@@ -69,7 +69,7 @@ class _RecordingSink:
 
 
 class _FailingSink:
-    """An ``AuditSink`` that always refuses to write, for the fail-closed test (AC-E4-19)."""
+    """An ``AuditSink`` that always refuses to write, for the fail-closed test."""
 
     def record(self, entry: AuditRecord) -> None:
         raise RuntimeError("audit store is down")
@@ -127,7 +127,7 @@ def _request(
     idempotency_key: str = "IDEMP-1",
     decision: PolicyDecision | None = _DEFAULT_DECISION,  # type: ignore[assignment]
 ) -> CreateDisputeCaseRequest:
-    """``decision`` defaults to a matching, eligible one; pass ``None`` explicitly for AC-E4-13's
+    """``decision`` defaults to a matching, eligible one; pass ``None`` explicitly for the
     ``decision_missing`` case, distinct from simply not overriding the default."""
     if decision is _DEFAULT_DECISION:
         decision = _decision(transaction_ref=transaction_ref, category=category)
@@ -174,7 +174,7 @@ def dsn() -> str:
     if not value:
         pytest.skip("DATABASE_URL is not set")
     apply_migrations(value)
-    # TRUNCATE on audit_log is refused at the store (migration 0003), including for this reset:
+    # TRUNCATE on audit_log is refused at the store, including for this reset:
     # the session's own replication role is switched off for it, since a trigger created without
     # ENABLE REPLICA or ENABLE ALWAYS does not fire under 'replica'.
     with psycopg.connect(value) as conn, conn.cursor() as cur:
@@ -215,7 +215,7 @@ def dsn() -> str:
 
 
 # -----------------------------------------------------------------------------
-# Happy path (AC-E4-17)
+# Happy path
 # -----------------------------------------------------------------------------
 
 
@@ -250,7 +250,7 @@ def test_a_confirmed_eligible_filing_creates_a_case_and_reads_back_correctly(dsn
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-12 / AC-E4-13: confirmation and decision
+# Confirmation and decision
 # -----------------------------------------------------------------------------
 
 
@@ -285,7 +285,7 @@ def test_a_filing_with_no_decision_is_refused_decision_missing(dsn: str) -> None
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-14: the case filed is always the one the customer saw
+# The case filed is always the one the customer saw
 # -----------------------------------------------------------------------------
 
 
@@ -321,7 +321,7 @@ def test_a_filing_that_does_not_match_the_decision_is_refused_confirmation_misma
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-15: idempotency replay — sequential, out-of-band, and a genuine race
+# Idempotency replay — sequential, out-of-band, and a genuine race
 # -----------------------------------------------------------------------------
 
 
@@ -375,8 +375,8 @@ def test_a_genuine_concurrent_race_on_the_same_idempotency_key_is_resolved_by_th
     dsn: str,
 ) -> None:
     """Two real threads, synchronized so both pass the proactive idempotency pre-check before
-    either inserts: the store's own unique constraint (``cases_customer_idempotency_key_unique``,
-    migration 0001) is what actually resolves the race, exercised through
+    either inserts: the store's own unique constraint (``cases_customer_idempotency_key_unique``)
+    is what actually resolves the race, exercised through
     ``PostgresToolPort``'s own ``UniqueViolation``-handling branch in ``_insert_case``, not
     simulated by inserting a row out of band."""
     barrier = threading.Barrier(2)
@@ -475,7 +475,7 @@ def test_the_open_case_lookup_failing_during_the_race_handler_fails_closed(dsn: 
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-16: a reused key with a different payload, and a duplicate open case
+# A reused key with a different payload, and a duplicate open case
 # -----------------------------------------------------------------------------
 
 
@@ -529,7 +529,7 @@ def test_a_genuine_concurrent_race_for_the_same_transaction_is_resolved_by_the_s
 ) -> None:
     """Two real threads targeting a transaction with no open case yet, synchronized so both pass
     the proactive open-case pre-check before either inserts: the partial unique index
-    (``cases_transaction_id_open_unique``, migration 0004) is what actually resolves the race,
+    (``cases_transaction_id_open_unique``) is what actually resolves the race,
     exercised through ``_insert_case``'s ``UniqueViolation`` handler for that constraint."""
     barrier = threading.Barrier(2)
     waited = threading.local()
@@ -625,7 +625,7 @@ def test_a_session_that_reaches_its_filing_cap_is_refused(dsn: str) -> None:
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-19: fail closed on the audit write
+# Fail closed on the audit write
 # -----------------------------------------------------------------------------
 
 
@@ -641,7 +641,7 @@ def test_a_filing_that_cannot_be_audited_creates_no_case(dsn: str) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Migration 0004: the store-level constraints directly
+# The store-level constraints directly
 # -----------------------------------------------------------------------------
 
 

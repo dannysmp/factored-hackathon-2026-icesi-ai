@@ -114,3 +114,14 @@ describe('TurnResponseSchema', () => {
     expect(() => TurnResponseSchema.parse({ ...BASE_RESPONSE, risk_score: 0.9 })).toThrow()
   })
 })
+
+describe('TurnResponseSchema reply length', () => {
+  it('accepts a reply of 2000 characters and refuses one of 2001', () => {
+    expect(
+      TurnResponseSchema.safeParse({ ...BASE_RESPONSE, reply: 'x'.repeat(2000) }).success,
+    ).toBe(true)
+    expect(
+      TurnResponseSchema.safeParse({ ...BASE_RESPONSE, reply: 'x'.repeat(2001) }).success,
+    ).toBe(false)
+  })
+})

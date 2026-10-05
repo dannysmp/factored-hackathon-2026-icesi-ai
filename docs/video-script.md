@@ -1,13 +1,12 @@
 # Video script
 
 Walks the three demonstration paths and names the core architectural decisions behind what the
-viewer sees, each by its record number with a one-sentence explanation, as the release checklist
-requires. This is a first draft of the script; the live conversation endpoint it plays against
-now runs in the customer chat (`LiveChatClient`, not only recorded fixtures), and the recording
-itself remains a later, separate deliverable.
+viewer sees, each with a one-sentence explanation. The live conversation endpoint it plays against
+runs in the customer chat (`LiveChatClient`, not only recorded fixtures); the recording itself is
+made from this script.
 
 Every line of dialogue quoted here is taken verbatim from `docs/demo-scripts.md`; this script adds
-only the narration between paths and the closing walk through the decision records.
+only the narration between paths and the closing walk through the design decisions.
 
 ## Opening
 
@@ -43,34 +42,34 @@ amount or what a risk model would say about it. The console is a read-only viewe
 decision, not because the write path is unfinished — an agent sees exactly what the customer said,
 masked, and the reasoning that led here."
 
-## Decision records named
+## Design decisions named
 
 About 40 seconds.
 
-Narrate each in one sentence, matching the architecture document:
+Narrate each in one sentence:
 
-- **ADR-1, decide-then-render:** the system uses a deterministic policy engine instead of an
+- **Decide, then render:** the system uses a deterministic policy engine instead of an
   autonomous agent loop, because dispute eligibility has financial consequences that need
   reproducible decisions and stable reason codes, not a model's judgment call.
-- **ADR-2, the typed envelope:** everything the customer reads is rendered only from a structured
+- **The typed envelope:** everything the customer reads is rendered only from a structured
   envelope of facts and sources, so grounding is enforced by the code that builds the reply, not
   by hoping the model doesn't invent a number.
-- **ADR-3, authorization in the tool layer:** no tool in this system can even accept another
+- **Authorization in the tool layer:** no tool in this system can even accept another
   customer's identifier as an argument, so cross-customer access is not just forbidden, it is
   inexpressible.
-- **ADR-6, the risk scorer routes, policy decides:** a transaction's risk score can only send a
+- **The risk scorer routes, policy decides:** a transaction's risk score can only send a
   case to human review; it never determines whether a dispute is eligible or what happens to it.
-- **ADR-16, lexical retrieval with abstention:** policy questions are answered from a small,
+- **Lexical retrieval with abstention:** policy questions are answered from a small,
   versioned corpus with a relevance floor, and a question below that floor gets a plain "I don't
   have that" and a person, never a guess.
-- **ADR-17, the console as a read-only viewer:** the human-agent console shows cases and audit
+- **The console as a read-only viewer:** the human-agent console shows cases and audit
   timelines across customers as its own authorization domain, and ships as a viewer first; its
   narrow audited writes exist in the API and have no screen, by that design, not as a missing feature.
 
 ## Closing
 
 About 10 seconds. "The complete account of what is built, what is deliberately deferred, and what remains is in the
-repository's limitations report and its technology evolution matrix — nothing in this recording
+repository's limitations report — nothing in this recording
 claims more than the code behind it does."
 
 ## Notes for the recording
@@ -80,5 +79,5 @@ claims more than the code behind it does."
   checked by a person watching the full recording before delivery, per the release checklist.
 - The Portuguese and English variants of each path (`docs/demo-scripts.md`, scripts 2, 3, 5 and 7)
   are available for a longer cut or a second recording, if the release schedule allows one; this
-  script covers the required minimum: all three paths, with the handoff and the console, in one
+  script covers all three paths, with the handoff and the console, in one
   language.

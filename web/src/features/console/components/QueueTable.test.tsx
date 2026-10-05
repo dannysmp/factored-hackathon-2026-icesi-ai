@@ -88,4 +88,10 @@ describe('QueueTable', () => {
 
     expect(screen.queryByText('vencido', { exact: false })).not.toBeInTheDocument()
   })
+
+  it('marks its table wrapper as the one whose rows can be opened, so rows highlight on hover', () => {
+    const { container } = render(<QueueTable items={[item()]} onSelectTicket={vi.fn()} />)
+
+    expect(container.querySelector('.queue-table-openable')).not.toBeNull()
+  })
 })

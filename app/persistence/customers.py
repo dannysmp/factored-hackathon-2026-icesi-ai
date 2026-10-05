@@ -5,9 +5,9 @@ Customer Lookup
 Overview
 --------
 Answers one question against the serving store: does this customer identifier exist, and what is
-its status? The sandbox login uses it to check existence before issuing a session (AC-E4-47,
-follow-up issue #36); the reads adapter does not need it, since every reference it resolves
-already carries the owning customer's identifier in the row itself.
+its status? The sandbox login uses it to check existence before issuing a session; the reads
+adapter does not need it, since every reference it resolves already carries the owning customer's
+identifier in the row itself.
 
 Scope
 -----
@@ -21,11 +21,11 @@ Design Principles
   identifier that does not resolve is, from the caller's side, indistinguishable from a store
   that is briefly down, and both are handled the same way by the caller (refuse to sign in).
 - No status gate here: this module reports the status as read, never decides whether a status
-  should be allowed to sign in or dispute (AC-E4-48 — the policy applies no status gate; the
-  service layer does not invent one at the login boundary either).
+  should be allowed to sign in or dispute. The policy applies no status gate, and the service
+  layer does not invent one at the login boundary either.
 
 Runtime Contract
------------------
+----------------
 ``customer_status(dsn, customer_id) -> str | None``
 """
 
@@ -47,7 +47,10 @@ _CONNECT_TIMEOUT_SECONDS = 5
 
 def customer_status(dsn: str, customer_id: str) -> str | None:
     """The customer's status as the store records it, or ``None`` when there is no match or the
-    store could not be reached."""
+    store could not be reached.
+
+    A driver failure is logged as a warning carrying the current request id, never raised.
+    """
     try:
         with (
             psycopg.connect(dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,

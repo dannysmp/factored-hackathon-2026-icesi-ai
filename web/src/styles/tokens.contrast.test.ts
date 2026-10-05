@@ -34,6 +34,7 @@ const TEXT_PAIRS: readonly (readonly [string, string])[] = [
   ['color-text', 'color-bg-subtle'],
   ['color-text-subtle', 'color-bg'],
   ['color-text-subtle', 'color-bg-subtle'],
+  ['color-text-subtle', 'color-info-bg'],
   ['color-accent', 'color-bg'],
   ['color-accent-contrast', 'color-accent'],
   ['color-accent-contrast', 'color-accent-hover'],
@@ -41,6 +42,18 @@ const TEXT_PAIRS: readonly (readonly [string, string])[] = [
   ['color-warning', 'color-warning-bg'],
   ['color-error', 'color-error-bg'],
   ['color-info', 'color-info-bg'],
+  ['color-text', 'color-success-bg'],
+  ['color-text', 'color-warning-bg'],
+  ['color-text', 'color-error-bg'],
+  ['color-text', 'color-info-bg'],
+  ['color-disabled-text', 'color-disabled-bg'],
+]
+
+// The edge of a control against the surface it sits on. WCAG 1.4.11 asks 3:1 for the boundary a
+// person needs to find an input or an outlined button.
+const CONTROL_BOUNDARY_PAIRS: readonly (readonly [string, string])[] = [
+  ['color-border-control', 'color-bg'],
+  ['color-border-control', 'color-bg-subtle'],
 ]
 
 describe('design token contrast', () => {
@@ -49,6 +62,31 @@ describe('design token contrast', () => {
       const ratio = contrast(token(foreground, scheme), token(background, scheme))
       expect(ratio, `${foreground} on ${background} (${scheme})`).toBeGreaterThanOrEqual(4.5)
     }
+  })
+
+  it.each(['light', 'dark'] as const)(
+    'meets 3:1 for every control boundary in %s mode',
+    (scheme) => {
+      for (const [boundary, surface] of CONTROL_BOUNDARY_PAIRS) {
+        const ratio = contrast(token(boundary, scheme), token(surface, scheme))
+        expect(ratio, `${boundary} on ${surface} (${scheme})`).toBeGreaterThanOrEqual(3)
+      }
+    },
+  )
+
+  it('keeps the divider border lighter than the control boundary', () => {
+    for (const scheme of ['light', 'dark'] as const) {
+      const divider = contrast(token('color-border', scheme), token('color-bg', scheme))
+      const control = contrast(token('color-border-control', scheme), token('color-bg', scheme))
+      expect(control, scheme).toBeGreaterThan(divider)
+    }
+  })
+
+  it('collapses motion for a person who asks for reduced motion', () => {
+    const block = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/.exec(TOKENS_CSS)
+    expect(block).not.toBeNull()
+    expect(block?.[1]).toMatch(/transition-duration:\s*0\.01ms/)
+    expect(block?.[1]).toMatch(/animation-duration:\s*0\.01ms/)
   })
 
   it('computes the contrast ratio correctly at its two extremes', () => {

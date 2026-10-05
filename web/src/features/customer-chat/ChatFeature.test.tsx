@@ -2,15 +2,32 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ChatFeature } from './ChatFeature'
 import type { ChatClient } from './client'
 import { FixtureChatClient } from './client'
 import { FILE_DISPUTE_EN } from './fixtures'
 import { FILE_DISPUTE_ES } from './fixtures.es'
+import { findMessage } from './findMessage'
 
 function renderChat(): ReturnType<typeof render> {
   return render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN)} lang="en" />)
+}
+
+/** The hidden region that reads new replies aloud, as opposed to the typing row's status. */
+function announcement(): HTMLElement {
+  const region = screen
+    .getAllByRole('status')
+    .find((element) => element.getAttribute('aria-live') === 'polite')
+  if (region === undefined) throw new Error('expected the announcement region to be on the page')
+  return region
+}
+
+/** The visible closing line, as opposed to the hidden announcement that repeats it. */
+function visibleEndedLine(): Element {
+  const line = document.querySelector('p[class*="ended"]')
+  if (line === null) throw new Error('expected the visible ended line to be on the page')
+  return line
 }
 
 describe('ChatFeature', () => {
@@ -46,7 +63,7 @@ describe('ChatFeature', () => {
     const user = userEvent.setup()
     renderChat()
 
-    await screen.findByText('Hi! Which transaction would you like to dispute?')
+    await findMessage('Hi! Which transaction would you like to dispute?')
     await user.type(screen.getByLabelText('Your message'), 'the Tienda Sol one')
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
@@ -55,14 +72,14 @@ describe('ChatFeature', () => {
     })
     await user.click(choice)
 
-    await screen.findByText(/what is the reason for the dispute/i)
+    await findMessage(/what is the reason for the dispute/i)
     await user.type(screen.getByLabelText('Your message'), 'unrecognized charge')
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
     const confirm = await screen.findByRole('button', { name: 'Confirm' })
     await user.click(confirm)
 
-    expect(await screen.findByText(/case DEMO-1234/)).toBeInTheDocument()
+    expect(await findMessage(/case DEMO-1234/)).toBeInTheDocument()
     expect(
       screen.getByText((_content, element) => element?.textContent === 'You: unrecognized charge'),
     ).toBeInTheDocument()
@@ -71,9 +88,9 @@ describe('ChatFeature', () => {
   it('disables the form and shows a distinct ended state once the assistant ends the session', async () => {
     // Start straight from the last, session-ending turn.
     render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN.slice(-1))} lang="en" />)
-    await screen.findByText('Thanks for reaching out. Have a good day!')
+    await findMessage('Thanks for reaching out. Have a good day!')
     expect(screen.queryByLabelText('Your message')).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('This conversation has ended.')
+    expect(visibleEndedLine()).toHaveTextContent('This conversation has ended.')
   })
 
   it('shows the case reference on the ended state when the last turn carries one', async () => {
@@ -83,7 +100,67 @@ describe('ChatFeature', () => {
     }
     const endedWithTicket = { ...lastTurn, handoff_ticket: 'DEMO-1234' }
     render(<ChatFeature client={new FixtureChatClient([endedWithTicket])} lang="en" />)
-    expect(await screen.findByRole('status')).toHaveTextContent('Case reference: DEMO-1234.')
+    await findMessage('Thanks for reaching out. Have a good day!')
+    expect(visibleEndedLine()).toHaveTextContent(
+      'This conversation has ended. Case reference: DEMO-1234.',
+    )
+  })
+
+  it('announces the closing line and the case reference together with the last assistant reply', async () => {
+    const [lastTurn] = FILE_DISPUTE_EN.slice(-1)
+    if (lastTurn === undefined) {
+      throw new Error('fixture FILE_DISPUTE_EN must have at least one turn')
+    }
+    const endedWithTicket = { ...lastTurn, handoff_ticket: 'DEMO-1234' }
+    render(<ChatFeature client={new FixtureChatClient([endedWithTicket])} lang="en" />)
+    await findMessage('Thanks for reaching out. Have a good day!')
+
+    expect(announcement()).toHaveTextContent(
+      'Thanks for reaching out. Have a good day! This conversation has ended. Case reference: DEMO-1234.',
+    )
+  })
+
+  it('announces the new assistant reply and never reads the customer’s own message back', async () => {
+    const user = userEvent.setup()
+    let release: () => void = () => undefined
+    const fixture = new FixtureChatClient(FILE_DISPUTE_EN)
+    const client: ChatClient = {
+      start: () => fixture.start(),
+      sendTurn: () =>
+        new Promise((resolve) => {
+          release = () => {
+            resolve(fixture.sendTurn())
+          }
+        }),
+    }
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage('Hi! Which transaction would you like to dispute?')
+    expect(announcement()).toHaveTextContent('Hi! Which transaction would you like to dispute?')
+
+    await user.type(screen.getByLabelText('Your message'), 'the Tienda Sol one')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    expect(announcement()).not.toHaveTextContent('the Tienda Sol one')
+    expect(announcement()).toHaveTextContent('Hi! Which transaction would you like to dispute?')
+
+    release()
+    await findMessage('I found one transaction. Is this the one?')
+    expect(announcement()).toHaveTextContent('I found one transaction. Is this the one?')
+    expect(announcement()).not.toHaveTextContent('the Tienda Sol one')
+  })
+
+  it('tells the page which language the conversation is in, so its title and document language follow', async () => {
+    const onLanguageChange = vi.fn()
+    render(
+      <ChatFeature
+        client={new FixtureChatClient(FILE_DISPUTE_ES)}
+        lang="en"
+        onLanguageChange={onLanguageChange}
+      />,
+    )
+    await screen.findByRole('button', { name: 'Enviar' })
+
+    expect(onLanguageChange).toHaveBeenCalledWith('en')
+    expect(onLanguageChange).toHaveBeenLastCalledWith('es')
   })
 
   it('shows a retryable error, not a stack trace, when the client rejects', async () => {
@@ -105,33 +182,35 @@ describe('ChatFeature', () => {
       sendTurn: () => Promise.reject(new Error('network is down')),
     }
     render(<ChatFeature client={client} lang="en" />)
-    await screen.findByText('Hi! Which transaction would you like to dispute?')
+    await findMessage('Hi! Which transaction would you like to dispute?')
     await user.type(screen.getByLabelText('Your message'), 'the Tienda Sol one')
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Your last message could not be sent. Please try again.',
     )
-    expect(screen.getByText('Hi! Which transaction would you like to dispute?')).toBeInTheDocument()
+    expect(
+      await findMessage('Hi! Which transaction would you like to dispute?'),
+    ).toBeInTheDocument()
     expect(screen.queryByText('network is down')).not.toBeInTheDocument()
   })
 
   it('disables the send button while a message is in flight', async () => {
     const user = userEvent.setup()
     renderChat()
-    await screen.findByText('Hi! Which transaction would you like to dispute?')
+    await findMessage('Hi! Which transaction would you like to dispute?')
     await user.type(screen.getByLabelText('Your message'), 'first message')
     const sendButton = screen.getByRole('button', { name: 'Send' })
     await user.click(sendButton)
     // The reply resolves on a microtask, so the disabled state is visible for at least one tick.
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
-    await screen.findByText('I found one transaction. Is this the one?')
+    await findMessage('I found one transaction. Is this the one?')
   })
 
   it('has no automatically detectable accessibility violations mid-conversation', async () => {
     const user = userEvent.setup()
     const { container } = renderChat()
-    await screen.findByText('Hi! Which transaction would you like to dispute?')
+    await findMessage('Hi! Which transaction would you like to dispute?')
     await user.type(screen.getByLabelText('Your message'), 'the Tienda Sol one')
     await user.click(screen.getByRole('button', { name: 'Send' }))
     await screen.findByRole('button', { name: /Tienda Sol/ })

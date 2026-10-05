@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import './TicketDetailScreen.css'
 import { ReferenceBanner } from '../customer-chat/components/ReferenceBanner'
+import { Button } from '../../components/ui/Button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/Tabs'
 import { PacketPanel } from './components/PacketPanel'
 import { TimelinePanel } from './components/TimelinePanel'
@@ -33,12 +34,10 @@ export function TicketDetailScreen({
     return (
       <div className="ticket-detail-screen" role="alert">
         <p>No se pudo cargar el ticket. Intente de nuevo.</p>
-        <button type="button" onClick={query.retry}>
+        <Button variant="primary" onClick={query.retry}>
           Intentar de nuevo
-        </button>
-        <button type="button" onClick={onBack}>
-          Volver a la cola
-        </button>
+        </Button>
+        <Button onClick={onBack}>Volver a la cola</Button>
       </div>
     )
   }
@@ -57,9 +56,7 @@ export function TicketDetailScreen({
     return (
       <div className="ticket-detail-screen">
         <p>Este ticket ya no está disponible.</p>
-        <button type="button" onClick={onBack}>
-          Volver a la cola
-        </button>
+        <Button onClick={onBack}>Volver a la cola</Button>
       </div>
     )
   }
@@ -77,9 +74,9 @@ export function TicketDetailScreen({
 
   return (
     <section className="ticket-detail-screen" aria-label="Detalle del ticket">
-      <button type="button" onClick={onBack}>
+      <Button variant="quiet" onClick={onBack}>
         Volver a la cola
-      </button>
+      </Button>
       <ReferenceBanner
         referenceDateLine={`Fecha de referencia de los datos: ${detail.packet.reference_date}.`}
         demoNotice="Esta es una sesión de demostración."

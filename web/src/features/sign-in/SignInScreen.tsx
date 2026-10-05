@@ -3,6 +3,7 @@ import type { JSX, SyntheticEvent } from 'react'
 import type { DemoPersonaSummary } from './contracts'
 import type { Lang } from '../customer-chat/contracts'
 import type { SignInAudience } from './api'
+import { Button } from '../../components/ui/Button'
 import { SignInError, fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
 import { useT } from '../../i18n/useT'
 import { LANGUAGES } from '../../i18n/lang'
@@ -40,6 +41,9 @@ function toLang(value: string): Lang {
  * "unreachable" state. No persona is selected in the unavailable state, so its text is always the
  * default language's; the Portuguese and English catalog entries exist for catalog parity only.
  *
+ * `onLanguageChange` reports the language this screen is currently speaking, as the selection
+ * changes, so the page around it can follow.
+ *
  * `onSignedIn` receives the session token and the chosen persona's language, so the caller can
  * hand both to `LiveChatClient` — the token is this component's own state, held only for the
  * moment it takes to pass it up; nothing here ever writes it to storage (ADR-18: "the token held
@@ -53,9 +57,11 @@ function toLang(value: string): Lang {
 export function SignInScreen({
   audience = 'customer',
   onSignedIn,
+  onLanguageChange,
 }: {
   audience?: SignInAudience
   onSignedIn: (token: string, lang: Lang) => void
+  onLanguageChange?: (lang: Lang) => void
 }): JSX.Element {
   const [directoryStatus, setDirectoryStatus] = useState<DirectoryStatus>('loading')
   const [personas, setPersonas] = useState<readonly DemoPersonaSummary[]>([])
@@ -68,13 +74,15 @@ export function SignInScreen({
   const selectedPersona = personas.find((candidate) => candidate.slug === selectedSlug)
   // The console stays fixed-Spanish regardless of which agent persona is selected (D91); only
   // the customer path follows the selected persona's own language.
-  const t = useT(
-    audience === 'agent'
+  const activeLang: Lang =
+    audience === 'agent' || selectedPersona === undefined
       ? DEFAULT_LANG
-      : selectedPersona !== undefined
-        ? toLang(selectedPersona.language)
-        : DEFAULT_LANG,
-  )
+      : toLang(selectedPersona.language)
+  const t = useT(activeLang)
+
+  useEffect(() => {
+    onLanguageChange?.(activeLang)
+  }, [activeLang, onLanguageChange])
 
   useEffect(() => {
     let cancelled = false
@@ -140,7 +148,7 @@ export function SignInScreen({
   }
 
   return (
-    <section aria-label="Demonstration sign-in" className={styles.screen}>
+    <section aria-label={t('signin.regionLabel')} className={styles.screen}>
       <p className={styles.intro}>{t('signin.intro')}</p>
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.field}>
@@ -186,13 +194,14 @@ export function SignInScreen({
           </p>
         )}
 
-        <button
+        <Button
           type="submit"
-          className={styles.submit}
+          variant="primary"
+          large
           disabled={submitting || selectedSlug === '' || accessCode === ''}
         >
           {t('signin.submit')}
-        </button>
+        </Button>
       </form>
     </section>
   )

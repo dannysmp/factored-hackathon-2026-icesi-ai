@@ -14,22 +14,22 @@ Scope
 In: ``Case``, its category and provenance labels, the safe-behavior vocabulary adversarial cases
 are scored against, and ``InjectedToolFailure``, the tool-failure condition a case declares for
 ``evals.injector`` to apply.
-Out: running a case against a system variant (the runner, a later slice), actually failing a tool
-call (`evals.injector`), the deterministic and judge checks that turn a run into a verdict
-(`evals.metrics.CaseResult`), and the corpus of 135 authored cases itself (a following slice,
-delivered as generated data, not schema).
+Out: running a case against a system variant (the runner), actually failing a tool call
+(`evals.injector`), the deterministic and judge checks that turn a run into a verdict
+(`evals.metrics.CaseResult`), and the corpus of 135 authored cases itself (generated data, not
+schema).
 
 Design Principles
 ------------------
 - **A case is a plain record, per the package's own rule**: no I/O, no clock, nothing derived at
   import time. Authoring 135 of these is a data-entry problem, not a code problem.
 - **The mix-table categories are a closed set.** `CaseCategory` has exactly the six rows of the
-  golden set's category table (`plan/docs/evaluation-plan.md`); a seventh stratum is a plan
-  change before it is a code change.
-- **Safe behavior is adversarial-only.** The evaluation plan scores an adversarial case on its
-  safe expected behavior, never on task completion; a non-adversarial case is scored on its
-  expected intent and reason code instead. A case cannot declare both or neither incorrectly:
-  exactly the adversarial cases carry a safe behavior, and no other case does.
+  golden set's category table; a seventh stratum is a change to the golden set's design before it
+  is a code change.
+- **Safe behavior is adversarial-only.** An adversarial case is scored on its safe expected
+  behavior, never on task completion; a non-adversarial case is scored on its expected intent and
+  reason code instead. A case cannot declare both or neither incorrectly: exactly the adversarial
+  cases carry a safe behavior, and no other case does.
 - **Provenance is stated, never inferred.** Every case says whether it reflects an observed row,
   team-generated wording, or an injected condition, so the report can name the limitation instead
   of a reader having to guess it from the case ID.
@@ -71,9 +71,8 @@ from contracts.service_v1.tools import Tool  # Which tool an injected failure ta
 class CaseCategory(StrEnum):
     """Which row of the golden-set mix table a case belongs to.
 
-    Exactly the six categories of the mix table in ``plan/docs/evaluation-plan.md``; adversarial
-    cases are excluded from the correctness-rate sets (S, A, E) by `evals.metrics` but counted in
-    unsafe outcomes, same as the category's own definition there.
+    Exactly the six categories of the mix table; adversarial cases are excluded from the
+    correctness-rate sets (S, A, E) by `evals.metrics` but counted in unsafe outcomes.
     """
 
     NORMAL = "normal"
@@ -156,12 +155,12 @@ class Case:
         The corpus section (`app.retrieval.corpus_index.PolicyChunk.section_id`) a correct policy
         answer is grounded in; required exactly when `expected_intent` is `Intent.POLICY_ANSWER`,
         forbidden otherwise (see `_exactly_policy_answers_declare_a_section`). Lets the evaluation
-        judge and the human validation sample score grounding for a policy answer without
-        reopening the running conversation's own retrieval trace (ADR-2's envelope boundary) — the
-        golden-set author already knows which section a question is grounded in when writing it;
-        this field promotes that knowledge from `description` prose to a checked value. Not
-        validated against the real corpus files here (`Case` stays I/O-free, per the module's own
-        rule); a test resolves every declared id against `corpus_index.load_chunks` instead.
+        judge and the human validation sample score grounding for a policy answer without reopening
+        the running conversation's own retrieval trace (the envelope boundary) — the golden-set
+        author already knows which section a question is grounded in when writing it; this field
+        promotes that knowledge from `description` prose to a checked value. Not validated against
+        the real corpus files here (`Case` stays I/O-free, per the module's own rule); a test
+        resolves every declared id against `corpus_index.load_chunks` instead.
     expected_category
         The dispute category a correct run confirms filing for; required exactly when
         `expected_intent` is `Intent.CONFIRM_FILING`, forbidden otherwise (see
