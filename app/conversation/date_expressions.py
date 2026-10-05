@@ -6,8 +6,8 @@ Overview
 --------
 Resolves the customer's own words for when a transaction happened ("ayer", "el lunes", "dia 3",
 "3 de junio", "03/04") into an absolute date and the ``DateSource`` that names how it was
-expressed. Purely deterministic: no model call, no wall clock — the reference date is
-always the caller's own input, the domain calendar's reference date, never ``date.today()``.
+expressed. Purely deterministic: no model call, no wall clock — the reference date is always the
+caller's own input, the domain calendar's reference date, never ``date.today()``.
 
 Scope
 -----
@@ -22,13 +22,20 @@ Design Principles
 - A transaction date is never resolved into the future relative to the reference date: a weekday
   name or a day-of-month resolves to the most recent occurrence on or before it, matching the
   domain fact that a dispute is always about a transaction already in the past.
-- An expression this table does not recognize resolves to ``None``, exactly the same "nothing
-  stated" outcome as before this module existed — an unrecognized phrase is never guessed at.
+- An expression this table does not recognize resolves to ``None``, the same "nothing stated"
+  outcome as a message with no date at all — an unrecognized phrase is never guessed at.
 - A curated per-language table, the same shape ``app.retrieval.lexical``'s own stopword lists use:
   additive, reversible, and deliberately narrow rather than a general-purpose date parser. Vague
   ranges ("semana pasada", "last week") are deliberately left unresolved: picking one specific day
   out of a stated week would be inventing a fact the customer did not give, the same principle
   ``prompts/nlu_v1.yaml`` already states for the model itself.
+
+Runtime Contract
+----------------
+``resolve(expression, *, language, reference_date) -> tuple[date, DateSource] | None``. A numeric
+date (``dd/mm`` or ``dd/mm/yyyy``) resolves with any ``language``, including ``None``; every other
+form needs the language to pick its vocabulary. ``DateSource.RELATIVE`` is a relative day term or a
+weekday, ``DateSource.PARTIAL`` a day of the month, ``DateSource.NUMERIC`` a numeric date.
 """
 
 from __future__ import annotations
@@ -152,42 +159,44 @@ _MONTHS: dict[Lang, dict[str, int]] = {
 
 
 def _month_alternation(language: Lang) -> str:
-    """A regular-expression alternation of the month names and abbreviations of the language,
-    longest first so that a longer name is never cut short by a shorter prefix.
-    """
+    """The language's month names as a regular-expression alternation, longest first so a full
+    name is never cut short by one of its own abbreviations."""
     return "|".join(sorted(_MONTHS[language], key=len, reverse=True))
 
 
 # A month-and-day phrase, per language, with the day and month as named groups and an optional
-# four-digit year: "3 de junio" / "el 3 de junio de 2026" (es), "dia 21 de abril" (pt),
-# "June 3rd" / "3rd of June" / "the 3rd of June, 2026" (en).
+# four-digit year: "3 de junio" / "el 3 de junio de 2026" (es), "dia 21 de abril" / "no dia 21 de
+# abril" (pt), "June 3rd" / "3rd of June" / "on the 3rd of June, 2026" (en). A leading preposition
+# and article are accepted because the model may report the customer's phrase as spoken.
+_YEAR = r"(?P<year>(?:19|20)\d{2})"
 _MONTH_DAY: dict[Lang, tuple[re.Pattern[str], ...]] = {
     "es": (
         re.compile(
-            rf"^(?:el\s+)?(?:dia\s+)?(?P<day>\d{{1,2}})\s+de\s+(?P<month>{_month_alternation('es')})"
-            r"(?:\s+(?:de|del)\s+(?P<year>\d{4}))?$"
+            r"^(?:(?:en\s+)?el\s+)?(?:dia\s+)?(?P<day>\d{1,2})\s+de\s+"
+            rf"(?P<month>{_month_alternation('es')})(?:\s+(?:de|del)\s+{_YEAR})?$"
         ),
     ),
     "pt": (
         re.compile(
-            rf"^(?:o\s+)?(?:dia\s+)?(?P<day>\d{{1,2}})\s+de\s+(?P<month>{_month_alternation('pt')})"
-            r"(?:\s+de\s+(?P<year>\d{4}))?$"
+            r"^(?:(?:no|em|em\s+o|o)\s+)?(?:dia\s+)?(?P<day>\d{1,2})\s+de\s+"
+            rf"(?P<month>{_month_alternation('pt')})(?:\s+de\s+{_YEAR})?$"
         ),
     ),
     "en": (
         re.compile(
-            rf"^(?:on\s+)?(?:the\s+)?(?P<month>{_month_alternation('en')})\.?\s+(?P<day>\d{{1,2}})"
-            r"(?:st|nd|rd|th)?(?:,?\s+(?P<year>\d{4}))?$"
+            r"^(?:(?:on|in)\s+)?(?:the\s+)?"
+            rf"(?P<month>{_month_alternation('en')})\.?\s+(?:the\s+)?(?P<day>\d{{1,2}})"
+            rf"(?:st|nd|rd|th)?(?:,?\s+{_YEAR})?$"
         ),
         re.compile(
-            rf"^(?:on\s+)?(?:the\s+)?(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?"
-            rf"(?P<month>{_month_alternation('en')})\.?(?:,?\s+(?P<year>\d{{4}}))?$"
+            r"^(?:(?:on|in)\s+)?(?:the\s+)?(?P<day>\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?"
+            rf"(?P<month>{_month_alternation('en')})\.?(?:,?\s+{_YEAR})?$"
         ),
     ),
 }
 
-# Day first, in every language — never the customer's own language's usual
-# convention. An optional two- or four-digit year; without one, the reference date's own year.
+# Day first, in every language — never the customer's own language's usual convention (English
+# included). An optional two- or four-digit year; without one, the reference date's own year.
 _NUMERIC = re.compile(r"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?$")
 
 _MAX_MONTHS_BACK = 4  # Bounded search for a day-of-month that doesn't exist in every month.
@@ -293,6 +302,22 @@ def resolve(
 ) -> tuple[date, DateSource] | None:
     """The date ``expression`` names, resolved against ``reference_date``, and how it was
     expressed — or ``None`` when it names no date this table recognizes.
+
+    Parameters
+    ----------
+    expression : str
+        The customer's own words for the date, as the understanding step reported them.
+    language : Lang | None
+        The conversation's language, which selects the vocabulary; ``None`` leaves only the numeric
+        form resolvable.
+    reference_date : date
+        The domain calendar's reference date; every result is on or before it.
+
+    Returns
+    -------
+    tuple[date, DateSource] | None
+        The resolved date with how it was expressed, or ``None`` for an unrecognized phrase, a date
+        that does not exist, or a numeric date with an explicit year after ``reference_date``.
     """
     numeric = _NUMERIC.match(expression.strip())
     if numeric is not None:
