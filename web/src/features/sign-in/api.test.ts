@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SignInError, fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
 
+/** A JSON `Response` with the given status and body, like the broker returns. */
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,

@@ -1,7 +1,9 @@
+/** The shared notice: a toned message with an icon, used for status, warnings and errors. */
 import type { JSX, ReactNode } from 'react'
 import { classNames } from './classNames'
 import styles from './Notice.module.css'
 
+/** The kind of message a notice carries; it picks the color and the glyph. */
 export type NoticeTone = 'info' | 'success' | 'warning' | 'error'
 
 /** One glyph per tone, so a notice never relies on color alone to say what kind it is. */

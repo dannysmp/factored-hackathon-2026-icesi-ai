@@ -1,4 +1,8 @@
-/** Component test: `QueueTable`'s rows, empty state, overdue flag and ticket selection. */
+/**
+ * Component test: `QueueTable` writes one row per case with its reference, trigger, language,
+ * category, status, dates and age; marks priority and overdue cases; and reports the selected
+ * ticket reference. The rows show no document number.
+ */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'

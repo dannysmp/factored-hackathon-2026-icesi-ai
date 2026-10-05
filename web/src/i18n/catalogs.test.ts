@@ -1,7 +1,7 @@
 /** Parity test: every catalog must define every key with a non-blank value. `catalogParityProblems`
- * is exercised against deliberately broken fixtures (never the real catalog files, which the type
- * checker already keeps key-complete) to prove it actually catches a missing key or a blank value,
- * not just that the real catalogs happen to pass it today. */
+ * is exercised against deliberately broken fixtures, which the real catalog files cannot supply
+ * because the type checker already keeps them key-complete, to prove it catches a missing key or a
+ * blank value rather than only that the real catalogs happen to pass it. */
 import { describe, expect, it } from 'vitest'
 import { CATALOGS } from './catalogs'
 import { catalogParityProblems } from './parity'

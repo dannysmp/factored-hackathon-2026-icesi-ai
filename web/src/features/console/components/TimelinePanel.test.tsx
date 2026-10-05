@@ -1,5 +1,8 @@
-/** Component test: `TimelinePanel` orders entries by trace identifier (AC-E10-03) and shows no
- * message text (AC-E10-05, structurally guaranteed by `TimelineEntry`'s own shape). */
+/**
+ * Component test: `TimelinePanel` orders entries by trace identifier, writes each state change
+ * and reason code in the console's Spanish, and shows no message text (the `TimelineEntry` shape
+ * carries none).
+ */
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { TimelineEntry } from '../contracts'

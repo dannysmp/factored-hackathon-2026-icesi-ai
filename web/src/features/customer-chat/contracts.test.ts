@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { ChoiceSchema, TurnRequestSchema, TurnResponseSchema } from './contracts'
 
+/** A valid turn response, which each test alters in exactly one respect. */
 const BASE_RESPONSE = {
   contract_version: '1' as const,
   turn_id: 'fixture-turn-0001',

@@ -1,3 +1,5 @@
+/* Layout of the customer chat screen: the page column plus its status, failure and ended blocks. */
+
 .chat {
   max-width: 40rem;
   margin: 0 auto;
@@ -13,8 +15,8 @@
   margin: var(--space-4) 0;
 }
 
-/* The session-ended state (AC-E10-18): a distinct, purpose-built treatment, not a form that
-   silently stopped responding. */
+/* The session-ended state: a distinct, purpose-built treatment, not a form that silently
+   stopped responding. */
 .ended {
   margin: var(--space-4) 0;
   padding: var(--space-3) var(--space-4);

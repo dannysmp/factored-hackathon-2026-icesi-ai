@@ -1,3 +1,4 @@
+/* Styles for Button: shared base, three emphasis variants, the large and full-width modifiers, and the disabled treatment. */
 .button {
   display: inline-flex;
   align-items: center;
@@ -46,6 +47,7 @@
   background-color: var(--color-bg-subtle);
 }
 
+/* A large button keeps the same touch-target minimum as the base; only its padding and text grow. */
 .large {
   padding: var(--space-3) var(--space-6);
   font-size: var(--font-size-md);

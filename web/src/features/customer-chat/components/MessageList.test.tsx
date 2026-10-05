@@ -1,3 +1,7 @@
+/**
+ * Component test: `MessageList` labels each message by sender, marks unsent ones, shows the typing
+ * row politely, scrolls only to genuinely new content, and has no accessibility violations.
+ */
 import { render, screen } from '@testing-library/react'
 import { axe } from 'jest-axe'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

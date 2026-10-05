@@ -1,4 +1,7 @@
-/** Component test: the queue can be driven from the keyboard alone. */
+/**
+ * Component test: the queue can be driven from the keyboard alone — tab order through the filter,
+ * the view tabs and the ticket buttons, arrow-key tab switching, and Enter/Space to open a ticket.
+ */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
