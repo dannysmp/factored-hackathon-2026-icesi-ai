@@ -64,11 +64,9 @@ function isShownLanguage(value: string): value is Lang {
  * `focusForm` moves the keyboard to the selected persona card as soon as the form appears, for a person
  * who has just been sent back here and would otherwise have lost their place.
  *
- * `preferredLang` selects a persona who speaks that language once the directory loads, so a
- * person sent back after a session in Portuguese or English meets a form in that language rather
- * than Spanish. `preferredSlug` picks that exact persona when they speak it, otherwise the first
- * one who does. Without either, or without a persona in that language, the first persona is
- * selected.
+ * `preferredLang` is the language of a session that just ended, so a person sent back after a
+ * session in Portuguese or English meets a form in that language rather than Spanish.
+ * `preferredSlug` picks that exact persona when they speak it.
  *
  * `onLanguageChange` reports the language this screen is currently speaking, as the selection
  * changes, so the page around it can follow.
@@ -81,9 +79,10 @@ function isShownLanguage(value: string): value is Lang {
  * the rest of the console, and has no language switcher. Before a persona is selected (loading,
  * the directory error, sign-in switched off) the customer path speaks `startingLanguage`: the
  * language of the session that just ended, else the browser's language when it is one of the
- * three, else Spanish. Once the directory loads, the persona who speaks that language is selected
- * first, so the screen does not change language when the form appears. Nothing is written to
- * storage.
+ * three, else Spanish. Once the directory loads, the persona who speaks that language is
+ * selected (`preferredSlug` first among them), so the screen does not change language when the
+ * form appears; when no persona speaks it, the first persona is selected and the form follows
+ * that persona's language. Nothing is written to storage.
  */
 export function SignInScreen({
   audience = 'customer',

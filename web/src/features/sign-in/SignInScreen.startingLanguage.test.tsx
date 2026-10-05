@@ -1,5 +1,6 @@
 /** Component test: the language the sign-in speaks before a persona is selected. */
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as api from './api'
 import { SignInError } from './api'
@@ -103,6 +104,53 @@ describe('SignInScreen starting language', () => {
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
     expect(await screen.findByRole('radio', { checked: true })).toHaveAttribute('value', 'ana')
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(
+      CATALOGS.es['signin.heading'],
+    )
+  })
+
+  it('only preselects: the person can pick another, and nothing signs in on its own', async () => {
+    browserIn('pt-BR')
+    const fetchPersonas = vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    const signIn = vi.spyOn(api, 'signIn')
+    const onSignedIn = vi.fn()
+    const user = userEvent.setup()
+    render(<SignInScreen onSignedIn={onSignedIn} />)
+
+    expect(await screen.findByRole('radio', { checked: true })).toHaveAttribute('value', 'joao')
+    const submit = screen.getByRole('button', { name: CATALOGS.pt['signin.submit'] })
+    expect(submit).toBeDisabled()
+
+    await user.click(screen.getByRole('radio', { name: /^Ana\b/ }))
+
+    expect(screen.getByRole('radio', { checked: true })).toHaveAttribute('value', 'ana')
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(
+      CATALOGS.es['signin.heading'],
+    )
+    expect(screen.getByRole('button', { name: CATALOGS.es['signin.submit'] })).toBeDisabled()
+    expect(fetchPersonas).toHaveBeenCalledTimes(1)
+    expect(signIn).not.toHaveBeenCalled()
+    expect(onSignedIn).not.toHaveBeenCalled()
+  })
+
+  it('still needs the access code before the preselected persona can sign in', async () => {
+    browserIn('en-US')
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    const signIn = vi.spyOn(api, 'signIn').mockResolvedValue('token-abc')
+    const onSignedIn = vi.fn()
+    const user = userEvent.setup()
+    render(<SignInScreen onSignedIn={onSignedIn} />)
+
+    await screen.findByRole('radio', { checked: true })
+    const submit = screen.getByRole('button', { name: CATALOGS.en['signin.submit'] })
+    expect(submit).toBeDisabled()
+
+    await user.type(screen.getByLabelText(CATALOGS.en['signin.accessCodeLabel']), 'the-code')
+    expect(submit).toBeEnabled()
+    expect(signIn).not.toHaveBeenCalled()
+    await user.click(submit)
+
+    expect(signIn).toHaveBeenCalledWith('emma', 'the-code', 'customer')
   })
 
   it('stays Spanish for the agent audience whatever the browser language', async () => {
@@ -111,6 +159,17 @@ describe('SignInScreen starting language', () => {
     render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(CATALOGS.es['signin.unreachable'])
+  })
+
+  it('keeps the first agent selected even when a later agent speaks the browser language', async () => {
+    browserIn('es-CO')
+    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue([
+      { slug: 'beatriz', display_name: 'Beatriz', language: 'pt', audience: 'agent' },
+      { slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' },
+    ])
+    render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
+
+    expect(await screen.findByRole('radio', { checked: true })).toHaveAttribute('value', 'beatriz')
   })
 
   it('writes nothing to browser storage', async () => {
