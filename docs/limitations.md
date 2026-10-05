@@ -109,11 +109,14 @@ results still to come say so and name the command that completes them.
   writes (claim, release, note and status change under `/v1/agent/tickets/{ticket_ref}`), each
   scoped to the signed-in agent and audited. The console's interface never calls them, matching
   its design as a viewer, so those actions are reachable only through the API.
-- **Text enlarged beyond 200% on a phone narrower than about 480 px may need horizontal
-  scrolling.** Every control stays reachable. At 200% text size and at the 375 px default width the
-  layout fits without scrolling. The surfaces that can overflow are the header title, the sign-in
-  card, the Yes and No quick replies, the persona language tag and the console queue's language
-  select. This concerns text-only enlargement, not browser page zoom.
+- **Text enlarged beyond 200% on a narrow phone can make the page scroll sideways, and part of the
+  header title can be cut off.** Every interactive control stays reachable by scrolling. At 200%
+  text size and at the 375 px default width the layout fits without scrolling. At 300% on 375 px
+  and 320 px phones the sign-in language buttons and the persona language tag, the Yes and No
+  quick replies and the console header and queue overflow, and in the Spanish chat and the console
+  the start of the header title sits left of the page origin where it cannot be scrolled to. This
+  concerns text-only enlargement: browser page zoom to 400% at 320 px reflows into a single
+  column without sideways scrolling on the sign-in, chat and console screens.
 - **Structured logging runs across the service and every CLI entrypoint, including a configuration
   failure at start-up.** Every line carries a stable event name, the request's trace id and, once
   authenticated, its session id, with any card-shaped digit run redacted before the line is
