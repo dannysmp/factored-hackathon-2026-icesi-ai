@@ -18,6 +18,10 @@ export interface Messages {
   'failure.offline': string
   'failure.timeout': string
   'failure.rateLimited': string
+  /** `{seconds}` is replaced with the wait the service asked for, in whole seconds. */
+  'failure.rateLimitedIn': string
+  /** The same sentence for a wait of exactly one second. */
+  'failure.rateLimitedInOne': string
   'failure.unavailable': string
   'chat.regionLabel': string
   'chat.messagesLabel': string

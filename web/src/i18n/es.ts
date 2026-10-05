@@ -15,6 +15,10 @@ export const es: Messages = {
     'No hay conexión con el servicio. Revise su conexión a internet e inténtelo de nuevo.',
   'failure.timeout': 'La respuesta tardó demasiado. Inténtelo de nuevo.',
   'failure.rateLimited': 'Ha realizado demasiados intentos. Espere un minuto e inténtelo de nuevo.',
+  'failure.rateLimitedIn':
+    'Ha realizado demasiados intentos. Inténtelo de nuevo en {seconds} segundos.',
+  'failure.rateLimitedInOne':
+    'Ha realizado demasiados intentos. Inténtelo de nuevo en {seconds} segundo.',
   'failure.unavailable':
     'El servicio no está disponible por ahora. Inténtelo de nuevo en unos minutos.',
   'chat.regionLabel': 'Conversación con el asistente',
