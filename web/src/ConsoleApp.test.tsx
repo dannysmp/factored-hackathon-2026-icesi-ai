@@ -55,7 +55,9 @@ describe('ConsoleApp', () => {
     stubTheWholeFlow()
     render(<ConsoleApp />)
 
-    expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
+    expect(
+      await screen.findByRole('group', { name: es['signin.personaGroupLabel'] }),
+    ).toBeInTheDocument()
     expect(
       screen.queryByRole('region', { name: 'Cola de casos escalados' }),
     ).not.toBeInTheDocument()
@@ -66,7 +68,7 @@ describe('ConsoleApp', () => {
     const user = userEvent.setup()
     render(<ConsoleApp />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
 
@@ -87,7 +89,7 @@ describe('ConsoleApp', () => {
     const user = userEvent.setup()
     render(<ConsoleApp />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
     const rows = await screen.findAllByRole('row')
@@ -133,7 +135,7 @@ describe('ConsoleApp', () => {
     const user = userEvent.setup()
     render(<ConsoleApp />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
     const rows = await screen.findAllByRole('row')
@@ -161,7 +163,7 @@ describe('ConsoleApp', () => {
     const user = userEvent.setup()
     render(<ConsoleApp />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     expect(document.documentElement.lang).toBe('es')
     expect(document.title).toBe('Consola del agente')
     expect(screen.queryByRole('button', { name: 'Cerrar sesión' })).not.toBeInTheDocument()
@@ -172,7 +174,9 @@ describe('ConsoleApp', () => {
 
     await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }))
 
-    expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
+    expect(
+      await screen.findByRole('group', { name: es['signin.personaGroupLabel'] }),
+    ).toBeInTheDocument()
     expect(
       screen.queryByRole('region', { name: 'Cola de casos escalados' }),
     ).not.toBeInTheDocument()
@@ -184,7 +188,7 @@ describe('ConsoleApp', () => {
     render(<ConsoleApp />)
 
     const signIn = async (): Promise<void> => {
-      await screen.findByLabelText(es['signin.personaLabel'])
+      await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
       await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
       await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
     }
@@ -210,7 +214,7 @@ describe('ConsoleApp', () => {
     stubTheWholeFlow()
     render(<ConsoleApp />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     expect(screen.getAllByRole('banner')).toHaveLength(1)
     expect(screen.getByRole('banner')).toContainElement(
       screen.getByRole('heading', { level: 1, name: 'Consola del agente' }),
@@ -224,7 +228,7 @@ describe('ConsoleApp', () => {
     const user = userEvent.setup()
     render(<ConsoleApp />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
     await screen.findByRole('region', { name: 'Cola de casos escalados' })
@@ -252,7 +256,7 @@ describe('ConsoleApp', () => {
     stubTheWholeFlow()
     const { container } = render(<ConsoleApp />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     expect(await axe(container)).toHaveNoViolations()
   })
 
@@ -261,7 +265,7 @@ describe('ConsoleApp', () => {
     const user = userEvent.setup()
     const { container } = render(<ConsoleApp />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
     await screen.findByRole('region', { name: 'Cola de casos escalados' })

@@ -144,12 +144,16 @@ export const ACTION_LABELS: Record<string, string> = {
   get_case: 'Consulta de un caso',
 }
 
-/** How an action ended. A result that is a policy reason code reads through `REASON_CODE_LABELS`. */
+/**
+ * How an action ended. A result that is a policy reason code reads through `REASON_CODE_LABELS`.
+ * Each is worded to agree with every action label, masculine or feminine, so none is a bare
+ * participle.
+ */
 export const ACTION_RESULT_LABELS: Record<string, string> = {
-  reached: 'Alcanzado',
+  reached: 'Se alcanzó',
   unavailable: 'No disponible',
   unverified: 'Sin verificar',
-  refused: 'Rechazada',
+  refused: 'Se rechazó',
   tool_failure: 'Falla de herramienta',
   confirmation_required: 'Requiere confirmación',
   confirmation_mismatch: 'La confirmación no coincide',

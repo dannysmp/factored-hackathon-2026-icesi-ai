@@ -9,10 +9,12 @@ import type { SignInAudience } from './api'
 import { Button } from '../../components/ui/Button'
 import { ErrorState } from '../../components/ui/ErrorState'
 import { Notice } from '../../components/ui/Notice'
+import { classNames } from '../../components/ui/classNames'
 import { fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
 import { useT } from '../../i18n/useT'
 import { failureReason } from '../../i18n/failureReason'
 import { LANGUAGES, LANGUAGE_NAMES } from '../../i18n/lang'
+import { PERSONA_CASE_KEYS, personaInitials } from './personaCases'
 import { classifyFailure } from '../../lib/failure'
 import type { FailureKind } from '../../lib/failure'
 import styles from './SignInScreen.module.css'
@@ -33,19 +35,21 @@ function toLang(value: string): Lang {
   return (LANGUAGES as readonly string[]).includes(value) ? (value as Lang) : DEFAULT_LANG
 }
 
-/** A persona's name followed by the language it speaks, so the choice says who the conversation
- * will be with and in what language. A language outside the three shown is left off. */
-function personaLabel(persona: DemoPersonaSummary): string {
-  const lang = toLang(persona.language)
-  return (LANGUAGES as readonly string[]).includes(persona.language)
-    ? `${persona.display_name} — ${LANGUAGE_NAMES[lang]}`
-    : persona.display_name
+/** Whether a persona's language is one of the three the screen is shown in. */
+function isShownLanguage(value: string): value is Lang {
+  return (LANGUAGES as readonly string[]).includes(value)
 }
 
 /**
- * The demonstration sign-in: a card with a persona picker built from the live persona directory
- * (never a hardcoded copy) and the access code, which is handed to whoever runs the demonstration
- * out of band and never baked into this bundle.
+ * The demonstration sign-in: a centered card with the product's name and a one-line description,
+ * a language switcher, a card for each persona built from the live persona directory (never a
+ * hardcoded copy) and the access code, which is handed to whoever runs the demonstration out of
+ * band and never baked into this bundle.
+ *
+ * Each persona card shows initials, the name, the language the persona speaks and, in plain words,
+ * the case the persona represents. The language switcher selects the first persona who speaks the
+ * chosen language, unless the selected persona already does; a language no persona speaks is
+ * offered but disabled. The access code can be shown or hidden.
  *
  * `audience` selects the persona list and the access code this screen asks for: `'customer'` (the
  * default) or `'agent'`.
@@ -59,7 +63,7 @@ function personaLabel(persona: DemoPersonaSummary): string {
  * a connection or server problem, each in its own words. The keyboard returns to the access code
  * field so it can be corrected at once.
  *
- * `focusForm` moves the keyboard to the persona picker as soon as the form appears, for a person
+ * `focusForm` moves the keyboard to the selected persona card as soon as the form appears, for a person
  * who has just been sent back here and would otherwise have lost their place.
  *
  * `preferredLang` selects a persona who speaks that language once the directory loads, so a
@@ -76,7 +80,7 @@ function personaLabel(persona: DemoPersonaSummary): string {
  * up; nothing here writes it to storage.
  *
  * The customer path follows the selected persona's language; the agent path stays in Spanish, like
- * the rest of the console. Before a persona is selected (loading, the directory error) the screen
+ * the rest of the console, and has no language switcher. Before a persona is selected (loading, the directory error) the screen
  * speaks `DEFAULT_LANG`, because no language signal exists yet.
  */
 export function SignInScreen({
@@ -103,11 +107,13 @@ export function SignInScreen({
   const [directoryFailure, setDirectoryFailure] = useState<FailureKind | null>(null)
   const [directoryAttempt, setDirectoryAttempt] = useState(0)
   const headingId = useId()
-  const personaFieldId = useId()
+  const languageLabelId = useId()
+  const personaGroupId = useId()
   const accessCodeFieldId = useId()
   const hintId = useId()
   const errorId = useId()
-  const personaRef = useRef<HTMLSelectElement>(null)
+  const [accessCodeVisible, setAccessCodeVisible] = useState(false)
+  const personaGroupRef = useRef<HTMLFieldSetElement>(null)
   const accessCodeRef = useRef<HTMLInputElement>(null)
   const selectedPersona = personas.find((candidate) => candidate.slug === selectedSlug)
   // The console stays fixed-Spanish regardless of which agent persona is selected; only
@@ -150,7 +156,8 @@ export function SignInScreen({
   }, [audience, directoryAttempt, preferredLang, preferredSlug])
 
   useEffect(() => {
-    if (focusForm && directoryStatus === 'ready') personaRef.current?.focus()
+    if (focusForm && directoryStatus === 'ready')
+      personaGroupRef.current?.querySelector<HTMLInputElement>('input:checked')?.focus()
   }, [focusForm, directoryStatus])
 
   useEffect(() => {
@@ -161,6 +168,12 @@ export function SignInScreen({
     setDirectoryStatus('loading')
     setDirectoryFailure(null)
     setDirectoryAttempt((attempt) => attempt + 1)
+  }
+
+  function chooseLanguage(lang: Lang): void {
+    if (selectedPersona !== undefined && toLang(selectedPersona.language) === lang) return
+    const first = personas.find((persona) => toLang(persona.language) === lang)
+    if (first !== undefined) setSelectedSlug(first.slug)
   }
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
@@ -221,54 +234,124 @@ export function SignInScreen({
 
   return (
     <section aria-labelledby={headingId} className={styles.card}>
+      <p className={styles.eyebrow}>{t('signin.regionLabel')}</p>
       <h2 id={headingId} className={styles.heading}>
-        {t('signin.regionLabel')}
+        {t('signin.productName')}
       </h2>
+      <p className={styles.tagline}>
+        {t(audience === 'agent' ? 'signin.agentTagline' : 'signin.productTagline')}
+      </p>
+      {audience === 'customer' && (
+        <div className={styles.languageSwitcher}>
+          <span id={languageLabelId} className={styles.label}>
+            {t('signin.languageSwitcherLabel')}
+          </span>
+          <div role="group" aria-labelledby={languageLabelId} className={styles.languageButtons}>
+            {LANGUAGES.map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                lang={lang}
+                className={styles.languageButton}
+                aria-pressed={activeLang === lang}
+                disabled={
+                  submitting || !personas.some((persona) => toLang(persona.language) === lang)
+                }
+                onClick={() => {
+                  chooseLanguage(lang)
+                }}
+              >
+                {LANGUAGE_NAMES[lang]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <p className={styles.intro}>{t('signin.intro')}</p>
       <form className={styles.form} onSubmit={handleSubmit}>
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor={personaFieldId}>
-            {t('signin.personaLabel')}
-          </label>
-          <select
-            id={personaFieldId}
-            ref={personaRef}
-            className={styles.select}
-            value={selectedSlug}
-            disabled={submitting}
-            onChange={(event) => {
-              setSelectedSlug(event.target.value)
-            }}
-          >
-            {personas.map((persona) => (
-              <option key={persona.slug} value={persona.slug}>
-                {personaLabel(persona)}
-              </option>
-            ))}
-          </select>
-        </div>
+        <fieldset
+          ref={personaGroupRef}
+          className={styles.personas}
+          aria-labelledby={personaGroupId}
+          disabled={submitting}
+        >
+          <legend id={personaGroupId} className={styles.label}>
+            {t('signin.personaGroupLabel')}
+          </legend>
+          {personas.map((persona) => {
+            const caseKey = PERSONA_CASE_KEYS[persona.slug]
+            const selected = persona.slug === selectedSlug
+            return (
+              <label
+                key={persona.slug}
+                className={classNames(styles.persona, selected && styles.personaSelected)}
+              >
+                <input
+                  type="radio"
+                  name="persona"
+                  value={persona.slug}
+                  checked={selected}
+                  className={styles.personaRadio}
+                  onChange={() => {
+                    setSelectedSlug(persona.slug)
+                  }}
+                />
+                <span className={styles.avatar} aria-hidden="true">
+                  {personaInitials(persona.display_name)}
+                </span>
+                <span className={styles.personaText}>
+                  <span className={styles.personaHeader}>
+                    <span className={styles.personaName}>{persona.display_name}</span>{' '}
+                    {isShownLanguage(persona.language) && (
+                      <span className={styles.personaLanguage}>
+                        {t(`signin.personaLanguage.${persona.language}`)}
+                      </span>
+                    )}
+                  </span>
+                  {caseKey !== undefined && (
+                    <span className={styles.personaCase}>{t(caseKey)}</span>
+                  )}
+                </span>
+              </label>
+            )
+          })}
+        </fieldset>
 
         <div className={styles.field}>
           <label className={styles.label} htmlFor={accessCodeFieldId}>
             {t('signin.accessCodeLabel')}
           </label>
-          <input
-            id={accessCodeFieldId}
-            ref={accessCodeRef}
-            name="access-code"
-            type="password"
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            className={styles.accessCode}
-            value={accessCode}
-            disabled={submitting}
-            aria-invalid={refused ? true : undefined}
-            aria-describedby={describedBy === '' ? undefined : describedBy}
-            onChange={(event) => {
-              setAccessCode(event.target.value)
-            }}
-          />
+          <div className={styles.accessCodeRow}>
+            <input
+              id={accessCodeFieldId}
+              ref={accessCodeRef}
+              name="access-code"
+              type={accessCodeVisible ? 'text' : 'password'}
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              className={styles.accessCode}
+              value={accessCode}
+              disabled={submitting}
+              aria-invalid={refused ? true : undefined}
+              aria-describedby={describedBy === '' ? undefined : describedBy}
+              onChange={(event) => {
+                setAccessCode(event.target.value)
+              }}
+            />
+            <button
+              type="button"
+              className={styles.accessCodeToggle}
+              aria-label={`${t(accessCodeVisible ? 'signin.accessCodeHide' : 'signin.accessCodeShow')} ${t('signin.accessCodeLabel').toLocaleLowerCase(activeLang)}`}
+              aria-controls={accessCodeFieldId}
+              disabled={submitting}
+              onClick={() => {
+                setAccessCodeVisible((visible) => !visible)
+              }}
+            >
+              {t(accessCodeVisible ? 'signin.accessCodeHide' : 'signin.accessCodeShow')}
+            </button>
+          </div>
           {accessCode.trim() === '' && (
             <p id={hintId} className={styles.hint}>
               {t('signin.accessCodeHint')}
