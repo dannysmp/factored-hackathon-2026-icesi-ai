@@ -156,6 +156,77 @@ def test_evaluate_dispute_passes_a_tool_failure_through_without_tracking_a_decis
     assert dispatcher._decisions == {}
 
 
+class _UnmatchedToolPort:
+    """Stands in for a `ToolPort` that finds no transaction the session's customer owns."""
+
+    def evaluate_dispute(self, request: EvaluateDisputeRequest) -> None:
+        return None
+
+
+class _CaseListToolPort:
+    """Stands in for a `ToolPort` whose case list is a fixed tuple."""
+
+    def __init__(self, cases: tuple[CaseRecord, ...]) -> None:
+        self._cases = cases
+
+    def list_dispute_cases(self) -> tuple[CaseRecord, ...]:
+        return self._cases
+
+
+def _dispatcher_over(tool_port: object, retriever: LexicalRetriever) -> B1ToolDispatcher:
+    return B1ToolDispatcher(
+        tool_port=tool_port,  # type: ignore[arg-type]
+        retriever=retriever,
+        outbox=object(),  # type: ignore[arg-type]
+        policy=load_policy(),
+        calendar=DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING),
+        clock=lambda: _NOW,
+        customer_id="CLI-UNUSED",
+        lang="es",
+    )
+
+
+def test_evaluate_dispute_passes_an_unmatched_reference_through_without_tracking_a_decision(
+    retriever: LexicalRetriever,
+) -> None:
+    """A reference the customer does not own comes back as no result; the model must read that
+    as-is and the harness must not treat it as a decision."""
+    dispatcher = _dispatcher_over(_UnmatchedToolPort(), retriever)
+    call = ToolCall(
+        id="t1",
+        name="evaluate_dispute",
+        input={"transaction_ref": "TRX-UNKNOWN", "category": "unrecognized_charge"},
+    )
+
+    result = dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
+
+    assert result == "null"
+    assert dispatcher._decisions == {}
+    assert dispatcher.last_confirmable_decision is None
+
+
+def test_list_dispute_cases_dispatches_a_tuple_of_cases_as_a_json_array(
+    retriever: LexicalRetriever,
+) -> None:
+    dispatcher = _dispatcher_over(_CaseListToolPort((_case_record("CASE-1"),)), retriever)
+    call = ToolCall(id="t1", name="list_dispute_cases", input={})
+
+    result = dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
+
+    assert [item["case_number"] for item in json.loads(result)] == ["CASE-1"]
+
+
+def test_list_dispute_cases_dispatches_an_empty_case_list_as_an_empty_array(
+    retriever: LexicalRetriever,
+) -> None:
+    dispatcher = _dispatcher_over(_CaseListToolPort(()), retriever)
+    call = ToolCall(id="t1", name="list_dispute_cases", input={})
+
+    result = dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
+
+    assert result == "[]"
+
+
 def test_to_json_uses_model_dump_json_for_a_pydantic_value() -> None:
     value = ToolFailure(tool=Tool.EVALUATE_DISPUTE, cause="error")
     assert _to_json(value) == value.model_dump_json()
