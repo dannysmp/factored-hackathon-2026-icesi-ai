@@ -18,8 +18,8 @@ is not the slide file itself.
 - Dispute cases (category `Transactions`, subcategory `Cargo no reconocido`) are **12,297** over 37
   months, about 332 a month: **18.3%** of all complaints and **90.6%** of every `Transactions`
   complaint.
-- Only **24.5%** of cases reach `Resolved` or `Closed`; the rest stay open, in process or
-  escalated. The median time to resolve the cases that do close is **15.0 days**; **20.4%** of
+- Only **24.5%** of cases reach `Resolved` or `Closed`; 74.6% stay open, in process or escalated
+  and 0.9% are rejected. The median time to resolve the cases that do close is **15.0 days**; **20.4%** of
   cases breach their service-level target; **14.7%** come from a customer who has complained
   before.
 - The workflow targets are the team's own: **40% or more** of disputes resolved safely without a
@@ -74,9 +74,11 @@ is not the slide file itself.
   table, a freshness policy, and a manifest that records the inputs and code version of every
   output.
 - The one learned component is a transaction risk model, benchmarked against a baseline. It was
-  trained on the earliest period, tuned on the next and tested on the most recent, with features
-  limited to what was known at or before the transaction. No threshold was precise enough, so it
-  routes no case today; a fraud claim reaches a person by category alone.
+  trained on the earliest period, tuned on the next and tested on the most recent. Its features are point-in-time with two
+  exceptions: the customer's latest recorded country (25.0% of transactions belong to a customer
+  whose record is newer than the transaction) and the exchange rate of the transaction's day. No
+  threshold was precise enough, so it routes no case today; a fraud claim reaches a person by
+  category alone.
 
 ## Slide 5 — The evaluation results
 
@@ -100,10 +102,13 @@ matching, and the model-only agent has no deterministic controller.
   Automation was attempted on 100.0% of in-scope cases. Containment is 80.9%, 84.5% and 75.7%;
   cost per successful automated resolution is $0.004, $0.000 and $0.006, in the table's column
   order.
-- Cost counts the understanding calls only and excludes reply-rendering spend. The time-to-resolve
-  and breach-rate targets are not measured offline.
+- Cost for the proposed system counts the understanding calls only; the model-only agent's counts
+  every priced call. Reply-rendering spend is excluded. The time-to-resolve and breach-rate targets
+  are not measured offline.
 - These are offline measurements, not production results, and zero unsafe outcomes in 135 cases
-  does not establish zero risk.
+  does not establish zero risk. One case, `hr-fraud-en-01`, produced an unsafe outcome in one of
+  its three repeats that did not reproduce, and the golden set has no case that expects a denial
+  of an ineligible filing, so the eight ineligibility reason codes are not exercised.
 - **The automated judge is not validated.** Two human raters scored the same replies; the judge was
   required to match each rater on at least 80% of replies. Agreement with the two raters is 62% and
   30% on grounding and 64% and 62% on language quality (50 replies each), and 17% and 100% on
@@ -123,7 +128,7 @@ Stated in full in `docs/limitations.md`. Each item is paired with the step that 
 | The risk model found no threshold precise enough, so it routes no case. | Retrain on confirmed outcomes, then re-calibrate before routing. |
 | The automated judge is not validated against human raters. | A larger, rater-agreed sample and a tightened rubric. |
 | The evaluation set is scripted and small: 135 cases, 32 adversarial. | Replay anonymised real conversations and widen adversarial coverage. |
-| The agent console is a viewer; claim, note and status actions have no screen. | Add those audited actions to the console. |
+| The agent console is a viewer; claim, release, note and status actions have no screen. | Add those audited actions to the console. |
 | Demonstration sign-in and a single host; deployed data has no backup. | Managed identity and a managed database with backup. |
 | Filing windows use one operating time zone. | Store and apply each customer's time zone. |
 | Document numbers are redacted by shape; a dotted identity number still passes. | Cover the dotted form once its cost against amounts is measured. |
