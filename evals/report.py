@@ -474,7 +474,7 @@ def _repeated_run_section(systems: tuple[SystemResult, ...]) -> str:
         return "No system variant in this report ran more than once."
     parts = []
     for result in repeated:
-        header = f"### {result.system} ({result.run_count} runs)"
+        header = f"### {result.system}\n\nRuns: {result.run_count}."
         if not result.flips:
             parts.append(f"{header}\n\nNo case flipped its correct-outcome or unsafe verdict.")
             continue
