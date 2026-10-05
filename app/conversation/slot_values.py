@@ -61,6 +61,7 @@ from app.conversation.renderer import (  # Reuse the template path's own tables 
     CATEGORY_NAMES,
     INELIGIBLE_TEXT,
     amount_text,
+    case_status_label,
     format_date,
 )
 from app.domain.policy.models import Outcome
@@ -165,7 +166,9 @@ def _dispute_status(e: RenderEnvelope) -> tuple[SlotValue, ...]:
     entries: list[SlotValue] = []
     for case in e.facts.cases:
         entries.append(SlotValue(field=GroundedField.CASE_NUMBER, value=case.case_number))
-        entries.append(SlotValue(field=GroundedField.CASE_STATUS, value=case.status))
+        entries.append(
+            SlotValue(field=GroundedField.CASE_STATUS, value=case_status_label(case.status, e.lang))
+        )
         entries.append(
             SlotValue(field=GroundedField.FILED_ON, value=format_date(case.filed_on, e.lang))
         )
