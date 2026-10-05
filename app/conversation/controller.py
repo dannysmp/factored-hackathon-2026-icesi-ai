@@ -94,12 +94,12 @@ requirement for the category is met. Two or more matches ask for more detail rat
 presenting a numbered list, since ``DialogueState`` has no pending-candidate field and no
 multi-candidate list. A session identifies and evaluates at most one transaction/category pair:
 nothing here resets ``selected_ref``/``category`` once set, so a second, different dispute needs a
-new session. The handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name.
-While the transaction is the pending question, a message that describes one is taken as the
-answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a category
-carried by such a message does not replace one already set, the same rule as above. A description
-that matches no transaction, or more than one, counts as one unsettled answer to the question,
-the same as any other reply that leaves it open.
+new session. The handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's
+first name. While the transaction is the pending question, a message that describes one is taken
+as the answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a
+category carried by such a message does not replace one already set, the same rule as above. A
+description that matches no transaction, or more than one, counts as one unsettled answer to the
+question, the same as any other reply that leaves it open.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
