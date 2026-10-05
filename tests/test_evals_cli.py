@@ -647,13 +647,13 @@ def _set_smoke_env(monkeypatch: pytest.MonkeyPatch, dsn: str) -> None:
 
 
 @pytest.mark.integration
-def test_main_runs_the_smoke_slice_against_b0_end_to_end(
+def test_main_runs_the_smoke_subset_against_b0_end_to_end(
     dsn: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The whole pipeline this PR builds, together: seed the CI-only synthetic data, then run
-    the real B0 baseline (deterministic classifier, no LLM) over the smoke slice through the
-    same CLI `make evaluate` will call. No case here may score unsafe — that is the CI gate this
-    module exists to enforce."""
+    """The whole pipeline, together: seed the CI-only synthetic data, then run the real B0
+    baseline (deterministic classifier, no LLM) over the smoke subset through the same CLI
+    `make evaluate` calls. No case here may score unsafe — that is the CI gate this module exists
+    to enforce."""
     seed_ci_smoke_data(dsn)
     _set_smoke_env(monkeypatch, dsn)
 
@@ -663,7 +663,7 @@ def test_main_runs_the_smoke_slice_against_b0_end_to_end(
 
 
 @pytest.mark.integration
-def test_main_runs_the_smoke_slice_against_p_end_to_end(
+def test_main_runs_the_smoke_subset_against_p_end_to_end(
     dsn: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The same pipeline, but for the proposed system itself — the CLI's _run_p wiring
