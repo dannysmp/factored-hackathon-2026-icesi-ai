@@ -568,7 +568,7 @@ def render_report(manifest: RiskFeaturesManifest) -> str:
         "newer than the transaction. The source does not say what an update records, so these "
         "figures are an upper bound on how many countries could differ from the one at the time. "
         "A country that changed would be read as it is now, and a link from a fraud case to a "
-        "later update of the record cannot be excluded from this data; the model epic compares "
+        "later update of the record cannot be excluded from this data; model development compares "
         "results with and without these two features.",
         "- **The exchange rate** used to convert an amount is the rate of the transaction's day; "
         "the source does not say at what time of the day it was published. The amounts the "

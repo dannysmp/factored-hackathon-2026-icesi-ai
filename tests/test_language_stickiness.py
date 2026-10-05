@@ -11,7 +11,7 @@ from app.conversation.language import resolve_language
 
 
 def test_a_first_message_clearly_in_one_language_sets_it() -> None:
-    """AC-E5-01: the detected language of the first message is the conversation's language."""
+    """The detected language of the first message is the conversation's language."""
     result = resolve_language(current=None, detected="pt")
 
     assert result.lang == "pt"
@@ -20,7 +20,7 @@ def test_a_first_message_clearly_in_one_language_sets_it() -> None:
 
 
 def test_a_first_message_the_detector_cannot_place_uses_the_best_guess() -> None:
-    """AC-E5-04: an undetectable first message still gets a language, and flags the ambiguity."""
+    """An undetectable first message still gets a language, and flags the ambiguity."""
     result = resolve_language(current=None, detected=None)
 
     assert result.lang == "es"
@@ -28,7 +28,7 @@ def test_a_first_message_the_detector_cannot_place_uses_the_best_guess() -> None
 
 
 def test_one_off_language_message_does_not_switch() -> None:
-    """AC-E5-02: a single message in another language leaves the conversation where it was."""
+    """A single message in another language leaves the conversation where it was."""
     result = resolve_language(current="es", detected="pt", consecutive_off_language=0)
 
     assert result.lang == "es"
@@ -36,7 +36,7 @@ def test_one_off_language_message_does_not_switch() -> None:
 
 
 def test_two_consecutive_off_language_messages_switch() -> None:
-    """AC-E5-03: the second message in a row in another language switches at once."""
+    """The second message in a row in another language switches at once."""
     first = resolve_language(current="es", detected="pt", consecutive_off_language=0)
     second = resolve_language(current="es", detected="pt", consecutive_off_language=first.streak)
 
@@ -45,7 +45,7 @@ def test_two_consecutive_off_language_messages_switch() -> None:
 
 
 def test_an_explicit_request_switches_immediately_even_on_the_first_off_language_message() -> None:
-    """AC-E5-03: asking to change language switches at once, no streak required."""
+    """Asking to change language switches at once, no streak required."""
     result = resolve_language(current="es", detected="en", explicit_switch_to="en")
 
     assert result.lang == "en"

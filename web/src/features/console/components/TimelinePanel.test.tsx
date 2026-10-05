@@ -54,4 +54,10 @@ describe('TimelinePanel', () => {
     // Both the reason-code and the policy-version cells fall back to an em dash on this entry.
     expect(screen.getAllByRole('cell', { name: '—' })).toHaveLength(2)
   })
+
+  it('does not carry the openable-row class, since its rows cannot be opened', () => {
+    const { container } = render(<TimelinePanel entries={[entry()]} />)
+
+    expect(container.querySelector('.queue-table-openable')).toBeNull()
+  })
 })

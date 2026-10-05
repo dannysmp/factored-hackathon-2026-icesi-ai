@@ -12,7 +12,7 @@ exactly once. The selection is appended to the experiment log, where `models.cal
 
 Scope
 -----
-In: an uncapped boosted fit (unlike the signal probe's own, time-boxed fit), the ablation report,
+In: an uncapped boosted fit (unlike the signal probe's own, capped fit), the ablation report,
 the test-period bootstrap and the resulting selection, appended to the experiment log.
 Out: the precision floor, the threshold and the model card. Those belong to `models.calibration`:
 this module only says which model, boosted or logistic, the threshold is chosen on.
