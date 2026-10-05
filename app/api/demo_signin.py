@@ -126,6 +126,13 @@ DEFAULT_ADDRESS_CAP = 5
 DEFAULT_GLOBAL_CAP = 50
 DEFAULT_PERSONA_CAP = 1
 
+# How many times one address may read the persona directory in one window. The directory is a
+# static, non-sensitive list read by every page load, reload and sign-out, so its cap is a flood
+# guard and not a sign-in limit: one visitor opening the sign-in a handful of times a minute, or
+# several evaluators behind one shared address, must always find the persona list.
+DIRECTORY_REQUEST_CAP = 60
+DIRECTORY_REQUEST_WINDOW_SECONDS = 60
+
 PERSONA_SLUG_PATTERN = re.compile(r"[a-z0-9-]{1,32}")
 _ANCHORED_PERSONA_SLUG = f"^{PERSONA_SLUG_PATTERN.pattern}$"
 
@@ -616,7 +623,9 @@ def build_demo_persona_directory_router(
     no customer or agent identifier. Rate-limited all the same, against the same abuse surface
     every other public route on this host faces, using ``attempt_limiter`` as a plain per-address
     request counter — every call counts, not only a failure, since a listing route has no
-    separate notion of "wrong".
+    separate notion of "wrong". The caller sizes it for page loads
+    (``DIRECTORY_REQUEST_CAP`` per ``DIRECTORY_REQUEST_WINDOW_SECONDS``), far above the five
+    wrong access codes the sign-in brokers allow.
 
     Parameters
     ----------

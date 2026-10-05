@@ -94,6 +94,8 @@ from app.api.demo_signin import (  # Demo broker routes
     AGENT_SESSIONS_PATH,
     DEMO_PERSONAS_PATH,
     DEMO_SESSIONS_PATH,
+    DIRECTORY_REQUEST_CAP,
+    DIRECTORY_REQUEST_WINDOW_SECONDS,
     build_demo_agent_signin_router,
     build_demo_persona_directory_router,
     build_demo_signin_router,
@@ -673,7 +675,11 @@ def create_app(
             personas=demo_personas,
             include_customers=resolved.demo_signin_enabled,
             include_agents=resolved.demo_agent_signin_enabled,
-            attempt_limiter=AttemptLimiter(clock=clock),
+            attempt_limiter=AttemptLimiter(
+                max_failures=DIRECTORY_REQUEST_CAP,
+                window_seconds=DIRECTORY_REQUEST_WINDOW_SECONDS,
+                clock=clock,
+            ),
             reference_date=calendar.reference_date,
         )
 
