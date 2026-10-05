@@ -18,8 +18,9 @@ function byMoment(a: TimelineEntry, b: TimelineEntry): number {
  * here can expose one.
  *
  * The backend's own order is not specified, so this orders by the moment each entry occurred. A
- * trace identifier is shared by every entry of one request and is not a position, so it is shown
- * but neither orders the rows nor identifies one; each row is keyed by its own turn identifier.
+ * trace identifier names a conversation and is shared by every entry of it, so it is not a
+ * position and does not identify a row; it is shown, and each row is keyed by its own turn
+ * identifier.
  */
 export function TimelinePanel({ entries }: { entries: readonly TimelineEntry[] }): JSX.Element {
   if (entries.length === 0) {
