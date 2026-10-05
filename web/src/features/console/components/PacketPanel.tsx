@@ -33,7 +33,8 @@ function customerName(firstName: string): string {
 }
 
 /**
- * The packet: the request first, as a summary of who is asking and why, then the
+ * The packet: the request first, as a summary of who is asking and why (with the case already
+ * filed for it, when there is one), then the
  * verified facts, the actions taken or refused, the evidence (reason codes, policy version, source
  * sections, and the risk score with its uncertainty, base rate and routing threshold when there is
  * one), and the open questions. Every value is written for an agent reading Spanish: a known
@@ -70,6 +71,14 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
             <>
               <dt>Categoría</dt>
               <dd>{CATEGORY_LABELS[packet.category]}</dd>
+            </>
+          )}
+          {packet.existing_case_number !== null && (
+            <>
+              <dt>Caso ya registrado</dt>
+              <dd>
+                <span className="ticket-ref">{packet.existing_case_number}</span>
+              </dd>
             </>
           )}
           <dt>Fecha de referencia</dt>
