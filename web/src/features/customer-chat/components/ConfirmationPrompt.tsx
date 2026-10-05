@@ -6,23 +6,20 @@ import type { Lang } from '../../../i18n/lang'
 import styles from './ConfirmationPrompt.module.css'
 
 /**
- * The yes and no quick replies next to the text prompt (AC-E10-13).
+ * The yes and no quick replies next to the text prompt.
  *
- * A click supplies the same fixed text an explicit typed "yes" or "no" would (AC-E5-20); neither
- * carries a summary of its own: the reply above them already showed what is being confirmed. The
- * conversation shows the button's own label, in the customer's language, as what they said. Yes is
- * the one primary action; No is outlined beside it, so declining is as easy to reach as agreeing
- * without competing with it.
- * The live endpoint slice must disable or re-show this after any change to that summary — a
- * fixture script never changes mid-conversation, so this component cannot exercise that rule.
+ * A click supplies the same fixed text an explicit typed "yes" or "no" would; neither carries a
+ * summary of its own: the reply above them already showed what is being confirmed. The conversation
+ * shows the button's own label, in the customer's language, as what they said. Yes is the one
+ * primary action; No is outlined beside it, so declining is as easy to reach as agreeing without
+ * competing with it. The caller renders the pair only while a confirmation is awaited and no turn
+ * is in flight, so a changed summary is never answered by a stale button.
  */
 export function ConfirmationPrompt({
   onConfirm,
-  disabled,
   lang,
 }: {
   onConfirm: (sent: string, shown: string) => void
-  disabled: boolean
   lang: Lang
 }): JSX.Element {
   const t = useT(lang)
@@ -31,7 +28,6 @@ export function ConfirmationPrompt({
       <Button
         variant="primary"
         large
-        disabled={disabled}
         onClick={() => {
           onConfirm(CONFIRMATION_TEXT, t('chat.confirm'))
         }}
@@ -41,7 +37,6 @@ export function ConfirmationPrompt({
       <Button
         variant="secondary"
         large
-        disabled={disabled}
         onClick={() => {
           onConfirm(DECLINE_TEXT, t('chat.decline'))
         }}

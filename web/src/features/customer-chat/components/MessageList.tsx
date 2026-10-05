@@ -20,8 +20,7 @@ import styles from './MessageList.module.css'
  * or color alone. The message that asks for confirmation (`reviewId`) is set apart as a review
  * card, headed by what it is and followed by the reassurance that nothing is filed until the
  * customer says yes. While a reply is awaited a typing bubble closes the list; it lives in an
- * always-present status region so it is announced once, politely, when it appears. When a message is added or the typing row
- * appears, the newest content is scrolled into view: a reply from its first line, the person's
+ * always-present status region so it is announced once, politely, when it appears. When a message is added or the typing row appears, the newest content is scrolled into view: a reply from its first line, the person's
  * own message and the typing row at the nearest edge.
  */
 export function MessageList({

@@ -11,11 +11,9 @@ import styles from './ChoiceButtons.module.css'
 export function ChoiceButtons({
   choices,
   onChoose,
-  disabled,
 }: {
   choices: readonly Choice[]
   onChoose: (sent: string, shown: string) => void
-  disabled: boolean
 }): JSX.Element | null {
   if (choices.length === 0) {
     return null
@@ -26,7 +24,6 @@ export function ChoiceButtons({
         <li key={choice.number}>
           <Button
             className={styles.choice}
-            disabled={disabled}
             onClick={() => {
               onChoose(String(choice.number), choice.label)
             }}

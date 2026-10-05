@@ -108,8 +108,8 @@ export function ChatFeature({
   const latest = conversation.latest
   const busy = conversation.status === 'loading'
   const ended = latest?.end_session === true
-  const lastAssistantText =
-    conversation.messages.findLast((m) => m.from === 'assistant')?.text ?? ''
+  const lastAssistant = conversation.messages.findLast((m) => m.from === 'assistant')
+  const lastAssistantText = lastAssistant?.text ?? ''
   // A dispute is filed on a turn that does not end the conversation, and the farewell that ends
   // it carries no case number: the card shows the filing from the moment it happens and keeps its
   // number to the end, unless the conversation ends in a hand-off, whose own reference then leads.
@@ -144,9 +144,7 @@ export function ChatFeature({
           lang={activeLang}
           pending={busy}
           reviewId={
-            latest.next_expected === 'confirmation' && !ended
-              ? (conversation.messages.findLast((m) => m.from === 'assistant')?.id ?? null)
-              : null
+            latest.next_expected === 'confirmation' && !ended ? (lastAssistant?.id ?? null) : null
           }
         />
       )}
@@ -169,9 +167,9 @@ export function ChatFeature({
       )}
       {latest !== null && !ended && (
         <>
-          <ChoiceButtons choices={latest.choices} onChoose={conversation.send} disabled={busy} />
-          {latest.next_expected === 'confirmation' && (
-            <ConfirmationPrompt onConfirm={conversation.send} disabled={busy} lang={activeLang} />
+          {!busy && <ChoiceButtons choices={latest.choices} onChoose={conversation.send} />}
+          {!busy && latest.next_expected === 'confirmation' && (
+            <ConfirmationPrompt onConfirm={conversation.send} lang={activeLang} />
           )}
           <TurnForm
             onSubmit={conversation.send}

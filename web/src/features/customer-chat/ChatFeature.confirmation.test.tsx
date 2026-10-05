@@ -1,6 +1,7 @@
 /** Component test: the confirmation button never confirms anything but the summary on screen. */
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { axe } from 'jest-axe'
 import { describe, expect, it } from 'vitest'
 import { ChatFeature } from './ChatFeature'
 import type { ChatClient } from './client'
@@ -43,6 +44,7 @@ const SUMMARY_180 = turn(
   'You are disputing MXN 180.00 at Tienda Sol. File this dispute?',
   'confirmation',
 )
+const CANCELLED = turn(3, "Understood, I didn't file the dispute.", null)
 const FILED = turn(5, 'Your dispute was filed.', null)
 
 /** Replays `script` after the opening turn and records every text the customer sends. */
@@ -161,29 +163,32 @@ describe('ChatFeature confirmation button', () => {
 
   it('offers a No beside the Yes that sends only the fixed decline text', async () => {
     const user = userEvent.setup()
-    const { client, sent } = recordingClient([SUMMARY_250, CHANGED])
+    const { client, sent } = recordingClient([SUMMARY_250, CANCELLED])
     render(<ChatFeature client={client} lang="en" />)
     await findMessage(OPENING.reply)
     await sendText(user, 'the Tienda Sol one')
-    const group = await screen.findByRole('group', { name: 'Quick replies' })
+    const group = await screen.findByRole('group', { name: 'Your answer' })
     expect(group).toContainElement(screen.getByRole('button', { name: 'Yes, file it' }))
 
-    await user.click(screen.getByRole('button', { name: 'No' }))
+    await user.click(screen.getByRole('button', { name: "No, don't file" }))
 
-    await findMessage(CHANGED.reply)
+    await findMessage(CANCELLED.reply)
     expect(sent).toEqual(['the Tienda Sol one', DECLINE_TEXT])
-    expect(screen.getByText((_c, el) => el?.textContent === 'You: No')).toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'Quick replies' })).not.toBeInTheDocument()
+    expect(
+      screen.getByText((_c, el) => el?.textContent === "You: No, don't file"),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Your answer' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Review before filing')).not.toBeInTheDocument()
   })
 
   it.each([
-    ['es', es],
-    ['pt', pt],
-  ] as const)('labels the No in the customer language (%s)', async (lang, catalog) => {
+    ['es', es, 'De acuerdo, no presenté la disputa.'],
+    ['pt', pt, 'Tudo bem, não apresentei a contestação.'],
+  ] as const)('labels the No in the customer language (%s)', async (lang, catalog, cancelled) => {
     const user = userEvent.setup()
     const { client, sent } = recordingClient([
       { ...SUMMARY_250, lang },
-      { ...CHANGED, lang },
+      { ...CANCELLED, lang, reply: cancelled },
     ])
     const opening = { ...OPENING, lang }
     render(
@@ -195,7 +200,7 @@ describe('ChatFeature confirmation button', () => {
 
     await user.click(await screen.findByRole('button', { name: catalog['chat.decline'] }))
 
-    await findMessage(CHANGED.reply, catalog['chat.messagesLabel'])
+    await findMessage(cancelled, catalog['chat.messagesLabel'])
     expect(sent).toEqual(['x', DECLINE_TEXT])
     expect(
       screen.getByText(
@@ -222,7 +227,7 @@ describe('ChatFeature confirmation button', () => {
     expect(screen.queryByText('Review before filing')).not.toBeInTheDocument()
   })
 
-  it('is disabled while a turn is in flight and confirms once', async () => {
+  it('is withdrawn while a turn is in flight, so it confirms once', async () => {
     const user = userEvent.setup()
     const sent: string[] = []
     let release: (value: TurnResponse) => void = () => undefined
@@ -245,14 +250,39 @@ describe('ChatFeature confirmation button', () => {
 
     await user.click(confirm)
     await waitFor(() => {
-      expect(confirm).toBeDisabled()
+      expect(screen.queryByRole('button', { name: 'Yes, file it' })).not.toBeInTheDocument()
     })
-    await user.click(confirm)
+    expect(screen.queryByRole('button', { name: "No, don't file" })).not.toBeInTheDocument()
     act(() => {
       release(FILED)
     })
 
     await findMessage(FILED.reply)
     expect(sent.filter((text) => text === CONFIRMATION_TEXT)).toHaveLength(1)
+  })
+
+  it('has no accessibility violations at the confirmation', async () => {
+    const user = userEvent.setup()
+    const { client } = recordingClient([SUMMARY_250])
+    const { container } = render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    await sendText(user, 'the Tienda Sol one')
+    await screen.findByRole('group', { name: 'Your answer' })
+
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('shows neither the review nor the quick replies once the conversation has ended', async () => {
+    const user = userEvent.setup()
+    const closing = TurnResponseSchema.parse({ ...SUMMARY_250, end_session: true })
+    const { client } = recordingClient([closing])
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    await sendText(user, 'the Tienda Sol one')
+
+    await findMessage(closing.reply)
+    expect(screen.queryByText('Review before filing')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Your answer' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Yes, file it' })).not.toBeInTheDocument()
   })
 })
