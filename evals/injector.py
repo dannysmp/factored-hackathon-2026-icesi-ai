@@ -128,6 +128,7 @@ class FailureSchedule:
     __slots__ = ("failure",)
 
     def __init__(self) -> None:
+        """Start with no failure declared."""
         self.failure: InjectedToolFailure | None = None
 
     def decorate(self, principal: Principal, port: ToolPort) -> ToolPort:
