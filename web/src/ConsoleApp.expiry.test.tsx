@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConsoleApp } from './ConsoleApp'
 import { es } from './i18n/es'
 import { DEMO_QUEUE, DEMO_TICKET_DETAILS } from './features/console/fixtures'
+import { REFERENCE_DATE_LINES } from './features/sign-in/personaDirectory'
 
 const SESSIONS_PATH = '/v1/auth/demo-agent-sessions'
 
@@ -40,6 +41,7 @@ function stubBackend(
         return Promise.resolve(
           jsonResponse(200, {
             personas: [{ slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' }],
+            reference_date_lines: REFERENCE_DATE_LINES,
           }),
         )
       }

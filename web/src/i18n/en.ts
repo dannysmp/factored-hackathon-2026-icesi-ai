@@ -62,6 +62,7 @@ export const en: Messages = {
   'signin.accessCodeHide': 'Hide',
   'signin.accessCodeLabel': 'Access code',
   'signin.refused': 'The access code or profile was not accepted. Please try again.',
+  'signin.personaInUse': 'This profile is in use right now. Choose another profile.',
   'signin.accessCodeHint': 'Enter the access code to continue.',
   'signin.submit': 'Sign in',
   'signin.submitting': 'Signing in…',

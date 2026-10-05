@@ -20,9 +20,9 @@ then the persona is looked up, the issuance reservations are taken, and the atte
 before a token is returned. The two sign-in brokers share every helper below but are never the
 same route or the same access code, so a leaked customer code leaves the console protected. The
 persona directory carries no access code of its own — it mints no session and reveals nothing
-beyond a slug, a display name, a language and which audience it belongs to (never a customer or
-agent id) — but is gated by the same two settings, so the kill switch hides it exactly like the two
-sign-in routes.
+beyond a slug, a display name, a language, which audience it belongs to (never a customer or
+agent id) and the product's reference date in each language — but is gated by the same two
+settings, so the kill switch hides it exactly like the two sign-in routes.
 Out: validating the persona file or checking it against the seed (``app.security.demo_personas``,
 done once at start-up — the agent list has no seed to check against), issuing or verifying the
 token itself (``SessionService``), the two limiter implementations (``app.security.limits``,
@@ -41,6 +41,13 @@ Design Principles
 - **One uniform refusal** for a wrong access code, an unknown persona and a rate limit: the same
   code, status and message, so a caller cannot use the response shape to learn which check failed
   or whether a given persona slug exists.
+- **A held persona is told apart from a rate limit**: when the persona's own slot is the one at
+  its cap, the answer is ``409 demo_persona_in_use`` with no identifier, so the picker can say the
+  profile is in use and to choose another; a busy address or broker keeps ``429``. It is reached
+  only after a valid access code and a valid slug, so the uniform refusal above is unchanged.
+- **Signing out frees the persona**: every reservation an issued session took is remembered by
+  session id (``SessionReservations``) and released when the session is revoked, which sign-out
+  does; a session that ends any other way keeps them until their TTL.
 - **The issuance caps run only after the persona is known to be valid**, and count the success,
   not the attempt: a caller who never gets past the access code or the persona lookup never
   consumes issuance capacity meant for real demo sessions.
@@ -51,7 +58,8 @@ Runtime Contract
 201 session (public while ``DEMO_SIGNIN_ENABLED`` is true).
 ``POST /v1/auth/demo-agent-sessions``  body ``{"persona": str}``, header ``X-Demo-Access-Code``  ->
 201 session (public while ``DEMO_AGENT_SIGNIN_ENABLED`` is true), its own access code.
-``GET /v1/auth/demo-personas``  -> 200 ``{"personas": [{slug, display_name, language, audience}]}``
+``GET /v1/auth/demo-personas``  -> 200 ``{"personas": [{slug, display_name, language, audience}],
+"reference_date_lines": {es, pt, en}}``, each line the chat's own "data as of" sentence
 (public whenever either kill switch is on; customer personas only, agent personas only, or both,
 matching which switch is on).
 
@@ -69,7 +77,7 @@ import hashlib  # Client address hashed before it reaches the audit record
 import hmac  # Constant-time comparison of the shared access code
 import logging  # Structured events about demo sign-ins
 import re  # Strict persona-slug pattern
-from datetime import datetime, timedelta  # Session lifetimes and reservation TTLs
+from datetime import date, datetime, timedelta  # Session lifetimes, reservation TTLs, data date
 from typing import Annotated, Literal  # Header and field declarations, closed audience values
 
 # Third-party libraries
@@ -78,10 +86,14 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr  # Validated models
 
 # Local modules
 from app.api.auth import SessionResponse  # Shared response shape with the sandbox login
+from app.conversation.renderer import reference_date_line  # The chat's own date wording
 from app.security.client_address import client_address  # The real connecting address
 from app.security.demo_personas import PersonaList  # The validated, seed-checked persona list
 from app.security.errors import ErrorCode, ProblemError  # Failure format
-from app.security.issuance_limits import IssuanceLimiter  # Concurrent-session caps
+from app.security.issuance_limits import (  # Concurrent-session caps and who holds them
+    IssuanceLimiter,
+    SessionReservations,
+)
 from app.security.limits import AttemptLimiter  # Failed-access-code limit
 from app.security.middleware import current_request_id  # Request identifier for logs
 from app.security.sessions import SessionService  # Sessions
@@ -144,12 +156,23 @@ class DemoPersonaSummary(BaseModel):
     audience: Literal["customer", "agent"]
 
 
+class ReferenceDateLines(BaseModel):
+    """The data's reference date as the chat words it, once per language."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    es: str
+    pt: str
+    en: str
+
+
 class DemoPersonaDirectory(BaseModel):
-    """The whole listing the sign-in screen's picker renders."""
+    """The whole listing the sign-in screen's picker renders, with the data's reference date."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     personas: tuple[DemoPersonaSummary, ...]
+    reference_date_lines: ReferenceDateLines
 
 
 def _address_hash(address: str) -> str:
@@ -166,7 +189,7 @@ def _refusal() -> ProblemError:
 
 def _reserve_all(
     limiter: IssuanceLimiter, keys_and_caps: list[tuple[str, int]], ttl: timedelta
-) -> list[tuple[str, datetime]] | None:
+) -> list[tuple[str, datetime]] | str:
     """Reserve every key in order, or release whatever already succeeded and refuse.
 
     Reserving three independent keys is not one atomic operation across all three, so a caller
@@ -174,7 +197,8 @@ def _reserve_all(
     never completed; this releases every earlier success as soon as one key refuses. On success,
     returns every ``(key, expiry)`` reserved, so the caller can release them too if a later step
     of the same attempt — issuing the token, writing its audit record — fails after all three
-    reservations already succeeded.
+    reservations already succeeded. On refusal, returns the key that was at its cap, so the caller
+    can tell a held persona from a busy address or broker.
     """
     reserved: list[tuple[str, datetime]] = []
     for key, cap in keys_and_caps:
@@ -182,7 +206,7 @@ def _reserve_all(
         if expiry is None:
             for done_key, done_expiry in reserved:
                 limiter.release(done_key, done_expiry)
-            return None
+            return key
         reserved.append((key, expiry))
     return reserved
 
@@ -202,6 +226,26 @@ def _rate_limited(wait: int) -> ProblemError:
         "Wait before trying again.",
         headers={"Retry-After": str(wait)},
     )
+
+
+def _persona_in_use() -> ProblemError:
+    """The refusal for a persona another session already holds: its own code and status.
+
+    Reached only after the access code and the persona slug are both valid, and the slugs are
+    public in the directory, so it tells a caller nothing they could not already see. It carries
+    no identifier and no time: the service cannot say when the other session will end.
+    """
+    return ProblemError(
+        ErrorCode.DEMO_PERSONA_IN_USE,
+        409,
+        "This profile is in use",
+        "Choose another profile.",
+    )
+
+
+def _capacity_refusal(refused_key: str, persona_key: str) -> ProblemError:
+    """The refusal for a capacity key at its cap: a held persona, or a plain rate limit."""
+    return _persona_in_use() if refused_key == persona_key else _rate_limited(60)
 
 
 def build_demo_signin_router(
@@ -232,9 +276,13 @@ def build_demo_signin_router(
     attempt_limiter : AttemptLimiter
         Limits wrong access codes per client address; never reused for issuance capacity.
     issuance_limiter : IssuanceLimiter
-        Bounds concurrent successful sign-ins per address, globally and per persona slot.
+        Bounds concurrent successful sign-ins per address, globally and per persona slot. The
+        broker also remembers which reservations each issued session holds and frees them when
+        the session is revoked (signed out).
     """
     expected = demo_access_code.get_secret_value().encode("utf-8")
+    reservations = SessionReservations(issuance_limiter, clock=sessions.now)
+    sessions.on_revoked("customer", reservations.release)
     router = APIRouter()
 
     def _audit_or_fail_closed(entry: SignInAuditRecord) -> None:
@@ -316,7 +364,7 @@ def build_demo_signin_router(
             ],
             CUSTOMER_TTL,
         )
-        if reserved is None:
+        if isinstance(reserved, str):
             logger.warning("demo_signin_capacity_reached request_id=%s", current_request_id())
             _audit_or_fail_closed(
                 SignInAuditRecord(
@@ -329,7 +377,7 @@ def build_demo_signin_router(
                     persona_slug=persona.slug,
                 )
             )
-            raise _rate_limited(60)
+            raise _capacity_refusal(reserved, f"persona:{persona.slug}")
 
         issued = sessions.issue(
             persona.customer_id, audience="customer", ttl=CUSTOMER_TTL, demo=True
@@ -355,6 +403,7 @@ def build_demo_signin_router(
             # being delivered, the same self-inflicted lockout the caps exist to prevent.
             _release_all(issuance_limiter, reserved)
             raise
+        reservations.hold(issued.session_id, reserved)
         logger.info(
             "demo_session_issued session_id=%s request_id=%s",
             issued.session_id,
@@ -404,9 +453,12 @@ def build_demo_agent_signin_router(
         Limits wrong access codes per client address for this broker only.
     issuance_limiter : IssuanceLimiter
         Bounds concurrent successful sign-ins per address, globally and per persona slot, for this
-        broker only.
+        broker only. The broker also remembers which reservations each issued session holds and
+        frees them when the session is revoked (signed out).
     """
     expected = demo_access_code.get_secret_value().encode("utf-8")
+    reservations = SessionReservations(issuance_limiter, clock=sessions.now)
+    sessions.on_revoked("agent", reservations.release)
     router = APIRouter()
 
     def _audit_or_fail_closed(entry: SignInAuditRecord) -> None:
@@ -483,7 +535,7 @@ def build_demo_agent_signin_router(
             ],
             AGENT_TTL,
         )
-        if reserved is None:
+        if isinstance(reserved, str):
             logger.warning("demo_agent_signin_capacity_reached request_id=%s", current_request_id())
             _audit_or_fail_closed(
                 SignInAuditRecord(
@@ -496,7 +548,7 @@ def build_demo_agent_signin_router(
                     persona_slug=persona.slug,
                 )
             )
-            raise _rate_limited(60)
+            raise _capacity_refusal(reserved, f"persona:{persona.slug}")
 
         issued = sessions.issue(persona.agent_id, audience="agent", ttl=AGENT_TTL, demo=True)
         try:
@@ -518,6 +570,7 @@ def build_demo_agent_signin_router(
             # this path, so the three reservations above must not either.
             _release_all(issuance_limiter, reserved)
             raise
+        reservations.hold(issued.session_id, reserved)
         logger.info(
             "demo_agent_session_issued session_id=%s request_id=%s",
             issued.session_id,
@@ -537,6 +590,7 @@ def build_demo_persona_directory_router(
     include_customers: bool,
     include_agents: bool,
     attempt_limiter: AttemptLimiter,
+    reference_date: date,
 ) -> APIRouter:
     """Build the read-only persona directory a sign-in picker renders.
 
@@ -560,8 +614,16 @@ def build_demo_persona_directory_router(
     attempt_limiter : AttemptLimiter
         This route's own instance — never one of the two sign-in brokers' own limiters, which
         count wrong access codes, a different contract.
+    reference_date : date
+        The domain date the service runs on; the directory words it in each language with the
+        same function the chat uses, so the sign-in screen never computes or guesses it.
     """
     router = APIRouter()
+    reference_date_lines = ReferenceDateLines(
+        es=reference_date_line(reference_date, "es"),
+        pt=reference_date_line(reference_date, "pt"),
+        en=reference_date_line(reference_date, "en"),
+    )
 
     @router.get(DEMO_PERSONAS_PATH)
     def list_demo_personas(request: Request) -> DemoPersonaDirectory:
@@ -594,6 +656,8 @@ def build_demo_persona_directory_router(
                 )
                 for persona in personas.agents
             )
-        return DemoPersonaDirectory(personas=tuple(summaries))
+        return DemoPersonaDirectory(
+            personas=tuple(summaries), reference_date_lines=reference_date_lines
+        )
 
     return router

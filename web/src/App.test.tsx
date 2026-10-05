@@ -9,9 +9,13 @@ import { findMessage } from './features/customer-chat/findMessage'
 import { en } from './i18n/en'
 import { es } from './i18n/es'
 import { pt } from './i18n/pt'
+import { REFERENCE_DATE_LINES } from './features/sign-in/personaDirectory'
 
 function personasBody(language: string): unknown {
-  return { personas: [{ slug: 'ana', display_name: 'Ana', language, audience: 'customer' }] }
+  return {
+    personas: [{ slug: 'ana', display_name: 'Ana', language, audience: 'customer' }],
+    reference_date_lines: REFERENCE_DATE_LINES,
+  }
 }
 const SESSION_BODY = {
   access_token: 'token-abc',
@@ -41,21 +45,20 @@ function jsonResponse(body: unknown): Response {
   })
 }
 
-function stubTheWholeFlow(options: { personaLanguage?: string; turnLang?: string } = {}): void {
+function stubTheWholeFlow(options: { personaLanguage?: string; turnLang?: string } = {}) {
   const { personaLanguage = 'es', turnLang = 'es' } = options
   // Every call this app makes passes a plain string path (never a Request or URL object), so the
   // mock only needs to handle that one shape.
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((url: string) => {
-      if (url === '/v1/auth/demo-personas')
-        return Promise.resolve(jsonResponse(personasBody(personaLanguage)))
-      if (url === '/v1/auth/demo-sessions') return Promise.resolve(jsonResponse(SESSION_BODY))
-      if (url === '/v1/turns')
-        return Promise.resolve(jsonResponse({ ...TURN_BODY, lang: turnLang }))
-      throw new Error(`unexpected fetch: ${url}`)
-    }),
-  )
+  const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>((url) => {
+    if (url === '/v1/auth/demo-personas')
+      return Promise.resolve(jsonResponse(personasBody(personaLanguage)))
+    if (url === '/v1/auth/demo-sessions') return Promise.resolve(jsonResponse(SESSION_BODY))
+    if (url === '/v1/turns') return Promise.resolve(jsonResponse({ ...TURN_BODY, lang: turnLang }))
+    if (url === '/v1/auth/logout') return Promise.resolve(new Response(null, { status: 204 }))
+    throw new Error(`unexpected fetch: ${url}`)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
 }
 
 function headerWidthClass(): string {
@@ -153,6 +156,44 @@ describe('App', () => {
       await screen.findByRole('group', { name: es['signin.personaGroupLabel'] }),
     ).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: es['chat.regionLabel'] })).not.toBeInTheDocument()
+  })
+
+  it('ends the session at the service when the customer signs out', async () => {
+    const fetchMock = stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    await screen.findByRole('region', { name: es['chat.regionLabel'] })
+
+    await user.click(screen.getByRole('button', { name: es['app.signOut'] }))
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/v1/auth/logout',
+      expect.objectContaining({ method: 'POST', headers: { Authorization: 'Bearer token-abc' } }),
+    )
+  })
+
+  it('still signs the customer out when the service cannot be reached', async () => {
+    const fetchMock = stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'the-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    await screen.findByRole('region', { name: es['chat.regionLabel'] })
+    fetchMock.mockImplementation((url) =>
+      url === '/v1/auth/logout'
+        ? Promise.reject(new TypeError('Failed to fetch'))
+        : Promise.resolve(jsonResponse(personasBody('es'))),
+    )
+
+    await user.click(screen.getByRole('button', { name: es['app.signOut'] }))
+
+    expect(
+      await screen.findByRole('group', { name: es['signin.personaGroupLabel'] }),
+    ).toBeInTheDocument()
   })
 
   it('frames the sign-in step with a banner holding the page title and one main landmark', async () => {

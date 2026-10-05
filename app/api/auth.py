@@ -36,11 +36,15 @@ Runtime Contract
 ----------------
 ``POST /v1/auth/test-sessions``  body ``{"customer_id": str}``  -> 201 session (public)
 ``GET  /v1/session``             -> 200 who the session belongs to
-``POST /v1/auth/logout``         -> 204, the session stops working
+``POST /v1/auth/logout``         -> 204, the session stops working and the profile it held is freed
+``POST /v1/agent/auth/logout``   -> 204, the same for an agent session (the agent audience's own
+path: a customer token is refused there, an agent token on the customer path)
 
 Limitations
 -----------
-Sessions are not refreshed: an expired session needs a new login.
+Sessions are not refreshed: an expired session needs a new login. Only an explicit logout frees the
+profile a demonstration session holds; a session that expires unused keeps it until its lifetime
+ends.
 """
 
 from __future__ import annotations
@@ -71,6 +75,7 @@ from app.security.sessions import (  # Sessions
 logger = logging.getLogger(__name__)
 
 TEST_SESSIONS_PATH = "/v1/auth/test-sessions"
+AGENT_LOGOUT_PATH = "/v1/agent/auth/logout"
 
 # The customer's status as the store records it, or None when there is no match; the
 # sandbox login checks existence only, never status.
@@ -264,10 +269,8 @@ def build_auth_router(
             demo=principal.demo,
         )
 
-    @router.post("/v1/auth/logout", status_code=204)
-    def logout(request: Request) -> Response:
-        """End the current session: its token stops working immediately."""
-        principal = principal_of(request)
+    def end_session(principal: Principal | AgentPrincipal) -> Response:
+        """Revoke ``principal``'s session; what it held is freed with it."""
         try:
             sessions.revoke(principal)
         except RuntimeError:
@@ -285,5 +288,15 @@ def build_auth_router(
             current_request_id(),
         )
         return Response(status_code=204)
+
+    @router.post("/v1/auth/logout", status_code=204)
+    def logout(request: Request) -> Response:
+        """End the current session: its token stops working immediately."""
+        return end_session(principal_of(request))
+
+    @router.post(AGENT_LOGOUT_PATH, status_code=204)
+    def agent_logout(request: Request) -> Response:
+        """End the current agent session: its token stops working immediately."""
+        return end_session(agent_principal_of(request))
 
     return router

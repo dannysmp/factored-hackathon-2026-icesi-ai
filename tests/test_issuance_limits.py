@@ -11,7 +11,7 @@ import threading
 import time
 from datetime import UTC, datetime, timedelta
 
-from app.security.issuance_limits import IssuanceLimiter
+from app.security.issuance_limits import IssuanceLimiter, SessionReservations
 
 START = datetime(2026, 9, 26, 12, 0, 0, tzinfo=UTC)
 
@@ -156,3 +156,104 @@ def test_concurrent_reservations_cannot_all_pass_the_check() -> None:
 
     assert sum(1 for result in results if result is not None) == 5
     assert len(results) == 40
+
+
+TTL = timedelta(minutes=30)
+
+
+def _reserve_three(limiter: IssuanceLimiter) -> list[tuple[str, datetime]]:
+    """What one sign-in takes: an address, the whole broker and one persona slot."""
+    reserved = []
+    for key in ("address:a", "global:customer", "persona:ana"):
+        expiry = limiter.try_reserve(key, cap=1, ttl=TTL)
+        assert expiry is not None
+        reserved.append((key, expiry))
+    return reserved
+
+
+def test_releasing_a_session_frees_every_reservation_it_held() -> None:
+    clock = Clock()
+    limiter = IssuanceLimiter(clock=clock)
+    held = SessionReservations(limiter, clock=clock)
+    held.hold("s1", _reserve_three(limiter))
+
+    held.release("s1")
+
+    for key in ("address:a", "global:customer", "persona:ana"):
+        assert limiter.try_reserve(key, cap=1, ttl=TTL) is not None, f"{key} was not freed"
+
+
+def test_a_session_that_is_never_released_keeps_its_reservations_until_their_ttl() -> None:
+    clock = Clock()
+    limiter = IssuanceLimiter(clock=clock)
+    held = SessionReservations(limiter, clock=clock)
+    held.hold("s1", _reserve_three(limiter))
+
+    assert limiter.try_reserve("persona:ana", cap=1, ttl=TTL) is None
+    clock.now = START + TTL
+    assert limiter.try_reserve("persona:ana", cap=1, ttl=TTL) is not None
+
+
+def test_releasing_twice_does_not_free_a_reservation_another_session_has_since_taken() -> None:
+    clock = Clock()
+    limiter = IssuanceLimiter(clock=clock)
+    held = SessionReservations(limiter, clock=clock)
+    held.hold("s1", _reserve_three(limiter))
+    held.release("s1")
+    held.hold("s2", _reserve_three(limiter))
+
+    held.release("s1")
+
+    assert limiter.try_reserve("persona:ana", cap=1, ttl=TTL) is None
+    assert limiter.try_reserve("address:a", cap=1, ttl=TTL) is None
+    assert limiter.try_reserve("global:customer", cap=1, ttl=TTL) is None
+
+
+def test_releasing_a_session_that_expired_does_not_free_the_slot_taken_after_it() -> None:
+    clock = Clock()
+    limiter = IssuanceLimiter(clock=clock)
+    held = SessionReservations(limiter, clock=clock)
+    held.hold("s1", _reserve_three(limiter))
+    clock.now = START + TTL + timedelta(minutes=1)
+    held.hold("s2", _reserve_three(limiter))
+
+    held.release("s1")
+
+    assert limiter.try_reserve("persona:ana", cap=1, ttl=TTL) is None
+
+
+def test_releasing_an_unknown_session_changes_nothing() -> None:
+    clock = Clock()
+    limiter = IssuanceLimiter(clock=clock)
+    held = SessionReservations(limiter, clock=clock)
+    held.hold("s1", _reserve_three(limiter))
+
+    held.release("never-issued")
+
+    assert limiter.try_reserve("persona:ana", cap=1, ttl=TTL) is None
+
+
+def _hold_one(
+    held: SessionReservations, limiter: IssuanceLimiter, session_id: str, ttl: timedelta
+) -> None:
+    key = f"k:{session_id}"
+    expiry = limiter.try_reserve(key, cap=1, ttl=ttl)
+    assert expiry is not None
+    held.hold(session_id, [(key, expiry)])
+
+
+def test_a_full_record_drops_expired_sessions_first_and_then_the_oldest() -> None:
+    clock = Clock()
+    limiter = IssuanceLimiter(clock=clock)
+    held = SessionReservations(limiter, clock=clock, capacity=2)
+    _hold_one(held, limiter, "expired", timedelta(minutes=5))
+    clock.now = START + timedelta(minutes=10)
+    _hold_one(held, limiter, "first", TTL)
+    _hold_one(held, limiter, "second", TTL)
+    _hold_one(held, limiter, "third", TTL)
+
+    held.release("first")
+    held.release("third")
+
+    assert limiter.try_reserve("k:third", 1, TTL) is not None, "the newest entry was dropped"
+    assert limiter.try_reserve("k:first", 1, TTL) is None, "the oldest live entry was kept"

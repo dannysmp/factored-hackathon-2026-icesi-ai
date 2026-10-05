@@ -9,6 +9,7 @@ import { SignInScreen } from './SignInScreen'
 import { en } from '../../i18n/en'
 import { es } from '../../i18n/es'
 import { getPersonaRadio } from './personaRadios'
+import { directoryOf } from './personaDirectory'
 
 /** Two customer personas, one speaking Spanish and one English. */
 const PERSONAS = [
@@ -22,7 +23,7 @@ afterEach(() => {
 
 describe('SignInScreen', () => {
   it('shows the persona picker once the directory loads', async () => {
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
     expect(
@@ -58,7 +59,7 @@ describe('SignInScreen', () => {
   )
 
   it('treats a directory with no persona for its audience as switched off, for the console too', async () => {
-    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue([])
+    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue(directoryOf([]))
     render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
 
     await screen.findByText(es['signin.unavailable'])
@@ -75,7 +76,7 @@ describe('SignInScreen', () => {
   })
 
   it('signs in with the selected persona and access code, then calls onSignedIn', async () => {
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
     const signInMock = vi.spyOn(api, 'signIn').mockResolvedValue('token-abc')
     const onSignedIn = vi.fn()
     const user = userEvent.setup()
@@ -93,7 +94,7 @@ describe('SignInScreen', () => {
   })
 
   it('follows the selected customer persona’s own language, switching live as the selection changes', async () => {
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
     const user = userEvent.setup()
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
@@ -106,7 +107,7 @@ describe('SignInScreen', () => {
   })
 
   it('shows a refusal message and lets the customer retry, without calling onSignedIn', async () => {
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
     vi.spyOn(api, 'signIn').mockRejectedValue(new SignInError(401, 'Sign-in refused'))
     const onSignedIn = vi.fn()
     const user = userEvent.setup()
@@ -123,7 +124,7 @@ describe('SignInScreen', () => {
   })
 
   it('has no automatically detectable accessibility violations once ready', async () => {
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
     const { container } = render(<SignInScreen onSignedIn={vi.fn()} />)
 
     await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
@@ -134,7 +135,7 @@ describe('SignInScreen', () => {
     const agentPersonas = [
       { slug: 'diego', display_name: 'Diego', language: 'pt', audience: 'agent' as const },
     ]
-    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue(agentPersonas)
+    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue(directoryOf(agentPersonas))
     const fetchCustomerSpy = vi.spyOn(api, 'fetchCustomerPersonas')
     const signInMock = vi.spyOn(api, 'signIn').mockResolvedValue('agent-token')
     const onSignedIn = vi.fn()
@@ -157,7 +158,7 @@ describe('SignInScreen', () => {
     const agentPersonas = [
       { slug: 'diego', display_name: 'Diego', language: 'pt', audience: 'agent' as const },
     ]
-    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue(agentPersonas)
+    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue(directoryOf(agentPersonas))
     render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
 
     expect(await screen.findByRole('button', { name: es['signin.submit'] })).toBeInTheDocument()
@@ -170,7 +171,7 @@ describe('SignInScreen', () => {
     const personasWithOddLanguage = [
       { slug: 'zora', display_name: 'Zora', language: 'klingon', audience: 'customer' as const },
     ]
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(personasWithOddLanguage)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(personasWithOddLanguage))
     const onSignedIn = vi.fn()
     const user = userEvent.setup()
     render(<SignInScreen onSignedIn={onSignedIn} />)

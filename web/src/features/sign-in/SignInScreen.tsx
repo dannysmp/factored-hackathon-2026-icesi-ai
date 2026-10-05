@@ -3,14 +3,21 @@
  */
 import { useEffect, useId, useRef, useState } from 'react'
 import type { JSX, SyntheticEvent } from 'react'
-import type { DemoPersonaSummary } from './contracts'
+import type { DemoPersonaSummary, ReferenceDateLines } from './contracts'
 import type { Lang } from '../customer-chat/contracts'
 import type { SignInAudience } from './api'
+import { ReferenceBanner } from '../customer-chat/components/ReferenceBanner'
 import { Button } from '../../components/ui/Button'
 import { ErrorState } from '../../components/ui/ErrorState'
 import { Notice } from '../../components/ui/Notice'
 import { classNames } from '../../components/ui/classNames'
-import { fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
+import {
+  PERSONA_IN_USE_CODE,
+  SignInError,
+  fetchAgentPersonas,
+  fetchCustomerPersonas,
+  signIn,
+} from './api'
 import { useT } from '../../i18n/useT'
 import { failureReason } from '../../i18n/failureReason'
 import { LANGUAGES, LANGUAGE_NAMES, startingLanguage } from '../../i18n/lang'
@@ -49,6 +56,10 @@ function isShownLanguage(value: string): value is Lang {
  * chosen language, unless the selected persona already does; a language no persona speaks is
  * offered but disabled. The access code can be shown or hidden.
  *
+ * Under the description the screen states the date the data is as of, in the selected language, in
+ * the same banner the chat uses. The service words it (it arrives with the persona directory, in all
+ * three languages) and this screen only chooses which one to show, so it never computes the date.
+ *
  * `audience` selects the persona list and the access code this screen asks for: `'customer'` (the
  * default) or `'agent'`.
  *
@@ -57,8 +68,9 @@ function isShownLanguage(value: string): value is Lang {
  * is not available and offers no form. A directory that fails for any other reason (no
  * connection, a slow answer, a limit reached, a server error) says which, and offers Retry.
  *
- * A refused sign-in says what was refused: a wrong access code or persona, a limit reached, or
- * a connection or server problem, each in its own words. The keyboard returns to the access code
+ * A refused sign-in says what was refused: a wrong access code or persona, a profile another
+ * session is using (asking for another profile, with no promise of when it frees up), a limit
+ * reached, or a connection or server problem, each in its own words. The keyboard returns to the access code
  * field so it can be corrected at once.
  *
  * `focusForm` moves the keyboard to the selected persona card as soon as the form appears, for a person
@@ -101,6 +113,7 @@ export function SignInScreen({
 }): JSX.Element {
   const [directoryStatus, setDirectoryStatus] = useState<DirectoryStatus>('loading')
   const [personas, setPersonas] = useState<readonly DemoPersonaSummary[]>([])
+  const [referenceDateLines, setReferenceDateLines] = useState<ReferenceDateLines | null>(null)
   const [selectedSlug, setSelectedSlug] = useState('')
   const [accessCode, setAccessCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -135,9 +148,11 @@ export function SignInScreen({
     let cancelled = false
     const fetchPersonas = audience === 'agent' ? fetchAgentPersonas : fetchCustomerPersonas
     fetchPersonas().then(
-      (fetched) => {
+      (directory) => {
         if (cancelled) return
+        const fetched = directory.personas
         setPersonas(fetched)
+        setReferenceDateLines(directory.referenceDateLines)
         const inPreferredLang = fetched.filter(
           (persona) => audience === 'customer' && toLang(persona.language) === startLang,
         )
@@ -193,6 +208,10 @@ export function SignInScreen({
       (error: unknown) => {
         const failure = classifyFailure(error)
         setSubmitting(false)
+        if (error instanceof SignInError && error.code === PERSONA_IN_USE_CODE) {
+          setSignInError(t('signin.personaInUse'))
+          return
+        }
         setSignInError(
           failure === 'unauthorized'
             ? t('signin.refused')
@@ -241,6 +260,11 @@ export function SignInScreen({
         {t('signin.heading')}
       </h2>
       <p className={styles.intro}>{t('signin.intro')}</p>
+      {referenceDateLines !== null && (
+        <div className={styles.referenceDate}>
+          <ReferenceBanner referenceDateLine={referenceDateLines[activeLang]} demoNotice={null} />
+        </div>
+      )}
       {audience === 'customer' && (
         <div className={styles.languageSwitcher}>
           <span id={languageLabelId} className={styles.label}>

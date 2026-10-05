@@ -27,10 +27,22 @@ export const DemoPersonaSummarySchema = z
 /** A value that passes `DemoPersonaSummarySchema`. */
 export type DemoPersonaSummary = z.infer<typeof DemoPersonaSummarySchema>
 
-/** The list of personas the sign-in broker currently accepts, for every audience. */
+/** The data's reference date as the service words it, once per display language. */
+export const ReferenceDateLinesSchema = z
+  .object({
+    es: z.string().min(1),
+    pt: z.string().min(1),
+    en: z.string().min(1),
+  })
+  .strict()
+/** A value that passes `ReferenceDateLinesSchema`. */
+export type ReferenceDateLines = z.infer<typeof ReferenceDateLinesSchema>
+
+/** The personas the sign-in broker currently accepts, for every audience, and the data's date. */
 export const DemoPersonaDirectorySchema = z
   .object({
     personas: z.array(DemoPersonaSummarySchema),
+    reference_date_lines: ReferenceDateLinesSchema,
   })
   .strict()
 

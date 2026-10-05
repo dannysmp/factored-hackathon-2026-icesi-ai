@@ -4,6 +4,7 @@ import type { JSX } from 'react'
 import { ChatFeature } from './features/customer-chat/ChatFeature'
 import { LiveChatClient } from './features/customer-chat/client'
 import type { Lang } from './features/customer-chat/contracts'
+import { endSession } from './features/sign-in/api'
 import { SignInScreen } from './features/sign-in/SignInScreen'
 import { Button } from './components/ui/Button'
 import { Notice } from './components/ui/Notice'
@@ -17,6 +18,8 @@ import styles from './App.module.css'
  * endpoint (`LiveChatClient`). The session token lives only in this component's own state, never
  * in browser storage, so closing the tab ends the session; the sign-in screen follows the same
  * held-in-memory rule.
+ *
+ * Signing out also ends the session at the service, which frees the profile for the next sign-in.
  *
  * When the service reports the session has ended, the person is returned to the sign-in with a
  * note saying so, in the language the conversation was last in, and the keyboard lands on the
@@ -82,6 +85,7 @@ export function App(): JSX.Element {
         <Button
           variant="quiet"
           onClick={() => {
+            void endSession(session.token, 'customer')
             setSession(null)
           }}
         >

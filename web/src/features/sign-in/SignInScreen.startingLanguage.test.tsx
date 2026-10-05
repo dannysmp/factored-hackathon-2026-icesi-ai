@@ -8,6 +8,7 @@ import { SignInScreen } from './SignInScreen'
 import { CATALOGS } from '../../i18n/catalogs'
 import { LANGUAGES } from '../../i18n/lang'
 import type { Lang } from '../../i18n/lang'
+import { directoryOf } from './personaDirectory'
 
 const BROWSER: Record<Lang, string> = { es: 'es-CO', pt: 'pt-BR', en: 'en-US' }
 const PERSONAS = [
@@ -56,7 +57,7 @@ describe.each(LANGUAGES)('SignInScreen in a browser whose language is %s', (lang
 
   it('opens the form on the persona who speaks that language', async () => {
     browserIn(BROWSER[lang])
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
     expect(await screen.findByRole('heading', { level: 2 })).toHaveTextContent(
@@ -99,7 +100,7 @@ describe('SignInScreen starting language', () => {
   it('falls back to the first persona when nobody speaks the browser language', async () => {
     browserIn('pt-BR')
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(
-      PERSONAS.filter((persona) => persona.language !== 'pt'),
+      directoryOf(PERSONAS.filter((persona) => persona.language !== 'pt')),
     )
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
@@ -111,7 +112,9 @@ describe('SignInScreen starting language', () => {
 
   it('only preselects: the person can pick another, and nothing signs in on its own', async () => {
     browserIn('pt-BR')
-    const fetchPersonas = vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    const fetchPersonas = vi
+      .spyOn(api, 'fetchCustomerPersonas')
+      .mockResolvedValue(directoryOf(PERSONAS))
     const signIn = vi.spyOn(api, 'signIn')
     const onSignedIn = vi.fn()
     const user = userEvent.setup()
@@ -135,7 +138,7 @@ describe('SignInScreen starting language', () => {
 
   it('still needs the access code before the preselected persona can sign in', async () => {
     browserIn('en-US')
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
     const signIn = vi.spyOn(api, 'signIn').mockResolvedValue('token-abc')
     const onSignedIn = vi.fn()
     const user = userEvent.setup()
@@ -163,10 +166,12 @@ describe('SignInScreen starting language', () => {
 
   it('keeps the first agent selected even when a later agent speaks the browser language', async () => {
     browserIn('es-CO')
-    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue([
-      { slug: 'beatriz', display_name: 'Beatriz', language: 'pt', audience: 'agent' },
-      { slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' },
-    ])
+    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue(
+      directoryOf([
+        { slug: 'beatriz', display_name: 'Beatriz', language: 'pt', audience: 'agent' },
+        { slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' },
+      ]),
+    )
     render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
 
     expect(await screen.findByRole('radio', { checked: true })).toHaveAttribute('value', 'beatriz')
@@ -175,7 +180,7 @@ describe('SignInScreen starting language', () => {
   it('writes nothing to browser storage', async () => {
     browserIn('pt-BR')
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
-    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
     render(<SignInScreen onSignedIn={vi.fn()} />)
     await screen.findByRole('heading', { level: 2 })
 

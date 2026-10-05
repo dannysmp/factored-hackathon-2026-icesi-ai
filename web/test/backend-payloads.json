@@ -13,7 +13,12 @@
         "language": "pt",
         "slug": "agent-beatriz"
       }
-    ]
+    ],
+    "reference_date_lines": {
+      "en": "Reference date of the data: June 18, 2026",
+      "es": "Fecha de referencia de los datos: 18 de junio de 2026",
+      "pt": "Data de referência dos dados: 18 de junho de 2026"
+    }
   },
   "QueueResponse": {
     "items": [

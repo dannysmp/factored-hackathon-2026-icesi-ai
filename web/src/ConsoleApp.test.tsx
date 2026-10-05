@@ -10,9 +10,11 @@ import { ConsoleApp } from './ConsoleApp'
 import { es } from './i18n/es'
 import { DEMO_QUEUE, DEMO_TICKET_DETAILS } from './features/console/fixtures'
 import { REQUEST_SUMMARY_LABELS } from './features/console/labels'
+import { REFERENCE_DATE_LINES } from './features/sign-in/personaDirectory'
 
 const PERSONAS_BODY = {
   personas: [{ slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' }],
+  reference_date_lines: REFERENCE_DATE_LINES,
 }
 const SESSION_BODY = {
   access_token: 'agent-token',
@@ -32,6 +34,9 @@ function stubTheWholeFlow() {
     }
     if (url === '/v1/auth/demo-agent-sessions') {
       return Promise.resolve(jsonResponse(201, SESSION_BODY))
+    }
+    if (url === '/v1/agent/auth/logout') {
+      return Promise.resolve(new Response(null, { status: 204 }))
     }
     if (url === '/v1/agent/queue') {
       return Promise.resolve(jsonResponse(200, DEMO_QUEUE))
@@ -184,6 +189,26 @@ describe('ConsoleApp', () => {
     expect(
       screen.queryByRole('region', { name: 'Cola de casos escalados' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('ends the agent session at the service when the agent signs out', async () => {
+    const fetchMock = stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<ConsoleApp />)
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    await screen.findByRole('region', { name: 'Cola de casos escalados' })
+
+    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }))
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/v1/agent/auth/logout',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer agent-token' },
+      }),
+    )
   })
 
   it('shows the queue, not the previous ticket, when the agent signs in again after signing out from a ticket', async () => {

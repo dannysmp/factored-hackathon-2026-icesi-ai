@@ -354,6 +354,41 @@ def test_revoking_one_session_leaves_the_others(service: SessionService) -> None
     assert service.verify_customer(second.token).customer_id == "C1"
 
 
+def test_a_revoked_session_is_reported_once_to_the_callbacks_of_its_own_kind(
+    service: SessionService,
+) -> None:
+    """What is tied to a session is freed with it: customer callbacks for a customer session,
+    agent callbacks for an agent session, each with that session's identifier."""
+    customer_seen: list[str] = []
+    agent_seen: list[str] = []
+    service.on_revoked("customer", customer_seen.append)
+    service.on_revoked("agent", agent_seen.append)
+    customer = service.issue("C1", audience="customer")
+    agent = service.issue("A1", audience="agent")
+
+    service.revoke(service.verify_customer(customer.token))
+    service.revoke(service.verify_agent(agent.token))
+
+    assert customer_seen == [customer.session_id]
+    assert agent_seen == [agent.session_id]
+
+
+def test_a_revocation_that_cannot_be_recorded_does_not_run_the_callbacks(clock: Clock) -> None:
+    """A session that stays valid must not lose what it holds."""
+    full = InMemoryRevocationStore(capacity=1)
+    service = SessionService({"customer": KEY}, 900, clock=clock, revocations=full)
+    seen: list[str] = []
+    service.on_revoked("customer", seen.append)
+    first = service.issue("C1", audience="customer")
+    second = service.issue("C2", audience="customer")
+    service.revoke(service.verify_customer(first.token))
+
+    with pytest.raises(RuntimeError):
+        service.revoke(service.verify_customer(second.token))
+
+    assert seen == [first.session_id]
+
+
 def test_the_revocation_store_forgets_expired_entries_and_never_forgets_live_ones() -> None:
     """Bounded memory without un-revoking a live session."""
     store = InMemoryRevocationStore(capacity=2)

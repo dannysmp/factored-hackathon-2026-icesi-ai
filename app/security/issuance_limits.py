@@ -6,12 +6,13 @@ Overview
 --------
 Bounds concurrent successful demo sign-ins per key — a client address, the whole broker, or one
 persona slot. A reservation counts against its key's cap for exactly as long as the
-session it backs would remain active, and ages out on that same schedule: no separate "session
-ended" event is needed, since a reservation's own expiry already matches the session's.
+session it backs would remain active, and ages out on that same schedule; a sign-out frees it
+earlier.
 
 Scope
 -----
-In: reserving capacity by key, against a cap and a TTL the caller supplies per call.
+In: reserving capacity by key, against a cap and a TTL the caller supplies per call, and
+remembering which reservations an issued session holds so a sign-out can free them.
 Out: choosing the keys or caps (the demo broker route decides those); the wrong-access-code path,
 which stays on ``AttemptLimiter`` — a failure-only, never-reset counter with a different contract
 this module does not repurpose.
@@ -37,19 +38,25 @@ that expiry for — used when a caller checks several keys for one attempt and a
 so an earlier successful reservation is not left burning capacity for an attempt that never
 completed.
 
+``SessionReservations(limiter).hold(session_id, reserved)`` remembers which reservations an issued
+session holds; ``.release(session_id)`` frees exactly those, once. A broker registers it with
+``SessionService.on_revoked``, so a person who signs out frees their profile at once instead of
+leaving it held for the session's whole lifetime.
+
 Limitations
 -----------
-A session ended early (logout, revocation) does not free its reservation before the original TTL
-elapses: this limiter has no view of revocation, only of how long a session was minted to live.
-Given the concurrency caps exist to bound cost and load, not to track exact session state, holding
-a slot until the mint's own TTL naturally passes is judged an acceptable simplification over
-wiring a release path through revocation.
+The limiter itself has no view of revocation, only of how long a session was minted to live. A
+session that ends any other way than an explicit sign-out (it expires unused, or is revoked by
+another path) keeps its reservations until the original TTL elapses. The record of which
+reservations a session holds is in-process and bounded: when it is full the oldest entry is
+dropped, and that session's reservations then age out on their own TTL like any other.
 """
 
 from __future__ import annotations
 
 # Standard libraries
 import threading  # Shared between request threads
+from collections.abc import Sequence  # Reservations a session holds
 from datetime import datetime, timedelta  # Window arithmetic
 
 # Local modules
@@ -115,3 +122,46 @@ class IssuanceLimiter:
                 return
             if not entries:
                 self._reservations.pop(key, None)
+
+
+class SessionReservations:
+    """Remembers the reservations each issued session holds, so ending it can free them.
+
+    Releasing is by the exact ``(key, expiry)`` pair the limiter handed out, and the record is
+    removed in the same locked step that reads it: a second release for the same session finds
+    nothing, and a reservation another session has since taken cannot be freed by mistake.
+    """
+
+    def __init__(
+        self,
+        limiter: IssuanceLimiter,
+        *,
+        clock: Clock = utc_now,
+        capacity: int = MAX_TRACKED_KEYS,
+    ) -> None:
+        self._limiter = limiter
+        self._clock = clock
+        self._capacity = capacity
+        self._held: dict[str, list[tuple[str, datetime]]] = {}
+        self._lock = threading.Lock()
+
+    def hold(self, session_id: str, reserved: Sequence[tuple[str, datetime]]) -> None:
+        """Record that ``session_id`` holds ``reserved`` (each ``(key, expiry)`` as reserved)."""
+        now = self._clock()
+        with self._lock:
+            if len(self._held) >= self._capacity:
+                self._held = {
+                    sid: held
+                    for sid, held in self._held.items()
+                    if any(expiry > now for _, expiry in held)
+                }
+            if len(self._held) >= self._capacity:
+                self._held.pop(next(iter(self._held)))
+            self._held[session_id] = list(reserved)
+
+    def release(self, session_id: str) -> None:
+        """Free every reservation ``session_id`` holds; a no-op for an unknown or released one."""
+        with self._lock:
+            held = self._held.pop(session_id, [])
+        for key, expiry in held:
+            self._limiter.release(key, expiry)

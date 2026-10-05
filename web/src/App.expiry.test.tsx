@@ -8,6 +8,7 @@ import { findMessage } from './features/customer-chat/findMessage'
 import { en } from './i18n/en'
 import { es } from './i18n/es'
 import { findPersonaRadio } from './features/sign-in/personaRadios'
+import { REFERENCE_DATE_LINES } from './features/sign-in/personaDirectory'
 
 const SESSION_BODY = {
   access_token: 'token-abc',
@@ -60,6 +61,7 @@ function stubService(
                 ? [{ slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' }]
                 : []),
             ],
+            reference_date_lines: REFERENCE_DATE_LINES,
           }),
         )
       }
