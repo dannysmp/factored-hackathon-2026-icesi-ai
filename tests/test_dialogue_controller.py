@@ -24,11 +24,13 @@ import pytest
 # Local modules
 from app.conversation.controller import (
     _ESCALATE_TRIGGER_OF,
+    _LEADING_DETERMINERS,
     _REQUEST_SUMMARY_OF,
     _ROUTES,
     DialogueController,
     _idempotency_key,
     _matches_hint,
+    _names_no_merchant,
 )
 from app.conversation.handoff import HandoffContent, build_packet
 from app.conversation.llm_understanding import LlmNlu
@@ -58,6 +60,7 @@ from contracts.service_v1.envelope import (
     CustomerReason,
     DateSource,
     Intent,
+    Lang,
     Slot,
 )
 from contracts.service_v1.handoff import HandoffPacket, HandoffTrigger
@@ -106,6 +109,7 @@ def _transaction(
     amount: Decimal | None = Decimal("100.00"),
     currency: str = "USD",
     last4: str = "1234",
+    original: tuple[Decimal, str] | None = None,
 ) -> TransactionFact:
     disclosed = (
         DisclosedAmount(
@@ -119,6 +123,9 @@ def _transaction(
         occurred_on=occurred_on,
         merchant=merchant,
         amount=disclosed,
+        original_amount=None
+        if original is None
+        else CaseMoney(amount=original[0], currency=original[1]),
         product=ProductLabel(name="Credit Card", last4=last4),
         status=TransactionStatus.APPROVED,
     )
@@ -284,6 +291,7 @@ class FakeHandoffOutbox:
             actions=content.actions,
             attempted_action=content.attempted_action,
             existing_case_number=content.existing_case_number,
+            open_questions=content.open_questions,
         )
         self.packets.append(packet)
         return packet
@@ -451,6 +459,113 @@ def test_matches_hint_still_rejects_a_different_merchant_after_accent_folding() 
 def test_matches_hint_never_matches_an_unknown_amount_against_a_stated_one() -> None:
     fact = _transaction(amount=None)
     assert not _matches_hint(fact, TransactionHint(amount=Decimal("10.00")))
+
+
+@pytest.mark.parametrize(
+    ("original", "quoted"),
+    [
+        (
+            (Decimal("1914215.00"), "COP"),
+            TransactionHint(amount=Decimal("1914215.00"), currency="COP"),
+        ),
+        ((Decimal("1914215.00"), "COP"), TransactionHint(amount=Decimal("1914215.00"))),
+        (
+            (Decimal("3499939.11"), "ARS"),
+            TransactionHint(amount=Decimal("3499939.11"), currency="ARS"),
+        ),
+        (
+            (Decimal("250000.00"), "CLP"),
+            TransactionHint(amount=Decimal("250000.00"), currency="CLP"),
+        ),
+        ((Decimal("250000.00"), "CLP"), TransactionHint(currency="CLP")),
+    ],
+    ids=["cop", "cop-no-currency", "ars", "clp", "clp-currency-only"],
+)
+def test_matches_hint_reads_a_figure_quoted_in_the_currency_of_the_transaction(
+    original: tuple[Decimal, str], quoted: TransactionHint
+) -> None:
+    """The amount in dollars is no help to a customer who quotes pesos."""
+    with_dollars = _transaction(amount=Decimal("470.20"), currency="USD", original=original)
+    without_dollars = _transaction(amount=None, original=original)
+
+    assert _matches_hint(with_dollars, quoted)
+    assert _matches_hint(without_dollars, quoted)
+
+
+def test_matches_hint_still_reads_the_amount_in_dollars_of_a_transaction_made_in_pesos() -> None:
+    fact = _transaction(
+        amount=Decimal("470.20"), currency="USD", original=(Decimal("1914215.00"), "COP")
+    )
+
+    assert _matches_hint(fact, TransactionHint(amount=Decimal("470.20"), currency="USD"))
+    assert _matches_hint(fact, TransactionHint(amount=Decimal("470.20")))
+
+
+@pytest.mark.parametrize(
+    "quoted",
+    [
+        TransactionHint(amount=Decimal("1914215.01"), currency="COP"),
+        TransactionHint(amount=Decimal("1914215.00"), currency="ARS"),
+        TransactionHint(amount=Decimal("470.20"), currency="COP"),
+        TransactionHint(amount=Decimal("1914215.00"), currency="USD"),
+    ],
+    ids=["other-amount", "other-currency", "dollars-in-pesos", "pesos-in-dollars"],
+)
+def test_matches_hint_pairs_the_amount_with_the_currency_of_the_same_figure(
+    quoted: TransactionHint,
+) -> None:
+    fact = _transaction(
+        amount=Decimal("470.20"), currency="USD", original=(Decimal("1914215.00"), "COP")
+    )
+
+    assert not _matches_hint(fact, quoted)
+
+
+@pytest.mark.parametrize("language", ["es", "pt", "en"])
+@pytest.mark.parametrize(
+    "quoted",
+    [
+        TransactionHint(amount=Decimal("1914215.00"), currency="COP"),
+        TransactionHint(amount=Decimal("1914215.00")),
+    ],
+    ids=["with-currency", "amount-only"],
+)
+def test_a_figure_quoted_in_pesos_finds_a_transaction_that_has_no_dollar_amount(
+    language: Lang, quoted: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    controller = _two_transaction_controller(
+        [
+            NluResult(
+                intent=NluIntent.FILE_DISPUTE,
+                confidence=0.8,
+                language=language,
+                transaction=quoted,
+            )
+        ],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+        port=FakeToolPort(
+            transactions=(
+                _transaction("TX-1", merchant="Amazon", amount=Decimal("100.00")),
+                _transaction(
+                    "TX-2",
+                    merchant=None,
+                    amount=None,
+                    occurred_on=date(2026, 6, 10),
+                    last4="9876",
+                    original=(Decimal("1914215.00"), "COP"),
+                ),
+            )
+        ),
+    )
+
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert (state.selected_ref, state.pending_slot) == ("TX-2", Slot.TRANSACTION_CHOICE)
 
 
 def test_idempotency_key_is_deterministic_and_well_shaped() -> None:
@@ -895,6 +1010,7 @@ def test_a_described_transaction_that_finds_none_counts_toward_the_budget(
 
     assert dialogue.say(_file_dispute(transaction=_NOBODY)).end_session
     assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+    assert _unanswered_in(dialogue) == [(Slot.TRANSACTION, 2)]
 
 
 def test_after_a_description_that_matches_nothing_the_transaction_stays_the_open_question(
@@ -1738,6 +1854,13 @@ def test_an_unclear_answer_to_the_presented_transaction_asks_again_then_escalate
     escalated = dialogue.say(_confirmation(ConfirmationAnswer.AMBIGUOUS))
     assert escalated.end_session
     assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
+    assert _unanswered_in(dialogue) == [(Slot.TRANSACTION_CHOICE, 2)]
+
+
+def _unanswered_in(dialogue: _Dialogue) -> list[tuple[Slot, int]]:
+    """The open questions of the one packet a conversation handed over."""
+    [packet] = dialogue.outbox.packets
+    return [(question.slot, question.attempts) for question in packet.open_questions]
 
 
 def _awaiting_filing_confirmation(
@@ -1808,6 +1931,7 @@ def test_two_changes_in_a_row_hand_off_once_the_clarification_budget_is_spent(
     assert second.reply != first.reply
     assert len(dialogue.outbox.packets) == 1
     assert dialogue.outbox.packets[0].trigger.value == "low_understanding"
+    assert _unanswered_in(dialogue) == [(Slot[pending.upper()], 2)]
 
 
 def _awaiting_filing_confirmation_of_two(policy: Policy, retriever: LexicalRetriever) -> _Dialogue:
@@ -2085,6 +2209,98 @@ def test_a_correction_at_a_question_that_is_not_a_change_target_reads_like_an_un
     assert "No logré identificar qué desea cambiar" not in correction.reply
 
 
+_UNCLEAR_QUESTION_WORDING = {
+    "es": ("comercio", "monto", "fecha"),
+    "pt": ("estabelecimento", "valor", "data"),
+    "en": ("merchant", "amount", "date"),
+}
+
+
+@pytest.mark.parametrize("language", ["es", "pt", "en"])
+def test_unclear_first_text_asks_which_transaction_instead_of_repeating_the_menu(
+    policy: Policy, retriever: LexicalRetriever, language: str
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    menu = dialogue.say(_plain(NluIntent.SMALL_TALK, language=language))
+
+    reply = _Dialogue(policy, retriever).say(_plain(NluIntent.UNCLEAR, language=language))
+
+    assert reply.next_expected is Slot.TRANSACTION
+    assert reply.reply != menu.reply
+    assert all(word in reply.reply for word in _UNCLEAR_QUESTION_WORDING[language])
+    assert not reply.end_session
+    assert reply.handoff_ticket is None
+    assert reply.case_number is None
+
+
+def test_a_greeting_then_a_vague_request_asks_for_the_transaction_only_the_second_time(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    greeting = dialogue.say(_plain(NluIntent.SMALL_TALK))
+    request = dialogue.say(_plain(NluIntent.UNCLEAR))
+
+    assert greeting.next_expected is None
+    assert request.next_expected is Slot.TRANSACTION
+    assert request.reply != greeting.reply
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.pending_slot is Slot.TRANSACTION
+
+
+@pytest.mark.parametrize("intent", [NluIntent.SMALL_TALK, NluIntent.FAREWELL])
+def test_a_greeting_or_thanks_never_opens_the_transaction_question(
+    policy: Policy, retriever: LexicalRetriever, intent: NluIntent
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    reply = dialogue.say(_plain(intent))
+
+    assert reply.next_expected is None
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.pending_slot is None
+
+
+@pytest.mark.parametrize("language", ["es", "pt", "en"])
+def test_two_unusable_replies_hand_over_with_the_missing_transaction_recorded(
+    policy: Policy, retriever: LexicalRetriever, language: str
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    first = dialogue.say(_plain(NluIntent.UNCLEAR, language=language))
+    second = dialogue.say(_plain(NluIntent.UNCLEAR, language=language))
+    assert first.next_expected is Slot.TRANSACTION
+    assert second.next_expected is Slot.TRANSACTION
+    assert second.reply == first.reply
+    assert dialogue.outbox.packets == []
+
+    third = dialogue.say(_plain(NluIntent.UNCLEAR, language=language))
+
+    assert third.end_session
+    assert third.next_expected is None
+    assert third.handoff_ticket is not None
+    [packet] = dialogue.outbox.packets
+    assert packet.trigger.value == "low_understanding"
+    assert [code.value for code in packet.evidence.reason_codes] == ["escalate_low_nlu_confidence"]
+    assert [(q.slot, q.attempts) for q in packet.open_questions] == [(Slot.TRANSACTION, 2)]
+
+
+def test_a_vague_message_answered_with_a_description_goes_on_to_the_transaction(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    asked = dialogue.say(_plain(NluIntent.UNCLEAR))
+    assert asked.next_expected is Slot.TRANSACTION
+
+    found = dialogue.say(_file_dispute(transaction=TransactionHint(merchant="Amazon")))
+
+    assert found.next_expected is not Slot.TRANSACTION
+    assert not found.end_session
+    assert dialogue.outbox.packets == []
+
+
 def test_a_correction_with_no_open_question_falls_back_to_the_greeting(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
@@ -2334,6 +2550,7 @@ def test_the_reason_question_is_asked_twice_before_a_person_is_involved(
     third = dialogue.say(_plain(NluIntent.UNCLEAR))
     assert third.end_session
     assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+    assert _unanswered_in(dialogue) == [(Slot.REASON, 2)]
 
 
 def test_a_described_reply_after_an_unsettled_answer_starts_the_count_again(
@@ -3253,6 +3470,48 @@ def test_a_list_request_numbers_each_transaction_in_the_reply_and_the_choices(
     state = dialogue.store.get(_SESSION_ID)
     assert state is not None
     assert state.offered_refs == ("TX-1", "TX-2", "TX-3")
+
+
+def test_a_dispute_described_while_a_list_is_on_offer_replaces_the_list_with_its_transaction(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+
+    presented = dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Netflix"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.offered_refs == ()
+    assert state.selected_ref == "TX-2"
+
+    later = dialogue.say(_plain(NluIntent.CHOICE, choice=3))
+
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-2"
+    assert later.next_expected is Slot.TRANSACTION_CHOICE
+
+
+def test_a_correction_while_a_list_is_on_offer_leaves_the_list_to_choose_from(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+
+    dialogue.say(_plain(NluIntent.CORRECTION))
+    picked = dialogue.say(_plain(NluIntent.CHOICE, choice=1))
+
+    assert picked.next_expected is Slot.REASON
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-1"
 
 
 def test_a_reply_that_is_not_a_list_offers_no_choices(
@@ -5137,6 +5396,412 @@ def test_a_first_message_with_a_blank_merchant_searches_by_the_rest_of_the_hint(
     state = store.get(_SESSION_ID)
     assert state is not None
     assert (state.selected_ref, state.pending_slot) == (selected, pending)
+
+
+_GENERIC_MERCHANTS = [
+    "transferencia",
+    "transferencias",
+    "transferencia bancaria",
+    "transferência",
+    "transferências",
+    "transfer",
+    "transfers",
+    "bank transfer",
+    "wire transfer",
+    "pix",
+    "transaccion",
+    "transacción",
+    "transacciones",
+    "transacao",
+    "transação",
+    "transações",
+    "transaction",
+    "transactions",
+    "movimiento",
+    "movimientos",
+    "movimento",
+    "movimentos",
+    "cargo",
+    "cargos",
+    "cobro",
+    "cobros",
+    "cobrança",
+    "cobranças",
+    "charge",
+    "charges",
+    "compra",
+    "compras",
+    "compra online",
+    "compra en línea",
+    "purchase",
+    "purchases",
+    "online purchase",
+    "pago",
+    "pagos",
+    "pagamento",
+    "pagamentos",
+    "payment",
+    "payments",
+    "retiro",
+    "retiros",
+    "saque",
+    "saques",
+    "withdrawal",
+    "withdrawals",
+    "depósito",
+    "depósitos",
+    "deposit",
+    "deposits",
+    "tienda",
+    "tiendas",
+    "tienda en línea",
+    "tienda online",
+    "comercio",
+    "establecimiento",
+    "estabelecimento",
+    "loja",
+    "lojas",
+    "loja online",
+    "loja virtual",
+    "store",
+    "stores",
+    "online store",
+    "shop",
+    "shops",
+    "online shop",
+    "merchant",
+    "servicio",
+    "servicios",
+    "serviço",
+    "serviços",
+    "service",
+    "services",
+    "un servicio",
+    "um serviço",
+    "a service",
+    "una transferencia",
+    "uma transferência",
+    "a transfer",
+    "una tienda en línea",
+    "the online store",
+    "mi tienda",
+    "su servicio",
+    "este servicio",
+    "esa transferencia",
+    "mis pagos",
+    "meu serviço",
+    "sua loja",
+    "esse pagamento",
+    "nossa transferência",
+    "my store",
+    "your payment",
+    "this service",
+    "that transfer",
+    "one transfer",
+    "some services",
+    "unos pagos",
+    "meus pagamentos",
+    "minhas compras",
+    "suas transferencias",
+    "essas lojas",
+    "nuestras compras",
+    "tus pagos",
+    "estes servicos",
+    "uns serviços",
+    "las transferencias",
+    "Transferencia ",
+    "  LA TIENDA ",
+]
+
+
+def _transfer_controller(
+    results: list[NluResult],
+    *,
+    store: InMemoryDialogueStore,
+    policy: Policy,
+    retriever: LexicalRetriever,
+) -> DialogueController:
+    """A customer with one purchase and one transfer, which has no merchant."""
+    return _two_transaction_controller(
+        results,
+        store=store,
+        policy=policy,
+        retriever=retriever,
+        port=FakeToolPort(
+            transactions=(
+                _transaction("TX-1", merchant="Amazon", amount=Decimal("100.00")),
+                _transaction(
+                    "TX-2",
+                    merchant=None,
+                    amount=Decimal("2763.79"),
+                    occurred_on=date(2026, 6, 10),
+                    last4="9876",
+                ),
+            )
+        ),
+    )
+
+
+_DETERMINERS = (
+    "a",
+    "an",
+    "aquel",
+    "aquela",
+    "aquelas",
+    "aquele",
+    "aqueles",
+    "aquella",
+    "aquellas",
+    "aquellos",
+    "as",
+    "el",
+    "esa",
+    "esas",
+    "ese",
+    "esos",
+    "essa",
+    "essas",
+    "esse",
+    "esses",
+    "esta",
+    "estas",
+    "este",
+    "estes",
+    "estos",
+    "her",
+    "his",
+    "its",
+    "la",
+    "las",
+    "los",
+    "meu",
+    "meus",
+    "mi",
+    "minha",
+    "minhas",
+    "mis",
+    "my",
+    "nossa",
+    "nossas",
+    "nosso",
+    "nossos",
+    "nuestra",
+    "nuestras",
+    "nuestro",
+    "nuestros",
+    "o",
+    "one",
+    "os",
+    "our",
+    "seu",
+    "seus",
+    "some",
+    "su",
+    "sua",
+    "suas",
+    "sus",
+    "teu",
+    "teus",
+    "that",
+    "the",
+    "their",
+    "these",
+    "this",
+    "those",
+    "tu",
+    "tua",
+    "tuas",
+    "tus",
+    "um",
+    "uma",
+    "umas",
+    "un",
+    "una",
+    "unas",
+    "unos",
+    "uns",
+    "vuestra",
+    "vuestras",
+    "vuestro",
+    "vuestros",
+    "your",
+)
+
+
+@pytest.mark.parametrize("determiner", _DETERMINERS)
+def test_every_leading_determiner_is_dropped_before_a_generic_word(determiner: str) -> None:
+    assert _names_no_merchant(f"{determiner} servicio")
+
+
+def test_the_leading_determiners_are_exactly_the_listed_ones() -> None:
+    assert sorted(_LEADING_DETERMINERS) == sorted(_DETERMINERS)
+
+
+@pytest.mark.parametrize("hint", ["su", "this", "Su Casa", "One Medical", "El Corte Inglés"])
+def test_a_hint_that_is_not_a_determiner_before_a_generic_word_stays_a_merchant(
+    hint: str,
+) -> None:
+    assert not _names_no_merchant(hint)
+
+
+@pytest.mark.parametrize("typed", _GENERIC_MERCHANTS)
+@pytest.mark.parametrize(
+    "rest",
+    [
+        TransactionHint(amount=Decimal("2763.79"), currency="USD"),
+        TransactionHint(date_on=date(2026, 6, 10), date_source=DateSource.ABSOLUTE),
+        TransactionHint(
+            amount=Decimal("2763.79"),
+            date_on=date(2026, 6, 10),
+            date_source=DateSource.ABSOLUTE,
+        ),
+    ],
+    ids=["amount", "date", "amount-and-date"],
+)
+def test_a_word_for_a_kind_of_transaction_is_not_searched_for_as_a_merchant(
+    typed: str, rest: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A transfer has no merchant, so the word the customer uses for it must not rule it out."""
+    store = InMemoryDialogueStore()
+    controller = _transfer_controller(
+        [_file_dispute(transaction=rest.model_copy(update={"merchant": typed}))],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+    )
+
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert (state.selected_ref, state.pending_slot) == ("TX-2", Slot.TRANSACTION_CHOICE)
+
+
+@pytest.mark.parametrize("typed", _GENERIC_MERCHANTS)
+def test_a_word_for_a_kind_of_transaction_alone_asks_which_transaction(
+    typed: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """It names nothing to search by, so the customer is asked, not told nothing was found."""
+    store = InMemoryDialogueStore()
+    controller = _transfer_controller(
+        [_file_dispute(transaction=TransactionHint(merchant=typed))],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+    )
+    nothing_found = _transfer_controller(
+        [_file_dispute(transaction=_NOBODY)],
+        store=InMemoryDialogueStore(),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    asked = controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+    missed = nothing_found.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    assert asked.next_expected is Slot.TRANSACTION
+    assert asked.reply != missed.reply
+
+
+@pytest.mark.parametrize("typed", _GENERIC_MERCHANTS)
+def test_a_word_for_a_kind_of_transaction_keeps_the_presented_transaction(
+    typed: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    selected, _reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(merchant=typed),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected == "TX-1"
+
+
+@pytest.mark.parametrize(
+    "merchant", ["Servicios Tigo", "Tigo servicios", "Serviço Nuvem", "Service Fee Co"]
+)
+def test_a_merchant_name_containing_a_word_for_a_kind_of_transaction_is_searched_for(
+    merchant: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The amount would identify the transfer, so a hint that were wrongly dropped would select
+    it; a name that only contains the word is a merchant's, searched for and not matched."""
+    store = InMemoryDialogueStore()
+    controller = _transfer_controller(
+        [
+            _file_dispute(
+                transaction=TransactionHint(
+                    merchant=merchant, amount=Decimal("2763.79"), currency="USD"
+                )
+            )
+        ],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+    )
+
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref is None
+
+
+@pytest.mark.parametrize(
+    "article", ["un", "una", "el", "la", "o", "a", "um", "uma", "the", "an", "my"]
+)
+def test_every_leading_article_is_ignored_before_a_generic_word(
+    article: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    def reply_for(typed: str) -> str:
+        controller = _transfer_controller(
+            [_file_dispute(transaction=TransactionHint(merchant=typed))],
+            store=InMemoryDialogueStore(),
+            policy=policy,
+            retriever=retriever,
+        )
+        return controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal()).reply
+
+    assert reply_for(f"{article} transfer") == reply_for("transfer")
+    assert reply_for(f"{article} transfer") != reply_for("Zzzz Unmatched")
+
+
+@pytest.mark.parametrize("merchant", ["A&A", "$$", "The A"])
+def test_a_merchant_made_only_of_articles_or_symbols_is_searched_for_like_any_other(
+    merchant: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """Such a name is a merchant's, not a word for a kind of transaction: it is searched for and,
+    matching nothing, is answered as any unmatched merchant is, rather than being dropped."""
+
+    def reply_for(typed: str) -> str:
+        controller = _two_transaction_controller(
+            [_file_dispute(transaction=TransactionHint(merchant=typed))],
+            store=InMemoryDialogueStore(),
+            policy=policy,
+            retriever=retriever,
+        )
+        return controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal()).reply
+
+    assert reply_for(merchant) == reply_for("Zzzz Unmatched")
+    assert reply_for(merchant) != reply_for("transfer")
+
+
+def test_a_merchant_that_merely_contains_a_generic_word_is_still_searched_for(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """Only a description made of the generic word alone is dropped."""
+    store = InMemoryDialogueStore()
+    controller = _two_transaction_controller(
+        [_file_dispute(transaction=TransactionHint(merchant="Store Amazon"))],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+    )
+
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref is None
 
 
 def test_naming_a_different_merchant_while_one_is_presented_presents_that_one(

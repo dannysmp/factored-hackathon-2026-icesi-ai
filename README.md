@@ -71,7 +71,7 @@ Design rules that follow from this:
 | `evals/` | Golden set, adversarial cases, evaluation harness and judge rubric |
 | `web/` | React customer chat and human-agent console (a read-only viewer of the handoff queue) |
 | `infra/` | AWS provisioning and deployment scripts, the reverse-proxy configuration and the deployment runbook; the pipeline itself is `.github/workflows/deploy.yml` |
-| `docs/` | Limitations, the security checklist, the release checklist and the demonstration scripts |
+| `docs/` | Limitations, the security checklist, the release checklist, the demonstration scripts, the video script, the slide content and the delivery message |
 | `reports/` | Generated reports (data profile, analyses, operational seed, evaluation results) |
 | `Dockerfile`, `docker-compose*.yml` | The backend image, the local Postgres serving store, and the deployed stack composed on top of it |
 | `scripts/` | Repository tooling, such as the secret-scan self-test |
@@ -188,6 +188,14 @@ data/raw/
     (and the same layout for the other daily fact tables)
 ```
 
+The data commands rewrite reports that are committed, so they refuse to run when their input
+directory is absent: `make profile` and `make pipeline` stop with a message when `data/raw` (or
+`DATA_DIR`) does not exist, and `make analyze` and `make features` stop when `data/silver` (or
+`SILVER_DIR`) does not exist. Nothing is changed in that case. An existing but empty directory is
+treated as data. `make profile` and `make pipeline` then run and write reports that list every
+table as missing, and `make analyze` removes `reports/workflow-analysis.md` before failing;
+`git checkout -- reports` restores them.
+
 `make profile` measures the files against the data dictionary and writes
 [`reports/data-profile.md`](reports/data-profile.md): row counts, schema conformance, duplicate
 keys, missing and malformed values, referential integrity, arrival lateness and the workload
@@ -276,11 +284,29 @@ every pull request and blocks the merge on a failure.
 [`reports/evaluation.md`](reports/evaluation.md) is the committed result of the last full run:
 workload, versions, headline metrics per system, repeated-run variability, the failure gallery,
 unsafe outcomes, judge validation, learned components and limitations. Every figure is measured
-offline on the golden set. Two human raters and the judge scored the same 50 cases, and the judge
-agreed with them on too few to be trusted on any dimension, so the report states "not reportable by
-the judge" and shows the raters' means instead. The figures describe the commit the report names,
-not the current head, which carries later behaviour fixes. See
-[`docs/limitations.md`](docs/limitations.md).
+offline on the golden set. Two human raters and the judge scored the same 50 cases (6 for
+clarification), and the judge agreed with them on too few to be trusted on any dimension, so the
+report states "not reportable by the judge" and shows the raters' means instead.
+
+| Metric (cases) | P | B0 | B1 |
+|---|---|---|---|
+| Runs | 3 | 1 | 1 |
+| Safe automated resolution (103 in scope) | 0.725 (range 0.718-0.728) | 0.330 | 0.369 |
+| Containment (103) | 0.809 (range 0.806-0.816) | 0.845 | 0.757 |
+| Escalation quality (22 needing a person) | 0.727 | 0.455 | 0.273 |
+| Missed transfers (22 needing a person) | 0.152 (range 0.136-0.182) | 0.545 | 0.091 |
+| Unnecessary transfers (81 not needing one) | 0.012 | 0.074 | 0.062 |
+| Unsafe outcomes (135) | 0.000 | 0.000 | 0.000 |
+| Latency, median / 95th percentile | 2.558 s / 4.402 s | 0.027 s / 0.046 s | 5.105 s / 12.217 s |
+| Cost per attempted case (USD) | 0.005 | 0.000 | 0.008 |
+
+P is the mean of its three runs; B0 and B1 ran once, so their figures carry no run-to-run range.
+Zero observed unsafe outcomes means none occurred in the case-runs counted, not that the risk is
+zero. B0 shares the dialogue controller with P and is not an unchanged control.
+[`reports/evaluation-comparison.md`](reports/evaluation-comparison.md) sets this run beside the two
+earlier ones and lists the cases that still fail. The figures describe the commit the report names
+(`6cea3b4`), not the current head, which carries later behaviour fixes and whose effect is not
+measured. See [`docs/limitations.md`](docs/limitations.md).
 
 ### Configuration
 
@@ -379,6 +405,9 @@ security requirements, and which controls exist today, are in [SECURITY.md](SECU
 | `make pipeline` exits with code 1 and `reports/data-quality.md` exists | A table could not be cleaned; the report names it and the reason (for example a file without a header row) |
 | `make pipeline` exits non-zero and `reports/data-quality.md` is missing | The build crashed before finishing; a report from an earlier run is removed rather than left stale, so its absence is the crash's own signal. Check the traceback |
 | `make analyze` exits non-zero | Run `make pipeline` first: the analysis reads the cleaned layer. Any earlier `reports/workflow-analysis.md` is removed rather than left stale, so its absence is expected; `analysis_failed` in the log names a handled reason, otherwise check the traceback |
+| `make profile` or `make pipeline` stops with `no raw data at …` | Place the CSV files under `data/raw`, or set `DATA_DIR` to where they are. No report was changed |
+| `make analyze` or `make features` stops with `no cleaned layer at …` | Run `make pipeline` with the raw data in place first, or set `SILVER_DIR`. No report was changed |
+| `make features` exits non-zero and logs `risk_features_failed reason=FileNotFoundError` | The cleaned layer exists but lacks a table the features read. Run `make pipeline` with the complete raw data |
 | The service exits with `No domain date resolves` | Set `DATA_AS_OF_DATE` (for example `2026-06-18`) in `.env`, or load the operational seed (`make load-seed`) so the service can read it |
 | `DATABASE_URL is required for this operation but is not set` | Start the store (`make db-up`) and set `DATABASE_URL` in `.env` to its address |
 | The service exits with `SESSION_SIGNING_KEY is required` | Set `SESSION_SIGNING_KEY` in `.env` (32 or more characters); only `APP_ENV=local` may start without it |

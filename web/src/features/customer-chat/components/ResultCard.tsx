@@ -1,3 +1,4 @@
+/** The outcome card shown when a conversation ends: filed, handed to a person, or closed. */
 import type { JSX, Ref } from 'react'
 import { useId } from 'react'
 import { useT } from '../../../i18n/useT'

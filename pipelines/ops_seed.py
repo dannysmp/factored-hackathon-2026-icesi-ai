@@ -268,6 +268,7 @@ def _select_customers(
     selected: dict[str, dict[str, Any]] = {}
 
     def _take(predicate: Callable[[dict[str, Any]], bool], count: int) -> None:
+        """Select up to ``count`` not-yet-chosen customers matching ``predicate``, in rank order."""
         taken = 0
         for row in rows:
             if row["customer_id"] in selected:
@@ -357,6 +358,14 @@ _PRODUCTS_QUERY = """
 
 
 def _transactions_query() -> str:
+    """SQL that returns every chosen customer's transactions with a resolved dollar amount.
+
+    ``amount_usd`` is the source's own dollar figure when it states one; otherwise the amount
+    itself when its currency is USD; otherwise the amount converted at the day's USD rate;
+    otherwise ``NULL``. ``amount_usd_provenance`` records which of those produced it
+    (``reported``, ``converted`` or ``unknown``), so a converted amount can be told from a
+    reported one.
+    """
     usd_expr = usd_amount_expr(
         amount="t.amount",
         currency="t.currency",
@@ -483,12 +492,14 @@ def _measure_mix(con: duckdb.DuckDBPyConnection, gold_dir: Path) -> dict[str, An
     source_transactions = f"({_source_provenance_query()})"
 
     def _rate(table: str, condition: str) -> float:
+        """Share of the table's rows that satisfy ``condition``; zero for an empty table."""
         (total, hits) = con.execute(
             f"SELECT count(*), count(*) FILTER (WHERE {condition}) FROM {table}"
         ).fetchone() or (0, 0)
         return hits / total if total else 0.0
 
     def _compare_tx(condition: str) -> dict[str, float]:
+        """The same ``condition`` rate in the seed and in the source, side by side."""
         return {
             "seed": _rate(seed_transactions, condition),
             "source": _rate(source_transactions, condition),
@@ -606,6 +617,7 @@ def _table(headers: list[str], body: list[list[str]]) -> str:
 
 
 def _pct(value: float) -> str:
+    """Format a 0-1 share as a percentage with two decimals for the report."""
     return f"{value * 100:.2f} %"
 
 

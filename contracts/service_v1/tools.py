@@ -72,6 +72,7 @@ from contracts.service_v1.cases import (  # The base this contract builds on
     CaseRecord,
     ContractModel,
     DisclosedAmount,
+    Money,
     SafeText,
 )
 
@@ -164,6 +165,9 @@ class TransactionFact(ContractModel):
     present and falls back to ``description`` (the source's own transaction description)
     otherwise. The tool implementation decides which one a page carries; this contract
     only says that either, both or neither may be present, never inventing one from the other.
+
+    ``amount`` is always in US dollars; ``original_amount`` is the figure in the currency the
+    transaction was made in, so that an amount the customer quotes in that currency can be matched.
     """
 
     # Opaque reference of the transaction, the handle every later call uses.
@@ -173,6 +177,10 @@ class TransactionFact(ContractModel):
     merchant: Annotated[SafeText, Field(min_length=1, max_length=80)] | None
     description: Annotated[SafeText, Field(min_length=1, max_length=200)] | None = None
     amount: DisclosedAmount
+    # The amount in the currency the transaction was made in, as the source states it. ``amount``
+    # is always in US dollars, so a figure the customer quotes in another currency can only be
+    # matched here. Absent where a caller has no such figure.
+    original_amount: Money | None = None
     product: ProductLabel
     status: TransactionStatus
 

@@ -55,7 +55,9 @@
 }
 
 .ticket-detail-screen .ticket-ref {
-  white-space: nowrap;
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .ticket-detail-screen h3 {

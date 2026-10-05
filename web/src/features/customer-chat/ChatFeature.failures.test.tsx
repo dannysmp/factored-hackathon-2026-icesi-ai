@@ -162,7 +162,9 @@ describe('ChatFeature when the session has ended', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(en['app.sessionExpired'])
     expect(within(alert).queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
-    expect(onSessionExpired).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(onSessionExpired).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('tells its owner when the session had already ended before the conversation started', async () => {
@@ -175,7 +177,9 @@ describe('ChatFeature when the session has ended', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(en['app.sessionExpired'])
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
-    expect(onSessionExpired).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(onSessionExpired).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('does not report an expiry for any other failure', async () => {

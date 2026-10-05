@@ -59,10 +59,12 @@ Design Principles
 
 Runtime Contract
 ----------------
-``redact_pan(text) -> PanRedaction`` with ``masked`` (the text to send) and ``found`` (whether
+``redact_pan(text) -> Redaction`` with ``masked`` (the text to send) and ``found`` (whether
 anything was redacted, for the request-capture fixture and for accounting).
-``redact_document_numbers(text) -> PanRedaction``, the same result shape for document-number
-shapes, applied to text already passed through ``redact_pan``.
+``redact_document_numbers(text) -> Redaction``, the same result shape for document-number
+shapes, applied to text already passed through ``redact_pan``. The order matters: a card number
+is a long run of digits, and a caller that looked for document numbers first would redact it
+under the wrong placeholder and report no card.
 ``safe_hex_suffix(nbytes=4, *, preceding_digits=0) -> str``, an uppercase hex string of
 ``2 * nbytes`` characters.
 
@@ -80,6 +82,13 @@ identifier; it is only a search hint for the customer's own transactions, and th
 what policy reads, so the cost is one more question to the customer. A national identity number
 typed with thousands-style dots (``1.094.921.834``) has the shape of an amount and passes through
 unmasked. Identity numbers split by anything else, or written in words, are not detected.
+
+Three further consequences follow from detecting by shape. A tax number written with a hyphen and
+shorter dotted groups (a Colombian ``900.123.456-7``, a Chilean ``12.345.678-5``) has no shape the
+rule recognizes and passes through; the same number typed without dots is an unbroken run and is
+redacted, leaving only its hyphenated check digit. An unbroken decimal amount (``1250000.50``) has
+its whole part redacted and the decimal part left. A date typed as eight unbroken digits
+(``20260612``) is redacted like an identifier, so it is not available as a search hint.
 """
 
 from __future__ import annotations
@@ -102,8 +111,9 @@ _RUN = re.compile(rf"\d(?:[{re.escape(_SEPARATORS)}]?\d)*")
 _MIN_PAN_DIGITS = 13
 _MAX_PAN_DIGITS = 19
 
-# A personal tax number, a company tax number, or any unbroken run of seven or more digits. The
-# punctuated shapes come first so each is replaced whole.
+# A personal tax number, a company tax number, or any unbroken run of seven or more digits. Each
+# is matched only as a whole figure: a longer run of digits that happens to contain one of the
+# punctuated shapes is a different figure, not that tax number, and passes through.
 _DOCUMENT_NUMBER = re.compile(
     r"(?<!\d)(?:\d{3}\.\d{3}\.\d{3}-\d{2}|\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\d{7,})(?!\d)"
 )
@@ -184,14 +194,14 @@ def _card_shaped_spans(text: str) -> list[tuple[int, int]]:
 
 
 @dataclass(frozen=True, slots=True)
-class PanRedaction:
-    """The result of scanning one piece of text for card-shaped digit runs."""
+class Redaction:
+    """The result of redacting one text: the text to send and whether anything was redacted."""
 
     masked: str
     found: bool
 
 
-def redact_pan(text: str) -> PanRedaction:
+def redact_pan(text: str) -> Redaction:
     """Replace every card-shaped digit run in ``text`` with :data:`PLACEHOLDER`.
 
     Parameters
@@ -201,7 +211,7 @@ def redact_pan(text: str) -> PanRedaction:
 
     Returns
     -------
-    PanRedaction
+    Redaction
         ``masked`` is safe to send; ``found`` is ``True`` when at least one run was redacted, for
         the caller's own accounting (never for a customer-visible message: what triggered
         redaction is not disclosed, the same rule the rest of the service applies to a routing
@@ -209,7 +219,7 @@ def redact_pan(text: str) -> PanRedaction:
     """
     spans = _card_shaped_spans(text)
     if not spans:
-        return PanRedaction(masked=text, found=False)
+        return Redaction(masked=text, found=False)
     pieces: list[str] = []
     cursor = 0
     for start, end in spans:
@@ -217,10 +227,10 @@ def redact_pan(text: str) -> PanRedaction:
         pieces.append(PLACEHOLDER)
         cursor = end
     pieces.append(text[cursor:])
-    return PanRedaction(masked="".join(pieces), found=True)
+    return Redaction(masked="".join(pieces), found=True)
 
 
-def redact_document_numbers(text: str) -> PanRedaction:
+def redact_document_numbers(text: str) -> Redaction:
     """Replace every document-number-shaped value in ``text`` with :data:`DOCUMENT_PLACEHOLDER`.
 
     Parameters
@@ -231,11 +241,14 @@ def redact_document_numbers(text: str) -> PanRedaction:
 
     Returns
     -------
-    PanRedaction
+    Redaction
         ``masked`` is safe to send; ``found`` is ``True`` when at least one value was redacted.
+        Detection is by shape: hyphenated tax numbers with short dotted groups are not detected,
+        an unbroken decimal amount keeps its decimal part, and an unbroken eight-digit date is
+        redacted.
     """
     masked, count = _DOCUMENT_NUMBER.subn(DOCUMENT_PLACEHOLDER, text)
-    return PanRedaction(masked=masked, found=count > 0)
+    return Redaction(masked=masked, found=count > 0)
 
 
 def _longest_digit_run(text: str) -> int:

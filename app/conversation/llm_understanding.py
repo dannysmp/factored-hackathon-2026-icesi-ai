@@ -36,6 +36,10 @@ Design Principles
   A call the port could not complete at all is a different outcome (``UnderstandingUnavailable``,
   raised rather than swallowed): unlike a malformed result, it is not the customer's own
   ambiguity, so it must not be treated as one.
+- A bare ``$`` names no currency, so a currency the model fills in for one is dropped unless the
+  message also states one (an ISO code, a prefixed symbol such as ``R$`` or ``US$``, a currency
+  sign or a currency word); a guessed currency would otherwise rule out the customer's own
+  transaction whenever it differs from the guess.
 - The masking serializer is the only path text takes to leave the process: this class never builds
   the user message from anything but the text after ``redact_pan`` and ``redact_document_numbers``.
 - Temperature 0: this is structured extraction, not open-ended writing.
@@ -380,6 +384,36 @@ def _to_nlu_result(extraction: _ModelExtraction, *, reference_date: date) -> Nlu
     )
 
 
+# Marks that state a currency beyond a bare dollar sign: a prefixed symbol, a currency sign, or a
+# currency word in the languages the service speaks. The word "peso" alone names no country, so it
+# counts only with the nationality that says which peso, on either side of it: "pesos colombianos"
+# and "Colombian pesos".
+_PESO_NATIONALITY = r"(?:colombian|mexican|argentin|chile|urugua)\w*"
+_CURRENCY_MARK = re.compile(
+    r"(?:\b(?:us|r|col|mx|ar|cl|c)\$|[€£¥]|\bd[oó]lar(?:es)?\b|\bdollars?\b|\breais\b"
+    rf"|\bpesos?\s+{_PESO_NATIONALITY}|\b{_PESO_NATIONALITY}\s+pesos?\b|\beuros?\b)",
+    re.IGNORECASE,
+)
+
+
+def _without_unstated_currency(result: NluResult, text: str) -> NluResult:
+    """``result`` without a currency that was guessed from a bare dollar sign.
+
+    The currency is a filter on the customer's transactions, so a guess made from a ``$`` that
+    names no currency must not survive: it would exclude the transaction the customer means
+    whenever it differs. The currency is kept when ``text`` has no dollar sign, or carries its code
+    or any explicit currency mark.
+    """
+    currency = result.transaction.currency
+    if currency is None or "$" not in text:
+        return result
+    if re.search(rf"\b{re.escape(currency)}\b", text, re.IGNORECASE) or _CURRENCY_MARK.search(text):
+        return result
+    return result.model_copy(
+        update={"transaction": result.transaction.model_copy(update={"currency": None})}
+    )
+
+
 def _clean_optional_fields_in_place(repaired: dict[str, object]) -> None:
     """Read an empty, blank or "null" optional field as absent, and tidy the codes.
 
@@ -550,4 +584,5 @@ class LlmNlu:
             output_tokens=result.output_tokens,
             latency_ms=result.latency_ms,
         )
-        return _parse(result.tool_input, reference_date=reference_date), accounting
+        parsed = _parse(result.tool_input, reference_date=reference_date)
+        return _without_unstated_currency(parsed, text), accounting

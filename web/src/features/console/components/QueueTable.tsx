@@ -39,34 +39,38 @@ function PriorityBadge(): JSX.Element {
  *
  * `focusTicketRef` names the case the agent has just come back from: when it is in this view and
  * nothing holds focus, its button takes focus, so going back lands on the row that was open.
+ * The request is single-use: `onFocusHandled` is called once the table has acted on it, whether or
+ * not the row was found or focus was taken, so a later remount of the table never replays it.
  */
 export function QueueTable({
   items,
   onSelectTicket,
   focusTicketRef = null,
+  onFocusHandled,
 }: {
   items: readonly QueueItem[]
   onSelectTicket: (ticketRef: string) => void
   focusTicketRef?: string | null
+  onFocusHandled?: () => void
 }): JSX.Element {
   const returnedButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    if (focusTicketRef !== null && document.activeElement === document.body) {
-      returnedButtonRef.current?.focus()
-    }
-  }, [focusTicketRef])
+    if (focusTicketRef === null) return
+    if (document.activeElement === document.body) returnedButtonRef.current?.focus()
+    onFocusHandled?.()
+  }, [focusTicketRef, onFocusHandled])
 
   if (items.length === 0) {
     return <p>Ningún caso coincide con este filtro.</p>
   }
 
   return (
-    // A narrow viewport scrolls this wrapper horizontally rather than wrapping every cell's text
-    // across several lines, so no text is truncated or illegible on a narrow screen — the same
-    // pattern `Tabs.css`'s own trigger list uses for the same reason.
+    // From the tablet breakpoint up, a narrower viewport scrolls this wrapper horizontally rather
+    // than wrapping every cell's text across several lines; below it, each row is a card. Each value
+    // cell holds a single box so the card's label/value grid places the whole value beside its label.
     <ScrollRegion className="queue-table-scroll queue-table-openable" label="Casos escalados">
-      <table>
+      <table className="stacked-table">
         <caption className="sr-only">Casos escalados</caption>
         <thead>
           <tr>
@@ -105,15 +109,19 @@ export function QueueTable({
                     </>
                   )}
                 </th>
-                <td>{TRIGGER_LABELS[item.trigger]}</td>
-                <td>{LANGUAGE_LABELS[item.language]}</td>
-                <td>{item.category === null ? '—' : CATEGORY_LABELS[item.category]}</td>
-                <td>{formatAge(item.age_days)}</td>
-                <td>
-                  {formatDate(item.promised_contact_by)}
-                  {overdue && <span className="queue-overdue-flag"> · vencido</span>}
+                <td data-label="Motivo">{TRIGGER_LABELS[item.trigger]}</td>
+                <td data-label="Idioma">{LANGUAGE_LABELS[item.language]}</td>
+                <td data-label="Categoría">
+                  {item.category === null ? '—' : CATEGORY_LABELS[item.category]}
                 </td>
-                <td>{STATUS_LABELS[item.status]}</td>
+                <td data-label="Antigüedad">{formatAge(item.age_days)}</td>
+                <td data-label="Contacto prometido para">
+                  <span>
+                    {formatDate(item.promised_contact_by)}
+                    {overdue && <span className="queue-overdue-flag"> · vencido</span>}
+                  </span>
+                </td>
+                <td data-label="Estado">{STATUS_LABELS[item.status]}</td>
               </tr>
             )
           })}

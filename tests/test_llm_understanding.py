@@ -60,7 +60,7 @@ def test_a_well_formed_tool_call_maps_to_a_validated_nlu_result() -> None:
     assert str(result.transaction.amount) == "125.50"
     assert result.transaction.currency == "MXN"
     assert accounting == TurnAccounting(
-        model=_MODEL, prompt_version="3", input_tokens=0, output_tokens=0, latency_ms=0.0
+        model=_MODEL, prompt_version="5", input_tokens=0, output_tokens=0, latency_ms=0.0
     )
 
 
@@ -216,7 +216,7 @@ def test_the_request_carries_the_configured_model_and_the_prompt_version() -> No
     nlu.understand("algo", language_hint="es", reference_date=_REFERENCE_DATE)
 
     assert llm.requests[0].model == _MODEL
-    assert llm.requests[0].prompt_version == "3"
+    assert llm.requests[0].prompt_version == "5"
     assert llm.requests[0].temperature == 0.0
 
 
@@ -254,7 +254,7 @@ def test_a_successful_calls_accounting_matches_the_completions_own_fields() -> N
     _result, accounting = nlu.understand("algo", language_hint="es", reference_date=_REFERENCE_DATE)
 
     assert accounting == TurnAccounting(
-        model=_MODEL, prompt_version="3", input_tokens=120, output_tokens=40, latency_ms=812.5
+        model=_MODEL, prompt_version="5", input_tokens=120, output_tokens=40, latency_ms=812.5
     )
 
 
@@ -545,6 +545,118 @@ def _understand(extraction: dict[str, object], text: str = "hola") -> NluResult:
         text, language_hint="es", reference_date=_REFERENCE_DATE
     )
     return result
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Não reconheço $2.763,79 do dia 15 de abril.",
+        "I don't recognize a charge of $2,763.79.",
+        "No reconozco un cobro de $ 2.763,79.",
+    ],
+    ids=["pt", "en", "es"],
+)
+def test_a_currency_guessed_from_a_bare_dollar_sign_is_dropped(text: str) -> None:
+    result = _understand({"amount": "2763.79", "currency": "BRL"}, text)
+
+    assert result.transaction.currency is None
+    assert result.transaction.amount == Decimal("2763.79")
+
+
+@pytest.mark.parametrize(
+    ("text", "currency"),
+    [
+        ("Não reconheço R$ 2.763,79.", "BRL"),
+        ("I don't recognize US$2,763.79.", "USD"),
+        ("No reconozco COL$ 2.763,79.", "COP"),
+        ("No reconozco MX$ 2.763,79.", "MXN"),
+        ("No reconozco AR$ 2.763,79.", "ARS"),
+        ("No reconozco CL$ 2.763,79.", "CLP"),
+        ("No reconozco C$ 2.763,79.", "NIO"),
+        ("I don't recognize a charge of $2,763.79 USD.", "USD"),
+        ("No reconozco $ 2.763,79 COP.", "COP"),
+        ("No reconozco $ 2.763,79 dólares.", "USD"),
+        ("No reconozco $ 2.763,79 dolares.", "USD"),
+        ("I don't recognize $2,763.79 dollars.", "USD"),
+        ("I don't recognize $2,763.79 dollar.", "USD"),
+        ("Não reconheço $ 2.763,79 reais.", "BRL"),
+        ("No reconozco $ 2.763,79 pesos colombianos.", "COP"),
+        ("No reconozco $ 2.763,79 peso mexicano.", "MXN"),
+        ("I don't recognize $2,763.79 Colombian pesos.", "COP"),
+        ("I don't recognize $2,763.79 Mexican pesos.", "MXN"),
+        ("I don't recognize $2,763.79 Argentine pesos.", "ARS"),
+        ("I don't recognize $2,763.79 Chilean pesos.", "CLP"),
+        ("I don't recognize $2,763.79 Uruguayan peso.", "UYU"),
+        ("No reconozco $ 2.763,79 euros.", "EUR"),
+        ("I don't recognize $2,763.79 in euro.", "EUR"),
+        ("I don't recognize €2,763.79 or $3.", "EUR"),
+        ("I don't recognize £2,763.79 or $3.", "GBP"),
+        ("I don't recognize ¥2,763.79 or $3.", "JPY"),
+    ],
+    ids=[
+        "pt-reais-prefix",
+        "en-us-prefix",
+        "es-col-prefix",
+        "es-mx-prefix",
+        "es-ar-prefix",
+        "es-cl-prefix",
+        "es-c-prefix",
+        "en-code-usd",
+        "es-code-cop",
+        "es-dolares",
+        "es-dolares-unaccented",
+        "en-dollars",
+        "en-dollar",
+        "pt-reais",
+        "es-pesos-colombianos",
+        "es-peso-mexicano",
+        "en-colombian-pesos",
+        "en-mexican-pesos",
+        "en-argentine-pesos",
+        "en-chilean-pesos",
+        "en-uruguayan-peso",
+        "es-euros",
+        "en-euro",
+        "euro-sign",
+        "pound-sign",
+        "yen-sign",
+    ],
+)
+def test_a_currency_the_message_states_is_kept_beside_a_dollar_sign(
+    text: str, currency: str
+) -> None:
+    result = _understand({"amount": "2763.79", "currency": currency}, text)
+
+    assert result.transaction.currency == currency
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "No reconozco $ 2.763,79 pesos.",
+        "No reconozco $ 2.763,79 peso.",
+        "I don't recognize $2,763.79 pesos.",
+    ],
+)
+def test_the_word_pesos_alone_is_not_a_stated_currency(text: str) -> None:
+    result = _understand({"amount": "2763.79", "currency": "COP"}, text)
+
+    assert result.transaction.currency is None
+    assert result.transaction.amount == Decimal("2763.79")
+
+
+def test_a_currency_is_kept_when_the_message_has_no_dollar_sign() -> None:
+    result = _understand({"amount": "2763.79", "currency": "COP"}, "No reconozco 2763.79")
+
+    assert result.transaction.currency == "COP"
+
+
+def test_the_word_real_is_not_a_stated_currency() -> None:
+    result = _understand(
+        {"amount": "50", "currency": "BRL"}, "I have a real problem with a charge of $50."
+    )
+
+    assert result.transaction.currency is None
 
 
 def test_a_lowercase_currency_code_is_read_in_capitals() -> None:
