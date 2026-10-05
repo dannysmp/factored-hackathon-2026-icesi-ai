@@ -170,6 +170,30 @@ def test_a_case_filed_and_a_handoff_survive_a_round_trip(store: DialogueStore) -
     assert read_back.phase is ConversationPhase.CLOSED
 
 
+def test_the_closing_turn_survives_a_round_trip_beside_an_earlier_case(
+    store: DialogueStore,
+) -> None:
+    """The turn that closed a later dispute reads back, and a new filing clears it."""
+    closed = _state().with_case_filed("D-1").with_dispute_closed("t-2")
+    store.save(closed, expected_version=0, turn_id="t-2", now=_NOW)
+
+    read_back = store.get("s-1")
+
+    assert read_back is not None
+    assert read_back.closed_turn_id == "t-2"
+    assert read_back.last_case_number == "D-1"
+
+    store.save(
+        read_back.with_case_filed("D-2"),
+        expected_version=read_back.version,
+        turn_id="t-3",
+        now=_NOW,
+    )
+    refiled = store.get("s-1")
+    assert refiled is not None
+    assert refiled.closed_turn_id is None
+
+
 def test_the_offered_transaction_references_survive_a_round_trip_in_order(
     store: DialogueStore,
 ) -> None:

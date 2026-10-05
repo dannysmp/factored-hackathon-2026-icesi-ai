@@ -162,6 +162,7 @@ def test_migrations_apply_cleanly_to_a_fresh_database() -> None:
         "0015_handoff_notes",
         "0016_llm_spend_daily",
         "0017_dialogue_state_offered_refs",
+        "0018_dialogue_state_closed_turn",
     )
 
     again = apply_migrations(dsn)
