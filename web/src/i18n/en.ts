@@ -54,7 +54,8 @@ export const en: Messages = {
   'signin.persona.joao.case': 'A credit card charge that is not recognized.',
   'signin.persona.emma.case': 'A credit card purchase that is not recognized.',
   'signin.persona.carlos.case': 'A large transfer from a checking account that is not recognized.',
-  'signin.persona.mariana.case': 'A new complaint, after several earlier ones.',
+  'signin.persona.mariana.case':
+    'A transaction that is not recognized, after an earlier complaint.',
   'signin.persona.agent-beatriz.case': 'Reviews escalated cases, in Portuguese and Spanish.',
   'signin.persona.agent-diego.case': 'Specialist in fraud cases, in Spanish.',
   'signin.accessCodeShow': 'Show',

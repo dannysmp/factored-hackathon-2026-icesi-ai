@@ -56,7 +56,8 @@ export const pt: Messages = {
   'signin.persona.emma.case': 'Uma compra no cartão de crédito que não é reconhecida.',
   'signin.persona.carlos.case':
     'Uma transferência de valor alto da conta corrente que não é reconhecida.',
-  'signin.persona.mariana.case': 'Uma nova reclamação, depois de várias anteriores.',
+  'signin.persona.mariana.case':
+    'Uma transação que não é reconhecida, depois de uma reclamação anterior.',
   'signin.persona.agent-beatriz.case': 'Analisa casos encaminhados, em português e em espanhol.',
   'signin.persona.agent-diego.case': 'Especialista em casos de fraude, em espanhol.',
   'signin.accessCodeShow': 'Mostrar',

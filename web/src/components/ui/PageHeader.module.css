@@ -37,6 +37,7 @@
 
 .form .title {
   font-size: var(--font-size-lg);
+  text-align: center;
 }
 
 .wide {
