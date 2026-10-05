@@ -31,7 +31,9 @@ describe('fetchCustomerPersonas', () => {
     expect(personas).toEqual([
       { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' },
     ])
-    expect(fetchMock).toHaveBeenCalledWith('/v1/auth/demo-personas')
+    expect(fetchMock).toHaveBeenCalledWith('/v1/auth/demo-personas', {
+      signal: expect.any(AbortSignal) as AbortSignal,
+    })
   })
 
   it('throws SignInError with the problem title on a non-ok response', async () => {
@@ -65,7 +67,9 @@ describe('fetchAgentPersonas', () => {
     expect(personas).toEqual([
       { slug: 'diego', display_name: 'Diego', language: 'pt', audience: 'agent' },
     ])
-    expect(fetchMock).toHaveBeenCalledWith('/v1/auth/demo-personas')
+    expect(fetchMock).toHaveBeenCalledWith('/v1/auth/demo-personas', {
+      signal: expect.any(AbortSignal) as AbortSignal,
+    })
   })
 })
 

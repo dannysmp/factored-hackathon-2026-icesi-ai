@@ -1,10 +1,10 @@
 """
-H4 Judge Validation — Real Sample
-====================================
+Judge Validation — Real Sample
+==============================
 
 Overview
 --------
-Turns the two returned H4 case sheets (``H4-case-sheet-Rater1.csv``, ``H4-case-sheet-Rater2.csv``)
+Turns the two returned case sheets (``H4-case-sheet-Rater1.csv``, ``H4-case-sheet-Rater2.csv``)
 into ``evals.judge_validation.RaterScore`` tuples, scores the same 50 cases with the real automated
 judge, computes the agreement ``evals.judge_validation.compute_agreement`` already implements and
 the pair counts, weighted kappa and gap direction ``compute_detail`` adds, writes every case's
@@ -33,7 +33,7 @@ Design Principles
   other).
 - **Every refusal happens before the first paid judge call.** Sheet integrity, rater roles and
   the report's shape are all checked up front.
-- **One judge call per case, never a batch call.** ``evals.judge.LlmJudge.score`` is already built
+- **One judge call per case, never a batch call.** ``evals.judge.LlmJudge.score`` is built
   for exactly one transcript at a time; this module does not add a second call shape for a sample
   this small (50 cases).
 - **A row with no ``clarification`` score (the rubric's own ``NA`` convention) becomes ``None``,
@@ -41,11 +41,12 @@ Design Principles
   that distinction, the same rule the synthetic placeholder fixture already exercises.
 - **The report is patched, never rebuilt from scratch.** Rebuilding ``EvaluationReport`` fully
   would mean re-running every system for real money, just to change the one section that actually
-  depends on human data; patching only the judge-validation section and the one limitations bullet
-  that names it as pending keeps every other section (versions, headline metrics, the failure
-  gallery) exactly as the real run already produced them. The patch targets the exact text
-  ``evals.report``'s own section renderers produce, so a future change to either renderer's exact
-  wording needs a matching change here — a test pins this by patching a real, current
+  depends on human data; patching only the judge-validation section, the one limitations bullet
+  that names it as pending and the demoted dimensions' cells of the judge-scored quality table
+  keeps every other section (versions, headline metrics, the failure gallery) exactly as the real
+  run already produced them. The patch targets the exact text ``evals.report``'s own section
+  renderers produce, so a future change to any of those renderers' exact wording needs a
+  matching change here — a test pins this by patching a real, current
   ``render_markdown`` output, not a hand-typed fixture string.
 
 Runtime Contract
@@ -55,9 +56,11 @@ grounding, language_quality, clarification, comment)``.
 ``load_rater_sheet(path) -> tuple[RaterCaseRow, ...]``.
 ``score_with_judge(rows, judge) -> tuple[JudgeVerdict, ...]``, one call per row via the given
 ``LlmJudge``.
-``apply_real_judge_validation(report_markdown, agreement, detail, facts_coverage) -> str``: the
-report text with the Judge validation section and the stale limitations bullet replaced for a
-``human``-provenance ``agreement``; the section is found by its title, never by its number.
+``apply_real_judge_validation(report_markdown, agreement, detail, facts_coverage, *, human_means)
+-> str``: the report text with the Judge validation section and the stale limitations bullet
+replaced for a ``human``-provenance ``agreement``, and the judge's mean withheld in the
+Judge-scored quality section for each demoted dimension; the sections are found by title, never by
+number.
 ``case_scores_csv(rater1, rater2, judge) -> str``: every case's three scores per dimension.
 ``regenerate_report(rater1_path, rater2_path, report_path, judge, cases_path)``: the whole
 orchestration with the judge injected, so it is testable without a model; the report file and the
@@ -97,24 +100,27 @@ from evals.judge_validation import (
     DIMENSIONS,
     DimensionAgreement,
     DimensionDetail,
+    HumanMean,
     RaterScore,
     Role,
     compute_agreement,
     compute_detail,
+    compute_human_means,
 )
-from evals.report import judge_validation_section
+from evals.report import judge_validation_section, withhold_demoted_judge_means
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_REPORT = Path("reports/evaluation.md")
 
 _PENDING_LIMITATIONS_BULLET = re.compile(
-    r"^- The judge-validation section is pending the real H4 human sample; see that "
+    r"^- The judge-validation section is pending the human judge-validation sample; see that "
     r"section for detail\.\n?",
     re.MULTILINE,
 )
 
 _JUDGE_VALIDATION_START = re.compile(r"^## \d+\. Judge validation\n\n", re.MULTILINE)
+_JUDGE_SCORED_START = re.compile(r"^## \d+\. Judge-scored quality\n\n", re.MULTILINE)
 _NEXT_SECTION_BOUNDARY = re.compile(r"\n\n## \d+\.")
 
 _CASES_FILE_NAME = "judge-validation-cases.csv"
@@ -150,7 +156,7 @@ _MAX_SCORE = 2
 
 @dataclass(frozen=True, slots=True)
 class RaterCaseRow:
-    """One row of a returned H4 case sheet, every column the rubric names."""
+    """One row of a returned case sheet, every column the rubric names."""
 
     case_id: str
     language: str
@@ -188,7 +194,7 @@ def _parse_clarification(value: str, *, case_id: str) -> int | None:
 
 
 def load_rater_sheet(path: Path) -> tuple[RaterCaseRow, ...]:
-    """Every row of a returned H4 case sheet.
+    """Every row of a returned case sheet.
 
     Raises
     ------
@@ -329,6 +335,22 @@ def _judge_validation_bounds(report_markdown: str) -> tuple[int, int]:
     return start.end(), end.start()
 
 
+def _judge_scored_bounds(report_markdown: str) -> tuple[int, int]:
+    """Start and end offsets of the Judge-scored quality section's body, or ``ValueError`` if the
+    shape is unexpected."""
+    start = _JUDGE_SCORED_START.search(report_markdown)
+    end = _NEXT_SECTION_BOUNDARY.search(report_markdown, start.end()) if start else None
+    if start is None or end is None:
+        raise ValueError(_UNRECOGNIZED_JUDGE_SCORED_SECTION)
+    return start.end(), end.start()
+
+
+_UNRECOGNIZED_JUDGE_SCORED_SECTION = (
+    "report_markdown does not carry a numbered 'Judge-scored quality' section immediately "
+    "followed by another numbered section — refusing to patch a report this module cannot "
+    "recognize"
+)
+
 _UNRECOGNIZED_REPORT = (
     "report_markdown does not carry a numbered 'Judge validation' section immediately followed "
     "by another numbered section — refusing to patch a report this module cannot recognize"
@@ -340,21 +362,41 @@ def apply_real_judge_validation(
     agreement: tuple[DimensionAgreement, ...],
     detail: tuple[DimensionDetail, ...] | None = None,
     facts_coverage: tuple[int, int] | None = None,
+    *,
+    human_means: tuple[HumanMean, ...],
 ) -> str:
     """``report_markdown`` with its judge-validation section, and the one limitations bullet that
     names it as pending, replaced for a real, ``human``-provenance sample.
+
+    The judge-scored quality section is patched too, so the report never states the judge's mean
+    for a dimension its own validation demoted: that mean is replaced by the raters' means.
 
     Raises
     ------
     ValueError
         ``report_markdown`` does not carry a numbered Judge validation section followed by another
-        numbered section — the report this module was given does not match the shape
-        ``evals.report.render_markdown`` produces, so patching it would corrupt rather than update.
+        numbered section, or no numbered Judge-scored quality section followed by another — the
+        report this module was given does not match the shape ``evals.report.render_markdown``
+        produces, so patching it would corrupt rather than update.
     """
     body_start, end = _judge_validation_bounds(report_markdown)
     new_section = judge_validation_section(agreement, "human", detail, facts_coverage)
     patched = report_markdown[:body_start] + new_section + report_markdown[end:]
+    patched = _withhold_in_judge_scored_section(patched, agreement, human_means)
     return _PENDING_LIMITATIONS_BULLET.sub("", patched)
+
+
+def _withhold_in_judge_scored_section(
+    report_markdown: str,
+    agreement: tuple[DimensionAgreement, ...],
+    human_means: tuple[HumanMean, ...],
+) -> str:
+    body_start, end = _judge_scored_bounds(report_markdown)
+    return (
+        report_markdown[:body_start]
+        + withhold_demoted_judge_means(report_markdown[body_start:end], agreement, human_means)
+        + report_markdown[end:]
+    )
 
 
 def _write_atomically(path: Path, text: str) -> None:
@@ -419,8 +461,9 @@ def regenerate_report(
     The per-case scores are written to ``cases_path``, beside the report as
     ``judge-validation-cases.csv`` unless given.
 
-    Every check that can refuse (sheet integrity, roles, packet consistency, report shape) runs
-    before the first judge call, so a refusal never follows paid work.
+    Every check that can refuse (sheet integrity, roles, packet consistency, report shape: both the
+    Judge validation and the Judge-scored quality sections) runs before the first judge call, so a
+    refusal never follows paid work.
 
     Raises
     ------
@@ -433,11 +476,13 @@ def regenerate_report(
     _check_same_prepared_packet(rater1_rows, rater2_rows)
     current = report_path.read_text(encoding="utf-8")
     _judge_validation_bounds(current)
+    _judge_scored_bounds(current)
 
     judge_verdicts = score_with_judge(rater1_rows, judge)
     scores_1, scores_2 = _as_rater_scores(rater1_rows), _as_rater_scores(rater2_rows)
     agreement = compute_agreement(scores_1, scores_2, judge_verdicts)
     detail = compute_detail(scores_1, scores_2, judge_verdicts)
+    human_means = compute_human_means(scores_1, scores_2)
     for entry in agreement:
         logger.info(
             "judge_validation dimension=%s rater_to_rater=%s rater1_to_judge=%s "
@@ -450,7 +495,13 @@ def regenerate_report(
         )
     target = cases_path or report_path.with_name(_CASES_FILE_NAME)
     _write_atomically(target, case_scores_csv(rater1_rows, rater2_rows, judge_verdicts))
-    patched = apply_real_judge_validation(current, agreement, detail, _facts_coverage(rater1_rows))
+    patched = apply_real_judge_validation(
+        current,
+        agreement,
+        detail,
+        _facts_coverage(rater1_rows),
+        human_means=human_means,
+    )
     _write_atomically(report_path, patched)
     logger.info("judge_validation_report_updated path=%s cases=%s", report_path, target)
     return agreement

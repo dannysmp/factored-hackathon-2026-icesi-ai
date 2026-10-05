@@ -244,8 +244,8 @@ def test_the_queue_route_refuses_a_customer_session() -> None:
 
 
 def test_the_queue_route_never_touches_the_audit_sink() -> None:
-    """The route audits a ticket's packet and timeline reads itself; listing the queue is not an
-    agent's read of one ticket's own material, so it records nothing here."""
+    """Only viewing a ticket's packet and timeline is audited; listing the queue is not itself
+    an agent's read of one ticket's own material."""
     audit = _FakeAudit()
     client = _client(
         principal=_AGENT, queue=_FakeQueue(), ticket_detail=_FakeTicketDetail(), audit=audit

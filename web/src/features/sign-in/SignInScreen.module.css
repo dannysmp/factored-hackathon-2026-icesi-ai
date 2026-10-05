@@ -1,30 +1,37 @@
-.screen {
-  max-width: 24rem;
-  margin: var(--space-12) auto 0;
+.card {
+  width: calc(100% - 2 * var(--space-4));
+  max-width: 26rem;
+  margin: var(--space-6) auto var(--space-8);
   padding: var(--space-6);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.heading {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-lg);
 }
 
 .intro {
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-6);
   color: var(--color-text-subtle);
 }
 
 .status {
   margin: var(--space-12) auto 0;
-  max-width: 24rem;
+  max-width: 26rem;
   padding: var(--space-6);
   color: var(--color-text-subtle);
   font-size: var(--font-size-sm);
   text-align: center;
 }
 
-.error {
-  margin: var(--space-12) auto 0;
-  max-width: 24rem;
-  padding: var(--space-4);
-  border-radius: var(--radius-sm);
-  background: var(--color-error-bg);
-  color: var(--color-error);
+.slot {
+  width: calc(100% - 2 * var(--space-4));
+  max-width: 26rem;
+  margin: var(--space-6) auto 0;
 }
 
 .form {
@@ -45,8 +52,9 @@
 }
 
 .select {
+  min-height: var(--size-touch-target);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
+  border: var(--border-width-thin) solid var(--color-border-control);
   border-radius: var(--radius-md);
   background: var(--color-bg);
   color: var(--color-text);
@@ -54,11 +62,12 @@
   font-size: var(--font-size-base);
 }
 
-/* The screen's one primary field (AC-E10-17): larger type, a heavier border and the accent
-   focus ring make it the visually dominant control, ahead of the persona picker above it. */
+/* The one primary field: larger type and a heavier accent border make it the dominant control,
+   ahead of the persona picker above it. */
 .accessCode {
+  min-height: var(--size-touch-target);
   padding: var(--space-3) var(--space-4);
-  border: 2px solid var(--color-accent);
+  border: var(--border-width-emphasis) solid var(--color-accent);
   border-radius: var(--radius-md);
   background: var(--color-bg);
   color: var(--color-text);
@@ -66,35 +75,8 @@
   font-size: var(--font-size-md);
 }
 
-.formError {
+.hint {
   margin: 0;
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-sm);
-  background: var(--color-error-bg);
-  color: var(--color-error);
+  color: var(--color-text-subtle);
   font-size: var(--font-size-sm);
-}
-
-.submit {
-  padding: var(--space-3) var(--space-6);
-  border: none;
-  border-radius: var(--radius-md);
-  background: var(--color-accent);
-  color: var(--color-accent-contrast);
-  font-family: var(--font-family);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-emphasis);
-  cursor: pointer;
-  transition:
-    background var(--motion-duration-fast) var(--motion-easing),
-    opacity var(--motion-duration-fast) var(--motion-easing);
-}
-
-.submit:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-}
-
-.submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }

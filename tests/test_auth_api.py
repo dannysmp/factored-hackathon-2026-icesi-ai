@@ -113,8 +113,8 @@ def _agent_console() -> AgentConsolePorts:
 def _always_active(customer_id: str) -> str | None:
     """A customer lookup fake that says every identifier belongs to an Active customer.
 
-    The default for tests unrelated to unknown customers and to customer status; those get their
-    own fakes below.
+    The default for tests unrelated to unknown or suspended customers; those get their own fakes
+    below.
     """
     return "Active"
 
@@ -238,7 +238,8 @@ def test_the_login_requires_the_shared_secret(client: TestClient, key: str | Non
 def test_a_customer_the_store_does_not_know_gets_the_same_refusal_as_a_wrong_secret(
     clock: Clock,
 ) -> None:
-    """Refused, indistinguishably from a wrong shared secret, never a server error."""
+    """An unknown customer is refused, indistinguishably from a wrong shared secret, never a
+    server error."""
     app = create_app(_settings(), clock=clock, customer_lookup=lambda customer_id: None)
     unknown = TestClient(app)
 
@@ -733,8 +734,8 @@ def test_the_agent_broker_starts_and_serves_when_the_customer_broker_is_disabled
 def test_the_sandbox_login_refuses_to_start_without_a_customer_lookup_or_a_database(
     clock: Clock,
 ) -> None:
-    """An unknown customer cannot be refused with nothing to check against; this fails fast, not
-    silently."""
+    """Refusing unknown customers cannot be enforced with nothing to check against; this fails fast,
+    not silently."""
     with pytest.raises(ConfigError, match="DATABASE_URL"):
         create_app(_settings(), clock=clock)
 

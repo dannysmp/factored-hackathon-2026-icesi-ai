@@ -6,25 +6,25 @@ Overview
 --------
 The seven tools B1 (the naive agent baseline) may call — the six real ``ToolPort`` methods plus
 ``get_policy`` and ``handoff`` — as Anthropic tool schemas, and ``B1ToolDispatcher``, which turns
-one model tool call into a real effect against the same store, retriever and handoff outbox P and
-B0 use. B1 gets exactly the same tools P has; it does not get a looser or wider surface, and the
-comparison the evaluation plan defines rests on that being true.
+one model tool call into a real effect against the same store, retriever and handoff outbox P and B0
+use. B1 gets exactly the same tools P has; it does not get a looser or wider surface, and the
+comparison rests on that being true.
 
 Scope
 -----
 In: the seven tool schemas; ``B1ToolDispatcher.dispatch``, executing one call and returning the
 tool-result text the model reads next.
 Out: the conversation loop that decides when to call the model again and when a customer turn is
-done (a following increment); scoring a run (``evals.scoring``, unchanged).
+done (``evals.runner.baselines.b1``); scoring a run (``evals.scoring``, unchanged).
 
 Design Principles
 -----------------
-- **The model decides; this module's own code writes.** Every persisted, content-bearing field of
-  a handoff packet — ``request_summary``, ``reason_codes``, ``first_name``, ``policy_version`` — is
+- **The model decides; this module's own code writes.** Every persisted, content-bearing field of a
+  handoff packet — ``request_summary``, ``reason_codes``, ``first_name``, ``policy_version`` — is
   built by this dispatcher from facts it already holds, never taken from the model's tool-call
-  arguments. The tool schema this module exposes to the model does not even declare a parameter
-  for any of them: the same "inexpressible, not merely forbidden" discipline ADR-3 already applies
-  to ``create_dispute_case``, extended here to the one other tool that writes a persisted record a
+  arguments. The tool schema this module exposes to the model does not even declare a parameter for
+  any of them: the same "inexpressible, not merely forbidden" discipline already applied to
+  ``create_dispute_case``, extended here to the one other tool that writes a persisted record a
   human later reads. The model's only real degree of freedom is *whether* to hand off and *which*
   named trigger to cite; the packet's content is exactly as disciplined for B1 as it is for P.
 - **``create_dispute_case`` reads the real decision it already holds, never the model's own.** The
@@ -44,9 +44,9 @@ Design Principles
   drift check keeps the two from disagreeing) — a property of corpus generation, not of this tool.
 - **One decision path, duplicated by necessity, not by choice.** ``_REQUEST_SUMMARY_OF`` mirrors
   ``app.conversation.controller``'s own private table verbatim; it is not exported there, and
-  changing a shared, reviewed production file to export it is a larger, separate decision than
-  this slice's own scope. The table is small (ten entries, one per ``HandoffTrigger``) and the two
-  copies are checked to agree by test.
+  changing a shared production file to export it is a larger, separate decision than this module
+  warrants. The table is small (ten entries, one per ``HandoffTrigger``) and the two copies are
+  checked to agree by test.
 
 Runtime Contract
 -----------------
