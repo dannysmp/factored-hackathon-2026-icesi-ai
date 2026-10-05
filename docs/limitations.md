@@ -105,10 +105,12 @@ results still to come say so and name the command that completes them.
   While the assistant is asking why the customer disputes a transaction, a reply that corrects
   which transaction is meant by giving a date, such as "na verdade é outra, a de 12/07", makes it
   ask for the reason again and the date is not used to change the transaction. A reply that agrees
-  and gives the reason in the same breath, such as "sim, mas era valor incorreto", goes to a
-  person instead of being read as the reason. Neither files a case wrongly: the first costs the
-  customer another turn and the second a handoff that was not needed. The wording was not added
-  to the golden set and the behavior is not covered by an automated test.
+  and gives the reason in the same breath, such as "sim, mas era valor incorreto", is not read as
+  the reason either: the reason is asked again, and when a second answer in a row leaves it
+  unsettled, the conversation goes to a person. Neither files a case wrongly: the first costs the
+  customer another turn and the second can cost a handoff that was not needed. The wordings were
+  not added to the golden set, and no automated test gives a date or a reason in these replies;
+  the re-ask and the handoff on a second unsettled answer are tested with other wordings.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in
