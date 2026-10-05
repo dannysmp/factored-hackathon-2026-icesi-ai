@@ -103,7 +103,8 @@ has no deterministic controller. The safe-resolution target is 40% or more.
 - Cost counts the model's understanding calls; replies come from fixed templates. The
   resolution-time and breach-rate targets are not measured offline.
 - On missed transfers the proposed system (6.1%, range 4.5% to 9.1%) does not beat the model-only
-  agent (4.5%, one run); the two cannot be told apart on this evidence.
+  agent (4.5%, one run); the two cannot be told apart on this evidence. The earlier 15.2% came from
+  a seed without the repeat-complainer flags, so that rule could not fire.
 - **Is the automated judge reliable?** Two human raters scored the same replies as an automated
   judge, and the judge was required to match each rater on at least 80% of replies.
 
