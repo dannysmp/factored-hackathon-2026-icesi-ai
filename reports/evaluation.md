@@ -55,7 +55,7 @@ Total golden-set cases: 135.
 | --- | --- | --- | --- | --- |
 | P | not reportable by the judge | not reportable by the judge | not reportable by the judge | 135 |
 
-**Withheld judge means.** The judge-validation decision demoted grounding, language_quality, clarification to human-only, so the judge's mean for it is not stated. The raters' own means over the judge-validation sample, a different set of cases from the judged run, are grounding: Rater 1 1.34 (n=50), Rater 2 0.48 (n=50); language_quality: Rater 1 1.98 (n=50), Rater 2 1.92 (n=50); clarification: Rater 1 0.83 (n=6), Rater 2 1.67 (n=6).
+**Withheld judge means.** The judge-validation decision demoted grounding, language_quality, clarification to human-only, so the judge's mean for each is not stated. The raters' own means over the judge-validation sample, a different set of cases from the judged run, are grounding: Rater 1 1.34 (n=50), Rater 2 0.48 (n=50); language_quality: Rater 1 1.98 (n=50), Rater 2 1.92 (n=50); clarification: Rater 1 0.83 (n=6), Rater 2 1.67 (n=6).
 
 B0, B1 carried no judge verdicts in this report: a system's own run is judge-scored only when it is in scope for judge-sourced report metrics (today, the proposed system alone — the same scope the human judge validation uses).
 

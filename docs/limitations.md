@@ -70,6 +70,8 @@ results still to come say so and name the command that completes them.
   makes grounding a weaker test than a reply set beside the facts it should cite, and the
   disagreement between the two raters on grounding is unexplained. The written analysis of where
   raters and judge disagree is a person's job and is not generated.
+  The report's figures describe the commit it names, not the current head, which carries later
+  behaviour and scoring fixes.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in

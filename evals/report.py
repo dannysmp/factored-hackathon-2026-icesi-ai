@@ -437,7 +437,7 @@ def withhold_demoted_judge_means(
     note = (
         "**Withheld judge means.** The judge-validation decision demoted "
         + ", ".join(demoted)
-        + " to human-only, so the judge's mean for it is not stated. The raters' own means over "
+        + " to human-only, so the judge's mean for each is not stated. The raters' own means over "
         "the judge-validation sample, a different set of cases from the judged run, are "
         + "; ".join(_human_mean_text(means[d]) for d in demoted)
         + "."

@@ -674,7 +674,7 @@ def test_learned_components_points_at_the_experiment_log_not_a_fabricated_number
     assert "experiment log" in section
 
 
-def test_limitations_names_pending_h4_only_when_not_human() -> None:
+def test_limitations_names_the_pending_sample_only_when_not_human() -> None:
     synthetic = render_markdown(_report(judge_validation_provenance="team_generated_synthetic"))
     human = render_markdown(_report(judge_validation_provenance="human"))
 
