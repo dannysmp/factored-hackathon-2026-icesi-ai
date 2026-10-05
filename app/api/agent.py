@@ -22,8 +22,8 @@ Design Principles
 -----------------
 - **Every read of a ticket's packet or timeline is audited before it is returned**, failing
   closed: the write happens first, and its own exception — including
-  ``NotImplementedError`` from ``ConsoleAuditSink``'s stub implementation — propagates instead of
-  being swallowed, so this route can never actually return agent-facing data without a
+  the ``NotImplementedError`` of ``AuditNotYetImplemented`` — propagates instead of being
+  swallowed, so this route can never actually return agent-facing data without a
   corresponding audit record, in production or in a test.
 - **Every narrow write audits itself as part of the same call** (``AgentWritesPort``'s own
   contract, matching ``PostgresAgentWrites``): a route never audits separately from the
@@ -124,9 +124,9 @@ class ConsoleAuditSink(Protocol):
     other source once the read completes) and the exact data shown (``packet``/``timeline``), so
     the real sink can hash what was actually returned into ``AuditRecord.tool_result_hash``, the
     same "prove what was shown, not just that something was" rule every other read audits under
-    (``app.persistence.reads``'s own ``_hash(result)``). Until a real implementation is injected, a
-    stub that always raises keeps this router from ever actually serving agent data unaudited, in
-    production or in a test — never a silent no-op.
+    (``app.persistence.reads``'s own ``_hash(result)``). ``AuditNotYetImplemented`` is the
+    fail-closed alternative that always raises, so a router built with it can never actually serve
+    agent data unaudited, in production or in a test — never a silent no-op.
     """
 
     def packet_viewed(
@@ -183,7 +183,7 @@ class AgentWritesPort(Protocol):
 
 
 class AuditNotYetImplemented:
-    """The ``ConsoleAuditSink`` a composition root injects until it wires the real one.
+    """A fail-closed ``ConsoleAuditSink`` for a composition that has no real audit sink.
 
     Raises ``NotImplementedError`` unconditionally: fails the ticket-detail route closed rather
     than ever serving a packet or a timeline with no audit record.

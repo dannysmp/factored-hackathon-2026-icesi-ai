@@ -572,7 +572,7 @@ def test_the_status_route_refuses_a_customer_session() -> None:
 
 
 # -----------------------------------------------------------------------------
-# The not-yet-implemented audit stub every composition root injects until it's real
+# The fail-closed audit sink for a composition with no real one
 # -----------------------------------------------------------------------------
 
 
