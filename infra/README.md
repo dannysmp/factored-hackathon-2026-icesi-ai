@@ -142,11 +142,11 @@ in its own database and role, never the default embedded H2:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml config   # validate
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d    # the deploy step runs this
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d    # the deploy step runs this last, after the database is migrated and seeded
 docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.metabase.yml \
   up -d --no-deps metabase   # 08-deploy-metabase.sh runs this, after creating its database and role
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm backend \
-  python -m app.persistence.migrate       # 05-deploy.sh runs this and the load below, after up -d
+  python -m app.persistence.migrate       # 05-deploy.sh runs this and the load below, before the full up -d
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm backend \
   python -m app.persistence.load_seed
 ```
