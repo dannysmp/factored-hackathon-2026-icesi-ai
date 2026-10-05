@@ -174,6 +174,7 @@ class RequestContextMiddleware:
         api_call = is_protected(route_path(scope))
 
         async def send_with_headers(message: Message) -> None:
+            """Add the hardening headers to the response start, never overriding a handler's own."""
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
                 present = {key.lower() for key, _ in headers}
@@ -253,7 +254,7 @@ class BodySizeLimitMiddleware:
         except TimeoutError:
             # One deadline for the whole drain, not per read: a client trickling in evenly paced
             # small chunks forever would otherwise reset an idle timeout on every message and
-            # never be caught (the exact case the read-timeout gap was reported for).
+            # never be caught.
             logger.warning("body_read_timed_out request_id=%s", current_request_id())
             problem = ProblemError(
                 ErrorCode.REQUEST_TIMEOUT,
@@ -275,6 +276,7 @@ class BodySizeLimitMiddleware:
         index = 0
 
         async def replay_receive() -> Message:
+            """Replay the buffered body messages in order, then read from the live connection."""
             nonlocal index
             if index < len(buffered):
                 message = buffered[index]
