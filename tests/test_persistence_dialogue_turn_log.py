@@ -106,6 +106,20 @@ def test_entries_are_ordered_by_when_they_occurred(turn_log: PostgresDialogueTur
 
 
 @pytest.mark.integration
+def test_turns_recorded_at_the_same_instant_keep_the_order_they_were_written(
+    turn_log: PostgresDialogueTurnLog,
+) -> None:
+    """With no later instant to separate them, the write order decides, so a read is repeatable."""
+    first = _entry(occurred_at=_T1, turn_id="t-9")
+    second = _entry(occurred_at=_T1, turn_id="t-2")
+    third = _entry(occurred_at=_T1, turn_id="t-5")
+    for entry in (first, second, third):
+        turn_log.record(entry, session_id="s-1")
+
+    assert turn_log.timeline_for("s-1") == (first, second, third)
+
+
+@pytest.mark.integration
 def test_a_repeated_session_and_turn_id_is_a_no_op(turn_log: PostgresDialogueTurnLog) -> None:
     """A retried write for the same turn never doubles an entry, matching the table's own
     ``UNIQUE (session_id, turn_id)`` — the first write wins, a second attempt changes nothing."""
