@@ -458,10 +458,14 @@ class DialogueController:
         """Process one customer turn and return the reply.
 
         The flow is: load the session's state; a turn id already recorded on it is a replay and is
-        answered without redoing anything unsafe; a session at its turn cap is answered with a
-        handoff and no model call; otherwise the message is understood, the outcome is decided and
-        acted on (``_advance``), the cost line is logged, the new state is saved with
-        optimistic concurrency, and the reply is rendered after the save.
+        answered without redoing anything unsafe; a conversation already handed to a person is
+        answered with its ticket, whatever the message says, with no model call and nothing
+        written, so a late confirmation can neither file a second case nor open a second ticket,
+        and an unreachable understanding dependency cannot hand the same conversation off twice;
+        a session at its turn cap is answered with a handoff and no model call; otherwise the
+        message is understood, the outcome is decided and acted on (``_advance``), the cost line
+        is logged, the new state is saved with optimistic concurrency, and the reply is rendered
+        after the save.
 
         An unreachable understanding dependency becomes a handoff rather than a clarification
         attempt. A save that loses a race on the same turn id answers with the winner's result.
@@ -491,6 +495,13 @@ class DialogueController:
 
         if current is not None and current.last_turn_id == request.turn_id:
             return self._respond(current, self._replay_envelope(current))
+
+        if (
+            current is not None
+            and current.phase is ConversationPhase.HANDED_OFF
+            and current.last_ticket_ref is not None
+        ):
+            return self._respond(current, self._ticket_envelope(current))
 
         if current is not None and current.turns_applied >= self._max_turns:
             return self._cap_reached(current)
@@ -772,13 +783,7 @@ class DialogueController:
         A brand-new session whose first message is too ambiguous to place in Spanish or
         Portuguese is offered both, deferring its actual request to the next turn (the renderer's
         own documented job of combining a best guess with the offer to switch, in one reply).
-
-        A conversation already handed to a person is answered with its ticket, whatever the message
-        says: nothing is evaluated, filed or handed off again, so a late confirmation can neither
-        file a second case nor open a second ticket.
         """
-        if state.phase is ConversationPhase.HANDED_OFF and state.last_ticket_ref is not None:
-            return state, self._ticket_envelope(state)
         if state.last_turn_id is None and result.language is None:
             return state, self._envelope(state, Intent.CLARIFY, TemplateId.LANGUAGE_OFFER)
         handler = _ROUTES[result.intent]

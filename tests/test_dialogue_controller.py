@@ -2870,6 +2870,33 @@ def test_a_dispute_message_after_an_unverified_filing_without_confirmation_files
     assert again.handoff_ticket == handed_off.handoff_ticket
 
 
+def test_an_unreachable_understanding_dependency_after_a_handoff_opens_no_second_ticket(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue, handed_off = _unverified_filing_dialogue(policy, retriever)
+    controller = DialogueController(
+        UnavailableNlu(),
+        store=dialogue.store,
+        tool_port=dialogue.port,
+        retriever=retriever,
+        policy=policy,
+        outbox=dialogue.outbox,
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+        max_turns=30,
+    )
+
+    for turn_id in ("turn-outage-1", "turn-outage-2"):
+        again = controller.handle_turn(_turn(turn_id), principal=_principal())
+
+        assert again.handoff_ticket == handed_off.handoff_ticket
+        assert again.state_version == handed_off.state_version
+    assert len(dialogue.outbox.packets) == 1
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.last_ticket_ref == handed_off.handoff_ticket
+
+
 def test_a_handoff_leaves_no_question_pending() -> None:
     state = DialogueState(
         session_id=_SESSION_ID,
