@@ -191,6 +191,9 @@ class TransactionFilters(ContractModel):
     # Bounds on the transaction date; both inclusive, each optional.
     since: date | None = None
     until: date | None = None
+    # Text the merchant name must contain, ignoring case and accents. It narrows the listing
+    # itself, since only the five most recent matches are returned.
+    merchant: Annotated[str, Field(min_length=1, max_length=80)] | None = None
 
     @model_validator(mode="after")
     def _since_is_not_after_until(self) -> TransactionFilters:
