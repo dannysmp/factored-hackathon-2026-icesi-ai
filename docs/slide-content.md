@@ -11,114 +11,114 @@ is not the slide file itself.
 - **Transaction Dispute Intake:** a multilingual assistant that takes a customer's dispute from the
   first message to a verified, filed case, or to the right person.
 
-## Slide 2 — The problem, from the data
+## Slide 2 — Transaction disputes are common, and most are slow to close
 
-- The supplied synthetic banking dataset holds 67,095 complaints and 686,296 customer contacts
-  from June 2023 to June 2026.
-- Dispute cases (category `Transactions`, subcategory `Cargo no reconocido`) are **12,297** over 37
-  months, about 332 a month: **18.3%** of all complaints and **90.6%** of every `Transactions`
-  complaint.
-- Only **24.5%** of cases reach `Resolved` or `Closed`; 74.6% stay open, in process or escalated
-  and 0.9% are rejected. The median time to resolve the cases that do close is **15.0 days**; **20.4%** of
-  cases breach their service-level target; **14.7%** come from a customer who has complained
-  before.
-- The workflow targets are the team's own: **40% or more** of disputes resolved safely without a
-  person, **0%** unsafe actions, a median of **3 days or fewer** to resolve, and **5% or fewer**
-  cases breaching the target.
-- The dispute count is a proxy: the source carries no dispute flag, so the figure follows a named
-  definition. A wider definition that also counts undue charges and transaction complaints with no
-  subcategory raises the share to **38.4%** of all complaints.
+- **12,297** disputed charges in 37 months, about 332 a month.
+- **18.3%** of all complaints, and **90.6%** of all transaction complaints.
+- **24.5%** of cases reach resolved or closed; the rest stay open, in process or escalated.
+- **15.0 days** median time to resolve the cases that do close.
+- **20.4%** of cases breach their service-level target.
+- **14.7%** of cases come from a customer who has complained before.
+- Our targets for the workflow: **40% or more** of disputes resolved safely without a person,
+  **0%** unsafe actions, **3 days or fewer** median time to resolve, and **5% or fewer** cases
+  breaching the target. The targets are the team's own.
+- Source: the supplied synthetic banking dataset, with 67,095 complaints and 686,296 customer
+  contacts from June 2023 to June 2026. A dispute is a complaint classified as an unrecognised
+  charge; the source carries no dispute flag. Adding undue charges and transaction complaints with
+  no subcategory raises the share to **38.4%**.
 
-## Slide 3 — The solution in action
+## Slide 3 — From a customer's first message to a filed case, or to the right person
 
-- Every message passes through five steps: **understand** (language and intent, in a strict
-  schema), **decide** (the policy engine: eligibility and routing), **act** (tools scoped to the
-  signed-in customer), **verify** (every write is read back first) and **escalate** (a person gets a
-  structured packet).
-- Four screens from the deployed build, on synthetic data:
+- Five steps: **understand** (language and intent, in a strict schema), **decide** (the policy
+  engine: eligibility and routing), **act** (tools scoped to the signed-in customer), **verify**
+  (every write is read back first) and **hand over** (when needed, a person gets a structured
+  packet).
+- Four screens captured from the deployed build, on synthetic data:
   1. The customer confirms. Nothing is filed until the customer approves a plain-language summary.
   2. A verified case is filed. The case number is shown only after the record has been read back.
-  3. A person takes over. A possible fraud is never decided by the assistant; it hands over at once.
-  4. The agent gets a full packet: the request, verified facts, actions taken, evidence and open
+  3. Or a person takes over. A possible fraud is never decided by the assistant; policy sends it
+     to a person first.
+  4. The agent gets a full packet: request, verified facts, actions taken, evidence and open
      questions.
-- The filing is shown in English, the handoff in Portuguese and the agent console in Spanish; the
-  same journey runs in all three languages.
-- Two further paths are not shown on a screen. A vague request is asked about rather than guessed;
-  a request that is not a dispute is declined plainly. The scripted evaluation holds 17 ambiguous
-  and 13 unsupported cases for them.
+- Filing is shown in English, the handoff in Portuguese and the agent console in Spanish. The same
+  journey runs in all three languages.
 
-## Slide 4 — The architecture
+## Slide 4 — How the system is built
 
-- The design follows one line: **the model understands and renders language; code decides and
-  acts.** Dispute eligibility, routing and confirmation requirements live only in the policy
-  engine, which is pure deterministic code with stable reason codes; the model never decides an
-  outcome.
-- Components: the customer chat in three languages, the API with session and authorization, the
-  dialogue controller (a state machine of five steps), the language model, the policy engine, the
-  tool layer, the handoff builder, the operational store for cases and the audit trail, and the
-  agent console with its queue and case packet.
-- Five properties apply to every component:
-  - **Security:** short-lived signed sessions; every tool is limited to the signed-in customer and
-    accepts no customer identifier; card numbers are masked before any model call.
-  - **Controlled automation:** filing needs explicit confirmation; fraud, large amounts and repeat
-    complainers go to a person; anything that moves money or resolves a dispute is never
-    automated.
-  - **Audit:** append-only records of every filing, refusal and sign-in; every decision carries a
-    stable reason code. Explanations come from the cited sources, the reason code and the
-    execution record, never from the model's own reasoning.
+- A deterministic core around the language model, running on a single AWS host, with an offline
+  pipeline that prepares the data and evaluates the system.
+- Applied across every component:
+  - **Security:** short-lived signed sessions; every tool is limited to the signed-in customer;
+    card numbers are masked before any model call.
+  - **Controlled automation:** the model never decides an outcome; filing needs explicit consent;
+    policy sends fraud, large amounts and repeat complainers to a person.
+  - **Audit:** append-only records of every filing, refusal and sign-in; each decision carries a
+    stable reason code.
   - **Reliability:** bounded retries and circuit breakers around the model and the store; an
     unrecoverable failure becomes a safe handoff.
   - **Observability:** structured logs with trace and session identifiers, card numbers redacted,
     health checks and a live business dashboard.
-- The data is prepared by a repeatable pipeline with a versioned contract and quality checks per
-  table, a freshness policy, and a manifest that records the inputs and code version of every
-  output.
-- The one learned component is a transaction risk model, benchmarked against a baseline. It was
-  trained on the earliest period, tuned on the next and tested on the most recent. Its features are point-in-time with two
-  exceptions: the customer's latest recorded country (25.0% of transactions belong to a customer
-  whose record is newer than the transaction) and the exchange rate of the transaction's day. No
-  threshold was precise enough, so it routes no case today; a fraud claim reaches a person by
-  category alone.
+- Actors: the customer, who uses the web chat in Spanish, Portuguese or English, and the bank
+  agent, who uses the console with its queue and case packet.
+- The host: one EC2 instance running Docker Compose, with secrets in SSM Parameter Store.
+  - **HTTPS edge:** Caddy, for TLS and security headers.
+  - **Web app:** React, typed and localised.
+  - **API service:** signed sessions and authorization.
+  - **Dialogue controller:** a state machine over every turn.
+  - **Policy engine:** deterministic eligibility and routing.
+  - **Policy retrieval:** lexical search with cited sources.
+  - **Tool layer:** scoped to the signed-in customer.
+  - **Reply templates:** fixed wording in three languages, filled with verified facts.
+  - **PostgreSQL:** cases, audit trail and sessions.
+  - **Handoff builder:** the structured packet for a person.
+  - **Metabase:** the operational dashboard.
+  - **Guards:** spend breaker, turn cap and sign-in rate limit.
+- The Claude API understands each request; card numbers are masked first.
+- Around the host: CI and delivery (tests, security scans, smoke evaluation; manual deploy) and
+  the offline pipeline (data contracts, risk model, full evaluation).
+- Design choices: lexical policy retrieval with an abstention floor instead of embeddings, for a
+  corpus of about nine sections per language; the managed model API with one secret instead of a
+  cloud-hosted model service; DuckDB over partitioned Parquet instead of a data warehouse; and one
+  host instead of a cluster.
 
-## Slide 5 — The evaluation results
+## Slide 5 — The highest safe resolution of the three systems tested
 
-Offline evaluation on 135 scripted, team-generated cases: 103 in scope and 32 adversarial. The
-proposed system ran 3 times and each baseline once, at the revision the report names. Both
-baselines keep the policy engine and the tools; the keyword baseline swaps the model for keyword
-matching, and the model-only agent has no deterministic controller.
+Offline evaluation on 135 scripted, team-generated cases: 103 in scope and 32 adversarial. Both
+baselines keep the policy engine and tools; one swaps the model for keyword matching, the other
+has no deterministic controller. The safe-resolution target is 40% or more.
 
-| Measure | Proposed system | Keyword baseline | Model-only agent |
+| Measure | Proposed, 3 runs | Keyword baseline | Model-only agent |
 |---|---|---|---|
-| Safe automated resolution (n = 103) | 72.5% | 33.0% | 36.9% |
-| Unsafe outcomes (n = 135) | 0.0% | 0.0% | 0.0% |
-| Escalation quality (n = 22) | 72.7% | 45.5% | 27.3% |
-| Missed transfers (n = 22) | 15.2% | 54.5% | 9.1% |
-| Unnecessary transfers (n = 81) | 1.2% | 7.4% | 6.2% |
-| Latency, median | 2.56 s | 0.03 s | 5.11 s |
-| Latency, 95th percentile | 4.40 s | 0.05 s | 12.22 s |
-| Cost per attempted case | $0.005 | $0.000 | $0.008 |
+| Safe automated resolution (n = 103, in-scope cases) | 72.5% | 33.0% | 36.9% |
+| Unsafe outcomes (n = 135, all cases) | 0.0% | 0.0% | 0.0% |
+| Escalation quality (n = 22, cases needing a person) | 72.7% | 45.5% | 27.3% |
+| Missed transfers (n = 22, cases needing a person) | 15.2% | 54.5% | 9.1% |
+| Unnecessary transfers (n = 81, cases not needing one) | 1.2% | 7.4% | 6.2% |
+| Latency, median (n = 103, in-scope cases) | 2.56 s | 0.03 s | 5.11 s |
+| Latency, 95th percentile (n = 103, in-scope cases) | 4.40 s | 0.05 s | 12.22 s |
+| Cost per attempted case (n = 103, model spend) | $0.005 | $0.000 | $0.008 |
 
-- Safe resolution across the three runs of the proposed system ranges from 71.8% to 72.8%.
-  Automation was attempted on 100.0% of in-scope cases. Containment is 80.9%, 84.5% and 75.7%;
-  cost per successful automated resolution is $0.004, $0.000 and $0.006, in the table's column
-  order.
-- Cost for the proposed system counts the understanding calls only; the model-only agent's counts
-  every priced call. Reply-rendering spend is excluded. The time-to-resolve and breach-rate targets
-  are not measured offline.
-- These are offline measurements, not production results, and zero unsafe outcomes in 135 cases
-  does not establish zero risk. One case, `hr-fraud-en-01`, produced an unsafe outcome in one of
-  its three repeats that did not reproduce, and the golden set has no case that expects a denial
-  of an ineligible filing, so the eight ineligibility reason codes are not exercised.
-- **The automated judge is not validated.** Two human raters scored the same replies; the judge was
-  required to match each rater on at least 80% of replies. Agreement with the two raters is 62% and
-  30% on grounding and 64% and 62% on language quality (50 replies each), and 17% and 100% on
-  clarification (6 replies). The report therefore withholds the judge's scores, and reply quality
-  is scored by people. The two raters themselves agree on grounding only 38% of the time.
+- These are offline measurements, not production results: zero unsafe outcomes in 135 cases does
+  not establish zero risk.
+- Cost counts the model's understanding calls; replies come from fixed templates. The
+  resolution-time and breach-rate targets are not measured offline.
+- **Is the automated judge reliable?** Two human raters scored the same replies as an automated
+  judge, and the judge was required to match each rater on at least 80% of replies.
+
+  | Dimension | Against rater 1 | Against rater 2 | Replies |
+  |---|---|---|---|
+  | Grounding | 62% | 30% | 50 |
+  | Language quality | 64% | 62% | 50 |
+  | Clarification | 17% | 100% | 6 |
+
+  Result: not validated on any dimension, so its scores are not reported. The raters' own means,
+  on a scale of 0 to 2, are 1.34 and 0.48 for grounding, 1.98 and 1.92 for language quality, and
+  0.83 and 1.67 for clarification.
 - By language, the correct outcome is reached in 90% of Spanish cases (n = 50), 92% of Portuguese
   (n = 36) and 94% of English (n = 17). No language is flagged; small samples are not proof of
   equal treatment.
 
-## Slide 6 — Limitations and next steps
+## Slide 6 — What it does not do yet, and what resolves each
 
 Stated in full in `docs/limitations.md`. Each item is paired with the step that resolves it:
 
@@ -128,10 +128,8 @@ Stated in full in `docs/limitations.md`. Each item is paired with the step that 
 | The risk model found no threshold precise enough, so it routes no case. | Retrain on confirmed outcomes, then re-calibrate before routing. |
 | The automated judge is not validated against human raters. | A larger, rater-agreed sample and a tightened rubric. |
 | The evaluation set is scripted and small: 135 cases, 32 adversarial. | Replay anonymised real conversations and widen adversarial coverage. |
-| The agent console is a viewer; claim, release, note and status actions have no screen. | Add those audited actions to the console. |
+| The agent console is a viewer; claim, note and status actions have no screen. | Add those audited actions to the console. |
 | Demonstration sign-in and a single host; deployed data has no backup. | Managed identity and a managed database with backup. |
 | Filing windows use one operating time zone. | Store and apply each customer's time zone. |
 | Document numbers are redacted by shape; a dotted identity number still passes. | Cover the dotted form once its cost against amounts is measured. |
 | Only sign-in is rate limited; capacity and record retention are undefined. | Rate limits, a measured capacity plan and a retention period. |
-
-The document-number redaction rules and their disclosed gaps are set out in `docs/limitations.md`.
