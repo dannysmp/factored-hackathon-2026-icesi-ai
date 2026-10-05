@@ -6,11 +6,13 @@ Overview
 --------
 The egress control every request applies to a customer's free text immediately before it leaves
 the process for the language model, the boundary where PII is minimized. Card-shaped (PAN-like)
-digit runs are found and replaced with a fixed placeholder; nothing else in the text is touched.
+digit runs and document-number-shaped values are found and replaced with fixed placeholders;
+nothing else in the text is touched.
 
 Scope
 -----
-In: the digit-run detector and the redaction it applies; ``safe_hex_suffix``, generating a
+In: the card digit-run detector and the redaction it applies, the document-number detector and
+its redaction, and ``safe_hex_suffix``, generating a
 reference-number suffix guaranteed never to combine with the digits before it into something this
 detector would itself flag — the one other place in this project that needs to reason about the
 same digit-run rule, not a second implementation of it.
@@ -44,11 +46,23 @@ Design Principles
   valid window covers cannot.
 - Redaction replaces only the matched digits and their internal separators; surrounding text,
   including any other digits in the same field, is untouched.
+- A document number has no checksum, so it is found by shape instead, and the shapes are chosen so
+  that a money amount survives: an unbroken run of seven or more digits (a national identity
+  number typed plainly, or a long phone number), and the two punctuated Brazilian shapes, a
+  personal tax number (``123.456.789-09``) and a company tax number (``12.345.678/0001-95``). A
+  figure written with thousands separators and a decimal part (``27.556.276,44``,
+  ``1,475,202.64``) is never an unbroken run that long, so it passes through untouched and the
+  amount the customer states still reaches the model.
+- The card detector alone serves the log path (``app.observability.logging``): the document-number
+  rule is for the customer's own words going to the model, where a long unbroken run is far more
+  likely an identifier than anything else; in a log line one is as likely a timestamp or an id.
 
 Runtime Contract
 ----------------
 ``redact_pan(text) -> PanRedaction`` with ``masked`` (the text to send) and ``found`` (whether
 anything was redacted, for the request-capture fixture and for accounting).
+``redact_document_numbers(text) -> PanRedaction``, the same result shape for document-number
+shapes, applied to text already passed through ``redact_pan``.
 ``safe_hex_suffix(nbytes=4, *, preceding_digits=0) -> str``, an uppercase hex string of
 ``2 * nbytes`` characters.
 
@@ -59,6 +73,13 @@ or one written entirely in words. Its adversarial robustness and false-positive 
 against a fixed adversarial set (separator variants, adjacent non-digit characters, multiple
 card-like runs in one field) and a fixed false-positive set (order numbers, phone numbers,
 reference codes of card-like length), not proven exhaustively.
+
+The document-number rule has two known gaps, both chosen over the alternative of redacting
+amounts. An amount typed as seven or more unbroken digits (``1250000``) is redacted like an
+identifier; it is only a search hint for the customer's own transactions, and the stored amount is
+what policy reads, so the cost is one more question to the customer. A national identity number
+typed with thousands-style dots (``1.094.921.834``) has the shape of an amount and passes through
+unmasked. Identity numbers split by anything else, or written in words, are not detected.
 """
 
 from __future__ import annotations
@@ -69,6 +90,7 @@ import secrets  # Generating a reference suffix that cannot look card-shaped
 from dataclasses import dataclass  # Immutable result
 
 PLACEHOLDER = "[card-number-redacted]"
+DOCUMENT_PLACEHOLDER = "[document-number-redacted]"
 
 # A card number as people actually type it: digits, optionally separated by one of these
 # characters between any two digits, never two separators in a row.
@@ -79,6 +101,12 @@ _RUN = re.compile(rf"\d(?:[{re.escape(_SEPARATORS)}]?\d)*")
 # longer ranges some debit and prepaid products use).
 _MIN_PAN_DIGITS = 13
 _MAX_PAN_DIGITS = 19
+
+# A personal tax number, a company tax number, or any unbroken run of seven or more digits. The
+# punctuated shapes come first so each is replaced whole.
+_DOCUMENT_NUMBER = re.compile(
+    r"(?<!\d)(?:\d{3}\.\d{3}\.\d{3}-\d{2}|\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\d{7,})(?!\d)"
+)
 
 
 _SINGLE_DIGIT_MAX = 9  # A doubled digit above this needs its own digits summed (Luhn's rule).
@@ -190,6 +218,24 @@ def redact_pan(text: str) -> PanRedaction:
         cursor = end
     pieces.append(text[cursor:])
     return PanRedaction(masked="".join(pieces), found=True)
+
+
+def redact_document_numbers(text: str) -> PanRedaction:
+    """Replace every document-number-shaped value in ``text`` with :data:`DOCUMENT_PLACEHOLDER`.
+
+    Parameters
+    ----------
+    text : str
+        Free text about to leave the process for a language model, already passed through
+        :func:`redact_pan`.
+
+    Returns
+    -------
+    PanRedaction
+        ``masked`` is safe to send; ``found`` is ``True`` when at least one value was redacted.
+    """
+    masked, count = _DOCUMENT_NUMBER.subn(DOCUMENT_PLACEHOLDER, text)
+    return PanRedaction(masked=masked, found=count > 0)
 
 
 def _longest_digit_run(text: str) -> int:

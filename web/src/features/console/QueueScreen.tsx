@@ -38,10 +38,12 @@ function itemsForView(items: readonly QueueItem[], view: TriggerView): QueueItem
 export function QueueScreen({
   client,
   onSelectTicket,
+  focusTicketRef = null,
   onSessionExpired,
 }: {
   client: QueueClient
   onSelectTicket: (ticketRef: string) => void
+  focusTicketRef?: string | null
   onSessionExpired?: () => void
 }): JSX.Element {
   const queue = useQueue(client, onSessionExpired)
@@ -109,7 +111,11 @@ export function QueueScreen({
           triggerView={triggerView}
           onTriggerViewChange={setTriggerView}
           renderTable={(view) => (
-            <QueueTable items={itemsForView(queue.items, view)} onSelectTicket={onSelectTicket} />
+            <QueueTable
+              items={itemsForView(queue.items, view)}
+              onSelectTicket={onSelectTicket}
+              focusTicketRef={focusTicketRef}
+            />
           )}
         />
       )}

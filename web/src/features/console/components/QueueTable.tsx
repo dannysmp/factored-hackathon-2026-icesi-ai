@@ -1,4 +1,5 @@
 /** The queue table: one row per escalated case, with an accessible button to open it. */
+import { useEffect, useRef } from 'react'
 import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { JSX } from 'react'
 import type { QueueItem } from '../contracts'
@@ -35,14 +36,27 @@ function PriorityBadge(): JSX.Element {
  * — clicking it calls `onSelectTicket`, `ConsoleApp`'s master-detail navigation into that case's
  * packet and timeline. Priority rows carry a text badge, and an overdue promised contact date is
  * flagged in words, so neither meaning rests on colour alone.
+ *
+ * `focusTicketRef` names the case the agent has just come back from: when it is in this view and
+ * nothing holds focus, its button takes focus, so going back lands on the row that was open.
  */
 export function QueueTable({
   items,
   onSelectTicket,
+  focusTicketRef = null,
 }: {
   items: readonly QueueItem[]
   onSelectTicket: (ticketRef: string) => void
+  focusTicketRef?: string | null
 }): JSX.Element {
+  const returnedButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (focusTicketRef !== null && document.activeElement === document.body) {
+      returnedButtonRef.current?.focus()
+    }
+  }, [focusTicketRef])
+
   if (items.length === 0) {
     return <p>Ningún caso coincide con este filtro.</p>
   }
@@ -75,6 +89,7 @@ export function QueueTable({
               >
                 <th scope="row">
                   <button
+                    ref={item.ticket_ref === focusTicketRef ? returnedButtonRef : undefined}
                     type="button"
                     className="queue-ticket-ref-button"
                     onClick={() => {
