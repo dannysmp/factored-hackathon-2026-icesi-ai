@@ -33,6 +33,7 @@ from contracts.service_v1.envelope import Intent
 from evals.cli import _fmt, _require_test_login_key, _select_cases, main
 from evals.fairness import CaseProfile
 from evals.golden.case_sheet import ALL_CASES
+from evals.injector import FailureSchedule
 from evals.judge import JudgeVerdict, LlmJudge
 from evals.metrics import NOT_DEFINED, CaseResult, Metric
 from evals.models import Case, CaseCategory
@@ -85,6 +86,65 @@ def test_require_test_login_key_returns_the_key_when_already_configured() -> Non
     )
 
     assert _require_test_login_key(settings) == LOGIN_KEY
+
+
+# -----------------------------------------------------------------------------
+# P and B0 — the failure schedule reaches both the application and the batch run
+# -----------------------------------------------------------------------------
+
+
+def _runner_settings() -> Any:
+    return load_settings(env_file=None).model_copy(
+        update={
+            "database_url": SecretStr("postgresql://unused/unused"),
+            "test_identity_enabled": True,
+            "test_identity_key": SecretStr(LOGIN_KEY),
+        }
+    )
+
+
+def _record_runner_wiring(
+    monkeypatch: pytest.MonkeyPatch, builder_name: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    built: dict[str, Any] = {}
+    run: dict[str, Any] = {}
+
+    def fake_builder(settings: object, **kwargs: Any) -> str:
+        built.update(kwargs)
+        return "app"
+
+    def fake_run_http_cases(client: object, dsn: str, cases: object, **kwargs: Any) -> tuple[()]:
+        run.update(kwargs)
+        return ()
+
+    monkeypatch.setattr(evals.cli, builder_name, fake_builder)
+    monkeypatch.setattr(evals.cli, "TestClient", lambda app: app)
+    monkeypatch.setattr(evals.cli, "run_http_cases", fake_run_http_cases)
+    return built, run
+
+
+def test_p_builds_its_application_through_the_schedule_the_batch_run_sets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    built, run = _record_runner_wiring(monkeypatch, "create_app")
+
+    evals.cli._run_p(_runner_settings(), ())
+
+    schedule = run["failure_schedule"]
+    assert isinstance(schedule, FailureSchedule)
+    assert built["tool_port_decorator"] == schedule.decorate
+
+
+def test_b0_builds_its_application_through_the_schedule_the_batch_run_sets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    built, run = _record_runner_wiring(monkeypatch, "build_b0_app")
+
+    evals.cli._run_b0(_runner_settings(), ())
+
+    schedule = run["failure_schedule"]
+    assert isinstance(schedule, FailureSchedule)
+    assert built["tool_port_decorator"] == schedule.decorate
 
 
 # -----------------------------------------------------------------------------

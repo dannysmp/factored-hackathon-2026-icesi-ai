@@ -16,6 +16,9 @@ Out: business routes, the tool layer and the data behind them.
 Design Principles
 -----------------
 - ``create_app`` is a factory: ``uvicorn app.main:create_app --factory``.
+- The tool port is the same for every caller. ``create_app`` accepts one optional decorator over
+  each request's tool port, outside its retry and circuit-breaker layer; nothing in production
+  passes one, and an evaluation harness uses it to fail a tool for one case.
 - Every path under ``/v1/`` requires a session by default; only the sign-in routes that are
   actually enabled (the sandbox login, the customer demo broker, the agent demo broker) are
   public.
@@ -95,7 +98,11 @@ from app.api.demo_signin import (  # Demo broker routes
     build_demo_persona_directory_router,
     build_demo_signin_router,
 )
-from app.api.turns import ControllerFactory, build_turns_router  # The turns route
+from app.api.turns import (  # The turns route and the hook a harness decorates its tools with
+    ControllerFactory,
+    ToolPortDecorator,
+    build_turns_router,
+)
 from app.config import (
     AppEnvironment,  # Environments with different key rules
     ConfigError,  # Missing signing key outside local
@@ -158,6 +165,7 @@ from app.security.sessions import (  # Sessions and the clock
     utc_now,
 )
 from app.security.signin_audit import SignInAuditSink  # The demo broker's audit sink interface
+from contracts.service_v1.tools import ToolPort  # What a tool port decorator returns
 
 logger = logging.getLogger(__name__)
 
@@ -384,6 +392,7 @@ def _controller_factory(
     retriever: LexicalRetriever,
     calendar: DomainCalendar,
     clock: Clock,
+    tool_port_decorator: ToolPortDecorator | None = None,
 ) -> ControllerFactory:
     """Build the per-request factory the turns route calls with each request's own principal.
 
@@ -427,22 +436,25 @@ def _controller_factory(
         current = store.get(principal.session_id)
         language = current.lang if current is not None else "es"
         audit = PostgresAuditSink(dsn)
-        tool_port = RetriedToolPort(
-            PostgresToolPort(
-                dsn,
-                audit,
-                policy,
-                customer_id=principal.customer_id,
-                session_id=principal.session_id,
-                trace_id=principal.session_id,
-                domain_date=calendar.reference_date,
-                now=clock,
-                language=language,
-                case_create_session_cap=settings.case_create_session_cap,
-            ),
+        store_port = PostgresToolPort(
+            dsn,
+            audit,
+            policy,
+            customer_id=principal.customer_id,
+            session_id=principal.session_id,
+            trace_id=principal.session_id,
+            domain_date=calendar.reference_date,
+            now=clock,
+            language=language,
+            case_create_session_cap=settings.case_create_session_cap,
+        )
+        tool_port: ToolPort = RetriedToolPort(
+            store_port,
             policy=tool_retry_policy,
             breaker=tool_breaker,
         )
+        if tool_port_decorator is not None:
+            tool_port = tool_port_decorator(principal, tool_port)
         outbox: HandoffOutbox = PostgresHandoffOutbox(dsn)
         gated_client: LlmClient = SpendGatedLlmClient(
             llm_client,
@@ -540,6 +552,7 @@ def create_app(
     controller_factory: ControllerFactory | None = None,
     signin_audit: SignInAuditSink | None = None,
     agent_console: AgentConsolePorts | None = None,
+    tool_port_decorator: ToolPortDecorator | None = None,
 ) -> FastAPI:
     """Build the FastAPI application.
 
@@ -567,6 +580,10 @@ def create_app(
         The console's own queue, ticket-detail, audit and writes collaborators; tests inject a
         hermetic bundle. When omitted and the agent demo broker is enabled, the real, store-backed
         ones are built from ``DATABASE_URL``.
+    tool_port_decorator : ToolPortDecorator | None
+        Wraps each request's tool port, outside the retry and circuit-breaker layer, so a harness
+        can fail a tool without leaving breaker state behind for the next request; ignored when
+        ``controller_factory`` is injected. When omitted, the tool port is used unchanged.
 
     Returns
     -------
@@ -708,7 +725,12 @@ def create_app(
             controller_factory=controller_factory
             if controller_factory is not None
             else _controller_factory(
-                resolved, policy=policy, retriever=retriever, calendar=calendar, clock=clock
+                resolved,
+                policy=policy,
+                retriever=retriever,
+                calendar=calendar,
+                clock=clock,
+                tool_port_decorator=tool_port_decorator,
             )
         )
     )
