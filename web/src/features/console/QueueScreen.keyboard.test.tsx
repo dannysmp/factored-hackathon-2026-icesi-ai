@@ -17,7 +17,7 @@ describe('QueueScreen keyboard traversal', () => {
 
     // Only the selected tab is in the tab order; the other two are reached with the arrow keys.
     await user.tab()
-    expect(screen.getByRole('tab', { name: 'Todos' })).toHaveFocus()
+    expect(screen.getByRole('tab', { name: /^Todos \(\d+\)$/ })).toHaveFocus()
 
     const [firstItem] = DEMO_QUEUE.items
     expect(firstItem).toBeDefined()
@@ -33,10 +33,10 @@ describe('QueueScreen keyboard traversal', () => {
     render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={vi.fn()} />)
     await screen.findAllByRole('row')
 
-    screen.getByRole('tab', { name: 'Todos' }).focus()
+    screen.getByRole('tab', { name: /^Todos \(\d+\)$/ }).focus()
     await user.keyboard('{ArrowRight}')
 
-    const priorityTab = screen.getByRole('tab', { name: 'Fraude y pérdida de tarjeta' })
+    const priorityTab = screen.getByRole('tab', { name: /^Fraude y pérdida de tarjeta \(\d+\)$/ })
     expect(priorityTab).toHaveFocus()
     expect(priorityTab).toHaveAttribute('aria-selected', 'true')
     expect(screen.getAllByRole('row')).toHaveLength(
@@ -44,7 +44,7 @@ describe('QueueScreen keyboard traversal', () => {
     )
 
     await user.keyboard('{ArrowLeft}')
-    expect(screen.getByRole('tab', { name: 'Todos' })).toHaveFocus()
+    expect(screen.getByRole('tab', { name: /^Todos \(\d+\)$/ })).toHaveFocus()
     expect(screen.getAllByRole('row')).toHaveLength(DEMO_QUEUE.items.length + 1)
   })
 

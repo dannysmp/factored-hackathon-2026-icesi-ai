@@ -33,24 +33,39 @@ def test_a_fresh_state_starts_with_no_pending_slot_and_zero_attempts() -> None:
     assert state.clarification_attempts == 0
 
 
-def test_asking_for_the_same_slot_again_increments_the_counter() -> None:
-    """Two consecutive clarifications on the same element count up."""
+def test_asking_for_a_slot_for_the_first_time_counts_no_unsettled_answer() -> None:
+    """A question not yet answered has not been answered badly: the count starts at zero."""
+    first = _state().with_clarification(Slot.REASON)
+
+    assert first.pending_slot is Slot.REASON
+    assert first.clarification_attempts == 0
+    assert first.phase is ConversationPhase.CLARIFYING
+
+
+def test_asking_for_the_same_slot_again_counts_each_unsettled_answer() -> None:
+    """Each time the pending element is asked for again, one more answer has left it unsettled."""
     first = _state().with_clarification(Slot.REASON)
     second = first.with_clarification(Slot.REASON)
+    third = second.with_clarification(Slot.REASON)
 
-    assert first.clarification_attempts == 1
-    assert second.clarification_attempts == 2
-    assert second.phase is ConversationPhase.CLARIFYING
+    assert second.clarification_attempts == 1
+    assert third.clarification_attempts == 2
 
 
 def test_asking_for_a_different_slot_resets_the_counter() -> None:
     """A new blocker starts its own count; the old one's attempts do not carry over."""
-    twice_on_reason = _state().with_clarification(Slot.REASON).with_clarification(Slot.REASON)
+    twice_on_reason = (
+        _state()
+        .with_clarification(Slot.REASON)
+        .with_clarification(Slot.REASON)
+        .with_clarification(Slot.REASON)
+    )
 
-    once_on_transaction = twice_on_reason.with_clarification(Slot.TRANSACTION)
+    on_transaction = twice_on_reason.with_clarification(Slot.TRANSACTION)
 
-    assert once_on_transaction.pending_slot is Slot.TRANSACTION
-    assert once_on_transaction.clarification_attempts == 1
+    assert twice_on_reason.clarification_attempts == 2
+    assert on_transaction.pending_slot is Slot.TRANSACTION
+    assert on_transaction.clarification_attempts == 0
 
 
 def test_filling_the_pending_slot_clears_it_and_resets_the_counter() -> None:

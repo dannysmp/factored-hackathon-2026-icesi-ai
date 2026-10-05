@@ -15,8 +15,8 @@ describe('FILE_DISPUTE_ES', () => {
   })
 
   it('carries the case number on the filing-result turn, before the session ends', () => {
-    const filingResult = FILE_DISPUTE_ES.find((turn) => turn.handoff_ticket !== null)
-    expect(filingResult?.handoff_ticket).toBe('D-2001')
+    const filingResult = FILE_DISPUTE_ES.find((turn) => turn.case_number !== null)
+    expect(filingResult?.case_number).toBe('D-2001')
     expect(filingResult?.end_session).toBe(false)
   })
 })
