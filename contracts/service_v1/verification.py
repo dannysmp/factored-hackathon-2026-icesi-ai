@@ -14,7 +14,7 @@ Scope
 In: ``CandidateReply`` (what the model wrote), ``SlotValue``/``SlotValues`` (what the controller
 grounded, keyed by field), ``RejectionReason`` and ``VerifierResult`` (what the verifier decided).
 Out: running the verification algorithm (``app.conversation.verifier``), producing slot values
-from an envelope (the dialogue controller, a later slice) and the model call itself (``app.llm``).
+from an envelope (the dialogue controller) and the model call itself (``app.llm``).
 
 Design Principles
 -----------------
@@ -28,7 +28,7 @@ Design Principles
   reply to citing every entry it was given, not just the first: ``GROUNDED_ENTRY_DROPPED`` names
   the reply that names a field once and silently leaves the rest of its grounded entries unsaid.
 - ``RejectionReason`` names *why* a candidate was rejected, not just that it was, so a verifier
-  test can assert the specific failure mode it seeded rather than only the outcome.
+  test can assert the specific failure mode it provoked rather than only the outcome.
 - The models are immutable and reject unknown fields, matching every other service contract.
 
 Runtime Contract
@@ -65,6 +65,7 @@ class CandidateReply(ContractModel):
     it — there is nothing independent to check it against.
     """
 
+    # The text exactly as the model wrote it, with ``{{field}}`` placeholders to be substituted.
     raw_text: Annotated[SafeText, Field(min_length=1, max_length=2000)]
 
 
@@ -81,6 +82,7 @@ class SlotValue(ContractModel):
     """
 
     field: GroundedField
+    # The text substituted for the field's placeholder, in the reply language.
     value: Annotated[SafeText, Field(min_length=1, max_length=200)]
 
 
@@ -92,6 +94,7 @@ class SlotValues(ContractModel):
     reply that lists several cases needs, one entry per case.
     """
 
+    # Empty when the envelope offers nothing to cite.
     entries: tuple[SlotValue, ...] = ()
 
 
@@ -103,10 +106,15 @@ class SlotValues(ContractModel):
 class RejectionReason(StrEnum):
     """Why a candidate reply was rejected."""
 
+    # The raw text holds a numeral character of its own instead of a placeholder.
     DIGIT_OUTSIDE_SLOT = "digit_outside_slot"
+    # A placeholder is malformed, unknown, or names a field the intent does not allow.
     UNDECLARED_PLACEHOLDER = "undeclared_placeholder"
+    # A placeholder names an allowed field that has no entry left to substitute.
     UNRESOLVED_PLACEHOLDER = "unresolved_placeholder"
+    # The reply never names a field the intent requires.
     REQUIRED_FIELD_MISSING = "required_field_missing"
+    # The reply names a field but leaves some of that field's entries unsaid.
     GROUNDED_ENTRY_DROPPED = "grounded_entry_dropped"
 
 
@@ -114,7 +122,9 @@ class VerifierResult(ContractModel):
     """The verifier's decision for one candidate reply."""
 
     outcome: Literal["accepted", "rejected"]
+    # The reply with every placeholder substituted; present exactly when accepted.
     rendered_text: SafeText | None = None
+    # Every reason that applies; present exactly when rejected.
     reasons: tuple[RejectionReason, ...] = ()
 
     @model_validator(mode="after")

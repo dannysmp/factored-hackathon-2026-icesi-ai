@@ -4,11 +4,10 @@ Fact Translation
 
 Overview
 --------
-Translates a tool-layer record (``contracts.service_v1.tools``/``cases``, stream 1's own contract,
-read straight from the serving store) into the render-layer fact the envelope and the handoff
-packet carry (``contracts.service_v1.envelope``, this stream's own contract). The two packages are
-deliberately separate — a different owner, a different freeze — so nothing recomputes this mapping
-ad hoc at every call site that needs one.
+Translates a tool-layer record (``contracts.service_v1.tools``/``cases``, read straight from the
+serving store) into the render-layer fact the envelope and the handoff packet carry
+(``contracts.service_v1.envelope``). The two contracts are deliberately separate, so the mapping
+lives in one place and nothing recomputes it ad hoc at every call site that needs one.
 
 Scope
 -----
@@ -41,7 +40,11 @@ from contracts.service_v1.envelope import CaseFact, Money, ProductLabel, Transac
 
 
 def to_envelope_transaction(fact: tools.TransactionFact) -> TransactionFact:
-    """``fact`` as the renderer or a handoff packet may state it."""
+    """``fact`` as the renderer or a handoff packet may state it.
+
+    The amount is the disclosed figure when the source gave one (or a same-day conversion exists)
+    and ``None`` otherwise; where the figure came from is not carried over.
+    """
     money = fact.amount.money
     return TransactionFact(
         ref=fact.ref,
@@ -54,7 +57,11 @@ def to_envelope_transaction(fact: tools.TransactionFact) -> TransactionFact:
 
 
 def to_envelope_case(record: cases.CaseRecord) -> CaseFact:
-    """``record`` as the renderer or a handoff packet may state it."""
+    """``record`` as the renderer or a handoff packet may state it.
+
+    The case's status is its enum value; the filing date and the expected first-response date are
+    the record's domain dates.
+    """
     return CaseFact(
         case_number=record.case_number,
         status=record.status.value,

@@ -8,8 +8,8 @@ Component: the egress boundary the understanding step's outbound model request p
 Where ``tests/test_masking.py`` proves ``redact_pan`` itself is correct in isolation, this module
 proves two guarantees on the *real call path* a customer's message travels through: a card number
 never reaches the request the process sends out, and no log line that path emits carries the
-customer's raw text. It also pins the shape of the structured result the step extracts: that
-result has no document-number, email or phone field. ``FakeLlm.requests`` is the request-capture
+customer's raw text. It also pins the shape of the structured transaction hint the step extracts:
+the hint has no document-number, email or phone field. ``FakeLlm.requests`` is the request-capture
 fixture the tests read.
 
 Limitations
@@ -75,7 +75,7 @@ def test_a_card_number_split_by_separators_never_reaches_the_outbound_request() 
     assert masking.PLACEHOLDER in sent
 
 
-def test_no_contract_field_the_understanding_step_extracts_can_carry_a_document_number() -> None:
+def test_the_transaction_hint_has_no_dedicated_identifier_field() -> None:
     """The structured transaction hint has no identifier field: it holds only merchant, amount,
     currency, date and a product's last four digits. The merchant is free text and can hold
     whatever a customer typed (see Limitations); this pins that no dedicated identifier field

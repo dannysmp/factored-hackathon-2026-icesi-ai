@@ -4,47 +4,45 @@ Risk Score Calibration, Threshold and Model Card
 
 Overview
 --------
-The calibration slice of the pre-registered risk probe
-(`plan/product/preregistration-risk-probe.md`, steps 2 to 7): fits the model the boosted-model
-slice selected (`models/boosted.py`'s own bootstrap result, read from the experiment log, never
-re-decided here), reports its calibration on validation and on test (AC-E6-03), chooses a
-threshold on validation against the pre-registered precision floor and routed-share cap
-(AC-E6-04), scores the test period once with it, and switches risk routing on only if the test
-result clears the same floor with its bootstrap interval's lower bound above the test prevalence
-(AC-E6-05, AC-E6-16). Whatever the result, it is written to a machine-readable model card
-(`models/model_card.json`) and appended to the experiment log.
+The last modelling step: fits the model that `models.boosted` selected (read from the experiment
+log, never re-decided here), reports its calibration on validation and on test, chooses a
+threshold on validation against a fixed precision floor and routed-share cap, scores the test
+period once with it, and switches risk routing on only if the test result clears the same floor
+with its bootstrap interval's lower bound above the test prevalence. Whatever the result, it is
+written to a machine-readable model card (`models/model_card.json`) and appended to the experiment
+log.
 
 Scope
 -----
 In: reading the selected model's name from the experiment log, fitting it once on train, scoring
 validation and test, the threshold search, the customer-resampled bootstrap of the precision at
 the chosen threshold, calibration diagnostics (Brier score, expected calibration error, a binned
-curve) and the model card. Out: model selection between logistic and boosted (`models/boosted.py`
+curve) and the model card. Out: model selection between logistic and boosted (`models.boosted`
 already decided that); wiring a live score into a request (the score is computed in batch and
-never carries a model into the running service, per the architecture document).
+never carries a model into the running service).
 
 Design Principles
 -----------------
 - **The model is never re-selected here.** `latest_selected_model` reads the last "bootstrap"
-  entry `models/boosted.py` appended and takes its `selected` field; this module has no rule of
-  its own for choosing between logistic and boosted.
-- **The threshold search is the pre-registration's own rule, unchanged.** The lowest validation
-  score whose precision is at least `PRECISION_FLOOR` and whose routed share is at most
-  `ROUTED_SHARE_CAP`; if none qualifies, there is no threshold and routing stays off (no test
-  scoring follows from that outcome, since there is no threshold to apply). `precision_recall_curve`
-  gives precision and recall at every distinct score; the routed share at each one follows from
+  entry `models.boosted` appended and takes its `selected` field; this module has no rule of its
+  own for choosing between logistic and boosted.
+- **The threshold rule is applied unchanged.** The lowest validation score whose precision is at
+  least `PRECISION_FLOOR` and whose routed share is at most `ROUTED_SHARE_CAP`; if none
+  qualifies, there is no threshold and routing stays off (no test scoring follows from that
+  outcome, since there is no threshold to apply). `precision_recall_curve` gives precision and
+  recall at every distinct score; the routed share at each one follows from
   `recall * positives / (precision * total)`, so no second pass over the scores is needed.
 - **The test period is scored exactly once.** That one score array feeds both the calibration
-  diagnostics AC-E6-03 asks for on the test period and, when a threshold was chosen, the routing
-  decision AC-E6-04 asks for; it is never rescored for a second purpose.
-- **The bootstrap resamples customers, not rows, over the test period only** (pre-registration
-  step 4), with the resample count and seed fixed by that document, not by this module.
+  diagnostics for the test period and, when a threshold was chosen, the routing decision; it is
+  never rescored for a second purpose.
+- **The bootstrap resamples customers, not rows, over the test period only,** with the resample
+  count (`CALIBRATION_BOOTSTRAP_RESAMPLES`) and seed set as constants rather than tuned here.
 - **Scores are not calibrated probabilities.** Both models are fitted with `class_weight="balanced"`
   (the same rule as `models.probe` and `models.boosted`), which reweights the fit for the severe
   imbalance and inflates predicted probabilities relative to the true prevalence. The precision,
   recall and threshold procedures stay valid regardless, because they only depend on the scores'
-  ranking, not their absolute value; the calibration diagnostics are reported for transparency
-  (AC-E6-03), not as a claim that the score is a calibrated probability.
+  ranking, not their absolute value; the calibration diagnostics are reported for transparency,
+  not as a claim that the score is a calibrated probability.
 - **A negative result is written, not hidden.** If no threshold clears the floor, or the test
   result does not, `routing_enabled` is `False` and `rationale` says which condition failed; the
   card is still complete and still machine-readable.
@@ -59,12 +57,11 @@ resamples) -> CalibrationResult``
 
 Limitations
 -----------
-The routed-share and recall guardrail gap between countries, segments and currencies
-(`models/README.md`, the outcome table) is not computed here: with no threshold accepted nothing
-is ever routed, so there is no group gap to report; a slice that enables routing must add that
-breakdown before shipping it. The customer identifier used for resampling is read only from the
-cleaned transactions table and is discarded once the bootstrap returns, the same rule
-`models.boosted` follows.
+The routed-share and recall guardrail gap between countries, segments and currencies is not
+computed here: with no threshold accepted nothing is ever routed, so there is no group gap to
+report; enabling routing would first require adding that breakdown. The customer identifier used
+for resampling is read only from the cleaned transactions table and is discarded once the
+bootstrap returns, the same rule `models.boosted` follows.
 """
 
 from __future__ import annotations
@@ -110,14 +107,16 @@ logger = logging.getLogger(__name__)
 DEFAULT_SILVER = Path("data/silver")
 DEFAULT_CARD = Path("models/model_card.json")
 
-# The pre-registered decision rule (`plan/product/preregistration-risk-probe.md`): ten times the
-# validation base rate, with at most one in twenty otherwise-eligible transactions routed.
+# The decision rule: a precision floor of ten times the validation base rate, with at most one in
+# twenty otherwise-eligible transactions routed.
 PRECISION_FLOOR = 0.01
 ROUTED_SHARE_CAP = 0.05
-# Fixed by the pre-registration's step 4, not chosen by this module.
+# A constant, not tuned by this module.
 CALIBRATION_BOOTSTRAP_RESAMPLES = 2000
 CALIBRATION_BINS = 10
 
+# The test period's features and label with the customer identifier, in one query so the three
+# line up row for row. The inner join drops any mart row without a cleaned transaction.
 _TEST_WITH_CUSTOMER_QUERY = """
 SELECT {columns}
 FROM read_parquet(?) AS m
@@ -128,7 +127,11 @@ WHERE m."split" = 'test'
 
 @dataclass(frozen=True, slots=True)
 class CalibrationCurvePoint:
-    """One bin of the calibration curve: how many scores fell in it and what was observed."""
+    """One bin of the calibration curve: how many scores fell in it and what was observed.
+
+    `bin_lower` and `bin_upper` are the bin's score range, `count` the scores in it,
+    `mean_predicted` their mean score and `observed_rate` the fraction that were fraud.
+    """
 
     bin_lower: float
     bin_upper: float
@@ -139,7 +142,10 @@ class CalibrationCurvePoint:
 
 @dataclass(frozen=True, slots=True)
 class CalibrationDiagnostics:
-    """Brier score, expected calibration error and the binned curve for one period."""
+    """Brier score, expected calibration error and the binned curve for one period.
+
+    `period` is `validation` or `test`. Empty bins are omitted from `curve`.
+    """
 
     period: str
     brier_score: float
@@ -149,7 +155,11 @@ class CalibrationDiagnostics:
 
 @dataclass(frozen=True, slots=True)
 class ThresholdChoice:
-    """The lowest validation threshold meeting the floor and the routed-share cap."""
+    """The lowest validation threshold meeting the floor and the routed-share cap.
+
+    Also holds the validation precision, recall and routed share (fraction of all validation rows
+    scored at or above the threshold) at that threshold.
+    """
 
     threshold: float
     validation_precision: float
@@ -159,7 +169,11 @@ class ThresholdChoice:
 
 @dataclass(frozen=True, slots=True)
 class TestScoring:
-    """The one-time test-period result of applying the chosen threshold."""
+    """The one-time test-period result of applying the chosen threshold.
+
+    Precision, recall and routed share at the threshold, the number of fraud-positive test rows,
+    and the customer-bootstrap interval of the precision.
+    """
 
     precision: float
     recall: float
@@ -170,7 +184,13 @@ class TestScoring:
 
 @dataclass(frozen=True, slots=True)
 class CalibrationResult:
-    """The full outcome of the calibration slice: the model card, in one object."""
+    """The full outcome of the calibration run: the model card, in one object.
+
+    Provenance (code and mart versions, split, seed), the selected model, the floor and cap used,
+    the calibration diagnostics per period, the threshold and test scoring (both `None` when no
+    validation threshold qualified), whether routing is enabled and why, and the card's fixed
+    prose: data provenance, intended use, leakage review and limitations.
+    """
 
     timestamp: str
     code_version: str
@@ -192,7 +212,11 @@ class CalibrationResult:
     limitations: tuple[str, ...]
 
     def as_dict(self) -> dict[str, object]:
-        """The result as JSON-serialisable data: both the experiment-log line and the model card."""
+        """The result as JSON-serialisable data: both the experiment-log line and the model card.
+
+        Split dates are rendered as ISO strings and the tuple-valued fields as lists; `threshold`
+        and `test_scoring` are `None` when absent.
+        """
         return {
             "timestamp": self.timestamp,
             "code_version": self.code_version,
@@ -237,7 +261,10 @@ class CalibrationResult:
 
 
 def latest_selected_model(log_path: Path) -> str:
-    """The model `models/boosted.py`'s bootstrap last selected, from the experiment log.
+    """The model `models.boosted`'s bootstrap last selected, from the experiment log.
+
+    Scans the log from the newest line back for an entry with a `bootstrap` object holding a
+    `selected` field and returns that field; entries of other run types are skipped.
 
     Raises
     ------
@@ -261,7 +288,16 @@ _FittedModel: TypeAlias = LogisticRegression | HistGradientBoostingClassifier
 def _fit_selected(
     model_name: str, train: PeriodArrays, *, seed: int
 ) -> tuple[_FittedModel, ColumnTransformer]:
-    """Fit `model_name` on `train`'s identical features; return it with its fitted preprocessor."""
+    """Fit `model_name` on `train`'s identical features; return it with its fitted preprocessor.
+
+    `model_name` is `logistic` or `boosted`, built with the same parameters as in `models.boosted`
+    (class-balanced, seeded with `seed`). The preprocessor is fitted on `train` only.
+
+    Raises
+    ------
+    ValueError
+        When `model_name` is neither `logistic` nor `boosted`.
+    """
     preprocessor = _preprocessor(train.categorical.shape[1], train.numeric.shape[1])
     x_train = preprocessor.fit_transform(np.hstack([train.categorical, train.numeric]))
     model: _FittedModel
@@ -278,7 +314,12 @@ def _fit_selected(
 def _score(
     model: _FittedModel, preprocessor: ColumnTransformer, period: PeriodArrays
 ) -> np.ndarray:
-    """The fitted `model`'s positive-class score for every row of `period`."""
+    """The fitted `model`'s positive-class score for every row of `period`.
+
+    Applies the already-fitted `preprocessor` (transform only, no refitting) and returns the
+    predicted probability of the fraud class; being class-balanced, it ranks rows but is not a
+    calibrated probability.
+    """
     x = preprocessor.transform(np.hstack([period.categorical, period.numeric]))
     return np.asarray(model.predict_proba(x)[:, 1])
 
@@ -286,7 +327,12 @@ def _score(
 def _calibration_diagnostics(
     period: str, label: np.ndarray, scores: np.ndarray, *, bins: int = CALIBRATION_BINS
 ) -> CalibrationDiagnostics:
-    """Brier score, expected calibration error and the binned curve of `scores` against `label`."""
+    """Brier score, expected calibration error and the binned curve of `scores` against `label`.
+
+    Scores are placed in `bins` equal-width bins over [0, 1] (the last bin includes 1.0). The
+    expected calibration error is the sum over non-empty bins of the bin's share of rows times the
+    absolute gap between its observed fraud rate and its mean score.
+    """
     brier = float(brier_score_loss(label, scores))
     edges = np.linspace(0.0, 1.0, bins + 1)
     bin_index = np.clip(np.digitize(scores, edges[1:-1], right=False), 0, bins - 1)
@@ -314,8 +360,9 @@ def choose_threshold(
 ) -> ThresholdChoice | None:
     """The lowest validation threshold whose precision is at least `floor` and share at most `cap`.
 
-    `None` when no threshold meets both, per the pre-registration's own rule: routing then stays
-    off and no test period is scored.
+    Considers every distinct score as a threshold (rows scored at or above it are routed) and
+    returns the lowest one meeting both conditions. `None` when no threshold meets both, or when
+    `label` is empty or has no positives: routing then stays off and no test period is scored.
     """
     total = len(label)
     positives = int(label.sum()) if total else 0
@@ -338,7 +385,11 @@ def choose_threshold(
 def _score_at_threshold(
     label: np.ndarray, scores: np.ndarray, threshold: float
 ) -> tuple[float, float, float, int]:
-    """Precision, recall, routed share and the positive count of `scores` at `threshold`, once."""
+    """Precision, recall, routed share and the positive count of `scores` at `threshold`, once.
+
+    A row is routed when its score is at least `threshold`. Precision, recall and routed share are
+    `0.0` rather than an error when their denominator is zero.
+    """
     predicted = scores >= threshold
     positives = int(label.sum())
     true_positive = int(np.sum(predicted & label))
@@ -359,7 +410,13 @@ def _bootstrap_precision_at_threshold(
     seed: int,
     resamples: int,
 ) -> BootstrapInterval:
-    """The customer-resampled 95% interval of the precision at `threshold`, over the test period."""
+    """The customer-resampled 95% interval of the precision at `threshold`, over the test period.
+
+    Each of `resamples` draws picks as many customers as there are, with replacement; rows are
+    weighted by how often their customer was drawn and the precision is recomputed from the fixed
+    scores (a draw that routes nothing counts as `0.0`). The returned point estimate is the
+    precision on the unresampled test period. Deterministic given `seed`.
+    """
     predicted = scores >= threshold
     unique_customers, row_of = np.unique(customer_ids, return_inverse=True)
     n_customers = len(unique_customers)
@@ -384,7 +441,7 @@ def _decide_routing(
     *,
     floor: float,
 ) -> tuple[bool, str]:
-    """Whether the test-period result clears AC-E6-05's two-condition rule, and why.
+    """Whether the test-period result clears the two-condition routing rule, and why.
 
     Routing turns on only when the test-period precision meets `floor` and the bootstrap
     interval's lower bound is above `test_prevalence`; either failing keeps it off, each with its
@@ -411,7 +468,17 @@ def _decide_routing(
 def _load_test_with_customer(
     con: duckdb.DuckDBPyConnection, mart: str, silver_dir: Path, column_types: dict[str, str]
 ) -> tuple[PeriodArrays, np.ndarray]:
-    """The test period's features, label and customer identifier, joined once, in one order."""
+    """The test period's features, label and customer identifier, joined once, in one order.
+
+    Reads the mart's test rows and joins the cleaned transactions table (under `silver_dir`) on
+    the transaction identifier to obtain the customer identifier, returned separately from the
+    feature arrays so it can only be used for grouping the bootstrap.
+
+    Raises
+    ------
+    duckdb.Error
+        When a required column is missing or the cleaned transactions table cannot be read.
+    """
     names = [*FEATURES, "is_fraud"]
     query = _TEST_WITH_CUSTOMER_QUERY.format(
         columns=", ".join(f'm."{name}"' for name in names) + ', t."customer_id" AS customer_id'
@@ -436,9 +503,11 @@ def _load_test_with_customer(
     return PeriodArrays(categorical, numeric, label, rows, int(label.sum())), customer_ids
 
 
+# Fixed prose of the model card: where the data came from, what the score may be used for, how
+# leakage was ruled out and what the card does not cover.
 _DATA_PROVENANCE = (
     "The transaction and fraud labels are synthetic, generated for this project; they are not "
-    "drawn from any real bank, customer or regulator (see plan/docs/data-plan.md)."
+    "drawn from any real bank, customer or regulator."
 )
 _INTENDED_USE = (
     "Routing only: the score can send an otherwise eligible dispute to a person for review. It "
@@ -472,7 +541,14 @@ def run_calibration(
     cap: float = ROUTED_SHARE_CAP,
     resamples: int = CALIBRATION_BOOTSTRAP_RESAMPLES,
 ) -> CalibrationResult:
-    """Run the calibration slice on `mart`; return the full model card as one result.
+    """Run the calibration on `mart`; return the full model card as one result.
+
+    Fits the model recorded in `model_log` on train, scores validation and test once, and
+    searches validation for a threshold meeting `floor` and `cap`. With a threshold, the test
+    period is scored at it and the routing decision is made from the test precision and its
+    `resamples`-draw customer bootstrap; without one, routing is off and the rationale says so.
+    `manifest` supplies the mart's code version and output digest, `silver_dir` the cleaned layer
+    used to group the bootstrap by customer, and `now` the run timestamp. Writes nothing.
 
     Raises
     ------
@@ -572,7 +648,12 @@ def run_calibration(
 
 
 def write_model_card(result: CalibrationResult, card_path: Path) -> None:
-    """Write `result` as the current model card, replacing whatever `card_path` held before."""
+    """Write `result` as the current model card, replacing whatever `card_path` held before.
+
+    Unlike the experiment log, the card holds only the current state. It is pretty-printed with
+    sorted keys and a trailing newline so a rewrite with an unchanged result is byte-identical,
+    and the parent directory is created when missing.
+    """
     card_path.parent.mkdir(parents=True, exist_ok=True)
     card_path.write_text(
         json.dumps(result.as_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -585,7 +666,14 @@ def write_model_card(result: CalibrationResult, card_path: Path) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the calibration slice; write the model card and append to the experiment log."""
+    """Run the calibration; write the model card and append to the experiment log.
+
+    Options select the mart, its manifest, the cleaned layer, the split file, the log (which is
+    also where the selected model is read from), the card path, the seed, the precision floor, the
+    routed-share cap and the resample count. Returns `0` on success and `1` when the split file is
+    invalid, an input is missing, the log has no model selection or DuckDB cannot read an input;
+    the failure is logged by exception type only.
+    """
     parser = argparse.ArgumentParser(
         description="Choose the risk-score threshold, calibrate it and write the model card."
     )

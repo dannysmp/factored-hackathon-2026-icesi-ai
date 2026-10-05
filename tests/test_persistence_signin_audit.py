@@ -3,8 +3,8 @@ Sign-In Audit Store Tests
 ==========================
 
 Component: ``app.persistence.signin_audit``. Needs a real, migrated Postgres: append-only is a
-store guarantee (migration 0006's trigger), and the resolved-id/audience pairing is a store
-guarantee too (migration 0007's check constraint) — neither is something a fake could prove.
+store guarantee (the trigger on the sign-in audit table), and the resolved-id/audience pairing is a
+store guarantee too (a check constraint) — neither is something a fake could prove.
 Marked ``integration``, skipped when ``DATABASE_URL`` is not set.
 """
 
