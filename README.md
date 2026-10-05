@@ -215,7 +215,7 @@ how customers feel about the contacts, what handling a dispute costs under state
 (`pipelines/analysis_assumptions.toml`) and which outcomes an automated workflow should reach. It
 builds the aggregate marts under `data/gold/dispute_demand`; the report holds counts and rates only.
 
-`make features` reads the cleaned layer and builds the table the transaction risk model will learn from
+`make features` reads the cleaned layer and builds the table the transaction risk model learns from
 (`data/gold/risk_features`), with the report [`reports/risk-features.md`](reports/risk-features.md).
 Every feature uses only what was known when the transaction happened (the velocity windows end
 strictly before it), the source's own fraud score and the authorisation outcome are left out on
