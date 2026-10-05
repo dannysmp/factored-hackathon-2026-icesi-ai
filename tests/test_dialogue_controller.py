@@ -3009,6 +3009,38 @@ def test_escalate_decision_hands_off(
     assert outbox.packets[0].evidence.reason_codes == (reason_code,)
 
 
+def test_escalate_handoff_lists_each_routing_reason_once(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The decision's own reason is its first trigger, so the packet must not list it twice."""
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    triggers = (ReasonCode.ESCALATE_REPEAT_COMPLAINER, ReasonCode.ESCALATE_AMOUNT_ABOVE_THRESHOLD)
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(Outcome.ESCALATE, triggers[0], triggers=triggers),
+    )
+    controller, _ = _controller(
+        _file_dispute(transaction=TransactionHint(merchant="Amazon")),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=outbox,
+        retriever=retriever,
+    )
+    controller.handle_turn(_turn("turn-0001"), principal=_principal())
+    controller, _ = _controller(
+        _file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE),
+        store=store,
+        tool_port=port,
+        policy=policy,
+        outbox=outbox,
+        retriever=retriever,
+    )
+    controller.handle_turn(_turn("turn-0002"), principal=_principal())
+    assert outbox.packets[0].evidence.reason_codes == triggers
+
+
 def test_duplicate_open_case_refusal_is_presented_as_ineligible(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:

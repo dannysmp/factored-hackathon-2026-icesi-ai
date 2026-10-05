@@ -1594,7 +1594,7 @@ class DialogueController:
         return self._handoff(
             state,
             trigger=trigger,
-            reason_codes=(decision.reason_code, *decision.triggers),
+            reason_codes=tuple(dict.fromkeys((decision.reason_code, *decision.triggers))),
             template=template,
             category=category,
             actions=(ActionRecord(action="evaluate_dispute", result=decision.reason_code.value),),
