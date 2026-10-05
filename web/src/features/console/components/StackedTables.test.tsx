@@ -37,6 +37,19 @@ describe('stacked tables', () => {
     expectCellsLabelledByColumn(container)
   })
 
+  it('keeps an overdue flag inside the value box of its date, not as a cell of its own', () => {
+    const [first] = DEMO_QUEUE.items
+    if (first === undefined) throw new Error('fixture setup: DEMO_QUEUE must not be empty')
+    const overdue = { ...first, reference_date: '2026-06-20', promised_contact_by: '2026-06-18' }
+    const { container } = render(<QueueTable items={[overdue]} onSelectTicket={() => undefined} />)
+
+    const cell = container.querySelector('td[data-label="Contacto prometido para"]')
+    const flag = container.querySelector('.queue-overdue-flag')
+    expect(flag).not.toBeNull()
+    expect(flag?.parentElement?.parentElement).toBe(cell)
+    expect(cell?.children).toHaveLength(1)
+  })
+
   it('labels every verified transaction value with its column title', () => {
     const { container } = render(<PacketPanel packet={FIRST.packet} />)
     expectCellsLabelledByColumn(container)
