@@ -277,11 +277,13 @@ def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -
     Every part of ``hint`` that was given must agree; a part the source data cannot answer (an
     absent merchant and description, an unknown amount) never matches a hint that names it. The
     merchant is compared ignoring accents and case, in both directions: a customer who types
-    "cafe" finds "Café Sol", and one who types "São Paulo" finds "SAO PAULO".
+    "cafe" finds "Café Sol", and one who types "São Paulo" finds "SAO PAULO". A merchant that is
+    empty once accents and surrounding blanks are removed names nothing, so it matches nothing.
     """
     if hint.merchant is not None:
         label = fact.merchant or fact.description
-        if label is None or _fold(hint.merchant) not in _fold(label):
+        wanted = _fold(hint.merchant).strip()
+        if label is None or not wanted or wanted not in _fold(label):
             return False
     money = fact.amount.money
     if hint.amount is not None and (money is None or money.amount != hint.amount):

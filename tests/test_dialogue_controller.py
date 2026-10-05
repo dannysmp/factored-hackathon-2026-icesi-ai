@@ -419,6 +419,7 @@ def test_matches_hint_ignores_case_in_an_accented_name_typed_with_its_accent() -
         ("São Paulo", "SAO PAULO"),
         ("SAO PAULO", "são paulo"),
         ("Pão de Açúcar", "pao de acucar"),
+        ("Señor Taco", "senor"),
     ],
 )
 def test_matches_hint_ignores_accents_whichever_side_carries_them(stored: str, typed: str) -> None:
@@ -426,7 +427,14 @@ def test_matches_hint_ignores_accents_whichever_side_carries_them(stored: str, t
     assert _matches_hint(_transaction(merchant=stored), TransactionHint(merchant=typed))
 
 
+@pytest.mark.parametrize("typed", ["\u0301", " ", "\u0301 \u0301"])
+def test_matches_hint_rejects_a_merchant_that_folds_to_nothing(typed: str) -> None:
+    """An accent mark or blank alone names no merchant, so it must not match every transaction."""
+    assert not _matches_hint(_transaction(merchant="Café Sol"), TransactionHint(merchant=typed))
+
+
 def test_matches_hint_still_rejects_a_different_merchant_after_accent_folding() -> None:
+    """Folding accents must not make unrelated names compare equal."""
     assert not _matches_hint(
         _transaction(merchant="Café Sol"), TransactionHint(merchant="Sol Luna")
     )
