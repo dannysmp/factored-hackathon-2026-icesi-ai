@@ -5,7 +5,7 @@ import {
   formatDate,
   formatDateTime,
   formatMoney,
-  formatScore,
+  formatScoreAgainstThreshold,
   formatShare,
 } from './format'
 
@@ -57,19 +57,32 @@ describe('formatMoney on unusual input', () => {
     expect(formatMoney('1500', 'JPY').replaceAll('\u00a0', ' ')).toBe('1500 JPY')
   })
 
-  it('keeps the decimals an amount carries beyond its currency’s own', () => {
-    expect(formatMoney('12.345', 'MXN').replaceAll('\u00a0', ' ')).toBe('12,345 MXN')
+  it('never shortens an amount with a nonzero fraction below cents', () => {
+    expect(formatMoney('15000.50', 'CLP').replaceAll('\u00a0', ' ')).toBe('15.000,50 CLP')
+    expect(formatMoney('0.10', 'JPY').replaceAll('\u00a0', ' ')).toBe('0,10 JPY')
+    expect(formatMoney('1234567.89', 'COP').replaceAll('\u00a0', ' ')).toBe('1.234.567,89 COP')
     expect(formatMoney('12.50', 'MXN').replaceAll('\u00a0', ' ')).toBe('12,50 MXN')
+  })
+
+  it('writes a negative zero as zero', () => {
+    expect(formatMoney('-0.00', 'MXN').replaceAll('\u00a0', ' ')).toBe('0,00 MXN')
   })
 
   it('writes a dash for an amount that is not a number', () => {
     expect(formatMoney('abc', 'MXN')).toBe('—')
     expect(formatMoney('', 'MXN')).toBe('—')
     expect(formatMoney('Infinity', 'MXN')).toBe('—')
+    expect(formatMoney('0x10', 'MXN')).toBe('—')
+    expect(formatMoney('1e3', 'MXN')).toBe('—')
   })
 
   it('shows the amount and the code as given when the code is not a currency', () => {
     expect(formatMoney('250', '12')).toBe('250 12')
+  })
+
+  it('shows the bare amount when the code is missing', () => {
+    expect(formatMoney('250', '')).toBe('250')
+    expect(formatMoney('250', '  ')).toBe('250')
   })
 
   describe('building the formatter', () => {
@@ -96,31 +109,85 @@ describe('formatShare on a value that is not a number', () => {
   })
 })
 
-describe('formatScore', () => {
-  const plain = (text: string): string => text.replaceAll('\u00a0', ' ')
-
-  it('writes a whole percentage when the score and threshold already differ', () => {
-    expect(plain(formatScore(0.2, 0.4))).toBe('20 %')
+describe('formatScoreAgainstThreshold', () => {
+  const plain = (shares: {
+    score: string
+    threshold: string
+  }): { score: string; threshold: string } => ({
+    score: shares.score.replaceAll('\u00a0', ' '),
+    threshold: shares.threshold.replaceAll('\u00a0', ' '),
   })
 
-  it('adds decimals to a score under its threshold until the two no longer read alike', () => {
-    expect(plain(formatScore(0.371, 0.374))).toBe('37,1 %')
-    expect(plain(formatScore(0.3996, 0.4001))).toBe('39,96 %')
-    expect(plain(formatScore(0.3999, 0.4))).toBe('39,99 %')
+  it('writes whole percentages when the score and threshold already differ', () => {
+    expect(plain(formatScoreAgainstThreshold(0.2, 0.4))).toEqual({
+      score: '20 %',
+      threshold: '40 %',
+    })
   })
 
-  it('stops at three decimals when the two still cannot be told apart', () => {
-    expect(plain(formatScore(0.399996, 0.4))).toBe('40,000 %')
+  it('writes both with the decimals at which a score under its threshold reads differently', () => {
+    expect(plain(formatScoreAgainstThreshold(0.371, 0.374))).toEqual({
+      score: '37,1 %',
+      threshold: '37,4 %',
+    })
+    expect(plain(formatScoreAgainstThreshold(0.3996, 0.4001))).toEqual({
+      score: '39,96 %',
+      threshold: '40,01 %',
+    })
+  })
+
+  it('goes to three decimals when two do not tell the pair apart', () => {
+    expect(plain(formatScoreAgainstThreshold(0.39996, 0.4))).toEqual({
+      score: '39,996 %',
+      threshold: '40,000 %',
+    })
+    expect(plain(formatScoreAgainstThreshold(0.3999, 0.4))).toEqual({
+      score: '39,99 %',
+      threshold: '40,00 %',
+    })
+  })
+
+  it('never writes a score under its threshold as equal to it, to the finest precision shown', () => {
+    const pairs: [number, number][] = [
+      [0.3996, 0.404],
+      [0.4, 0.40004],
+      [0.371, 0.374],
+      [0.39996, 0.4],
+      [0.1999, 0.2],
+    ]
+    for (const [score, threshold] of pairs) {
+      const shown = formatScoreAgainstThreshold(score, threshold)
+      expect(shown.score).not.toBe(shown.threshold)
+    }
+  })
+
+  it('writes the same text for both once the values are closer than the finest precision', () => {
+    expect(plain(formatScoreAgainstThreshold(0.399996, 0.4))).toEqual({
+      score: '40,000 %',
+      threshold: '40,000 %',
+    })
   })
 
   it('keeps a score at or above its threshold whole', () => {
-    expect(plain(formatScore(0.375, 0.375))).toBe('38 %')
-    expect(plain(formatScore(0.9, 0.4))).toBe('90 %')
+    expect(plain(formatScoreAgainstThreshold(0.375, 0.375))).toEqual({
+      score: '38 %',
+      threshold: '38 %',
+    })
+    expect(plain(formatScoreAgainstThreshold(0.9, 0.4))).toEqual({
+      score: '90 %',
+      threshold: '40 %',
+    })
   })
 
-  it('writes a dash for a score that is not a number, and a whole one when the threshold is not', () => {
-    expect(formatScore(Number.NaN, 0.4)).toBe('—')
-    expect(plain(formatScore(0.2, Number.NaN))).toBe('20 %')
+  it('writes a dash for a value that is not a number and a whole percentage for the other', () => {
+    expect(plain(formatScoreAgainstThreshold(Number.NaN, 0.4))).toEqual({
+      score: '—',
+      threshold: '40 %',
+    })
+    expect(plain(formatScoreAgainstThreshold(0.2, Number.NaN))).toEqual({
+      score: '20 %',
+      threshold: '—',
+    })
   })
 })
 

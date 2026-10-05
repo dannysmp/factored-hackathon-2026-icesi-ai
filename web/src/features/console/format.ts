@@ -67,31 +67,32 @@ function currencyFormat(currency: string, decimals?: number): Intl.NumberFormat 
   }
 }
 
-const MOST_AMOUNT_DECIMALS = 4
+/** A plain decimal string: optional minus, digits, an optional fraction. Rules out hex, exponents and spaces. */
+const DECIMAL_STRING = /^-?\d+(\.\d+)?$/
 
-/** The decimals an amount string really carries: "48.50" has one, "15000.00" none. */
-function significantDecimals(amount: string): number {
-  const fraction = amount.split('.')[1]?.replace(/0+$/, '') ?? ''
-  return Math.min(fraction.length, MOST_AMOUNT_DECIMALS)
-}
+/** A fraction with a digit other than zero: "48.50" has one, "15000.00" does not. */
+const NONZERO_FRACTION = /\.\d*[1-9]/
+
+/** The wire carries at most two decimals, so two is what an amount's own cents need. */
+const CENTS = 2
 
 /**
  * A decimal-string amount and its currency code as "250,00 MXN"; the code stays so two currencies
  * are never confused. The currency decides the decimals (two for the peso, none for the Chilean
- * peso) and an amount that carries more keeps them. An amount that is not a number reads "—"; a
- * code `Intl` does not accept is shown as given.
+ * peso); an amount with a nonzero fraction is never shortened below cents, so "15000.50" in a
+ * currency without decimals still reads "15.000,50 CLP". An amount that is not a plain decimal
+ * number reads "—"; a missing or unrecognized code leaves the amount as given.
  */
 export function formatMoney(amount: string, currency: string): string {
-  const value = Number(amount)
-  if (amount.trim() === '' || !Number.isFinite(value)) return UNREADABLE
+  const text = amount.trim()
+  if (!DECIMAL_STRING.test(text)) return UNREADABLE
   const usual = currencyFormat(currency)
-  if (usual === null) return `${amount} ${currency}`
-  const own = significantDecimals(amount)
-  const format =
-    own > (usual.resolvedOptions().minimumFractionDigits ?? 0)
-      ? (currencyFormat(currency, own) ?? usual)
-      : usual
-  return format.format(value)
+  if (usual === null) return `${text} ${currency}`.trim()
+  const usualDecimals = usual.resolvedOptions().minimumFractionDigits ?? 0
+  const needsCents = NONZERO_FRACTION.test(text) && usualDecimals < CENTS
+  const format = needsCents ? (currencyFormat(currency, CENTS) ?? usual) : usual
+  const value = Number(text)
+  return format.format(value === 0 ? 0 : value)
 }
 
 function shareFormat(digits: number): Intl.NumberFormat {
@@ -103,27 +104,42 @@ function shareFormat(digits: number): Intl.NumberFormat {
 }
 
 const WHOLE_SHARE = shareFormat(0)
+
+/** The most decimals a share is written with: a score and a threshold closer than this read alike. */
 const MOST_DECIMALS = 3
 const FINEST_SHARE = shareFormat(MOST_DECIMALS)
-const SHARE_BY_DECIMALS = [WHOLE_SHARE, shareFormat(1), shareFormat(2), FINEST_SHARE]
+
+/** The coarser formatters tried before `FINEST_SHARE`, from none to two decimals. */
+const COARSER_SHARES = [WHOLE_SHARE, shareFormat(1), shareFormat(2)]
 
 /** A score between 0 and 1 as a percentage, "37 %"; a value that is not a number as "—". */
 export function formatShare(value: number): string {
   return Number.isFinite(value) ? WHOLE_SHARE.format(value) : UNREADABLE
 }
 
+/** A risk score and the threshold it is compared with, written for the same screen. */
+export interface ScoreAgainstThreshold {
+  score: string
+  threshold: string
+}
+
 /**
- * A risk score as a percentage, written so that a score under its threshold never reads equal to
- * it: when both round to the same whole percentage, the score gains decimals until they differ
- * (up to three).
+ * A risk score and its escalation threshold as percentages, both written with the same decimals.
+ * A score at or above its threshold, or either value unreadable, is written whole. A score under
+ * its threshold gains decimals, on both values, until the two read differently, so a score never
+ * reads equal to a threshold it has not reached; two values closer than three decimals can tell
+ * apart are written to three, the finest precision shown.
  */
-export function formatScore(score: number, threshold: number): string {
-  if (!Number.isFinite(score)) return UNREADABLE
-  if (!Number.isFinite(threshold) || score >= threshold) return formatShare(score)
-  const decimals = SHARE_BY_DECIMALS.find(
-    (format) => format.format(score) !== format.format(threshold),
-  )
-  return (decimals ?? FINEST_SHARE).format(score)
+export function formatScoreAgainstThreshold(
+  score: number,
+  threshold: number,
+): ScoreAgainstThreshold {
+  const whole = { score: formatShare(score), threshold: formatShare(threshold) }
+  if (!Number.isFinite(score) || !Number.isFinite(threshold) || score >= threshold) return whole
+  const format =
+    COARSER_SHARES.find((candidate) => candidate.format(score) !== candidate.format(threshold)) ??
+    FINEST_SHARE
+  return { score: format.format(score), threshold: format.format(threshold) }
 }
 
 /** How old a ticket is, in words: "Hoy", "1 día", "3 días". */

@@ -120,7 +120,7 @@ describe('PacketPanel', () => {
     ).toBeInTheDocument()
   })
 
-  it('never writes a score under the escalation threshold as equal to it', () => {
+  it('writes a score under the escalation threshold at the decimals that tell them apart', () => {
     const { risk } = FIRST.packet.evidence
     if (risk === null) {
       throw new Error('fixture setup: FIRST.packet.evidence.risk must be non-null for this test')
@@ -133,19 +133,19 @@ describe('PacketPanel', () => {
             ...FIRST.packet.evidence,
             risk: {
               ...risk,
-              score: 0.371,
+              score: 0.3996,
               interval_low: 0.1,
               interval_high: 0.9,
-              threshold: 0.374,
+              threshold: 0.4001,
             },
           },
         }}
       />,
     )
 
-    expect(screen.getByText('Puntaje').nextElementSibling).toHaveTextContent('37,1 %')
+    expect(screen.getByText('Puntaje').nextElementSibling).toHaveTextContent('39,96 %')
     expect(screen.getByText('Umbral de escalamiento').nextElementSibling).toHaveTextContent(
-      /^37 %$/,
+      '40,01 %',
     )
   })
 
