@@ -1,7 +1,7 @@
-/** Component test: `TimelinePanel` orders entries by trace identifier (AC-E10-03) and shows no
- * message text (AC-E10-05, structurally guaranteed by `TimelineEntry`'s own shape). */
+/** Component test: `TimelinePanel` orders entries by the moment they occurred (AC-E10-03) and shows
+ * no message text (AC-E10-05, structurally guaranteed by `TimelineEntry`'s own shape). */
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { TimelineEntry } from '../contracts'
 import { TimelinePanel } from './TimelinePanel'
 
@@ -9,6 +9,7 @@ function entry(overrides: Partial<TimelineEntry> = {}): TimelineEntry {
   return {
     occurred_at: '2026-06-18T14:03:00Z',
     trace_id: 'trace-0001',
+    turn_id: 'turn-0001',
     intent: 'present_transactions',
     state_before: 'started',
     state_after: 'clarifying',
@@ -27,17 +28,99 @@ describe('TimelinePanel', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
-  it('orders entries by trace identifier, regardless of the order they arrive in', () => {
+  it('orders entries by the moment they occurred, regardless of the order they arrive in', () => {
     render(
       <TimelinePanel
-        entries={[entry({ trace_id: 'trace-0002' }), entry({ trace_id: 'trace-0001' })]}
+        entries={[
+          entry({ turn_id: 'turn-b', trace_id: 'trace-0001', occurred_at: '2026-06-18T14:05:00Z' }),
+          entry({ turn_id: 'turn-a', trace_id: 'trace-0002', occurred_at: '2026-06-18T14:03:00Z' }),
+        ]}
       />,
     )
 
     const rows = screen.getAllByRole('row')
-    // Header row, then trace-0001 before trace-0002, regardless of input order.
-    expect(rows[1]).toHaveTextContent('trace-0001')
-    expect(rows[2]).toHaveTextContent('trace-0002')
+    // The later trace identifier happened first, so it comes first.
+    expect(rows[1]).toHaveTextContent('trace-0002')
+    expect(rows[2]).toHaveTextContent('trace-0001')
+  })
+
+  it('compares moments, not their text, when entries are written with different offsets', () => {
+    render(
+      <TimelinePanel
+        entries={[
+          entry({
+            turn_id: 'turn-b',
+            trace_id: 'trace-b',
+            occurred_at: '2026-06-18T10:30:00-05:00',
+          }),
+          entry({ turn_id: 'turn-a', trace_id: 'trace-a', occurred_at: '2026-06-18T15:00:00Z' }),
+        ]}
+      />,
+    )
+
+    // 10:30 at -05:00 is 15:30 UTC, after 15:00 UTC although it sorts before it as text.
+    const rows = screen.getAllByRole('row')
+    expect(rows[1]).toHaveTextContent('trace-a')
+    expect(rows[2]).toHaveTextContent('trace-b')
+  })
+
+  it('keeps entries that share a trace identifier as separate rows, in the order they occurred', () => {
+    render(
+      <TimelinePanel
+        entries={[
+          entry({
+            turn_id: 'turn-2',
+            trace_id: 'trace-shared',
+            occurred_at: '2026-06-18T14:05:00Z',
+            intent: 'handoff',
+          }),
+          entry({
+            turn_id: 'turn-1',
+            trace_id: 'trace-shared',
+            occurred_at: '2026-06-18T14:03:00Z',
+          }),
+        ]}
+      />,
+    )
+
+    const rows = screen.getAllByRole('row')
+    expect(rows).toHaveLength(3)
+    expect(rows[1]).toHaveTextContent('18 jun 2026, 14:03 UTC')
+    expect(rows[2]).toHaveTextContent('18 jun 2026, 14:05 UTC')
+  })
+
+  it('gives every row its own identity when entries share a trace identifier', () => {
+    const problems = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      render(
+        <TimelinePanel
+          entries={[
+            entry({ turn_id: 'turn-1', trace_id: 'trace-shared' }),
+            entry({ turn_id: 'turn-2', trace_id: 'trace-shared' }),
+          ]}
+        />,
+      )
+
+      // React reports two siblings with the same key through the console.
+      expect(problems).not.toHaveBeenCalled()
+    } finally {
+      problems.mockRestore()
+    }
+  })
+
+  it('keeps entries recorded at the same instant in the order they arrived', () => {
+    render(
+      <TimelinePanel
+        entries={[
+          entry({ turn_id: 'turn-z', trace_id: 'trace-first' }),
+          entry({ turn_id: 'turn-a', trace_id: 'trace-second' }),
+        ]}
+      />,
+    )
+
+    const rows = screen.getAllByRole('row')
+    expect(rows[1]).toHaveTextContent('trace-first')
+    expect(rows[2]).toHaveTextContent('trace-second')
   })
 
   it('shows the state transition and the reason code when there is one', () => {
