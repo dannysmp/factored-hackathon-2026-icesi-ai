@@ -8,6 +8,8 @@ client, an injected clock, a fake customer lookup and a fake, in-memory sign-in 
 
 from __future__ import annotations
 
+import logging
+import re
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -347,6 +349,51 @@ def test_the_persona_slot_cap_refuses_a_second_concurrent_session(client: TestCl
     assert not {"persona", "customer_id", "ana", "CUST-1"} & (
         set(body) | set(map(str, body.values()))
     )
+
+
+def _capacity_warnings(caplog: pytest.LogCaptureFixture, event: str) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.getMessage().startswith(event)]
+
+
+def test_a_refused_customer_sign_in_logs_which_kind_of_capacity_was_full(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    assert _sign_in(client, "ana").status_code == 201
+
+    with caplog.at_level(logging.WARNING, logger="app.api.demo_signin"):
+        assert _sign_in(client, "ana").status_code == 409
+
+    (line,) = _capacity_warnings(caplog, "demo_signin_capacity_reached")
+    assert re.fullmatch(r"demo_signin_capacity_reached refused=persona request_id=\S+", line)
+    assert "ana" not in caplog.text
+    assert "testclient" not in caplog.text
+
+
+def test_a_refused_customer_sign_in_on_a_busy_address_logs_the_address_kind(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    for slug in ("ana", "joao", "emma", "carlos", "mariana"):
+        assert _sign_in(client, slug).status_code == 201
+
+    with caplog.at_level(logging.WARNING, logger="app.api.demo_signin"):
+        assert _sign_in(client, "ana").status_code == 429
+
+    (line,) = _capacity_warnings(caplog, "demo_signin_capacity_reached")
+    assert re.fullmatch(r"demo_signin_capacity_reached refused=address request_id=\S+", line)
+    assert "testclient" not in caplog.text
+
+
+def test_a_refused_agent_sign_in_logs_which_kind_of_capacity_was_full(
+    agent_client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    assert _sign_in_agent(agent_client, "agent-beatriz").status_code == 201
+
+    with caplog.at_level(logging.WARNING, logger="app.api.demo_signin"):
+        assert _sign_in_agent(agent_client, "agent-beatriz").status_code == 409
+
+    (line,) = _capacity_warnings(caplog, "demo_agent_signin_capacity_reached")
+    assert re.fullmatch(r"demo_agent_signin_capacity_reached refused=persona request_id=\S+", line)
+    assert "beatriz" not in caplog.text
 
 
 def test_a_different_persona_is_unaffected_by_another_personas_slot_cap(
@@ -758,6 +805,17 @@ def test_an_agent_token_cannot_end_a_session_on_the_customer_logout(
     _assert_problem(
         _sign_in_agent(agent_client, "agent-beatriz"), 409, "demo_persona_in_use", reauth=False
     )
+
+
+def test_a_customer_token_cannot_end_a_session_on_the_agent_logout(
+    agent_client: TestClient,
+) -> None:
+    customer = _sign_in(agent_client, "ana")
+
+    refused = agent_client.post("/v1/agent/auth/logout", headers=_bearer_of(customer))
+
+    assert refused.status_code == 401
+    _assert_problem(_sign_in(agent_client, "ana"), 409, "demo_persona_in_use", reauth=False)
 
 
 def test_a_customer_signing_out_does_not_free_an_agent_persona(agent_client: TestClient) -> None:

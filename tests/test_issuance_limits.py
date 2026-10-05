@@ -242,12 +242,26 @@ def _hold_one(
     held.hold(session_id, [(key, expiry)])
 
 
-def test_a_full_record_drops_expired_sessions_first_and_then_the_oldest() -> None:
+def test_a_full_record_drops_an_expired_session_before_an_older_live_one() -> None:
     clock = Clock()
     limiter = IssuanceLimiter(clock=clock)
     held = SessionReservations(limiter, clock=clock, capacity=2)
+    _hold_one(held, limiter, "live", TTL)
     _hold_one(held, limiter, "expired", timedelta(minutes=5))
     clock.now = START + timedelta(minutes=10)
+    _hold_one(held, limiter, "new", TTL)
+
+    held.release("live")
+    held.release("new")
+
+    assert limiter.try_reserve("k:live", 1, TTL) is not None, "the older live entry was dropped"
+    assert limiter.try_reserve("k:new", 1, TTL) is not None, "the newest entry was dropped"
+
+
+def test_a_full_record_with_nothing_expired_drops_the_oldest() -> None:
+    clock = Clock()
+    limiter = IssuanceLimiter(clock=clock)
+    held = SessionReservations(limiter, clock=clock, capacity=2)
     _hold_one(held, limiter, "first", TTL)
     _hold_one(held, limiter, "second", TTL)
     _hold_one(held, limiter, "third", TTL)
@@ -257,3 +271,36 @@ def test_a_full_record_drops_expired_sessions_first_and_then_the_oldest() -> Non
 
     assert limiter.try_reserve("k:third", 1, TTL) is not None, "the newest entry was dropped"
     assert limiter.try_reserve("k:first", 1, TTL) is None, "the oldest live entry was kept"
+
+
+def test_simultaneous_releases_of_one_session_free_its_reservation_once() -> None:
+    """Two sessions share a persona key at the same expiry; releasing one from many threads must
+    take exactly one of the two entries, never both."""
+    clock = Clock()
+    limiter = IssuanceLimiter(clock=clock)
+    held = SessionReservations(limiter, clock=clock)
+    for session_id in ("s1", "s2"):
+        expiry = limiter.try_reserve("persona:ana", cap=2, ttl=TTL)
+        assert expiry is not None
+        held.hold(session_id, [("persona:ana", expiry)])
+    original = limiter.release
+
+    def slow_release(key: str, expiry: datetime) -> None:
+        time.sleep(0.002)
+        original(key, expiry)
+
+    limiter.release = slow_release  # type: ignore[method-assign]
+    barrier = threading.Barrier(16)
+
+    def attempt() -> None:
+        barrier.wait()
+        held.release("s1")
+
+    threads = [threading.Thread(target=attempt) for _ in range(16)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert limiter.try_reserve("persona:ana", cap=2, ttl=TTL) is not None
+    assert limiter.try_reserve("persona:ana", cap=2, ttl=TTL) is None

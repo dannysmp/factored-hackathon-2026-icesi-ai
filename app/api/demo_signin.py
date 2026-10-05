@@ -243,6 +243,11 @@ def _persona_in_use() -> ProblemError:
     )
 
 
+def _key_class(key: str) -> str:
+    """The kind of a capacity key (``address``, ``global`` or ``persona``): no address, no slug."""
+    return key.split(":", 1)[0]
+
+
 def _capacity_refusal(refused_key: str, persona_key: str) -> ProblemError:
     """The refusal for a capacity key at its cap: a held persona, or a plain rate limit."""
     return _persona_in_use() if refused_key == persona_key else _rate_limited(60)
@@ -365,13 +370,19 @@ def build_demo_signin_router(
             CUSTOMER_TTL,
         )
         if isinstance(reserved, str):
-            logger.warning("demo_signin_capacity_reached request_id=%s", current_request_id())
+            logger.warning(
+                "demo_signin_capacity_reached refused=%s request_id=%s",
+                _key_class(reserved),
+                current_request_id(),
+            )
             _audit_or_fail_closed(
                 SignInAuditRecord(
                     trace_id=current_request_id(),
                     occurred_at=sessions.now(),
                     audience=SignInAudience.CUSTOMER,
                     outcome=SignInOutcome.REFUSED,
+                    # A held persona is recorded under the same reason as a cap: the audit
+                    # table's reason set is closed, and the response carries the distinction.
                     reason_code=SignInReasonCode.RATE_LIMITED,
                     client_address_hash=address_hash,
                     persona_slug=persona.slug,
@@ -536,13 +547,19 @@ def build_demo_agent_signin_router(
             AGENT_TTL,
         )
         if isinstance(reserved, str):
-            logger.warning("demo_agent_signin_capacity_reached request_id=%s", current_request_id())
+            logger.warning(
+                "demo_agent_signin_capacity_reached refused=%s request_id=%s",
+                _key_class(reserved),
+                current_request_id(),
+            )
             _audit_or_fail_closed(
                 SignInAuditRecord(
                     trace_id=current_request_id(),
                     occurred_at=sessions.now(),
                     audience=SignInAudience.AGENT,
                     outcome=SignInOutcome.REFUSED,
+                    # A held persona is recorded under the same reason as a cap: the audit
+                    # table's reason set is closed, and the response carries the distinction.
                     reason_code=SignInReasonCode.RATE_LIMITED,
                     client_address_hash=address_hash,
                     persona_slug=persona.slug,
