@@ -12,6 +12,7 @@ from __future__ import annotations
 
 # Standard libraries
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -3901,12 +3902,12 @@ def test_handoff_not_registered_when_the_outbox_fails(
     assert "request_id=" in logged[0].getMessage()
 
 
-def test_a_conversation_whose_handoff_was_not_registered_files_nothing_on_a_later_turn(
+def _abandoned_conversation(
     policy: Policy, retriever: LexicalRetriever
-) -> None:
-    """The confirmation question left open when the handoff failed must not be answerable: the
-    conversation answers that nothing was registered and creates no case."""
+) -> tuple[Callable[..., TurnResponse], InMemoryDialogueStore, FakeToolPort, FakeDialogueTurnLog]:
+    """A conversation with a confirmation open, and a way to run further turns on it."""
     store = InMemoryDialogueStore()
+    turn_log = FakeDialogueTurnLog()
     port = FakeToolPort(
         transactions=(_transaction(),),
         cases=(_case(),),
@@ -3915,37 +3916,74 @@ def test_a_conversation_whose_handoff_was_not_registered_files_nothing_on_a_late
         ),
         create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
     )
+    understood: list[ScriptedNlu] = []
 
     def run(result: NluResult, turn_id: str, *, failing: bool = False) -> TurnResponse:
-        controller, _ = _controller(
+        controller, nlu = _controller(
             result,
             store=store,
             tool_port=port,
             policy=policy,
             outbox=FakeHandoffOutbox(fail=failing),
             retriever=retriever,
+            turn_log=turn_log,
         )
+        understood.append(nlu)
         return controller.handle_turn(_turn(turn_id), principal=_principal())
 
     run(_file_dispute(transaction=TransactionHint(merchant="Amazon")), "turn-0001")
     asked = run(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE), "turn-0002")
     assert asked.next_expected is Slot.CONFIRMATION
+    run.understood = understood  # type: ignore[attr-defined]
+    return run, store, port, turn_log
+
+
+def test_a_conversation_whose_handoff_was_not_registered_files_nothing_on_a_later_turn(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The confirmation question left open when the handoff failed must not be answerable: the
+    conversation answers that nothing was registered and creates no case, calls no model and
+    records no history."""
+    run, store, port, turn_log = _abandoned_conversation(policy, retriever)
     abandoned = run(_plain(NluIntent.REQUEST_PERSON), "turn-0003", failing=True)
     assert abandoned.end_session
     saved = store.get(_SESSION_ID)
     assert saved is not None
     assert saved.phase is ConversationPhase.ABANDONED
+    logged_before = len(turn_log.entries)
 
-    later = run(_confirmation(ConfirmationAnswer.YES), "turn-0004")
+    with caplog.at_level(logging.WARNING):
+        later = run(_confirmation(ConfirmationAnswer.YES), "turn-0004")
 
     assert later.reply == abandoned.reply
     assert later.end_session
     assert later.case_number is None
     assert port.create_calls == 0
+    assert run.understood[-1].calls == []  # type: ignore[attr-defined]
+    assert len(turn_log.entries) == logged_before
     after = store.get(_SESSION_ID)
     assert after is not None
     assert after.version == saved.version
     assert after.last_case_number is None
+    refused = [r for r in caplog.records if "dialogue_abandoned_turn_refused" in r.getMessage()]
+    assert len(refused) == 1
+    assert f"session_id={_SESSION_ID}" in refused[0].getMessage()
+
+
+def test_replaying_the_turn_that_abandoned_the_conversation_returns_the_notice(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """Sending the abandoning turn again must not re-ask the confirmation it left open."""
+    run, _, port, _ = _abandoned_conversation(policy, retriever)
+    abandoned = run(_plain(NluIntent.REQUEST_PERSON), "turn-0003", failing=True)
+    assert abandoned.next_expected is None
+
+    replayed = run(_plain(NluIntent.REQUEST_PERSON), "turn-0003")
+
+    assert replayed.reply == abandoned.reply
+    assert replayed.end_session
+    assert replayed.next_expected is None
+    assert port.create_calls == 0
 
 
 def test_a_save_time_race_replays_the_winning_state(

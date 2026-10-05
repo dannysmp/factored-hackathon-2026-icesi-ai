@@ -467,10 +467,10 @@ class DialogueController:
         is logged, the new state is saved with optimistic concurrency, and the reply is rendered
         after the save.
 
-        Below the cap, a conversation whose handoff could not be registered is answered with that
-        same notice, whatever the message says, with no model call and nothing written, since no
-        person has it and the question it left open can no longer be answered. At the cap the next
-        message retries the registration.
+        Below the cap, a conversation whose handoff could not be registered is answered with the
+        notice that nothing was registered, whatever the message says, with no model call and
+        nothing written, since no person has it and the question it left open can no longer be
+        answered. At the cap the next message retries the registration.
 
         An unreachable understanding dependency becomes a handoff rather than a clarification
         attempt. A save that loses a race on the same turn id answers with the winner's result.
@@ -501,23 +501,10 @@ class DialogueController:
         if current is not None and current.last_turn_id == request.turn_id:
             return self._respond(current, self._replay_envelope(current))
 
-        if (
-            current is not None
-            and current.phase is ConversationPhase.HANDED_OFF
-            and current.last_ticket_ref is not None
-        ):
-            return self._respond(current, self._ticket_envelope(current))
-
-        if current is not None and current.turns_applied >= self._max_turns:
-            return self._cap_reached(current)
-
-        if current is not None and current.phase is ConversationPhase.ABANDONED:
-            return self._respond(
-                current,
-                self._envelope(
-                    current, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
-                ),
-            )
+        if current is not None:
+            unadvanced = self._answer_without_advancing(current)
+            if unadvanced is not None:
+                return unadvanced
 
         try:
             state, expected_version, result, accounting = self._start_turn(current, request)
@@ -548,6 +535,33 @@ class DialogueController:
             ) from conflict
 
         return self._respond(saved, envelope, state_before=state_before)
+
+    def _answer_without_advancing(self, current: DialogueState) -> TurnResponse | None:
+        """The reply for a turn that must not be understood or acted on, or ``None`` to proceed.
+
+        A conversation already handed to a person is answered with its ticket; a session at its
+        turn cap is handed off (or has its registration retried); a conversation whose handoff
+        could not be registered, below the cap, is answered with the not-registered notice. None
+        of these calls the model, and only the cap path writes.
+        """
+        if current.phase is ConversationPhase.HANDED_OFF and current.last_ticket_ref is not None:
+            return self._respond(current, self._ticket_envelope(current))
+        if current.turns_applied >= self._max_turns:
+            return self._cap_reached(current)
+        if current.phase is ConversationPhase.ABANDONED:
+            logger.warning(
+                "dialogue_abandoned_turn_refused session_id=%s request_id=%s",
+                current.session_id,
+                current_request_id(),
+            )
+            return self._respond(current, self._not_registered_envelope(current))
+        return None
+
+    def _not_registered_envelope(self, state: DialogueState) -> RenderEnvelope:
+        """The notice that nothing was registered and the session has ended."""
+        return self._envelope(
+            state, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
+        )
 
     def _cap_reached(self, current: DialogueState) -> TurnResponse:
         """Answer a turn the session's turn cap refuses, without calling the model.
@@ -1507,7 +1521,7 @@ class DialogueController:
                 state.session_id,
                 current_request_id(),
             )
-            new_state = state.with_phase(ConversationPhase.ABANDONED)
+            new_state = state.with_slot_filled().with_phase(ConversationPhase.ABANDONED)
             return new_state, self._envelope(
                 new_state, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
             )
@@ -1546,7 +1560,9 @@ class DialogueController:
         necessarily the one the replayed turn id originally produced. A question still open
         comes before a filed case: a filing leaves nothing pending, so an open question was
         asked by a later turn and is what a retry of that turn is owed. A retried turn id that
-        followed the filing and left no question open replays the filing result.
+        followed the filing and left no question open replays the filing result. A conversation
+        whose handoff could not be registered replays the notice that nothing was registered,
+        never the question it left open, since that question can no longer be answered.
         ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
         cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
         clears the pending slot and leaves no case or ticket behind, so it can never be confused
@@ -1564,27 +1580,31 @@ class DialogueController:
         ):
             return self._ticket_envelope(state)
 
+        if state.phase is ConversationPhase.ABANDONED:
+            return self._not_registered_envelope(state)
+
         if state.pending_slot is not None:
             return self._replay_pending(state, state.pending_slot)
 
         if state.last_case_number is not None:
-            case = dispatch(self._tool_port, tool_contracts.Tool.GET_CASE, state.last_case_number)
-            if isinstance(case, ToolFailure) or case is None:
-                return self._envelope(
-                    state, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
-                )
-            case_fact = to_envelope_case(case)
-            facts = DisputeFacts(
-                cases=(case_fact,), expected_response_on=case_fact.expected_response_on
-            )
-            return self._envelope(
-                state, Intent.FILING_RESULT, TemplateId.FILING_RESULT, facts=facts
-            )
+            return self._filed_case_envelope(state, state.last_case_number)
 
         if state.phase is ConversationPhase.CLOSED:
             return self._envelope(state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
 
         return self._replay_recompute(state)
+
+    def _filed_case_envelope(self, state: DialogueState, case_number: str) -> RenderEnvelope:
+        """The filing result for ``case_number`` read back fresh, or the not-registered notice
+        when the case cannot be read."""
+        case = dispatch(self._tool_port, tool_contracts.Tool.GET_CASE, case_number)
+        if isinstance(case, ToolFailure) or case is None:
+            return self._not_registered_envelope(state)
+        case_fact = to_envelope_case(case)
+        facts = DisputeFacts(
+            cases=(case_fact,), expected_response_on=case_fact.expected_response_on
+        )
+        return self._envelope(state, Intent.FILING_RESULT, TemplateId.FILING_RESULT, facts=facts)
 
     def _replay_pending(self, state: DialogueState, slot: Slot) -> RenderEnvelope:
         """The question still open, rendered again."""
@@ -1675,8 +1695,9 @@ class DialogueController:
 
         Rendering goes through ``render_reply`` (templates, or the verified model path when a model
         renderer was injected). When ``state_before`` is given the turn's history is recorded;
-        a turn that passes no ``state_before`` (a replay, or a repeated turn-cap answer) records
-        nothing. The handoff ticket is included only on a handoff reply.
+        a turn that passes no ``state_before`` (a replay, a repeated turn-cap answer, or the notice
+        given to a conversation whose handoff was not registered) records nothing. The handoff
+        ticket is included only on a handoff reply.
         """
         rendered: RenderedReply = render_reply(envelope, model_renderer=self._model_renderer)
         request = self._request
