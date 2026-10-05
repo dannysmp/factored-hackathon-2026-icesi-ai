@@ -115,6 +115,9 @@ class TurnResponse(ContractModel):
     end_session: bool = False
     # Number of the ticket opened when the conversation was handed to a person.
     handoff_ticket: Annotated[str, Field(pattern=NUMBER_PATTERN)] | None = None
+    # Number of the dispute case, on the reply that reports it was filed and verified; null on
+    # every other reply.
+    case_number: Annotated[str, Field(pattern=NUMBER_PATTERN)] | None = None
 
     @model_validator(mode="after")
     def _choices_are_numbered_from_one(self) -> TurnResponse:

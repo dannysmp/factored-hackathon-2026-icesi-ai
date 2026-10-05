@@ -1275,6 +1275,7 @@ class DialogueController:
             next_expected=envelope.next_expected,
             end_session=envelope.end_session,
             handoff_ticket=state.last_ticket_ref if envelope.intent is Intent.HANDOFF else None,
+            case_number=state.last_case_number if envelope.intent is Intent.FILING_RESULT else None,
         )
 
     def _record_turn(

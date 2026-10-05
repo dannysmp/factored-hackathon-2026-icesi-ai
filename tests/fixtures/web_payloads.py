@@ -203,6 +203,17 @@ def build_payloads() -> dict[str, object]:
         end_session=False,
         handoff_ticket="T-20260618-AAAAAAAA",
     )
+    filed_turn = TurnResponse(
+        turn_id="turn-0002",
+        conversation_id="conv-1",
+        state_version=5,
+        lang="es",
+        reply="Su disputa quedó registrada con el número D-2001.",
+        reference_date_line="Fecha de referencia: 18 de junio de 2026.",
+        demo_notice="Demostración.",
+        end_session=False,
+        case_number="D-2001",
+    )
     models: dict[str, object] = {
         "QueueResponse": QueueResponse(
             reference_date=_TODAY,
@@ -212,6 +223,7 @@ def build_payloads() -> dict[str, object]:
         "TicketDetail": detail,
         "TicketDetailSparse": sparse_detail,
         "TurnResponse": turn,
+        "TurnResponseFiled": filed_turn,
         "DemoPersonaDirectory": DemoPersonaDirectory(
             personas=(
                 DemoPersonaSummary(

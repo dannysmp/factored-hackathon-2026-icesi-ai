@@ -224,6 +224,7 @@
     "timeline": []
   },
   "TurnResponse": {
+    "case_number": null,
     "choices": [
       {
         "label": "Amazon",
@@ -241,5 +242,20 @@
     "reply": "¿Es esta la transacción?",
     "state_version": 2,
     "turn_id": "turn-0001"
+  },
+  "TurnResponseFiled": {
+    "case_number": "D-2001",
+    "choices": [],
+    "contract_version": "1",
+    "conversation_id": "conv-1",
+    "demo_notice": "Demostración.",
+    "end_session": false,
+    "handoff_ticket": null,
+    "lang": "es",
+    "next_expected": null,
+    "reference_date_line": "Fecha de referencia: 18 de junio de 2026.",
+    "reply": "Su disputa quedó registrada con el número D-2001.",
+    "state_version": 5,
+    "turn_id": "turn-0002"
   }
 }
