@@ -1,6 +1,7 @@
 /** How a finished conversation turned out. */
 export type ResultVariant = 'filed' | 'escalated' | 'closed'
 
+/** The outcome of a finished conversation and the numbers the screen shows for it. */
 export interface Result {
   variant: ResultVariant
   /** The number to quote for the outcome, or `null` when there is none. */
