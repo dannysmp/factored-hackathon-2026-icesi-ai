@@ -26,8 +26,9 @@ import styles from './App.module.css'
  */
 export function App(): JSX.Element {
   const [session, setSession] = useState<{ token: string; lang: Lang; slug: string } | null>(null)
-  // The page's own language: the sign-in screen reports the selected persona's, then the chat
-  // reports the conversation's. Spanish, the product's first language, until either has spoken.
+  // The page's own language: the sign-in screen reports the language it is speaking from its first
+  // render (the browser's, when it is one of the three, else Spanish) and then the selected
+  // persona's, and the chat reports the conversation's.
   const [lang, setLang] = useState<Lang>('es')
   // The language the ended session was in, while its note is on screen above the sign-in.
   const [expiredIn, setExpiredIn] = useState<Lang | null>(null)

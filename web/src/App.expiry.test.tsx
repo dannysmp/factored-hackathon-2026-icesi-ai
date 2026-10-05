@@ -117,6 +117,7 @@ describe('App when the session ends', () => {
   })
 
   it('follows the language the conversation moved to, not the persona it started with', async () => {
+    vi.spyOn(window.navigator, 'language', 'get').mockReturnValue('en-US')
     stubService([200, 401], { spanishPersona: true, turnLang: 'es' })
     const user = userEvent.setup()
     render(<App />)

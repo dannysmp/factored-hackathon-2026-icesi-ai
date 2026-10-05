@@ -32,9 +32,9 @@ describe('SignInScreen', () => {
     expect(screen.getByRole('radio', { name: /^Emma\b/ })).toBeInTheDocument()
   })
 
-  it('shows a retryable error when the directory cannot be fetched, in the default language', async () => {
-    // No persona is known yet at this point, so this state falls back to the screen's own
-    // default (Spanish) rather than showing stale or guessed text.
+  it('shows a retryable error when the directory cannot be fetched, in Spanish for a Spanish browser', async () => {
+    // No persona is known yet at this point, so the screen speaks the browser's language; the
+    // test setup's browser is Spanish.
     vi.spyOn(api, 'fetchCustomerPersonas').mockRejectedValue(new Error('network down'))
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
