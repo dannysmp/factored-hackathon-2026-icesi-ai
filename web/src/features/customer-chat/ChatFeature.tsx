@@ -4,8 +4,10 @@ import { ChoiceButtons } from './components/ChoiceButtons'
 import { ConfirmationPrompt } from './components/ConfirmationPrompt'
 import { MessageList } from './components/MessageList'
 import { ReferenceBanner } from './components/ReferenceBanner'
+import { ResultCard } from './components/ResultCard'
 import { TurnForm } from './components/TurnForm'
 import type { ChatClient } from './client'
+import { resultOf } from './result'
 import { useConversation } from './useConversation'
 import { Button } from '../../components/ui/Button'
 import { ErrorState } from '../../components/ui/ErrorState'
@@ -35,8 +37,8 @@ import styles from './ChatFeature.module.css'
  *
  * A screen reader is told about a new assistant reply through one hidden announcement region,
  * not by making the whole message list live: the list stays quiet, so nothing is read twice and
- * the person's own messages are never read back to them. When the conversation ends, the closing
- * line and the case reference are folded into that same announcement.
+ * the person's own messages are never read back to them. When the conversation ends, the outcome
+ * and its reference are folded into that same announcement and shown as a result card.
  */
 export function ChatFeature({
   client,
@@ -107,12 +109,13 @@ export function ChatFeature({
   const ended = latest?.end_session === true
   const lastAssistantText =
     conversation.messages.findLast((m) => m.from === 'assistant')?.text ?? ''
+  const result = ended ? resultOf(latest.case_number, latest.handoff_ticket) : null
   const closing =
-    ended && latest.handoff_ticket !== null
-      ? `${t('chat.ended')} ${t('chat.caseReference').replace('{ticket}', latest.handoff_ticket)}`
-      : ended
-        ? t('chat.ended')
-        : ''
+    result === null
+      ? ''
+      : result.reference === null
+        ? t(`chat.result.${result.variant}Title`)
+        : `${t(`chat.result.${result.variant}Title`)}. ${t('chat.result.caseNumberLabel')}: ${result.reference}.`
   const announcement = [lastAssistantText, closing].filter((part) => part !== '').join(' ')
 
   return (
@@ -157,12 +160,11 @@ export function ChatFeature({
         </>
       )}
       {ended && (
-        <p className={styles.ended}>
-          {t('chat.ended')}
-          {latest.handoff_ticket !== null && (
-            <> {t('chat.caseReference').replace('{ticket}', latest.handoff_ticket)}</>
-          )}
-        </p>
+        <ResultCard
+          lang={activeLang}
+          caseNumber={latest.case_number}
+          handoffTicket={latest.handoff_ticket}
+        />
       )}
     </section>
   )

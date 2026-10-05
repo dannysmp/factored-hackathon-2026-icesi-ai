@@ -23,13 +23,6 @@ function announcement(): HTMLElement {
   return region
 }
 
-/** The visible closing line, as opposed to the hidden announcement that repeats it. */
-function visibleEndedLine(): Element {
-  const line = document.querySelector('p[class*="ended"]')
-  if (line === null) throw new Error('expected the visible ended line to be on the page')
-  return line
-}
-
 describe('ChatFeature', () => {
   it('shows only its own loading text while starting, never MessageList’s empty state too', () => {
     const pending = (): Promise<never> =>
@@ -85,15 +78,14 @@ describe('ChatFeature', () => {
     ).toBeInTheDocument()
   })
 
-  it('disables the form and shows a distinct ended state once the assistant ends the session', async () => {
-    // Start straight from the last, session-ending turn.
+  it('disables the form and shows a result card once the assistant ends the session', async () => {
     render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN.slice(-1))} lang="en" />)
     await findMessage('Thanks for reaching out. Have a good day!')
     expect(screen.queryByLabelText('Your message')).not.toBeInTheDocument()
-    expect(visibleEndedLine()).toHaveTextContent('This conversation has ended.')
+    expect(screen.getByRole('region', { name: 'Conversation ended' })).toBeInTheDocument()
   })
 
-  it('shows the case reference on the ended state when the last turn carries one', async () => {
+  it('presents a hand-off reference as an escalated result', async () => {
     const [lastTurn] = FILE_DISPUTE_EN.slice(-1)
     if (lastTurn === undefined) {
       throw new Error('fixture FILE_DISPUTE_EN must have at least one turn')
@@ -101,22 +93,34 @@ describe('ChatFeature', () => {
     const endedWithTicket = { ...lastTurn, handoff_ticket: 'DEMO-1234' }
     render(<ChatFeature client={new FixtureChatClient([endedWithTicket])} lang="en" />)
     await findMessage('Thanks for reaching out. Have a good day!')
-    expect(visibleEndedLine()).toHaveTextContent(
-      'This conversation has ended. Case reference: DEMO-1234.',
-    )
+    const card = screen.getByRole('region', { name: 'A person will review your request' })
+    expect(card).toHaveTextContent('DEMO-1234')
   })
 
-  it('announces the closing line and the case reference together with the last assistant reply', async () => {
+  it('presents a case number as a filed result, ahead of a hand-off reference', async () => {
     const [lastTurn] = FILE_DISPUTE_EN.slice(-1)
     if (lastTurn === undefined) {
       throw new Error('fixture FILE_DISPUTE_EN must have at least one turn')
     }
-    const endedWithTicket = { ...lastTurn, handoff_ticket: 'DEMO-1234' }
-    render(<ChatFeature client={new FixtureChatClient([endedWithTicket])} lang="en" />)
+    const filed = { ...lastTurn, case_number: 'D-2001', handoff_ticket: 'DEMO-1234' }
+    render(<ChatFeature client={new FixtureChatClient([filed])} lang="en" />)
+    await findMessage('Thanks for reaching out. Have a good day!')
+    const card = screen.getByRole('region', { name: 'Dispute filed' })
+    expect(card).toHaveTextContent('D-2001')
+    expect(card).not.toHaveTextContent('DEMO-1234')
+  })
+
+  it('announces the outcome and its reference together with the last assistant reply', async () => {
+    const [lastTurn] = FILE_DISPUTE_EN.slice(-1)
+    if (lastTurn === undefined) {
+      throw new Error('fixture FILE_DISPUTE_EN must have at least one turn')
+    }
+    const filed = { ...lastTurn, case_number: 'D-2001' }
+    render(<ChatFeature client={new FixtureChatClient([filed])} lang="en" />)
     await findMessage('Thanks for reaching out. Have a good day!')
 
     expect(announcement()).toHaveTextContent(
-      'Thanks for reaching out. Have a good day! This conversation has ended. Case reference: DEMO-1234.',
+      'Thanks for reaching out. Have a good day! Dispute filed. Case reference: D-2001.',
     )
   })
 

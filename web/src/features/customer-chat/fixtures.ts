@@ -4,7 +4,7 @@
  * Team-generated, not derived from a real customer: it exists to prove the chat UI end to end
  * (the reference-date line, the demonstration notice, numbered choices, the confirmation button,
  * a handoff ticket) before the live endpoint exists. It mirrors the shape of the "file dispute"
- * scenario stream 2 recorded as raw decision envelopes (`tests/fixtures/scripted_flows.en.json`,
+ * scenario recorded as raw decision envelopes (`tests/fixtures/scripted_flows.en.json`,
  * Python-side, agent-only), but carries the rendered customer-facing text those envelopes
  * deliberately do not: rendering that text is the model-renderer slice's job, not this one's.
  */
@@ -27,6 +27,7 @@ export const FILE_DISPUTE_EN: readonly TurnResponse[] = [
     next_expected: 'transaction',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -41,6 +42,7 @@ export const FILE_DISPUTE_EN: readonly TurnResponse[] = [
     next_expected: 'transaction_choice',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -56,6 +58,7 @@ export const FILE_DISPUTE_EN: readonly TurnResponse[] = [
     next_expected: 'reason',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -71,6 +74,7 @@ export const FILE_DISPUTE_EN: readonly TurnResponse[] = [
     next_expected: 'confirmation',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -85,6 +89,7 @@ export const FILE_DISPUTE_EN: readonly TurnResponse[] = [
     next_expected: null,
     end_session: false,
     handoff_ticket: 'DEMO-1234',
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -99,5 +104,6 @@ export const FILE_DISPUTE_EN: readonly TurnResponse[] = [
     next_expected: null,
     end_session: true,
     handoff_ticket: null,
+    case_number: null,
   },
 ] as const
