@@ -106,7 +106,7 @@ gh run watch "$run_id" --exit-status
 
 Set `deploy_metabase=true` only when the Metabase parameters listed in `README.md` exist. For a clean-account reproduction that is then removed, leave `teardown_after` at its default (on).
 
-The run builds and scans both images, pushes them, deploys over SSM (the database is migrated, seeded and loaded with the dispute-demand marts before the rest of the stack is brought up), and runs the smoke test, the hardening check and the analytics check, which fails when any table an Operations dashboard question reads holds no rows (`infra/scripts/13-verify-analytics.sh`). With `deploy_metabase=true` the dashboard job also removes Metabase's built-in sample content (its sample database and the "E-commerce Insights" example dashboard) and runs every dashboard question, failing when one returns no rows. Any failed step fails the run.
+The run builds and scans both images, pushes them, deploys over SSM (the database is migrated, seeded and loaded with the dispute-demand marts before the rest of the stack is brought up), and runs the smoke test, the hardening check and the analytics check, which fails when any table an Operations dashboard question reads holds no rows (`infra/scripts/13-verify-analytics.sh`). With `deploy_metabase=true` the dashboard job also removes Metabase's built-in sample content (its sample database and the "E-commerce Insights" example dashboard) and runs every dashboard question, failing when one returns no rows. Metabase adds its sample database back whenever it restarts, so a restart brings that one entry back until the next run with `deploy_metabase=true`; the example collections and the "E-commerce Insights" dashboard stay removed. Any failed step fails the run.
 
 The host name is public (`<address-with-dashes>.sslip.io`). It appears in the run log where the smoke test step is echoed with it (same `run_id` as above):
 
@@ -118,7 +118,7 @@ gh run view "$run_id" --log | grep -o '[0-9]\{1,3\}-[0-9]\{1,3\}-[0-9]\{1,3\}-[0
 
 Which checks apply depends on the mode. With `teardown_after` left on, the host no longer exists once the run ends, so the only evidence is the green run: check 1. Checks 2 to 4 need a deployment that persists (`teardown_after=false`).
 
-1. **The pipeline's own checks passed**: the run finished green, including the smoke test and the hardening check. When `deploy_metabase` was on, the run also includes the dashboard smoke test and a second hardening check.
+1. **The pipeline's own checks passed**: the run finished green, including the smoke test, the hardening check and the analytics check. When `deploy_metabase` was on, the run also includes the dashboard smoke test and a second hardening check.
 2. **Sign-in state, without values.** The command prints the response body and then the HTTP status:
 
    ```sh

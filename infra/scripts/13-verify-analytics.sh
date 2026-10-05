@@ -12,7 +12,8 @@
 #   are defined, read with that module's own `--list-marts` mode. The count
 #   runs on the host over SSM, inside the database container, so nothing here
 #   needs a database credential or a network path to the database. Only row
-#   counts are printed.
+#   counts are printed. Only the tables a dashboard question reads are checked;
+#   a loaded table no question reads is not.
 # Usage:
 #   infra/scripts/13-verify-analytics.sh
 #   (after 05-deploy.sh, which loads the analytics schema)

@@ -30,7 +30,9 @@ Design Principles
   datasource connection — so re-running this script (every redeploy) converges to exactly the
   panels defined below, never duplicating them.
 - Removing the sample content is idempotent: it acts on whatever Metabase itself marks as sample
-  (``is_sample``), so an instance without any is left as it is and the step succeeds.
+  (``is_sample``), so an instance without any is left as it is and the step succeeds. Metabase
+  re-adds its sample database each time it restarts, so the removal lasts until the next restart;
+  the example collections and dashboard do not return.
 - A panel whose question returns no rows fails the run, naming the panel, so a dashboard that
   would render empty is caught where it is built rather than by whoever opens it.
 - Prints a markdown checklist to stdout: one row per panel, naming its business question, the
