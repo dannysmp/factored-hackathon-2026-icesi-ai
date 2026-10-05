@@ -27,8 +27,8 @@
 #   directory — on a redeploy against an already-initialized volume (any
 #   `teardown_after: false` run, which is exactly what a persisting preview
 #   or evaluation deployment is), the official image silently ignores it, so
-#   this script also rotates the live role's real password after the stack
-#   is up, the same `psql -v pw=... ALTER ROLE ... PASSWORD :'pw'` pattern
+#   this script also rotates the live role's real password once the
+#   database is up, the same `psql -v pw=... ALTER ROLE ... PASSWORD :'pw'` pattern
 #   08-deploy-metabase.sh already established for the Metabase-side roles —
 #   piped over stdin, never `-c`, since `:'var'` substitution only takes
 #   effect that way (verified against a real Postgres server, not assumed).
@@ -50,28 +50,29 @@
 #   logged (never the secret values) once computed, so a maintainer reading
 #   this command's own output knows the sign-in state without needing to
 #   separately test it.
-#   After the stack is up, this script also migrates and seeds the database:
-#   the host syncs the already-built operational seed (three Parquet files
+#   Order: the script starts only the database first, then migrates and seeds
+#   it, and only then brings up (or replaces) the rest of the stack, so a new
+#   backend image never serves requests against the schema of the previous
+#   release, nor against an empty database on a freshly launched instance.
+#   The host syncs the already-built operational seed (three Parquet files
 #   and its manifest, never committed — `data/` is git-ignored) from this
 #   project's own seed bucket (11-create-seed-bucket.sh), using the host's
 #   own instance role — the CI role that calls this script never touches the
 #   seed, same secret-minimization boundary as every value above. Migrations
 #   and the load itself run with `docker compose run --rm`, a fresh one-off
 #   container using the backend image with a different command, never
-#   `docker compose exec` against the long-running `backend` service: that
-#   service's own startup (`app.main.create_app`) validates every demo
-#   persona against a seeded customer when demo sign-in is enabled
-#   and fails closed before binding a port if the database is still empty —
-#   exactly the state right after `up -d` on a freshly launched instance —
-#   so `backend` would still be crash-looping, unreachable by `exec`, at the
-#   moment this step needs to run. `load_seed` itself is the one thing that
-#   verifies the seed's checksum against its manifest and applies the
-#   privacy-scanned pipeline output atomically (one transaction, truncate
-#   then reload) — this script only ever moves the already-built artifact
-#   and invokes that loader, never re-derives or re-touches the data. The
-#   explicit `restart backend` after seeding is what turns a still
-#   crash-looping container into a healthy one on this same run, rather than
-#   waiting out Docker's own exponential restart backoff.
+#   `docker compose exec` against the long-running `backend` service, which
+#   may not be running at that point. Migrations are additive and
+#   idempotent (each applied once, recorded, and refused if an applied file
+#   changed), so running them while the previous backend release is still
+#   serving is safe: that release ignores columns and tables it does not
+#   know. `load_seed` itself is the one thing that verifies the seed's
+#   checksum against its manifest and applies the privacy-scanned pipeline
+#   output atomically (one transaction, truncate then reload) — this script
+#   only ever moves the already-built artifact and invokes that loader, never
+#   re-derives or re-touches the data. The closing `restart backend` makes a
+#   backend whose image tag did not change (so `up -d` left it running) pick
+#   up the reloaded seed.
 #   Idempotent: `docker compose up -d` reconciles a running stack to the new
 #   image tag rather than erroring on one already up; `load_seed` truncates
 #   and reloads in one transaction, so a redeploy against an already-seeded
@@ -189,7 +190,7 @@ if [ -n "\${DEMO_AGENT_ACCESS_CODE}" ] && [ -n "\${AGENT_SESSION_SIGNING_KEY}" ]
 echo "demo sign-in state: DEMO_SIGNIN_ENABLED=\${DEMO_SIGNIN_ENABLED} DEMO_AGENT_SIGNIN_ENABLED=\${DEMO_AGENT_SIGNIN_ENABLED}"
 aws ecr get-login-password --region ${INFRA_REGION} | docker login --username AWS --password-stdin "\${ECR_REGISTRY}"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d postgres
 pg_role="\${POSTGRES_USER:-dispute_intake}"
 pg_db="\${POSTGRES_DB:-dispute_intake}"
 for _ in \$(seq 1 10); do
@@ -205,6 +206,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -T back
   python -m app.persistence.migrate
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -T backend \
   python -m app.persistence.load_seed
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.prod.yml restart backend
 SCRIPT
 )"

@@ -2,22 +2,23 @@
 Deploy-Time Migration and Seed-Load Tests
 ==========================================
 
-Component: the seed-loading addition to `infra/scripts/05-deploy.sh` (after the Postgres
-password rotation): sync the built operational seed from the project's own seed bucket, then run
-migrations and the seed load as one-off `docker compose run` containers, never `docker compose
-exec` against the long-running `backend` service. `exec` needs a running target; `backend`'s own
-startup validates every demo persona against a seeded customer when demo sign-in is enabled
-(`app.main.create_app`) and fails closed on an empty database -- exactly the state right after a
-fresh instance's first `up -d` -- so it can still be crash-looping at the moment this step needs
-to run. `docker compose run` creates a separate, disposable container from the same service
-definition and is not affected by the named service container's own state.
+Component: the seed-loading step of `infra/scripts/05-deploy.sh` (after the Postgres password
+rotation and before the rest of the stack is brought up): sync the built operational seed from the
+project's own seed bucket, then run migrations and the seed load as one-off `docker compose run`
+containers, never `docker compose exec` against the long-running `backend` service. `exec` needs
+a running target, and `backend` may not be running at that point: on a fresh instance it has not
+been created yet, and its own startup validates every demo persona against a seeded customer when
+demo sign-in is enabled (`app.main.create_app`) and fails closed on an empty database, so a
+container started early would be crash-looping. `docker compose run` creates a separate,
+disposable container from the same service definition and is not affected by the named service
+container's own state.
 
 What is and is not covered here: `app.persistence.load_seed`'s own correctness (parsing,
 verification, the load transaction, idempotency) is `tests/test_load_seed.py`'s job, not this
 file's -- this file tests the deploy-pipeline wiring around it: that the mount path this script
 sets up lines up with what the loader actually reads by default, and that a one-off container
 really is unaffected by another named service's own container crash-looping in the same project,
-since the whole reason this step uses `run` instead of `exec` depends on it.
+since the reason this step uses `run` instead of `exec` depends on it.
 """
 
 from __future__ import annotations
