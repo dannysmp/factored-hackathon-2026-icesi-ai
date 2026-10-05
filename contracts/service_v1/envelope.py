@@ -97,11 +97,14 @@ from app.domain.policy.models import (  # One vocabulary for outcomes, reasons a
 # Vocabulary
 # -----------------------------------------------------------------------------
 
+# The version string every envelope and customer response carries.
 CONTRACT_VERSION: Final = "1"
 
+# The conversation languages (Spanish, Portuguese, English) and the same set as a tuple.
 Lang = Literal["es", "pt", "en"]
 LANGUAGES: tuple[Lang, ...] = ("es", "pt", "en")
 
+# A probability or score between 0 and 1 inclusive: confidence, risk score, interval bound, rate.
 Rate = Annotated[float, Field(ge=0, le=1)]
 
 # Identifier shapes: opaque references of at most 64 characters, and shorter case and ticket
@@ -147,35 +150,46 @@ class ContractModel(BaseModel):
 class Intent(StrEnum):
     """What the reply is for."""
 
+    # Ask for or restate something, or carry the conversation on (greeting, language offer).
     CLARIFY = "clarify"
+    # List the matching transactions.
     PRESENT_TRANSACTIONS = "present_transactions"
+    # Ask the customer to confirm filing one selected transaction.
     CONFIRM_FILING = "confirm_filing"
+    # State the case that was filed, read back from the case service.
     FILING_RESULT = "filing_result"
+    # State that the transaction cannot be disputed, and why in plain words.
     INELIGIBLE = "ineligible"
+    # State where an existing case stands, or that none exists.
     DISPUTE_STATUS = "dispute_status"
+    # Answer a policy question from cited policy sections.
     POLICY_ANSWER = "policy_answer"
+    # Say the policy does not answer the question, citing nothing.
     ABSTAIN = "abstain"
+    # Decline a request the system does not support.
     REFUSE = "refuse"
+    # Tell the customer the matter passes to a person.
     HANDOFF = "handoff"
+    # Close the conversation.
     FAREWELL = "farewell"
 
 
 class DateSource(StrEnum):
     """How the customer expressed a date, which decides whether it is confirmed in words."""
 
-    ABSOLUTE = "absolute"
-    RELATIVE = "relative"
-    PARTIAL = "partial"
-    NUMERIC = "numeric"
+    ABSOLUTE = "absolute"  # A complete date the customer stated outright.
+    RELATIVE = "relative"  # Relative to the reference date: "yesterday", a weekday name.
+    PARTIAL = "partial"  # A day of the month only, such as "dia 3".
+    NUMERIC = "numeric"  # Day-first digits such as 03/04, which read differently month-first.
 
 
 class Slot(StrEnum):
     """The element the conversation is waiting for."""
 
-    TRANSACTION = "transaction"
-    TRANSACTION_CHOICE = "transaction_choice"
-    REASON = "reason"
-    CONFIRMATION = "confirmation"
+    TRANSACTION = "transaction"  # Which transaction the customer means.
+    TRANSACTION_CHOICE = "transaction_choice"  # Which of the listed transactions.
+    REASON = "reason"  # Why the customer disputes it, which gives the category.
+    CONFIRMATION = "confirmation"  # Yes or no to filing.
 
 
 class CustomerReason(StrEnum):
@@ -186,44 +200,54 @@ class CustomerReason(StrEnum):
     """
 
     ELIGIBLE = "eligible"
-    WINDOW_EXPIRED = "window_expired"
-    PENDING = "pending"
-    DECLINED = "declined"
-    REVERSED = "reversed"
-    DUPLICATE_CASE = "duplicate_case"
-    NOT_DISPUTABLE = "not_disputable"
-    NEEDS_REVIEW = "needs_review"
+    WINDOW_EXPIRED = "window_expired"  # Past the category's filing window.
+    PENDING = "pending"  # The transaction is still pending.
+    DECLINED = "declined"  # The transaction was declined.
+    REVERSED = "reversed"  # The transaction was already reversed.
+    DUPLICATE_CASE = "duplicate_case"  # An open case already exists for it.
+    NOT_DISPUTABLE = "not_disputable"  # Product out of scope, type not disputable, future date.
+    NEEDS_REVIEW = "needs_review"  # Routed to a person, whatever rule routed it.
 
 
 class TemplateId(StrEnum):
     """Fixed-wording texts. Each has one wording per language in the renderer."""
 
+    # Opening, and asking for each missing element.
     GREETING = "greeting"
     CLARIFY_TRANSACTION = "clarify_transaction"
     CLARIFY_REASON = "clarify_reason"
     CLARIFY_CHOICE = "clarify_choice"
     CLARIFY_CONFIRMATION = "clarify_confirmation"
     LANGUAGE_OFFER = "language_offer"
+    # Showing transactions: one match, a list, a request to narrow several matches, or no match.
     PRESENT_ONE = "present_one"
     PRESENT_LIST = "present_list"
     PRESENT_NARROW = "present_narrow"
     NOT_FOUND = "not_found"
+    # Filing: the confirmation prompt and the outcomes. ``FILING_UNVERIFIED`` is a filing whose
+    # read-back failed, so it is handed to a person instead of reported as done.
     CONFIRM_FILING = "confirm_filing"
     FILING_RESULT = "filing_result"
     FILING_UNVERIFIED = "filing_unverified"
     FILING_CANCELLED = "filing_cancelled"
+    # Ineligibility, and case status.
     INELIGIBLE = "ineligible"
     DISPUTE_STATUS = "dispute_status"
     NO_CASE_FOUND = "no_case_found"
+    # Policy questions: an answer from cited sections, or an abstention.
     POLICY_ANSWER = "policy_answer"
     ABSTAIN_POLICY = "abstain_policy"
+    # Refusals: an unsupported action, and a request to reverse a transaction.
     REFUSE_UNSUPPORTED = "refuse_unsupported"
     REFUSE_REVERSAL = "refuse_reversal"
+    # Handoffs, one wording per reason: routed by a rule, a fraud report, a card loss, the
+    # customer's own request, and a request that could not be registered.
     HANDOFF_REVIEW = "handoff_review"
     HANDOFF_FRAUD = "handoff_fraud"
     HANDOFF_CARD_LOSS = "handoff_card_loss"
     HANDOFF_REQUESTED = "handoff_requested"
     HANDOFF_NOT_REGISTERED = "handoff_not_registered"
+    # Starting over after the previous session expired with nothing filed, and closing.
     RESTART_AFTER_PENDING = "restart_after_pending"
     FAREWELL = "farewell"
 
@@ -256,7 +280,9 @@ class TransactionFact(ContractModel):
 
     ref: Annotated[str, Field(pattern=REF_PATTERN)]
     occurred_on: date
+    # Required key but nullable: the source often has no merchant.
     merchant: Annotated[SafeText, Field(min_length=1, max_length=80)] | None
+    # Required key but nullable: absent when there is no figure to state.
     amount: Money | None
     product: ProductLabel
     status: TransactionStatus
@@ -266,6 +292,7 @@ class CaseFact(ContractModel):
     """One dispute case as the case service holds it."""
 
     case_number: Annotated[str, Field(pattern=NUMBER_PATTERN)]
+    # The case status as the case service states it, kept as text for the reply to quote.
     status: Annotated[str, Field(min_length=1, max_length=32)]
     filed_on: date
     transaction_ref: Annotated[str, Field(pattern=REF_PATTERN)]
@@ -282,8 +309,10 @@ class CaseFact(ContractModel):
 class WindowFact(ContractModel):
     """A filing window stated in days, with the deadline as a date."""
 
+    # Length of the category's filing window, and the days elapsed since the transaction.
     days_allowed: Annotated[int, Field(ge=1)]
     age_days: Annotated[int, Field(ge=0)]
+    # The last day to file: the domain date plus the days remaining (checked on the envelope).
     deadline: date
 
 
@@ -308,19 +337,29 @@ class DateToConfirm(ContractModel):
 class DisputeFacts(ContractModel):
     """Everything about the customer's situation a reply may state, masked and session-scoped."""
 
+    # The transactions the reply may list (at most five), and how many matched in all.
     transactions: Annotated[tuple[TransactionFact, ...], Field(max_length=5)] = ()
     candidate_count: Annotated[int, Field(ge=0)] = 0
+    # The reference of the transaction chosen for the dispute. A confirm-filing reply must pick
+    # one of the transactions listed; other replies may carry a reference that is not listed.
     selected_ref: Annotated[str, Field(pattern=REF_PATTERN)] | None = None
     category: DisputeCategory | None = None
+    # Cases on file that the reply may state (at most three).
     cases: Annotated[tuple[CaseFact, ...], Field(max_length=3)] = ()
     window: WindowFact | None = None
+    # Policy parameters a policy answer may quote (at most sixteen).
     policy_values: Annotated[tuple[PolicyValue, ...], Field(max_length=16)] = ()
+    # When the first response to a newly filed case is expected.
     expected_response_on: date | None = None
+    # Search terms a reply may echo back (at most six); empty when none are set.
     search_terms: Annotated[
         tuple[Annotated[SafeText, Field(min_length=1, max_length=80)], ...], Field(max_length=6)
     ] = ()
     date_to_confirm: DateToConfirm | None = None
+    # How many further disputes the customer has mentioned beyond the current one (at most five);
+    # zero when none are set.
     pending_disputes: Annotated[int, Field(ge=0, le=5)] = 0
+    # The contact promise made in a handoff, in hours, and the handoff ticket's number.
     contact_within_hours: Annotated[int, Field(ge=1)] | None = None
     ticket_ref: Annotated[str, Field(pattern=NUMBER_PATTERN)] | None = None
 
@@ -356,6 +395,7 @@ CUSTOMER_REASON_OF: Mapping[ReasonCode, CustomerReason] = {
     ReasonCode.ESCALATE_RISK_SCORE: CustomerReason.NEEDS_REVIEW,
 }
 
+# The plain reasons that pair with an ineligible outcome: every one but eligible and needs-review.
 _INELIGIBLE_REASONS = frozenset(
     reason
     for reason in CustomerReason
@@ -378,7 +418,9 @@ class Decision(ContractModel):
 
     outcome: Outcome
     customer_reason: CustomerReason
+    # The version of the policy the decision was made under.
     policy_version: Annotated[str, Field(min_length=1)]
+    # Whether the customer must confirm before the case is filed; only an eligible decision can.
     requires_confirmation: bool = False
 
     @model_validator(mode="after")
@@ -399,6 +441,7 @@ class Decision(ContractModel):
 class InputFact(ContractModel):
     """One input of a decision, written as text for the audit and the console."""
 
+    # The name of the input and its value written as text.
     name: Annotated[str, Field(min_length=1, max_length=64)]
     value: Annotated[str, Field(min_length=1, max_length=64)]
 
@@ -407,7 +450,9 @@ class AgentDecision(ContractModel):
     """The detail of one decision that only an agent may see."""
 
     reason_code: ReasonCode
+    # Every escalation trigger that applied, when the decision routed to a person.
     triggers: tuple[ReasonCode, ...] = ()
+    # The inputs the decision used, written as text.
     inputs: tuple[InputFact, ...] = ()
 
 
@@ -416,10 +461,13 @@ class RiskEvidence(ContractModel):
     threshold it was compared to — the policy's own decision line, not merely the score alone,
     so a reader can see why a score did or did not route to a person, once risk routing is on."""
 
+    # The model's risk score and the bounds of its uncertainty interval.
     score: Rate
     interval_low: Rate
     interval_high: Rate
+    # The overall rate of the risky outcome, to read the score against.
     base_rate: Rate
+    # The score at or above which the policy routes to a person.
     threshold: Rate
 
     @model_validator(mode="after")
@@ -433,7 +481,9 @@ class RiskEvidence(ContractModel):
 class AgentOnly(ContractModel):
     """Routing detail for the audit, the packet and the console; never for a reply."""
 
+    # One entry per envelope decision, in the same order; empty when there is no detail.
     decisions: tuple[AgentDecision, ...] = ()
+    # The understanding step's own confidence in the customer's message.
     nlu_confidence: Rate | None = None
     risk: RiskEvidence | None = None
 
@@ -451,8 +501,11 @@ class SourceRef(ContractModel):
     A reply cites the title in its language; the section identifier stays in the decision record.
     """
 
+    # The policy section identifier; stays in the decision record, never shown to the customer.
     section_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_.-]{1,64}$")]
+    # One title per reply language.
     titles: tuple[LocalizedTitle, ...]
+    # The version of the policy corpus the section was taken from.
     corpus_version: Annotated[str, Field(min_length=1, max_length=32)]
 
     @model_validator(mode="after")
@@ -613,14 +666,20 @@ class _EnvelopeBody(ContractModel):
 
     contract_version: Literal["1"] = CONTRACT_VERSION
     session_id: Annotated[str, Field(min_length=1, max_length=64)]
+    # The language the reply is rendered in.
     lang: Lang
+    # The date the facts and the filing window are reckoned against (not the real clock).
     domain_date: date
     intent: Intent
+    # The element the conversation waits for next, when the reply asks for one.
     next_expected: Slot | None = None
+    # Whether this reply closes the session; true exactly for a farewell and a handoff.
     end_session: bool = False
     facts: DisputeFacts = DisputeFacts()
     decisions: tuple[Decision, ...] = ()
     sources: tuple[SourceRef, ...] = ()
+    # "template" renders a fixed text named by ``template_id``; "model" lets the model word the
+    # reply from the grounded fields allowed for the intent.
     render_mode: Literal["template", "model"] = "template"
     template_id: TemplateId | None = None
 
@@ -754,6 +813,7 @@ class Envelope(_EnvelopeBody):
 class ToolUnavailable(ContractModel):
     """The typed result of a tool that cannot answer; the controller turns it into a handoff."""
 
+    # The name of the tool that could not answer.
     tool: Annotated[str, Field(min_length=1, max_length=64)]
     cause: Literal["timeout", "error", "circuit_open"]
     retryable: bool = False

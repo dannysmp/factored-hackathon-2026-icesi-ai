@@ -259,7 +259,7 @@ def test_load_eval_bank_never_creates_a_row_for_the_orphans_own_dangling_ids(
 
 @pytest.mark.integration
 def test_load_eval_bank_is_additive_alongside_an_already_loaded_seed(tmp_path: Path) -> None:
-    """The core requirement this slice exists for: eval_bank loads on top of an already-loaded
+    """The core requirement: eval_bank loads on top of an already-loaded
     operational seed without truncating it, so both sources coexist in the store at once."""
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:

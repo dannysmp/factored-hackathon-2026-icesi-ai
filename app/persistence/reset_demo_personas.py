@@ -1,14 +1,14 @@
 """
 Demo Persona Reset
-===================
+==================
 
 Overview
 --------
-Restores every demo persona's customer to its seeded state before a demonstration (ADR-18):
-deletes the case rows a previous demo run created for a persona's customer, so the
-duplicate-open-case rule cannot block a scripted flow that was already exercised once. An
-operator command, run before a demonstration, not an HTTP route — the sign-in broker itself never
-needs to reset anything, so this is not new public attack surface.
+Restores every demo persona's customer to its seeded state before a demonstration: deletes the
+case rows a previous demo run created for a persona's customer, so the duplicate-open-case rule
+cannot block a scripted flow that was already exercised once. An operator command, run before a
+demonstration, not an HTTP route: the sign-in broker itself never needs to reset anything, so
+this is not new public attack surface.
 
 Scope
 -----
@@ -19,13 +19,13 @@ Out: creating or validating the persona file (``app.security.demo_personas``), t
 with.
 
 Design Principles
-------------------
+-----------------
 - Deletes only ``cases`` rows for the persona file's own customer_ids: customers, products and
   transactions are seed content this command never touches.
 - One transaction: every persona's cases are deleted together, or none are.
 
 Runtime Contract
------------------
+----------------
 ``reset_demo_personas(dsn, personas) -> int`` (rows deleted).
 The command line ``python -m app.persistence.reset_demo_personas``.
 """
@@ -51,6 +51,9 @@ logger = logging.getLogger(__name__)
 def reset_demo_personas(dsn: str, personas: PersonaList) -> int:
     """Delete every case row for a demo persona's customer.
 
+    Only the persona list's customer identifiers are matched; the delete commits as one
+    transaction.
+
     Returns
     -------
     int
@@ -66,6 +69,10 @@ def reset_demo_personas(dsn: str, personas: PersonaList) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Reset every demo persona's customer from the command line.
+
+    The DSN comes from ``--dsn`` when given, otherwise from ``DATABASE_URL`` through the validated
+    settings; the persona list is read with ``load_personas``, and the number of deleted case rows
+    is logged.
 
     Returns
     -------

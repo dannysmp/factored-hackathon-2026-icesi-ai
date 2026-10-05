@@ -165,7 +165,7 @@ commands are in [`web/README.md`](web/README.md).
 | `make seed` | Build the operational seed from the cleaned layer and write `reports/ops-seed.md` |
 | `make eval-bank` | Write the frozen evaluation scenario bank |
 | `make load-seed`, `make load-eval-bank`, `make load-analytics` | Load the operational seed, the scenario bank and the dispute marts into Postgres |
-| `make seed-ci-smoke` | Seed the synthetic data the CI smoke slice needs into a migrated Postgres |
+| `make seed-ci-smoke` | Seed the synthetic data the CI smoke subset needs into a migrated Postgres |
 | `make reset-demo-personas` | Delete the demonstration personas' accumulated cases before a demonstration |
 | `make corpus` | Regenerate the multilingual policy corpus in `policy/corpus` from the policy YAML |
 | `make corpus-check` | Fail when the committed corpus differs from what the policy generates |
@@ -260,7 +260,7 @@ keyword classifier; and **B1**, a naive model agent that chooses its own tool ca
 recorded outcome, and every unsafe outcome is counted.
 
 ```bash
-make evaluate SYSTEM=P SMOKE=1    # the 16-case injection and authorization slice, one system, once
+make evaluate SYSTEM=P SMOKE=1    # the 16-case injection and authorization subset, one system, once
 make evaluate SYSTEM={P|B0|B1}    # one system over the whole golden set
 make evaluate FULL=1              # P three times, B0 and B1 once; writes reports/evaluation.md
 ```
@@ -269,7 +269,7 @@ A run needs a migrated Postgres loaded with `make load-seed` (and `make load-eva
 adversarial set), `TEST_IDENTITY_ENABLED=true` with a `TEST_IDENTITY_KEY` (the harness never turns
 the sandbox login on itself), and `ANTHROPIC_API_KEY` for B1 and for P unless `LLM_PROVIDER=stub`.
 `make judge-validation` also calls the judge model and needs the key. Any run in which a case
-turns unsafe exits with code 1. CI runs the 16-case slice for P and B0 against stubbed models on
+turns unsafe exits with code 1. CI runs the 16-case subset for P and B0 against stubbed models on
 every pull request and blocks the merge on a failure.
 `make evaluate FULL=1` calls the live model many times and costs real money.
 
@@ -357,7 +357,7 @@ in [`infra/deployment-runbook.md`](infra/deployment-runbook.md).
 
 Every change passes formatting, linting, strict type-checking, tests with a coverage gate, a
 dependency audit, static security analysis, a full-history secret scan, the web interface's lint
-and tests, a shell-script lint of `infra/scripts`, container builds and the evaluation smoke slice
+and tests, a shell-script lint of `infra/scripts`, container builds and the evaluation smoke subset
 in CI before it is reviewed. A deployment is additionally checked against the live address. The
 security requirements, and which controls exist today, are in [SECURITY.md](SECURITY.md) and the
 [ASVS Level 1 checklist](docs/asvs-level1-checklist.md); what the system does not do is in

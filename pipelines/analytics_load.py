@@ -5,8 +5,8 @@ Analytics Mart Load
 Overview
 --------
 Loads the dispute-demand gold marts (``pipelines.gold``) into the Postgres ``analytics`` schema
-(ADR-11, migration ``0004_analytics_schema``) that the BI dashboard reads, instead of DuckDB or
-Parquet directly.
+(created by migration ``0004_analytics_schema``) that the BI dashboard reads, instead of
+DuckDB or Parquet directly.
 
 Scope
 -----
@@ -16,7 +16,7 @@ between the gold marts and what Postgres now holds, the command line
 ``python -m pipelines.analytics_load``.
 Out: building the marts themselves (``pipelines.gold``), creating the schema, tables and the
 read-only role (``app.persistence.migrate``, which must already have run), Metabase's own
-provisioning (a later slice).
+provisioning.
 
 Design Principles
 ------------------
@@ -25,10 +25,10 @@ Design Principles
   — the transaction is rolled back by never being committed.
 - Verifies every mart's Parquet output against ``pipelines.gold``'s own manifest digest before
   loading anything, the same rule ``app.persistence.load_seed`` follows for the operational seed.
-- **Parity is measured, not assumed** (ADR-11's hardening line: "a per-mart row-count and
-  checksum parity test compares the Postgres copy with the lake"). After each mart loads, its row
-  count and a content checksum are compared between the rows read from the gold Parquet file and
-  the same columns read back from Postgres. The checksum is computed over the **sorted** set of
+- **Parity is measured, not assumed**: a per-mart row-count and checksum parity test compares the
+  Postgres copy with the lake. After each mart loads, its row count and a content checksum are
+  compared between the rows read from the gold Parquet file and the same columns read back from
+  Postgres. The checksum is computed over the **sorted** set of
   canonicalized rows, not a fixed row order: Postgres makes no ordering guarantee for a plain
   ``SELECT`` and this check must hold regardless of physical row order.
 - Canonicalizes ``date`` and ``Decimal`` values to strings before hashing, so the same logical
@@ -47,7 +47,7 @@ Limitations
 Assumes migration ``0004_analytics_schema`` has already run; a store without the ``analytics``
 schema and its tables fails with the driver's own error, not a friendlier one. The
 ``analytics_reader`` role that migration creates has no password until Metabase's own
-provisioning slice sets one — this job connects with the same credential the serving store's
+provisioning sets one — this job connects with the same credential the serving store's
 other maintenance jobs use, never as ``analytics_reader`` itself.
 """
 
