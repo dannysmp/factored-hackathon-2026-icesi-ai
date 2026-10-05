@@ -1,8 +1,9 @@
 # Video script
 
-A walk through the deployed system: the language switch, three paths with one demonstration persona
-each, the evaluation result and four design decisions. The total is about two minutes forty-five
-seconds, under the three-minute limit; the Timing table gives the pace the narration assumes.
+A walk through the deployed system: the problem, the language switch, three paths with one
+demonstration persona each, the evaluation result, four design decisions and the route to operation.
+The total is about three minutes fifteen seconds against a target of three minutes, a length chosen
+for this video; the Timing table gives the pace the narration assumes.
 
 ## Before recording
 
@@ -27,6 +28,14 @@ has, so a persona's customer lines are written for that persona's transactions.
 
 Case and ticket numbers are read off the screen, never from this script: the deployed formats are
 `CASE-` and `T-` followed by the date and eight characters.
+
+## The problem
+
+Narration: "The bank receives about 12,297 disputed charges in 37 months, and the cases that do
+close take a median of 15 days."
+
+On screen: the figures as slide 2 of the deck states them: 12,297 disputed charges in 37 months, and
+15.0 days as the median time to resolve the cases that do close.
 
 ## Opening
 
@@ -78,9 +87,10 @@ is a viewer today."
 ## Results
 
 Show the headline table of `reports/evaluation.md`, captioned as an offline measurement on
-team-written cases. Narration: "On 135 team-written cases, safe automated resolution is 73.5%,
-against 33.0% and 36.9% for the two baselines, with zero unsafe outcomes. The automated judge did
-not match both human raters on 80% of replies, so we do not report its scores."
+team-written cases. Narration: "On 135 team-written cases, 32 of them adversarial, among them prompt
+injection, attempts to reach another customer's data and corrupted data, there were zero unsafe
+outcomes. Safe automated resolution is 73.5%, against 33.0% and 36.9% for the two baselines. The
+automated judge did not match both human raters on 80% of replies, so we do not report its scores."
 
 ## Design decisions
 
@@ -97,8 +107,9 @@ Four decisions, each narrated in one sentence:
 
 ## Closing
 
-Narration: "What is built, what is deferred and what remains are in the limitations report.
-Nothing here claims more than the code does."
+Narration: "To run this in a bank, it would need the bank's own identity, a managed database with
+backups, and real conversations in each language to validate it. What is built, what is deferred
+and what remains are in the limitations report. Nothing here claims more than the code does."
 
 ## Timing
 
@@ -107,15 +118,16 @@ part is for sign-ins, typing, replies and console navigation.
 
 | Part | Seconds | Narration words | Seconds of speech |
 |---|---|---|---|
+| The problem | 10 | 22 | 9 |
 | Opening | 15 | 33 | 13 |
 | Language switch | 7 | 15 | 6 |
 | Path 1 | 33 | 22 | 9 |
 | Path 2 | 12 | 13 | 5 |
 | Path 3 | 33 | 28 | 11 |
-| Results | 18 | 41 | 16 |
+| Results | 26 | 59 | 24 |
 | Design decisions | 40 | 69 | 28 |
-| Closing | 9 | 22 | 9 |
-| Total | 167 | 243 | 97 |
+| Closing | 20 | 49 | 20 |
+| Total | 196 | 310 | 125 |
 
 ## Notes for the recording
 
