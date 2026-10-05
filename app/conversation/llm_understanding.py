@@ -4,7 +4,7 @@ Model-Backed Understanding
 
 Overview
 --------
-An ``Understanding`` implemented through the LLM port (ADR-7): the customer's message, masked,
+An ``Understanding`` implemented through the LLM port: the customer's message, masked,
 goes to a forced structured-extraction tool call; the arguments come back validated as an
 ``NluResult`` or, failing that, as unusable understanding. Nothing downstream of this class can
 tell whether ``FakeNlu`` or a real model produced the result it reads — that is the whole purpose
@@ -46,7 +46,7 @@ usable, or raises ``UnderstandingUnavailable`` when the call could not be comple
 Limitations
 -----------
 The model reports only the customer's own words for a stated transaction date
-(``date_expression``); resolving them against ``reference_date`` (AC-E5-16) is a deterministic
+(``date_expression``); resolving them against ``reference_date`` is a deterministic
 step (``app.conversation.date_expressions``), never the model's own arithmetic. Its curated
 vocabulary is deliberately narrow (relative day terms, weekday names, a day-of-month phrase, and a
 numeric day-first date) — a vague range such as "last week" resolves to nothing, the same as an
@@ -71,7 +71,9 @@ from pydantic import (  # Loose intermediate model
 )
 
 # Local modules
-from app.conversation.date_expressions import resolve as resolve_date  # AC-E5-16, deterministic
+from app.conversation.date_expressions import (
+    resolve as resolve_date,
+)  # Deterministic date resolution
 from app.conversation.understanding import (  # What this call cost; raised, never swallowed
     TurnAccounting,
     UnderstandingUnavailable,
@@ -298,7 +300,7 @@ class _ModelExtraction(BaseModel):
 def _to_nlu_result(extraction: _ModelExtraction, *, reference_date: date) -> NluResult:
     """Map a validated extraction into the contract's own, stricter shape.
 
-    ``reference_date`` resolves ``extraction.date_expression`` (AC-E5-16), never the model's own
+    ``reference_date`` resolves ``extraction.date_expression``, never the model's own
     arithmetic; an expression the closed vocabulary does not recognize resolves to nothing, the
     same as no date stated at all.
 
@@ -407,7 +409,7 @@ class LlmNlu:
     ) -> tuple[NluResult, TurnAccounting | None]:
         """Understand ``text`` through the model, or return unusable understanding.
 
-        ``reference_date`` resolves a customer-stated transaction date (AC-E5-16) against the
+        ``reference_date`` resolves a customer-stated transaction date against the
         domain calendar's own reference date — never the wall clock.
 
         Empty text and an invalid call's output are both treated as unusable: the customer is

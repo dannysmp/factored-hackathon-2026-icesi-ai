@@ -37,8 +37,8 @@ Runtime Contract
 ``Understanding`` (protocol): ``understand(text, *, language_hint, reference_date) ->
 tuple[NluResult, TurnAccounting | None]``, or raises ``UnderstandingUnavailable`` instead of
 returning at all. ``reference_date`` is the domain calendar's own reference date (never the wall
-clock), read by an implementation that resolves a customer-stated transaction date against it
-(AC-E5-16); ``FakeNlu`` accepts it for the same signature every ``Understanding`` shares, but does
+clock), read by an implementation that resolves a customer-stated transaction date against it;
+``FakeNlu`` accepts it for the same signature every ``Understanding`` shares, but does
 not itself resolve any date.
 ``TurnAccounting(model, prompt_version, input_tokens, output_tokens, latency_ms)``.
 ``UnderstandingUnavailable``: raised instead of returning a result when the port could not reach
@@ -106,8 +106,8 @@ class Understanding(Protocol):
         """The understanding of ``text`` and, when a real model call produced it, its accounting.
 
         ``language_hint`` is a tie-breaker; ``reference_date`` is the domain calendar's own
-        reference date, used to resolve a transaction date the customer expressed relative to it
-        (AC-E5-16) — never the wall clock. The accounting half is ``None`` whenever no real,
+        reference date, used to resolve a transaction date the customer expressed relative to it —
+        never the wall clock. The accounting half is ``None`` whenever no real,
         priced model call happened (``FakeNlu``, always; a real call the port could not complete).
 
         Raises

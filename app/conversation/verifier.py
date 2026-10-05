@@ -14,8 +14,8 @@ refusal cannot be model-rendered at all (``contracts.service_v1.envelope``'s own
 Scope
 -----
 In: ``verify()`` — the one function this module exports, and the private substitution/scan it runs.
-Out: producing ``CandidateReply`` (the LLM adapter) and ``SlotValues`` (the dialogue controller, a
-later slice, from the same envelope this call receives) are both someone else's job; this module
+Out: producing ``CandidateReply`` (the LLM adapter) and ``SlotValues`` (the dialogue controller,
+from the same envelope this call receives) are both someone else's job; this module
 only checks what it is handed against what the envelope allows.
 
 Design Principles
@@ -52,7 +52,7 @@ The rejection scans for a *character* Unicode itself classifies as numeric; a qu
 entirely in ordinary letters (a Roman numeral spelled with plain Latin letters, or a number spelled
 out in words, in any language) contains no such character and is not caught. Closing that would
 mean checking the *meaning* of the text rather than its character classes, which is a different,
-open-ended problem this slice does not attempt — the same class of gap already disclosed for a
+open-ended problem this module does not attempt — the same class of gap already disclosed for a
 non-numeric fact stated without going through a declared field at all.
 """
 

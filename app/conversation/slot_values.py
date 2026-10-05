@@ -114,7 +114,7 @@ def _present_transactions(e: RenderEnvelope) -> tuple[SlotValue, ...]:
 
 
 def _confirm_filing(e: RenderEnvelope) -> tuple[SlotValue, ...]:
-    """The amount and date of the chosen transaction and the category the reply may state."""
+    """The amount and date of the chosen transaction and the category when it is known."""
     facts = e.facts
     transaction = next(t for t in facts.transactions if t.ref == facts.selected_ref)
     entries = [
@@ -152,8 +152,8 @@ def _ineligible(e: RenderEnvelope) -> tuple[SlotValue, ...]:
 
 
 def _dispute_status(e: RenderEnvelope) -> tuple[SlotValue, ...]:
-    """The number, status and filing date of each case, followed by a generic statement that
-    also covers the case where none exists.
+    """The number, status and filing date of each case, followed by one statement: that the cases
+    are listed, or that none was found when there are none.
     """
     entries: list[SlotValue] = []
     for case in e.facts.cases:

@@ -6,7 +6,7 @@ Overview
 --------
 The structured state one conversation keeps between turns: identifiers, the slots collected so
 far, the pending filing, the clarification count and the language. No raw message text is ever
-part of it (AC-E5-57): the customer's own words are read once by the understanding step and never
+part of it: the customer's own words are read once by the understanding step and never
 stored here.
 
 Scope
@@ -23,7 +23,7 @@ Design Principles
   again for the same slot increments it, asking for a different one resets it to 1, and filling
   the pending slot resets it to zero. This is the missing-slot guard the architecture describes:
   it counts consecutive attempts on one element, whatever the reported confidence.
-- A new login starts a new conversation (AC-E5-60): this model carries no notion of "resume", and
+- A new login starts a new conversation: this model carries no notion of "resume", and
   the store is what would have to go out of its way to look up a stale session by a new one's id,
   which it never does.
 - Optimistic concurrency: a state carries the version it was read at; the store turns a stale

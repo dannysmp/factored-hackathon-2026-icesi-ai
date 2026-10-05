@@ -4,7 +4,7 @@ Policy Answer
 
 Overview
 --------
-Turns a policy question into the facts and source the renderer needs (ADR-16): a search for the
+Turns a policy question into the facts and source the renderer needs: a search for the
 best-matching corpus section, and — for the handful of sections whose answer is a number the
 policy engine itself owns — the structured value from the loaded ``Policy``, never from the
 corpus text. Retrieval finds *which* section answers the question; it never supplies the figure

@@ -4,7 +4,7 @@ Domain Calendar
 
 Overview
 --------
-The one date policy decisions, cases and audit records use for "today" (ADR-15): a domain date
+The one date policy decisions, cases and audit records use for "today": a domain date
 resolved once at start-up, never the real clock. Two clocks exist on purpose — the domain date for
 policy and customer-visible dates, the real UTC instant for everything a timestamp of record needs
 — and this module owns only the first.

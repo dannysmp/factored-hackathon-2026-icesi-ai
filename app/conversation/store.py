@@ -5,7 +5,7 @@ Dialogue Store
 Overview
 --------
 Where dialogue state lives between turns, keyed by session id. A new login starts a new
-conversation (AC-E5-60): the store is asked for state by the session id a sign-in issued, and a
+conversation: the store is asked for state by the session id a sign-in issued, and a
 new sign-in issues a new one, so a prior conversation's state is never resumed under it.
 
 Scope

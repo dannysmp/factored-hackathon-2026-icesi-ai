@@ -6,7 +6,7 @@ Overview
 --------
 Resolves the customer's own words for when a transaction happened ("ayer", "el lunes", "dia 3",
 "3 de junio", "03/04") into an absolute date and the ``DateSource`` that names how it was
-expressed (AC-E5-16). Purely deterministic: no model call, no wall clock — the reference date is
+expressed. Purely deterministic: no model call, no wall clock — the reference date is
 always the caller's own input, the domain calendar's reference date, never ``date.today()``.
 
 Scope
@@ -15,8 +15,8 @@ In: matching a closed, curated vocabulary of relative day terms, weekday names a
 phrases and month-and-day phrases ("June 3rd", "3 de junio", "21 de abril") per language, and a
 numeric day-first date pattern; resolving each against the reference date the caller supplies.
 Out: recognizing that a message mentions a date at all (the model's own job, recorded as
-``date_expression``); confirming a resolved date in words before it is used (a later, separate
-controller-slice concern per AC-E5-16 and issue #106's own stated scope).
+``date_expression``); confirming a resolved date in words before it is used (the dialogue
+controller's job).
 
 Design Principles
 ------------------
@@ -153,8 +153,8 @@ _MONTHS: dict[Lang, dict[str, int]] = {
 
 
 def _month_alternation(language: Lang) -> str:
-    """A regular-expression alternation of the month names of the language, longest first so that a
-    longer name is never cut short by a shorter prefix.
+    """A regular-expression alternation of the month names and abbreviations of the language,
+    longest first so that a longer name is never cut short by a shorter prefix.
     """
     return "|".join(sorted(_MONTHS[language], key=len, reverse=True))
 
@@ -187,7 +187,7 @@ _MONTH_DAY: dict[Lang, tuple[re.Pattern[str], ...]] = {
     ),
 }
 
-# Day first, in every language, per AC-E5-16 — never the customer's own language's usual
+# Day first, in every language — never the customer's own language's usual
 # convention. An optional two- or four-digit year; without one, the reference date's own year.
 _NUMERIC = re.compile(r"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?$")
 
