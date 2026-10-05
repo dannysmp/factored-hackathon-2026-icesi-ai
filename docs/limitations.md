@@ -76,6 +76,15 @@ results still to come say so and name the command that completes them.
   tracked in the repository.
   The report's figures describe the commit it names, not the current head, which carries later
   behaviour and scoring fixes.
+- **A transaction described by a kind of transaction or place is found by its other details, from a
+  fixed word list.** When a customer names a transfer, a charge or an online store where a
+  merchant would go, the lookup ignores that word and searches by the amount, date or card; a
+  message with nothing else asks which transaction is meant. The list is exact-match and covers
+  Spanish, Portuguese and English. A phrase outside it, or a merchant name the model guesses
+  from the customer's words, still narrows the search to a merchant that may not exist and can
+  answer "not found" for a transaction the customer owns. A currency the model supplies for an
+  amount written with only a bare `$` is discarded; a currency the customer states is kept. The
+  behavior was verified with scripted understanding results, not across live model output.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in

@@ -72,6 +72,7 @@ from contracts.service_v1.cases import (  # The base this contract builds on
     CaseRecord,
     ContractModel,
     DisclosedAmount,
+    Money,
     SafeText,
 )
 
@@ -173,6 +174,10 @@ class TransactionFact(ContractModel):
     merchant: Annotated[SafeText, Field(min_length=1, max_length=80)] | None
     description: Annotated[SafeText, Field(min_length=1, max_length=200)] | None = None
     amount: DisclosedAmount
+    # The amount in the currency the transaction was made in, as the source states it. ``amount``
+    # is always in US dollars, so a figure the customer quotes in another currency can only be
+    # matched here. Absent where a caller has no such figure.
+    original_amount: Money | None = None
     product: ProductLabel
     status: TransactionStatus
 

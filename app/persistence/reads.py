@@ -359,6 +359,7 @@ class PostgresToolPort:
             merchant=clamp_merchant(row.merchant_name),
             description=None,
             amount=self._disclosed_amount(row.amount_usd, row.amount_usd_provenance),
+            original_amount=Money(amount=row.amount, currency=row.currency),
             product=ProductLabel(name=row.product_type or "unknown", last4=row.last4),
             status=PolicyTransactionStatus(row.transaction_status),
         )

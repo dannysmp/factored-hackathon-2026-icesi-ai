@@ -176,6 +176,7 @@ from app.tools.create_dispatch import create_dispute_case
 from app.tools.dispatcher import dispatch
 from contracts.service_v1 import tools as tool_contracts
 from contracts.service_v1.api import Choice, TurnRequest, TurnResponse
+from contracts.service_v1.cases import Money
 from contracts.service_v1.console import TimelineEntry
 from contracts.service_v1.envelope import (
     CUSTOMER_REASON_OF,
@@ -446,6 +447,14 @@ def _without_unnamed_merchant(result: NluResult) -> NluResult:
     )
 
 
+def _agrees_with_amount_hint(money: Money, hint: TransactionHint) -> bool:
+    """Whether ``money`` has the amount and the currency ``hint`` gives, those it does not give
+    being unconstrained."""
+    return (hint.amount is None or money.amount == hint.amount) and (
+        hint.currency is None or money.currency == hint.currency
+    )
+
+
 def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -> bool:
     """Whether ``fact`` could be what the customer described in ``hint``.
 
@@ -454,17 +463,19 @@ def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -
     merchant is compared ignoring accents and case, in both directions: a customer who types
     "cafe" finds "Café Sol", and one who types "São Paulo" finds "SAO PAULO". A merchant that is
     empty once accents and surrounding blanks are removed names nothing, so it matches nothing.
+    The amount and the currency must be those of one same figure: the amount in US dollars or the
+    one in the currency the transaction was made in, so a figure quoted in pesos finds its
+    transaction and a transaction with no dollar amount can still be found by its own.
     """
     if hint.merchant is not None:
         label = fact.merchant or fact.description
         wanted = _fold(hint.merchant).strip()
         if label is None or not wanted or wanted not in _fold(label):
             return False
-    money = fact.amount.money
-    if hint.amount is not None and (money is None or money.amount != hint.amount):
-        return False
-    if hint.currency is not None and (money is None or money.currency != hint.currency):
-        return False
+    if hint.amount is not None or hint.currency is not None:
+        figures = (fact.amount.money, fact.original_amount)
+        if not any(m is not None and _agrees_with_amount_hint(m, hint) for m in figures):
+            return False
     return hint.product_last4 is None or fact.product.last4 == hint.product_last4
 
 

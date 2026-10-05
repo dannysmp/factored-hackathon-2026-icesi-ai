@@ -20,7 +20,7 @@ SEMGREP_VERSION := 1.178.0
         profile pipeline analyze features corpus corpus-check train evaluate up \
         db-up db-down migrate check-migrations check-infra-scripts test-integration seed \
         eval-bank load-seed load-analytics reset-demo-personas seed-ci-smoke \
-        judge-validation
+        judge-validation require-raw-data require-silver
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -100,16 +100,24 @@ clean: ## Remove caches and build artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .hypothesis .coverage htmlcov
 	find . -type d -name __pycache__ -not -path './.venv/*' -prune -exec rm -rf {} +
 
-profile: ## Profile the raw data (DATA_DIR, default data/raw) and write reports/data-profile.md
+# Without the data the pipeline modules finish "successfully" on an empty run and overwrite the
+# committed reports, so the data commands stop here first.
+require-raw-data:
+	@test -d "$(DATA_DIR)" || { echo "make: no raw data at $(DATA_DIR); place the CSV files there or set DATA_DIR (see README, Data). Nothing was changed." >&2; exit 1; }
+
+require-silver:
+	@test -d "$(SILVER_DIR)" || { echo "make: no cleaned layer at $(SILVER_DIR); run 'make pipeline' with the raw data in place or set SILVER_DIR (see README, Data). Nothing was changed." >&2; exit 1; }
+
+profile: require-raw-data ## Profile the raw data (DATA_DIR, default data/raw) and write reports/data-profile.md
 	$(RUN) python -m pipelines.profile --data-dir $(DATA_DIR)
 
-pipeline: ## Clean the raw data into typed Parquet (SILVER_DIR, default data/silver) and write reports/data-quality.md
+pipeline: require-raw-data ## Clean the raw data into typed Parquet (SILVER_DIR, default data/silver) and write reports/data-quality.md
 	$(RUN) python -m pipelines.silver --raw $(DATA_DIR) --out $(SILVER_DIR)
 
-analyze: ## Build the dispute marts from SILVER_DIR and write reports/workflow-analysis.md
+analyze: require-silver ## Build the dispute marts from SILVER_DIR and write reports/workflow-analysis.md
 	$(RUN) python -m pipelines.analysis --silver $(SILVER_DIR)
 
-features: ## Build the risk feature mart from SILVER_DIR and write reports/risk-features.md
+features: require-silver ## Build the risk feature mart from SILVER_DIR and write reports/risk-features.md
 	$(RUN) python -m pipelines.risk_features --silver $(SILVER_DIR)
 
 corpus: ## Regenerate the multilingual policy corpus in policy/corpus from the policy YAML

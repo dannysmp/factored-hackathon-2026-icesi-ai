@@ -55,7 +55,7 @@
 }
 
 .ticket-detail-screen .ticket-ref {
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .ticket-detail-screen h3 {

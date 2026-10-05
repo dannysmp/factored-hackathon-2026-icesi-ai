@@ -75,6 +75,7 @@
 }
 
 .queue-table-scroll {
+  position: relative;
   overflow-x: auto;
   /* A soft edge on the side that still has content: the cover gradients scroll with the content
      and hide the shadow when that edge is reached, so a cut-off table is never mistaken for a
