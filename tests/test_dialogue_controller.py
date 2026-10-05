@@ -1557,6 +1557,30 @@ def test_a_retried_turn_that_opened_a_second_dispute_asks_its_question_again(
 
 
 @pytest.mark.parametrize("language", ["es", "pt", "en"])
+def test_a_retried_turn_that_asked_for_confirmation_in_a_filed_session_asks_for_it_again(
+    policy: Policy, retriever: LexicalRetriever, language: str
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever, language)
+    dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Amazon"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+    first = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    turn_id = f"turn-{dialogue.turns:04d}"
+    assert first.next_expected is Slot.CONFIRMATION
+    assert "D-1" not in first.reply
+
+    retried = dialogue.say(_confirmation(ConfirmationAnswer.YES), turn_id=turn_id)
+
+    assert "D-1" not in retried.reply
+    assert retried.next_expected is Slot.CONFIRMATION
+    assert retried.case_number is None
+    assert dialogue.port.create_calls == 1
+
+
+@pytest.mark.parametrize("language", ["es", "pt", "en"])
 @pytest.mark.parametrize("closing", _CLOSINGS_WITHOUT_A_CASE)
 def test_a_retried_turn_that_closed_a_second_dispute_does_not_report_the_first_case(
     policy: Policy, retriever: LexicalRetriever, closing: str, language: str
@@ -1589,6 +1613,14 @@ def test_a_retried_turn_that_closed_a_second_dispute_does_not_report_the_first_c
     retried = dialogue.say(_confirmation(answers[-1]), turn_id="turn-close")
 
     assert "D-1" not in retried.reply
+    assert (
+        retried.reply
+        == {
+            "es": "De acuerdo, no presenté la disputa.",
+            "pt": "Tudo bem, não apresentei a contestação.",
+            "en": "Understood, I didn't file the dispute.",
+        }[language]
+    )
     assert retried.case_number is None
     assert dialogue.port.create_calls == (2 if closing == "duplicate" else 1)
 

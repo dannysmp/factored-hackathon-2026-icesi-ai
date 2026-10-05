@@ -327,6 +327,9 @@ def _clarify_confirmation(e: RenderEnvelope) -> str:
 
 
 def _clarify_change(e: RenderEnvelope) -> str:
+    """The reply when a customer answers an open question with a change but does not say what:
+    it names the two parts that can change (the transaction or the reason) and offers answering
+    yes to go ahead unchanged."""
     return {
         "es": "No logré identificar qué desea cambiar. Dígame qué parte es: la transacción o "
         "el motivo de la disputa. Si todo está bien, responda sí.",
