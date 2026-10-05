@@ -60,7 +60,7 @@ describe('TimelinePanel', () => {
       />,
     )
 
-    expect(screen.getByText('Iniciada → Some new state')).toBeInTheDocument()
+    expect(screen.getByText('Iniciada → Sin etiqueta (some new state)')).toBeInTheDocument()
   })
 
   it('shows an em dash when there is no reason code or policy version', () => {
