@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SignInError, fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
 
+/** A JSON `Response` with the given status and body, like the broker returns. */
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -31,7 +32,9 @@ describe('fetchCustomerPersonas', () => {
     expect(personas).toEqual([
       { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' },
     ])
-    expect(fetchMock).toHaveBeenCalledWith('/v1/auth/demo-personas')
+    expect(fetchMock).toHaveBeenCalledWith('/v1/auth/demo-personas', {
+      signal: expect.any(AbortSignal) as AbortSignal,
+    })
   })
 
   it('throws SignInError with the problem title on a non-ok response', async () => {
@@ -65,7 +68,9 @@ describe('fetchAgentPersonas', () => {
     expect(personas).toEqual([
       { slug: 'diego', display_name: 'Diego', language: 'pt', audience: 'agent' },
     ])
-    expect(fetchMock).toHaveBeenCalledWith('/v1/auth/demo-personas')
+    expect(fetchMock).toHaveBeenCalledWith('/v1/auth/demo-personas', {
+      signal: expect.any(AbortSignal) as AbortSignal,
+    })
   })
 })
 

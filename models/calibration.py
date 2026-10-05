@@ -26,17 +26,17 @@ Design Principles
 - **The model is never re-selected here.** `latest_selected_model` reads the last "bootstrap"
   entry `models.boosted` appended and takes its `selected` field; this module has no rule of its
   own for choosing between logistic and boosted.
-- **The threshold rule is fixed in advance and applied unchanged.** The lowest validation score
-  whose precision is at least `PRECISION_FLOOR` and whose routed share is at most
-  `ROUTED_SHARE_CAP`; if none qualifies, there is no threshold and routing stays off (no test
-  scoring follows from that outcome, since there is no threshold to apply). `precision_recall_curve`
-  gives precision and recall at every distinct score; the routed share at each one follows from
+- **The threshold rule is applied unchanged.** The lowest validation score whose precision is at
+  least `PRECISION_FLOOR` and whose routed share is at most `ROUTED_SHARE_CAP`; if none
+  qualifies, there is no threshold and routing stays off (no test scoring follows from that
+  outcome, since there is no threshold to apply). `precision_recall_curve` gives precision and
+  recall at every distinct score; the routed share at each one follows from
   `recall * positives / (precision * total)`, so no second pass over the scores is needed.
 - **The test period is scored exactly once.** That one score array feeds both the calibration
   diagnostics for the test period and, when a threshold was chosen, the routing decision; it is
   never rescored for a second purpose.
 - **The bootstrap resamples customers, not rows, over the test period only,** with the resample
-  count (`CALIBRATION_BOOTSTRAP_RESAMPLES`) and seed fixed in advance rather than tuned here.
+  count (`CALIBRATION_BOOTSTRAP_RESAMPLES`) and seed set as constants rather than tuned here.
 - **Scores are not calibrated probabilities.** Both models are fitted with `class_weight="balanced"`
   (the same rule as `models.probe` and `models.boosted`), which reweights the fit for the severe
   imbalance and inflates predicted probabilities relative to the true prevalence. The precision,
@@ -58,11 +58,10 @@ resamples) -> CalibrationResult``
 Limitations
 -----------
 The routed-share and recall guardrail gap between countries, segments and currencies is not
-computed here: with no threshold accepted nothing
-is ever routed, so there is no group gap to report; enabling routing would first require adding
-that breakdown. The customer identifier used for resampling is read only from the cleaned
-transactions table and is discarded once the bootstrap returns, the same rule `models.boosted`
-follows.
+computed here: with no threshold accepted nothing is ever routed, so there is no group gap to
+report; enabling routing would first require adding that breakdown. The customer identifier used
+for resampling is read only from the cleaned transactions table and is discarded once the
+bootstrap returns, the same rule `models.boosted` follows.
 """
 
 from __future__ import annotations
@@ -108,11 +107,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_SILVER = Path("data/silver")
 DEFAULT_CARD = Path("models/model_card.json")
 
-# The decision rule, fixed in advance: a precision floor of ten times the validation base rate,
-# with at most one in twenty otherwise-eligible transactions routed.
+# The decision rule: a precision floor of 0.01, about ten times the validation base rate, with at
+# most one in twenty otherwise-eligible transactions routed.
 PRECISION_FLOOR = 0.01
 ROUTED_SHARE_CAP = 0.05
-# Fixed in advance, not tuned by this module.
+# A constant, not tuned by this module.
 CALIBRATION_BOOTSTRAP_RESAMPLES = 2000
 CALIBRATION_BINS = 10
 

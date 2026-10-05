@@ -1,4 +1,8 @@
-/** Component test: the ticket-detail screen's states (AC-E10-18) and its accessibility. */
+/**
+ * Component test: the ticket-detail screen renders its loading, ready (packet and timeline tabs),
+ * not-found and error states, offers a back control, and has no automatically detectable
+ * accessibility violations when ready or failed.
+ */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
@@ -6,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { TicketDetailClient } from './ticketDetailClient'
 import { FixtureTicketDetailClient } from './ticketDetailClient'
 import { DEMO_TICKET_DETAILS } from './fixtures'
+import { REQUEST_SUMMARY_LABELS } from './labels'
 import { TicketDetailScreen } from './TicketDetailScreen'
 
 const [FIRST] = DEMO_TICKET_DETAILS
@@ -23,14 +28,16 @@ describe('TicketDetailScreen', () => {
     const client: TicketDetailClient = { fetchTicketDetail: () => new Promise(() => undefined) }
     render(<TicketDetailScreen client={client} ticketRef={TICKET_REF} onBack={vi.fn()} />)
 
-    expect(screen.getByRole('status')).toHaveTextContent('Cargando el ticket')
+    expect(screen.getByRole('status')).toHaveTextContent('Cargando el caso')
   })
 
   it('shows the packet by default, with a tab to switch to the timeline', async () => {
     const client = new FixtureTicketDetailClient(DEMO_TICKET_DETAILS)
     render(<TicketDetailScreen client={client} ticketRef={TICKET_REF} onBack={vi.fn()} />)
 
-    expect(await screen.findByText(FIRST.packet.request_summary)).toBeInTheDocument()
+    expect(
+      await screen.findByText(REQUEST_SUMMARY_LABELS[FIRST.packet.trigger]),
+    ).toBeInTheDocument()
     expect(screen.queryByText('Cronología de auditoría')).not.toBeInTheDocument()
   })
 
@@ -38,7 +45,7 @@ describe('TicketDetailScreen', () => {
     const user = userEvent.setup()
     const client = new FixtureTicketDetailClient(DEMO_TICKET_DETAILS)
     render(<TicketDetailScreen client={client} ticketRef={TICKET_REF} onBack={vi.fn()} />)
-    await screen.findByText(FIRST.packet.request_summary)
+    await screen.findByText(REQUEST_SUMMARY_LABELS[FIRST.packet.trigger])
 
     await user.click(screen.getByRole('tab', { name: 'Cronología' }))
 
@@ -52,20 +59,20 @@ describe('TicketDetailScreen', () => {
     const onBack = vi.fn()
     const client = new FixtureTicketDetailClient(DEMO_TICKET_DETAILS)
     render(<TicketDetailScreen client={client} ticketRef={TICKET_REF} onBack={onBack} />)
-    await screen.findByText(FIRST.packet.request_summary)
+    await screen.findByText(REQUEST_SUMMARY_LABELS[FIRST.packet.trigger])
 
     await user.click(screen.getByRole('button', { name: 'Volver a la cola' }))
 
     expect(onBack).toHaveBeenCalled()
   })
 
-  it('shows a message and a back control when the ticket no longer resolves', async () => {
+  it('shows a message and a back control when the ticket does not resolve', async () => {
     const user = userEvent.setup()
     const onBack = vi.fn()
     const client: TicketDetailClient = { fetchTicketDetail: () => Promise.resolve(null) }
     render(<TicketDetailScreen client={client} ticketRef="T-GONE" onBack={onBack} />)
 
-    expect(await screen.findByText('Este ticket ya no está disponible.')).toBeInTheDocument()
+    expect(await screen.findByText('Este caso ya no está disponible.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Volver a la cola' }))
     expect(onBack).toHaveBeenCalled()
   })
@@ -73,17 +80,17 @@ describe('TicketDetailScreen', () => {
   it('shows a retryable error when the ticket cannot be loaded', async () => {
     render(<TicketDetailScreen client={FAILING_CLIENT} ticketRef={TICKET_REF} onBack={vi.fn()} />)
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar el ticket')
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar el caso')
     expect(screen.getByRole('button', { name: 'Intentar de nuevo' })).toBeInTheDocument()
   })
 
-  it('has no automatically detectable accessibility violations once ready', async () => {
+  it('has no automatically detectable accessibility violations when ready', async () => {
     const client = new FixtureTicketDetailClient(DEMO_TICKET_DETAILS)
     const { container } = render(
       <TicketDetailScreen client={client} ticketRef={TICKET_REF} onBack={vi.fn()} />,
     )
 
-    await screen.findByText(FIRST.packet.request_summary)
+    await screen.findByText(REQUEST_SUMMARY_LABELS[FIRST.packet.trigger])
     expect(await axe(container)).toHaveNoViolations()
   })
 

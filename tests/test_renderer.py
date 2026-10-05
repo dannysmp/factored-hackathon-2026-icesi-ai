@@ -97,7 +97,7 @@ def _source() -> SourceRef:
     ],
 )
 def test_format_date_is_absolute_and_carries_the_year(lang: str, expected: str) -> None:
-    """AC-E5-47: every date is written in words with the year, in the reply language."""
+    """Every date is written in words with the year, in the reply language."""
     assert format_date(_DOMAIN_DATE, lang) == expected  # type: ignore[arg-type]
 
 
@@ -109,8 +109,10 @@ def test_format_date_is_absolute_and_carries_the_year(lang: str, expected: str) 
         ("en", "Reference date of the data: June 18, 2026"),
     ],
 )
-def test_reference_date_line_matches_the_acceptance_example(lang: str, expected: str) -> None:
-    """AC-E5-48: the exact wording the acceptance criterion gives."""
+def test_reference_date_line_states_the_data_date_in_the_reply_language(
+    lang: str, expected: str
+) -> None:
+    """The reference-date line has this exact wording in each reply language."""
     assert reference_date_line(_DOMAIN_DATE, lang) == expected  # type: ignore[arg-type]
 
 
@@ -130,7 +132,7 @@ def test_format_money_uses_each_language_s_separators(lang: str, expected: str) 
 
 
 def test_demo_notice_is_stated_in_every_language() -> None:
-    """AC-E5-49: the demonstration notice exists in all three reply languages."""
+    """The demonstration notice exists in all three reply languages."""
     for lang in ("es", "pt", "en"):
         assert "sintéticos" in demo_notice(lang) or "synthetic" in demo_notice(lang)
 
@@ -331,6 +333,25 @@ def test_every_template_id_has_a_working_renderer(lang: str) -> None:
         assert rendered.reply.strip()
 
 
+@pytest.mark.parametrize(
+    ("lang", "asked_for", "person"),
+    [
+        ("es", ("comercio", "monto exacto", "fecha"), "asesor"),
+        ("pt", ("estabelecimento", "valor exato", "data"), "atendente"),
+        ("en", ("merchant", "exact amount", "date"), "person"),
+    ],
+)
+def test_not_found_asks_for_details_the_customer_can_give_and_offers_a_person(
+    lang: str, asked_for: tuple[str, ...], person: str
+) -> None:
+    """The reply names what to say next and never offers an action the assistant cannot take."""
+    reply = render(_every_template_envelope(lang)[TemplateId.NOT_FOUND]).reply
+
+    assert all(detail in reply for detail in asked_for)
+    assert person in reply
+    assert not any(offer in reply for offer in ("widen", "ampliar"))
+
+
 def test_the_spanish_language_offer_does_not_speak_in_a_gendered_first_person() -> None:
     """The assistant has no gender, so the Spanish offer must not say it is "segura"."""
     envelope = _envelope(template_id=TemplateId.LANGUAGE_OFFER)
@@ -375,7 +396,7 @@ def test_render_refuses_a_non_template_envelope() -> None:
 
 
 def test_a_transaction_without_a_merchant_is_shown_without_inventing_one() -> None:
-    """AC-E5-59: a null merchant is never filled in with an invented name."""
+    """A null merchant is never filled in with an invented name."""
     envelope = _envelope(
         intent=Intent.PRESENT_TRANSACTIONS,
         template_id=TemplateId.PRESENT_ONE,
@@ -434,6 +455,42 @@ def test_present_one_names_the_merchant_with_its_own_language_s_preposition(
     rendered = render(envelope)
 
     assert expected_phrase in rendered.reply
+
+
+@pytest.mark.parametrize(
+    ("lang", "second_line"),
+    [
+        ("es", "2. 80,00 MXN en Panadería, 10 de junio de 2026"),
+        ("pt", "2. 80,00 MXN em Panadería, 10 de junho de 2026"),
+        ("en", "2. 80.00 MXN at Panadería, June 10, 2026"),
+    ],
+)
+def test_present_list_writes_one_numbered_line_per_transaction_in_its_own_language(
+    lang: Lang, second_line: str
+) -> None:
+    """Each option is a line "N. amount at merchant, date", in the order of the facts."""
+    transactions = (
+        _transaction(ref="tx-1"),
+        _transaction(
+            ref="tx-2",
+            merchant="Panadería",
+            occurred_on=date(2026, 6, 10),
+            amount=Money(amount=Decimal("80.00"), currency="MXN"),
+        ),
+    )
+    envelope = _envelope(
+        intent=Intent.PRESENT_TRANSACTIONS,
+        template_id=TemplateId.PRESENT_LIST,
+        lang=lang,
+        facts=DisputeFacts(transactions=transactions, candidate_count=2),
+    )
+
+    lines = render(envelope).reply.split("\n")
+
+    assert len(lines) == 3
+    assert lines[1].startswith("1. ")
+    assert "Tienda Sol" in lines[1]
+    assert lines[2] == second_line
 
 
 @pytest.mark.parametrize(
@@ -532,7 +589,7 @@ def test_every_ineligible_reason_has_its_own_plain_wording(
 
 
 def test_the_policy_answer_cites_the_section_title_in_the_reply_language() -> None:
-    """AC-E5-28: the reply names the source by its readable title, not its identifier."""
+    """The reply names the source by its readable title, not its identifier."""
     source = _source()
     envelope = _envelope(
         intent=Intent.POLICY_ANSWER,
@@ -546,6 +603,38 @@ def test_the_policy_answer_cites_the_section_title_in_the_reply_language() -> No
 
     assert source.title_for("pt") in rendered.reply
     assert source.section_id not in rendered.reply
+
+
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [
+        (
+            "es",
+            "Puede consultarlo en la sección “Plazos para disputar” de nuestra "
+            "política de disputas.",
+        ),
+        (
+            "pt",
+            "Você pode consultar isso na seção “Prazos para contestar” da nossa "
+            "política de disputas.",
+        ),
+        ("en", "You can find this in the “Filing windows” section of our dispute policy."),
+    ],
+)
+def test_a_policy_answer_without_a_figure_cites_the_section_alone(
+    lang: Lang, expected: str
+) -> None:
+    envelope = _envelope(
+        intent=Intent.POLICY_ANSWER,
+        template_id=TemplateId.POLICY_ANSWER,
+        lang=lang,
+        sources=(_source(),),
+    )
+
+    rendered = render(envelope)
+
+    assert rendered.reply == expected
+    assert ": ." not in rendered.reply
 
 
 def test_dispute_status_grounds_a_case_without_an_expected_response_date() -> None:

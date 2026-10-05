@@ -1,11 +1,14 @@
+/** The queue's filter controls: a language select and the trigger-view tabs. */
 import { useId } from 'react'
 import type { JSX } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/Tabs'
 import type { Lang } from '../../customer-chat/contracts'
 import { LANGUAGE_LABELS } from '../labels'
 
+/** Which part of the queue a tab shows: everything, the fraud/card-loss rows, or the rest. */
 export type TriggerView = 'all' | 'priority' | 'other'
 
+/** The tabs in display order, with their fixed Spanish labels. */
 const TRIGGER_VIEWS: readonly { value: TriggerView; label: string }[] = [
   { value: 'all', label: 'Todos' },
   { value: 'priority', label: 'Fraude y pérdida de tarjeta' },
@@ -13,32 +16,36 @@ const TRIGGER_VIEWS: readonly { value: TriggerView; label: string }[] = [
 ]
 
 /**
- * The queue's two filters (AC-E10-01): language, a plain accessible control (matching
- * `SignInScreen`'s own `<select>` convention, since language composes with the trigger view
- * rather than partitioning it into exclusive panels — AC-E10-04 asks for a ticket that is *both*
- * Portuguese *and* fraud, not one or the other); and the trigger view, three tabs built on the
- * `Tabs` primitive (ADR-19, "the console's tabs ... over the console's queue views"), each a
- * genuine content panel — a shorter, differently prioritized reading of the same queue, not a
- * toggle dressed as tabs. "Fraude y pérdida de tarjeta" surfaces exactly the two triggers
- * AC-E10-01 sorts first, matching the queue's own priority flag (`QueueItem.priority`) rather
- * than one specific `HandoffTrigger` value, so an agent's fraud or card-loss specialty has a
- * direct answer without knowing the full trigger vocabulary.
+ * The queue's two filters: language, a plain accessible `<select>` (matching `SignInScreen`'s
+ * convention, since language composes with the trigger view rather than partitioning it into
+ * exclusive panels — an agent can ask for a ticket that is *both* Portuguese *and* fraud); and
+ * the trigger view, three tabs built on the `Tabs` primitive, each a genuine content panel — a
+ * shorter, differently prioritized reading of the same queue, not a toggle dressed as tabs.
+ * "Fraude y pérdida de tarjeta" surfaces exactly the two triggers the queue sorts first, matching
+ * the queue's own priority flag (`QueueItem.priority`) rather than one specific `HandoffTrigger`
+ * value, so an agent's fraud or card-loss specialty has a direct answer without knowing the full
+ * trigger vocabulary.
  *
- * Copy is fixed Spanish, not a catalog entry (D91: the console stays fixed-Spanish and never
- * imports the trilingual `useT` hook chat and sign-in use).
+ * Copy is fixed Spanish: the console never uses the per-language catalogs or the trilingual
+ * `useT` hook that chat and sign-in use.
  *
- * `renderTable` is called once per trigger view's `TabsContent`, filtered to that view by the
+ * Each tab shows how many cases it holds under the current language filter, so the agent knows
+ * what is behind a tab before opening it.
+ *
+ * `renderTable` is called one time per trigger view's `TabsContent`, filtered to that view by the
  * caller — this component owns the filter controls, never the table itself.
  */
 export function QueueFilters({
   language,
   onLanguageChange,
+  counts,
   triggerView,
   onTriggerViewChange,
   renderTable,
 }: {
   language: Lang | undefined
   onLanguageChange: (language: Lang | undefined) => void
+  counts: Readonly<Record<TriggerView, number>>
   triggerView: TriggerView
   onTriggerViewChange: (view: TriggerView) => void
   renderTable: (view: TriggerView) => JSX.Element
@@ -75,7 +82,7 @@ export function QueueFilters({
         <TabsList aria-label="Filtrar por motivo">
           {TRIGGER_VIEWS.map((view) => (
             <TabsTrigger key={view.value} value={view.value}>
-              {view.label}
+              {view.label} ({counts[view.value]})
             </TabsTrigger>
           ))}
         </TabsList>

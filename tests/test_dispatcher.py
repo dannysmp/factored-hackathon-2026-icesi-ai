@@ -72,7 +72,7 @@ def test_each_tool_calls_its_own_method_with_the_given_payload(
 
 
 def test_create_dispute_case_is_not_dispatched_here() -> None:
-    """Slice 1.4's tool has its own permission invariants; this module does not share them."""
+    """The create tool has its own permission invariants; this module does not share them."""
     port = _RecordingPort()
 
     with pytest.raises(KeyError, match="create_dispute_case"):

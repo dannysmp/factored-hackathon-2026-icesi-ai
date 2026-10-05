@@ -3,17 +3,17 @@ Agent Console Wiring Tests
 ==========================
 
 Component: ``app.main.create_app`` wiring the console's own routes (``app.api.agent``) into the
-running application (ADR-17, ADR-18). Most tests here are hermetic: a fake ``AgentConsolePorts``
-bundle (no real Postgres), real sign-ins through the demo brokers so the tokens under test are
-genuine, signed sessions, not hand-minted ones. Two tests at the end are marked ``integration``:
+running application. Most tests here are hermetic: a fake ``AgentConsolePorts`` bundle (no real
+Postgres), real sign-ins through the demo brokers so the tokens under test are genuine, signed
+sessions, not hand-minted ones. Two tests at the end are marked ``integration``:
 ``_default_agent_console`` — the real, store-backed collaborators ``create_app`` builds when no
 ``agent_console`` is injected — is otherwise never exercised by any test in this suite, since every
 other one injects a fake precisely to avoid needing Postgres.
 
-ADR-18's own evidence requirement: "a test enumerates every route with each token type, including
-crossing in both directions." ``tests/test_session_auth_middleware.py`` already proves the
-*mechanism* against synthetic routes; this file proves it against the *real* application, now that
-a real agent-audience route exists to cross into.
+The separation of the two audiences is only credible if a test enumerates every route with each
+token type, including crossing in both directions. ``tests/test_session_auth_middleware.py``
+already proves the *mechanism* against synthetic routes; this file proves it against the *real*
+application, now that a real agent-audience route exists to cross into.
 """
 
 from __future__ import annotations
@@ -264,7 +264,7 @@ def test_a_customer_token_is_refused_on_the_ticket_detail_route(client: TestClie
 
 
 def test_an_agent_token_is_refused_on_the_customer_turns_route(client: TestClient) -> None:
-    """Crossing in the other direction (ADR-18): the console's own token never reaches the
+    """Crossing in the other direction: the console's own token never reaches the
     customer's own route, even though both audiences now share the app."""
     token = _agent_token(client)
 

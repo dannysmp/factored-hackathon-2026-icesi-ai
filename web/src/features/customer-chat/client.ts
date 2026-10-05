@@ -1,23 +1,27 @@
 /**
  * Chat client: the one seam between the UI and a turn source.
  *
- * Components never call a transport directly (frontend standard, section 5: "one HTTP client
- * module"). `FixtureChatClient` replays a script; `LiveChatClient` is the real HTTP client against
- * the turn endpoint, behind a demo session.
+ * Components talk to a `ChatClient`, never to a transport. `FixtureChatClient` replays a script;
+ * `LiveChatClient` is the real HTTP client against the turn endpoint, behind a demo session.
  */
 import type { Lang, TurnRequest, TurnResponse } from './contracts'
 import { TurnResponseSchema } from './contracts'
+import { requestSignal } from '../../lib/failure'
 
 const TURNS_PATH = '/v1/turns'
 
 /** The word `_SMALL_TALK` (app/conversation/understanding.py) recognizes, one per language. */
 const GREETING_TRIGGER: Record<Lang, string> = { es: 'Hola', pt: 'Olá', en: 'Hello' }
 
+/** A source of turns: the opening message, then one reply per customer message. */
 export interface ChatClient {
   /** The assistant's opening message, before the customer has said anything. */
   start: () => Promise<TurnResponse>
-  /** Send the customer's text and get the next turn. */
-  sendTurn: (text: string) => Promise<TurnResponse>
+  /**
+   * Send the customer's text and get the next turn. A caller that may resend the same message
+   * passes its own `turnId`, so the server recognises the repeat instead of advancing twice.
+   */
+  sendTurn: (text: string, turnId?: string) => Promise<TurnResponse>
 }
 
 /** Raised when a fixture script has no more turns, or a caller sends text after it ended. */
@@ -103,16 +107,20 @@ export class LiveChatClient implements ChatClient {
     return this.postTurn(GREETING_TRIGGER[this.lang])
   }
 
-  sendTurn(text: string): Promise<TurnResponse> {
-    return this.postTurn(text)
+  sendTurn(text: string, turnId?: string): Promise<TurnResponse> {
+    return this.postTurn(text, turnId)
   }
 
-  private async postTurn(text: string): Promise<TurnResponse> {
-    const body: TurnRequest = { turn_id: crypto.randomUUID(), text }
+  private async postTurn(
+    text: string,
+    turnId: string = crypto.randomUUID(),
+  ): Promise<TurnResponse> {
+    const body: TurnRequest = { turn_id: turnId, text }
     const response = await fetch(TURNS_PATH, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
       body: JSON.stringify(body),
+      signal: requestSignal(),
     })
     if (!response.ok) {
       throw await this.toError(response)

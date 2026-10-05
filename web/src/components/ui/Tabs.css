@@ -1,12 +1,12 @@
-/* Styling for the vendored Radix tabs primitive, reading only tokens from src/styles/tokens.css
-   (ADR-19) — no literal color, spacing or font-size value here. */
+/* Styling for the tabs primitive, reading only tokens from src/styles/tokens.css: no literal
+   color, spacing or font-size value belongs here. */
 
 .tabs-list {
   display: flex;
   gap: var(--space-2);
   border-bottom: var(--border-width-thin) solid var(--color-border);
-  /* A queue's language/trigger labels can outgrow a narrow viewport (AC-E10-20's mobile
-     breakpoint): scroll horizontally rather than wrap or overflow the page, keeping every tab
+  /* A queue's language/trigger labels can outgrow a narrow viewport (for example on a
+     phone): scroll horizontally rather than wrap or overflow the page, keeping every tab
      reachable by keyboard and touch instead of silently clipping one. */
   overflow-x: auto;
   flex-wrap: nowrap;
@@ -17,6 +17,7 @@
   border: none;
   background: none;
   cursor: pointer;
+  min-height: var(--size-touch-target);
   padding: var(--space-2) var(--space-4);
   font-family: var(--font-family);
   font-size: var(--font-size-base);
@@ -35,10 +36,17 @@
   border-bottom-color: var(--color-accent);
 }
 
+/* A tab has no background to change, and its disabled colour sits close to an inactive tab's, so
+   the strike-through is what tells them apart without relying on colour. */
 .tabs-trigger:disabled {
-  color: var(--color-text-subtle);
-  opacity: 0.5;
+  color: var(--color-disabled-text);
   cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+/* The list scrolls sideways, which would clip a ring drawn outside the trigger: draw it inside. */
+.tabs-trigger:focus-visible {
+  outline-offset: calc(var(--focus-ring-width) * -1);
 }
 
 .tabs-content {

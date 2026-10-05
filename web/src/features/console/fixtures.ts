@@ -1,11 +1,12 @@
 /**
  * A scripted queue snapshot for the console's fixture client, shaped like a real
  * `GET /v1/agent/queue` response (priority tickets first) — one fraud ticket, one Portuguese
- * ticket among them (AC-E10-04), and a mix of ages and categories to exercise the table's own
- * range of values.
+ * ticket among them, and a mix of ages and categories to exercise the table's own range of values.
+ * Also holds the empty queue and two ticket details, used by the fixture clients and tests. Ticket references and customer data are invented; no document number appears.
  */
 import type { QueueItem, QueueResponse, TicketDetail } from './contracts'
 
+/** The demo queue: five tickets, two of them priority, dated against the reference day 2026-06-18. */
 export const DEMO_QUEUE: QueueResponse = {
   reference_date: '2026-06-18',
   reference_date_origin: 'setting',
@@ -78,13 +79,14 @@ export const DEMO_QUEUE: QueueResponse = {
   ],
 }
 
-/** A queue with no open tickets: the console's empty state (AC-E10-18). */
+/** A queue with no open tickets: the console's empty state. */
 export const EMPTY_QUEUE: QueueResponse = {
   reference_date: '2026-06-18',
   reference_date_origin: 'setting',
   items: [],
 }
 
+/** The `DEMO_QUEUE` row with this reference; throws if the fixture has none. */
 function queueItem(ticketRef: string): QueueItem {
   const item = DEMO_QUEUE.items.find((candidate) => candidate.ticket_ref === ticketRef)
   if (item === undefined) {
@@ -99,7 +101,8 @@ function queueItem(ticketRef: string): QueueItem {
  * reference_date/created_at, so each one reuses its exact `DEMO_QUEUE` item rather than
  * restating those fields and risking drift). The English one's own source title and request
  * summary stay in English — the ticket's own language, not the console's fixed Spanish — the
- * same distinction `SourceRef`'s own docstring draws for a reply's citation.
+ * same distinction `SourceRef` draws for a reply's citation. The Spanish one carries a risk
+ * score; the English one has none, an open question and an attempted action.
  */
 export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
   {
@@ -124,7 +127,7 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
           status: 'Approved',
         },
       ],
-      actions: [],
+      actions: [{ action: 'evaluate_dispute', result: 'escalate_fraud_claim' }],
       attempted_action: null,
       existing_case_number: null,
       evidence: {
@@ -155,9 +158,10 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
       {
         occurred_at: '2026-06-18T14:03:00Z',
         trace_id: 'trace-0001',
+        turn_id: 'turn-0001',
         intent: 'present_transactions',
-        state_before: 'awaiting_transaction',
-        state_after: 'awaiting_reason',
+        state_before: 'started',
+        state_after: 'clarifying',
         render_mode: 'template',
         reason_code: null,
         policy_version: null,
@@ -165,8 +169,9 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
       {
         occurred_at: '2026-06-18T14:05:00Z',
         trace_id: 'trace-0002',
+        turn_id: 'turn-0002',
         intent: 'handoff',
-        state_before: 'awaiting_reason',
+        state_before: 'clarifying',
         state_after: 'handed_off',
         render_mode: 'template',
         reason_code: 'escalate_fraud_claim',
@@ -206,7 +211,7 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
         },
       ],
       actions: [],
-      attempted_action: { action: 'evaluate_dispute', result: 'human_required' },
+      attempted_action: { action: 'create_dispute_case', result: 'confirmation_required' },
       existing_case_number: null,
       evidence: {
         reason_codes: ['escalate_low_nlu_confidence'],
@@ -230,9 +235,10 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
       {
         occurred_at: '2026-06-16T18:12:00Z',
         trace_id: 'trace-1001',
+        turn_id: 'turn-1001',
         intent: 'present_transactions',
-        state_before: 'awaiting_transaction',
-        state_after: 'awaiting_reason',
+        state_before: 'started',
+        state_after: 'clarifying',
         render_mode: 'template',
         reason_code: null,
         policy_version: null,
@@ -240,8 +246,9 @@ export const DEMO_TICKET_DETAILS: readonly TicketDetail[] = [
       {
         occurred_at: '2026-06-16T18:15:00Z',
         trace_id: 'trace-1002',
+        turn_id: 'turn-1002',
         intent: 'handoff',
-        state_before: 'awaiting_reason',
+        state_before: 'clarifying',
         state_after: 'handed_off',
         render_mode: 'model',
         reason_code: 'escalate_low_nlu_confidence',

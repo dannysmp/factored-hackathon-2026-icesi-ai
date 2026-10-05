@@ -11,7 +11,7 @@ describe('useT', () => {
   it('reads strings from the catalog matching the given language', () => {
     const { result } = renderHook(() => useT('es'))
 
-    expect(result.current('common.loading')).toBe(es['common.loading'])
+    expect(result.current('chat.send')).toBe(es['chat.send'])
   })
 
   it('switches to the new language’s catalog when re-rendered with a different lang', () => {

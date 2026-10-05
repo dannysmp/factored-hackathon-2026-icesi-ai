@@ -1,10 +1,10 @@
 /**
  * A scripted Spanish conversation, in `TurnResponse` shape.
  *
- * Team-generated, not derived from a real customer, on the same terms as `FILE_DISPUTE_EN`
- * (`fixtures.ts`): it exists to prove the chat UI end to end before the live endpoint drives a
- * real conversation. Unlike that one, every reply line here is copied verbatim from
- * `docs/demo-scripts.md`'s "Normal path in Spanish" script, itself the template renderer's real,
+ * Synthetic, not derived from a real customer, on the same terms as `FILE_DISPUTE_EN`
+ * (`fixtures.ts`): it lets the chat UI be exercised end to end without a server. Unlike that one,
+ * every reply line here is copied verbatim from `docs/demo-scripts.md`'s "Normal path in Spanish"
+ * script, itself the template renderer's real,
  * unedited output for the recorded envelope in `tests/fixtures/scripted_flows.es.json` — so this
  * fixture renders the same grounded Spanish text a live session produces for this scenario, not
  * an approximation of it.
@@ -14,6 +14,7 @@ import type { TurnResponse } from './contracts'
 const REFERENCE_DATE_LINE = 'Fecha de referencia de los datos: 18 de junio de 2026'
 const DEMO_NOTICE = 'Esta es una sesión de demostración con datos sintéticos.'
 
+/** The full Spanish "file a dispute" script, from greeting to the end of the session. */
 export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
   {
     contract_version: '1',
@@ -28,6 +29,7 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     next_expected: 'transaction',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -43,6 +45,7 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     next_expected: 'transaction_choice',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -58,6 +61,7 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     next_expected: 'reason',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -73,6 +77,7 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     next_expected: 'confirmation',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -87,7 +92,8 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     choices: [],
     next_expected: null,
     end_session: false,
-    handoff_ticket: 'D-2001',
+    handoff_ticket: null,
+    case_number: 'D-2001',
   },
   {
     contract_version: '1',
@@ -102,5 +108,6 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     next_expected: null,
     end_session: true,
     handoff_ticket: null,
+    case_number: null,
   },
 ] as const

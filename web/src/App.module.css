@@ -1,7 +1,7 @@
-.heading {
-  max-width: 40rem;
+/* Styles for App: the session-ended notice shown above the sign-in. */
+/* The session-ended notice sits above the sign-in card and shares its column. */
+.notice {
+  width: calc(100% - 2 * var(--space-4));
+  max-width: 26rem;
   margin: var(--space-6) auto 0;
-  padding: 0 var(--space-4);
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-emphasis);
 }

@@ -1,6 +1,6 @@
-/* The ticket-detail screen (AC-E10-02, AC-E10-03). Reuses `.sr-only` and `.queue-table-scroll`
-   from `QueueScreen.css` (a plain CSS import, safe to repeat — the bundler dedupes it) rather than
-   redeclaring the same visually-hidden and horizontal-scroll utilities a second time. */
+/* Styles the ticket-detail screen: the packet and timeline layout. Reuses `.sr-only` and
+   `.queue-table-scroll` from `QueueScreen.css` (a plain CSS import, safe to repeat — the bundler
+   dedupes it) rather than redeclaring the same visually-hidden and horizontal-scroll utilities. */
 @import './QueueScreen.css';
 
 .ticket-detail-screen {
@@ -14,7 +14,7 @@
 
 .ticket-detail-screen dl {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: minmax(9rem, 12rem) 1fr;
   gap: var(--space-1) var(--space-4);
   margin: 0 0 var(--space-4);
 }
@@ -28,9 +28,25 @@
   margin: 0;
 }
 
+/* Narrow screens give each value the full width under its label rather than a sliver beside it.
+   The breakpoint is a literal: a custom property cannot be read inside a media query. */
+@media (max-width: 40rem) {
+  .ticket-detail-screen dl {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-detail-screen dd {
+    margin-bottom: var(--space-2);
+  }
+}
+
 .ticket-detail-screen h2 {
   font-size: var(--font-size-lg);
   margin: 0;
+}
+
+.ticket-detail-screen .ticket-ref {
+  white-space: nowrap;
 }
 
 .ticket-detail-screen h3 {
@@ -42,4 +58,42 @@
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-emphasis);
   margin: var(--space-3) 0 var(--space-1);
+}
+
+.ticket-detail-screen .ticket-trigger {
+  margin: 0;
+  color: var(--color-text-subtle);
+}
+
+/* The request is the first thing an agent reads, so it sits in its own card, above the detail. */
+.packet-summary {
+  padding: var(--space-4);
+  background-color: var(--color-bg-subtle);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.packet-summary h3 {
+  margin-top: 0;
+}
+
+.packet-summary dl {
+  margin-bottom: 0;
+}
+
+.packet-request {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-md);
+}
+
+.packet-cue {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-sm);
+}
+
+.packet-plain-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }

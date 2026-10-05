@@ -1,6 +1,7 @@
 /**
- * Bootstrap: mounts `App` into `index.html`'s root element. No logic worth a test lives here;
- * `vite.config.ts` excludes this file from the coverage gate for that reason.
+ * Entry point of the customer chat: mounts `App` into the root element of `index.html` and loads
+ * the global styles. It holds no logic, so it is excluded from the coverage gate in
+ * `vite.config.ts`.
  */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'

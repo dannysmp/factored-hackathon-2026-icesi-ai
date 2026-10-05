@@ -19,13 +19,12 @@ without `customer_country` and `country_mismatch`.
 
 ## Signal probe
 
-`probe.py` runs the signal probe: a logistic
-regression baseline and a small, capped gradient-boosted classifier, fitted on the
-training period of the risk feature mart on identical features and scored on the validation
-period with the area under the precision-recall curve against the period's base rate. `python -m
-models.probe` appends its result to the experiment log. It only reports whether the features carry
-signal; the precision floor, the threshold, the bootstrap interval, the routing decision and the
-model card belong to the later steps.
+`probe.py` runs the signal probe: a logistic regression baseline and a small, capped
+gradient-boosted classifier, fitted on the training period of the risk feature mart on identical
+features and scored on the validation period with the area under the precision-recall curve
+against the period's base rate. `python -m models.probe` appends its result to the experiment
+log. It only reports whether the features carry signal; the precision floor, the threshold, the
+bootstrap interval, the routing decision and the model card belong to the later steps.
 
 ## Boosted-model comparison
 
@@ -41,26 +40,25 @@ calibration.
 
 ## Calibration and routing
 
-`calibration.py` runs the calibration step: fits the model
-`boosted.py`'s bootstrap last selected (read from the experiment log, never re-decided here),
-reports its calibration (Brier score, expected calibration error, a binned curve) on validation
-and on test, and searches validation for the lowest threshold whose precision is at least the
-floor fixed in advance and whose routed share is at most 5 %. With a threshold, the test period is
-scored once and a customer-resampled bootstrap gives the 95 % interval of its precision; routing
-is switched on only if that precision clears the floor and the interval's lower bound is above
-the test prevalence. Without one, routing stays off and the card records why. `python -m
-models.calibration` appends its result to the experiment log and writes it as the current model
-card.
+`calibration.py` runs the calibration step: it fits the model `boosted.py`'s bootstrap last
+selected (read from the experiment log, never re-decided here), reports its calibration (Brier
+score, expected calibration error, a binned curve) on validation and on test, and searches
+validation for the lowest threshold whose precision is at least the precision floor (0.01, about
+ten times the validation base rate) and whose routed share is at most 5 %. With a threshold, the
+test period is scored once and a customer-resampled bootstrap gives the 95 % interval of its
+precision; routing is switched on only if that precision clears the floor and the interval's lower
+bound is above the test prevalence. Without one, routing stays off and the card records why.
+`python -m models.calibration` appends its result to the experiment log and writes it as the
+current model card.
 
 ## Model card
 
 `model_card.json` is the current, machine-readable model card: the selected model, the threshold
 decision (or its absence), the test-period result and its interval when a threshold was chosen,
 the calibration diagnostics, the routing decision and its rationale, and the data provenance,
-intended use, leakage review and limitations of the risk model. Unlike
-the experiment log, it is overwritten on every run: it reports the current state, not a history.
-A test in `tests/` asserts it stays consistent with the policy file's own `risk_score_threshold`
-and `risk_routing_enabled`.
+intended use, leakage review and limitations of the risk model. Unlike the experiment log, it is
+overwritten on every run: it reports the current state, not a history. A test in `tests/` asserts
+it stays consistent with the policy file's own `risk_score_threshold` and `risk_routing_enabled`.
 
 ## Experiment log
 

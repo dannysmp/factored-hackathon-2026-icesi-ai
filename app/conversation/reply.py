@@ -7,9 +7,8 @@ Overview
 Decides, for one already-built template-mode envelope, whether to render it through the model
 path (written by the model, then verified) or the fixed-wording template path, and always falls
 back to the template on any failure: a rejected candidate, a failed model call, or an envelope
-whose template is not eligible for model rendering at all. This is the deterministic degrade path
-the plan calls for — a renderer failure never reaches the customer as an error, only as the
-template's own wording.
+whose template is not eligible for model rendering at all. This is the deterministic degrade path:
+a renderer failure never reaches the customer as an error, only as the template's own wording.
 
 Scope
 -----
@@ -64,9 +63,11 @@ from contracts.service_v1.envelope import RenderEnvelope, TemplateId
 
 logger = logging.getLogger(__name__)
 
-# Every template eligible for model rendering. Deliberately excludes: NO_CASE_FOUND and
+# Every template eligible for model rendering. Deliberately excludes: PRESENT_LIST (its numbered
+# lines are the options the customer picks from, and a model-worded reply is free to drop or
+# reorder them, so the options stay fixed text); NO_CASE_FOUND and
 # HANDOFF_NOT_REGISTERED (the contract itself permits building a model-mode envelope for either
-# state from facts alone, but nothing here elects to render one through the model yet — an explicit
+# state from facts alone, but nothing here elects to render one through the model — an explicit
 # scope choice, not a contract-level impossibility); HANDOFF_CARD_LOSS, HANDOFF_REQUESTED and
 # FILING_UNVERIFIED (their wording carries safety-relevant or procedural content a generic
 # model-rendered sentence can't distinguish from HANDOFF_REVIEW's own, since RenderEnvelope carries
@@ -74,13 +75,12 @@ logger = logging.getLogger(__name__)
 # contract's own _wording_matches_the_mode forbids a refusal from ever rendering in model mode);
 # ABSTAIN_POLICY (Intent.ABSTAIN has no required grounded field at all — the verifier only rejects
 # a digit, a malformed placeholder or a missing *required* field, so nothing would force a
-# model-rendered reply to actually state the ADR-16-mandated abstention sentence rather than any
-# other digit-free text); and every purely procedural template (a greeting, a clarification, a
+# model-rendered reply to actually state the abstention sentence rather than any other
+# digit-free text); and every purely procedural template (a greeting, a clarification, a
 # farewell, a cancellation) with no grounded content to gain from model wording.
 MODEL_ELIGIBLE_TEMPLATES = frozenset(
     {
         TemplateId.PRESENT_ONE,
-        TemplateId.PRESENT_LIST,
         TemplateId.PRESENT_NARROW,
         TemplateId.CONFIRM_FILING,
         TemplateId.FILING_RESULT,
@@ -114,6 +114,12 @@ def render_reply(
     model_renderer : LlmRenderer | None
         The model-backed renderer to try first; ``None`` disables model rendering entirely (the
         composition root's decision, from ``Settings.model_renderer_enabled``).
+
+    Returns
+    -------
+    RenderedReply
+        The model-rendered reply with ``render_mode == "model"`` when the verifier accepted the
+        candidate; the template-rendered reply in every other case.
     """
     session_id = template_envelope.session_id
     eligible = (

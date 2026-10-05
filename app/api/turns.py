@@ -44,8 +44,10 @@ from app.api.auth import principal_of  # The authenticated principal, from the a
 from app.conversation.controller import DialogueController
 from app.security.sessions import Principal
 from contracts.service_v1.api import TurnRequest, TurnResponse
+from contracts.service_v1.tools import ToolPort
 
 ControllerFactory = Callable[[Principal], DialogueController]
+ToolPortDecorator = Callable[[Principal, ToolPort], ToolPort]
 
 
 def build_turns_router(*, controller_factory: ControllerFactory) -> APIRouter:

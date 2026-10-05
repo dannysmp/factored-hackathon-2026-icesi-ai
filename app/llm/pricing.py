@@ -15,9 +15,8 @@ Out: where the cost is logged (the caller's job) or summarized (``app.observabil
 Design Principles
 -----------------
 - Money is never a float: the conversion is done in ``Decimal`` throughout.
-- The two prices are not a new decision: they are ADR-7's own pinned Anthropic prices,
-  "verified by the maintainer," repeated here as the one place a cost is computed from them
-  rather than re-derived at each call site.
+- The two prices are the pinned Anthropic prices for the supported models, repeated here as the one
+  place a cost is computed from them rather than re-derived at each call site.
 - The price table's keys are exactly ``app.config.ALLOWED_MODELS``; a model reaching this
   function that is not priced here is a configuration drift between the two, not a normal
   runtime case, so it raises rather than silently costing nothing.
@@ -35,7 +34,7 @@ from decimal import Decimal  # Money is never a float
 
 _TOKENS_PER_PRICE_UNIT = Decimal(1_000_000)
 
-# (price per million input tokens, price per million output tokens), in USD (ADR-7).
+# (price per million input tokens, price per million output tokens), in USD.
 _PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
     "claude-haiku-4-5-20251001": (Decimal("1"), Decimal("5")),
     "claude-sonnet-5": (Decimal("2"), Decimal("10")),
@@ -48,7 +47,7 @@ def is_priced(model: str) -> bool:
 
 
 def cost_usd(model: str, input_tokens: int, output_tokens: int) -> Decimal:
-    """The cost of one completion, in USD, at ADR-7's pinned per-model prices.
+    """The cost of one completion, in USD, at the pinned per-model prices.
 
     Raises
     ------

@@ -1,7 +1,8 @@
-/* Base styles, reading the design tokens (ADR-19): color scheme, font stack and text color come
-   from the token file so every surface starts from the same source, before any per-component
-   retrofit. The focus-visible treatment lives in tokens.css itself, applied globally there, so
-   this file never repeats it. */
+/* Global base styles for every entry point (the customer chat and the agent console). They read
+   the design tokens, never literals: color scheme, font stack, type size and text color come from
+   the token file so every surface starts from the same source and a token edit changes them all.
+   The focus-visible treatment lives in tokens.css and applies globally there, so this file never
+   repeats it. */
 @import './styles/tokens.css';
 
 *,
@@ -17,13 +18,15 @@ body {
   font-weight: var(--font-weight-body);
   line-height: var(--line-height-base);
   font-variant-numeric: var(--font-variant-numeric);
-  /* Measured directly, in a real Chromium render under both color-scheme values: before this
-     file declared any color, the unstyled defaults were pure black text on an unset (effectively
-     white) background in light mode, and pure white text on an unset (effectively near-black)
-     background in dark mode. --color-text/--color-bg below are close to those defaults but not
-     byte-identical -- a deliberate, chosen palette, not a continuation of unstyled defaults. The
-     difference is a few RGB units per channel in each mode and is not perceptible at normal
-     reading distance, but it is a real change, not a no-op. */
+  /* Text and page colors come from the palette, which follows the system light or dark setting. */
   color: var(--color-text);
   background-color: var(--color-bg);
+}
+
+/* Smooth scrolling to the newest message, for a person who has not asked their system to reduce
+   motion; the reduced-motion rules live with the design tokens. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }

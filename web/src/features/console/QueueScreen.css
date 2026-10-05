@@ -1,10 +1,12 @@
-/* The queue screen (AC-E10-01, AC-E10-17): the fraud/card-loss-first table is the visually
-   dominant element on this screen — every other control (filters, banner) reads smaller and in
-   the subtle text color, tokens throughout (ADR-19), nothing hardcoded. */
+/* Styles the queue screen and the tables shared with the ticket-detail screen. The
+   fraud/card-loss-first table is the visually dominant element on the screen — every other
+   control (filters, banner) reads smaller and in the subtle text color. Colors, type sizes, spacing
+   and radii read design tokens; the few literal values (the content width, the scroll-edge
+   gradient sizes, the sort-icon stroke) are measurements of this screen's own layout. */
 
 /* The standard visually-hidden idiom (WebAIM): a fixed, universal technique, not a design-scale
-   value — its 1px/-1px literals are a deliberate, narrow exception to "every value reads a token"
-   (ADR-19), the same way `tokens.css` itself never tokenizes an idiom's own constants. */
+   value — its 1px/-1px literals are a deliberate, narrow exception to reading tokens, the same way
+   `tokens.css` itself never tokenizes an idiom's own constants. */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -17,9 +19,9 @@
   border: 0;
 }
 
-/* A class, not an `aria-label` selector: the accessible name is Spanish copy (D91) and must stay
-   free to change without silently detaching this layout — a plain "1440px-wide content flush to
-   the left edge" bug this very selector caused once, caught only by looking at a screenshot. */
+/* A class, not an `aria-label` selector: the accessible name is fixed-Spanish copy and must stay
+   free to change without silently detaching this layout (an unmatched selector would leave the
+   content flush to the left edge instead of centred). */
 .queue-screen {
   display: flex;
   flex-direction: column;
@@ -31,8 +33,7 @@
 
 /* A flex column's default cross-axis alignment is `stretch`: without this, a direct `<button>`
    child (the error state's "Intentar de nuevo", the ticket-detail screen's "Volver a la cola")
-   stretches to the container's full width — a plain browser default nothing here had overridden,
-   caught only by looking at a screenshot. Scoped to the button itself, not the container's own
+   stretches to the container's full width. Scoped to the button itself, not the container's own
    `align-items`, so the banner, the filters row and the table keep stretching to full width as
    they already correctly do. */
 .queue-screen > button,
@@ -67,13 +68,26 @@
   font: inherit;
   color: var(--color-text);
   background-color: var(--color-bg);
-  border: var(--border-width-thin) solid var(--color-border);
+  border: var(--border-width-thin) solid var(--color-border-control);
   border-radius: var(--radius-sm);
+  min-height: var(--size-touch-target);
   padding: var(--space-2) var(--space-3);
 }
 
 .queue-table-scroll {
   overflow-x: auto;
+  /* A soft edge on the side that still has content: the cover gradients scroll with the content
+     and hide the shadow when that edge is reached, so a cut-off table is never mistaken for a
+     complete one. */
+  background:
+    linear-gradient(to right, var(--color-bg) 30%, transparent) left center / 2rem 100% no-repeat
+      local,
+    linear-gradient(to left, var(--color-bg) 30%, transparent) right center / 2rem 100% no-repeat
+      local,
+    linear-gradient(to right, var(--color-border-control), transparent) left center / 0.5rem 100%
+      no-repeat scroll,
+    linear-gradient(to left, var(--color-border-control), transparent) right center / 0.5rem 100%
+      no-repeat scroll;
 }
 
 table {
@@ -120,7 +134,7 @@ tbody th[scope='row'] {
   font-weight: var(--font-weight-emphasis);
 }
 
-/* A real `<button>` (frontend standard, section 7), styled to read as the reference text it
+/* A real `<button>` (semantic HTML first), styled to read as the reference text it
    replaces, not as a UI-chrome button — the ticket's own reference stays the row's visual weight,
    not the fact that it happens to be clickable. */
 .queue-ticket-ref-button {
@@ -129,7 +143,136 @@ tbody th[scope='row'] {
   color: inherit;
   background: none;
   border: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-touch-target);
   padding: 0;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* Rows answer the pointer, so the eye can follow a row across a wide table. */
+/* Scoped to the queue table: the packet and timeline tables hold no row that can be opened. */
+.queue-table-openable tbody tr:hover {
+  background-color: var(--color-bg-subtle);
+}
+
+.queue-table-openable thead th {
+  background-color: var(--color-bg-subtle);
+  border-bottom-color: var(--color-border-control);
+  /* A long column title wraps instead of widening its column past what its values need, so the
+     whole table fits a desktop screen without scrolling. */
+  white-space: normal;
+  vertical-align: bottom;
+}
+
+/* A priority row is marked by a bar on its leading edge, as well as the badge and the word: the
+   eye finds it while scanning, and it never depends on colour alone. */
+.queue-table-openable .queue-row-priority th[scope='row'] {
+  box-shadow: inset var(--space-1) 0 0 var(--color-error);
+}
+
+/* The reference stays in view while the rest of the row scrolls under it, with a hairline so the
+   scrolled content is seen to pass beneath. Only where the screen is wide enough to leave room for
+   the other columns: on a phone the reference cell alone fills most of the width, and pinning it
+   would leave a sliver for everything else. The breakpoint is a literal: a custom property cannot
+   be read inside a media query. */
+@media (min-width: 48rem) {
+  .queue-table-openable thead th:first-child,
+  .queue-table-openable tbody th[scope='row'] {
+    position: sticky;
+    left: 0;
+    background-color: var(--color-bg);
+    box-shadow: inset calc(-1 * var(--border-width-thin)) 0 0 var(--color-border);
+  }
+
+  .queue-table-openable thead th:first-child {
+    background-color: var(--color-bg-subtle);
+  }
+
+  .queue-table-openable tbody tr:hover th[scope='row'] {
+    background-color: var(--color-bg-subtle);
+  }
+
+  .queue-table-openable .queue-row-priority th[scope='row'] {
+    box-shadow:
+      inset var(--space-1) 0 0 var(--color-error),
+      inset calc(-1 * var(--border-width-thin)) 0 0 var(--color-border);
+  }
+}
+
+/* Forced colours (Windows high contrast) drop `box-shadow`, so the priority bar and the pinned
+   column's hairline would vanish there. Both are redrawn as real elements the mode keeps, coloured
+   with system colours: the bar on the leading edge of a priority row's reference, the hairline on
+   the trailing edge of the pinned reference column. The cell is made a positioning box below the
+   pinning breakpoint; above it the cell is already sticky, so it is left alone. */
+@media (forced-colors: active) {
+  .queue-table-openable .queue-row-priority th[scope='row']::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inline-size: var(--space-1);
+    background-color: Highlight;
+    forced-color-adjust: none;
+  }
+}
+
+@media (forced-colors: active) and (not (min-width: 48rem)) {
+  .queue-table-openable .queue-row-priority th[scope='row'] {
+    position: relative;
+  }
+}
+
+@media (forced-colors: active) and (min-width: 48rem) {
+  .queue-table-openable thead th:first-child::after,
+  .queue-table-openable tbody th[scope='row']::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    inline-size: var(--border-width-thin);
+    background-color: CanvasText;
+    forced-color-adjust: none;
+  }
+}
+
+.queue-priority-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-error);
+  background-color: var(--color-error-bg);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-emphasis);
+}
+
+.queue-priority-badge svg {
+  width: var(--space-3);
+  height: var(--space-3);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The audit trail has long values in every column, so its cells wrap; the moment stays on one
+   line, and the trace identifier, which has no break points of its own, may break anywhere. */
+.timeline-table th,
+.timeline-table td {
+  white-space: normal;
+}
+
+.timeline-table tbody th[scope='row'] {
+  white-space: nowrap;
+}
+
+.timeline-trace {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
 }

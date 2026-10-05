@@ -1,3 +1,5 @@
+/* Styles the numbered option buttons of the customer chat. */
+
 /* Secondary to the confirmation button: outlined rather than filled, so the primary action still
    reads as the dominant one when both appear together. */
 .list {
@@ -9,24 +11,10 @@
   list-style: none;
 }
 
+/* A long option wraps and stays left-aligned and readable, rather than centering as one line. */
 .choice {
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-family);
-  font-size: var(--font-size-base);
+  width: 100%;
+  justify-content: flex-start;
   text-align: left;
-  cursor: pointer;
-  transition: background var(--motion-duration-fast) var(--motion-easing);
-}
-
-.choice:hover:not(:disabled) {
-  background: var(--color-bg-subtle);
-}
-
-.choice:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  font-weight: var(--font-weight-body);
 }

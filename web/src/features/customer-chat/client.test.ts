@@ -34,6 +34,7 @@ describe('FixtureChatClient', () => {
   })
 })
 
+/** A contract-valid Spanish turn; `overrides` replaces individual fields. */
 function turnResponse(overrides: Partial<TurnResponse> = {}): TurnResponse {
   return {
     contract_version: '1',
@@ -48,10 +49,12 @@ function turnResponse(overrides: Partial<TurnResponse> = {}): TurnResponse {
     next_expected: null,
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
     ...overrides,
   }
 }
 
+/** A JSON `Response` with the given status and body, like the service returns. */
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -105,6 +108,21 @@ describe('LiveChatClient', () => {
     expect(firstId).toMatch(/^[A-Za-z0-9_-]{8,64}$/)
   })
 
+  it('sends the turn id it is given, so a resend is recognised as the same message', async () => {
+    const sentTurnIds: string[] = []
+    const fetchMock = vi.fn((url: string, init: RequestInit) => {
+      sentTurnIds.push(String(requestBody([url, init]).turn_id))
+      return Promise.resolve(jsonResponse(200, turnResponse()))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client: ChatClient = new LiveChatClient({ token: 'tok', lang: 'en' })
+
+    await client.sendTurn('same message', 'turn-id-from-the-caller')
+    await client.sendTurn('same message', 'turn-id-from-the-caller')
+
+    expect(sentTurnIds).toEqual(['turn-id-from-the-caller', 'turn-id-from-the-caller'])
+  })
+
   it('sends the customer text verbatim on sendTurn, not the greeting word', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, turnResponse()))
     vi.stubGlobal('fetch', fetchMock)
@@ -140,5 +158,30 @@ describe('LiveChatClient', () => {
     expect(error).toBeInstanceOf(TurnRequestError)
     expect((error as TurnRequestError).status).toBe(409)
     expect((error as TurnRequestError).message).toBe('The conversation moved on')
+  })
+
+  it('bounds every request with a timeout signal so a stalled connection ends in a failure', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(200, turnResponse())))
+    vi.stubGlobal('fetch', fetchMock)
+    const client: ChatClient = new LiveChatClient({ token: 'tok', lang: 'en' })
+
+    await client.start()
+    await client.sendTurn('hello')
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    for (const call of fetchMock.mock.calls as [string, RequestInit][]) {
+      expect(call[1].signal).toBeInstanceOf(AbortSignal)
+    }
+  })
+
+  it('lets a request that never reached the service reject as it is, for the caller to classify', async () => {
+    const failure = new TypeError('Failed to fetch')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(failure))
+    const client: ChatClient = new LiveChatClient({ token: 'tok', lang: 'en' })
+
+    await expect(client.sendTurn('hello')).rejects.toBe(failure)
   })
 })

@@ -40,6 +40,7 @@ def test_model_eligible_templates_excludes_every_safety_relevant_or_out_of_scope
     """Value-level, not derived from which templates the scripted flows happen to exercise: a
     template added back to this set by mistake must fail this test, not just lose test coverage."""
     excluded = {
+        TemplateId.PRESENT_LIST,
         TemplateId.NO_CASE_FOUND,
         TemplateId.HANDOFF_CARD_LOSS,
         TemplateId.HANDOFF_REQUESTED,
@@ -162,7 +163,7 @@ def _dispute_status_envelope() -> RenderEnvelope:
 
 
 def test_a_dispute_status_reply_with_a_case_still_renders_from_the_model() -> None:
-    """The required-field floor added for the no-case state must not regress the case-exists one:
+    """The required-field floor for the no-case state does not apply when a case exists:
     a model reply citing the case fields plus the outcome statement is still accepted, not
     silently downgraded to the template fallback."""
     llm = FakeLlm(

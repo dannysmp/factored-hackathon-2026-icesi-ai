@@ -25,7 +25,9 @@ from pydantic import SecretStr
 # Local modules
 from app.config import AppEnvironment, ConfigError, LlmProvider, Settings, load_settings
 from app.persistence.migrate import apply_migrations
+from app.security.sessions import Principal
 from contracts.service_v1.envelope import Intent
+from contracts.service_v1.tools import ToolPort
 from evals.models import Case, CaseCategory
 from evals.runner.baselines.b0 import build_b0_app
 from evals.runner.runner import run_cases
@@ -49,6 +51,25 @@ def test_build_b0_app_needs_no_database_when_no_sign_in_path_is_enabled() -> Non
     app = build_b0_app(settings)
 
     assert app is not None
+
+
+def test_build_b0_app_hands_the_tool_port_decorator_to_the_application_it_builds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, Any] = {}
+
+    def fake_create_app(settings: Settings, **kwargs: Any) -> str:
+        received.update(kwargs)
+        return "app"
+
+    def decorator(principal: Principal, port: ToolPort) -> ToolPort:
+        return port
+
+    monkeypatch.setattr("evals.runner.baselines.b0.create_app", fake_create_app)
+
+    build_b0_app(load_settings(env_file=None), tool_port_decorator=decorator)
+
+    assert received == {"tool_port_decorator": decorator}
 
 
 def test_build_b0_app_refuses_when_app_env_is_prod() -> None:
@@ -110,10 +131,10 @@ def dsn() -> str:
 @pytest.mark.integration
 def test_b0_answers_a_policy_question_end_to_end(dsn: str) -> None:
     """B0's own end-to-end shape: real store, real controller, real retriever and policy —
-    exactly as the evaluation plan defines B0. This proves the case is answered correctly; it does
-    not by itself prove no LLM call happened (a real network call could succeed or fail and this
-    case would still score correctly either way) — that structural property has its own test,
-    below."""
+    exactly as B0 is defined (a deterministic classifier, no LLM). This proves the case is answered
+    correctly; it does not by itself prove no LLM call happened (a real network call could succeed
+    or fail and this case would still score correctly either way) — that structural property has
+    its own test, below."""
     settings = _settings(database_url=SecretStr(dsn))
     client = TestClient(build_b0_app(settings))
     case = Case(

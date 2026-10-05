@@ -1,14 +1,26 @@
+/** The key set of the message catalogs, shared by all languages. */
+
 /**
+ * The shape every catalog must satisfy.
+ *
  * Every user-facing string key the catalogs must carry, one flat, namespaced key per string
- * (e.g. `chat.placeholder`). The type checker enforces that every catalog defines every key;
+ * (e.g. `chat.send`). The type checker enforces that every catalog defines every key;
  * `catalogs.test.ts` additionally proves no catalog leaves a key with a blank value, something
- * the type checker can't express.
+ * the type checker can't express. Strings may contain `{name}` placeholders that the caller
+ * fills at render time; each language must keep every placeholder its siblings have.
  */
 export interface Messages {
-  'common.loading': string
+  'app.title': string
+  'app.signOut': string
+  'app.sessionExpired': string
   'common.retry': string
   'common.error.generic': string
-  'chat.placeholder': string
+  'failure.offline': string
+  'failure.timeout': string
+  'failure.rateLimited': string
+  'failure.unavailable': string
+  'chat.regionLabel': string
+  'chat.messagesLabel': string
   'chat.messageLabel': string
   'chat.starting': string
   'chat.couldNotStart': string
@@ -18,9 +30,17 @@ export interface Messages {
   'chat.customerLabel': string
   'chat.confirm': string
   'chat.send': string
-  'chat.ended': string
-  /** `{ticket}` is replaced with the handoff ticket at render time — the one templated key. */
-  'chat.caseReference': string
+  'chat.assistantTyping': string
+  'chat.notSent': string
+  /** `{count}` is replaced with the number of characters the customer may still type. */
+  'chat.charactersLeft': string
+  'chat.result.filedTitle': string
+  'chat.result.escalatedTitle': string
+  'chat.result.closedTitle': string
+  'chat.result.caseNumberLabel': string
+  'chat.result.keepNumber': string
+  'chat.result.filedEarlierLabel': string
+  'signin.regionLabel': string
   'signin.loading': string
   'signin.unreachable': string
   'signin.unavailable': string
@@ -28,5 +48,7 @@ export interface Messages {
   'signin.personaLabel': string
   'signin.accessCodeLabel': string
   'signin.refused': string
+  'signin.accessCodeHint': string
   'signin.submit': string
+  'signin.submitting': string
 }

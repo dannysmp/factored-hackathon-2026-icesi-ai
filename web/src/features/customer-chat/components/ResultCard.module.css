@@ -1,0 +1,59 @@
+.card {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border: 1px solid var(--result-edge);
+  border-left-width: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--result-bg);
+  color: var(--color-text);
+}
+
+.filed {
+  --result-edge: var(--color-success);
+  --result-bg: var(--color-success-bg);
+}
+
+.escalated {
+  --result-edge: var(--color-info);
+  --result-bg: var(--color-info-bg);
+}
+
+.closed {
+  --result-edge: var(--color-border-control);
+  --result-bg: var(--color-bg-subtle);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-emphasis);
+}
+
+.label {
+  margin: var(--space-3) 0 0;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-sm);
+}
+
+/* The number is the one thing to carry away: large, tabular, and allowed to break rather than
+   overflow a narrow screen. */
+.reference {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-emphasis);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+.next {
+  margin: var(--space-3) 0 0;
+  font-size: var(--font-size-sm);
+}
+
+.filedEarlier {
+  margin: var(--space-1) 0 0;
+  font-weight: var(--font-weight-emphasis);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}

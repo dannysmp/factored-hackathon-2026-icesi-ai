@@ -1,6 +1,6 @@
 # Release checklist
 
-This checklist states each obligation of a release and names the evidence a reviewer can open. A row is checked off only with its evidence linked. Every artifact that already exists is linked directly from its row. The evidence is produced for the release and linked at the release commit, so some artifacts named here — the rehearsal checklist and the slide content checklist — are written as the release is prepared and have no link yet. The delivery date is 2026-10-05. Every row is verified before the freeze, 23:59 America/Bogota on 2026-10-04; the rows that check a live link are checked once more immediately before the release is announced, and that second check is recorded with its time.
+This checklist states each obligation of a release and names the evidence a reviewer can open. A row is checked off only with its evidence linked. Every artifact that already exists is linked directly from its row; the rehearsal checklist and the slide content checklist are written as a release is prepared and carry no link until then. Every row is verified before the freeze; the rows that check a live link are checked once more immediately before the release is announced, and that second check is recorded with its time.
 
 ## Repository
 
@@ -65,7 +65,7 @@ Every requirement is checked with a link to its evidence.
 | Controlled automation | The automation matrix; the authorization and confirmation tests | [ ] |
 | Handoff packet | A packet from a synthetic conversation shown in the console with identifiers masked; the packet completeness check | [ ] |
 | Repeatable data preparation | The pipeline commands, contracts, quality report and freshness fixture | [ ] |
-| Learned component against a baseline | The model card, the experiment log and the pre-registration | [ ] |
+| Learned component against a baseline | The model card and the experiment log | [ ] |
 | Held-out evaluation including failure conditions | The adversarial suite results | [ ] |
 | Successful, unsafe, handoff, latency and cost with sample sizes | The evaluation report | [ ] |
 | Outcome definitions honored | The metric definitions and the report | [ ] |

@@ -1,0 +1,16 @@
+/* Styles for ErrorState: the title, the reason line and the row of actions inside the notice. */
+.title {
+  margin: 0;
+  font-weight: var(--font-weight-emphasis);
+}
+
+.reason {
+  margin: var(--space-1) 0 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}

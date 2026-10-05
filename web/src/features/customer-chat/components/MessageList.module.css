@@ -1,3 +1,6 @@
+/* Styles the conversation transcript: sender bubbles, the not-sent state, the typing row and the
+   empty state. */
+
 .list {
   display: flex;
   flex-direction: column;
@@ -8,14 +11,97 @@
 }
 
 .message {
-  max-width: 32rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: min(32rem, 88%);
   padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  /* A pasted address or token has no break opportunity; wrap it rather than widen the page. */
+  overflow-wrap: anywhere;
+  scroll-margin-block: var(--space-4);
+}
+
+.assistant {
+  align-self: flex-start;
+  border: var(--border-width-thin) solid var(--color-border);
+  border-bottom-left-radius: var(--radius-sm);
   background: var(--color-bg-subtle);
 }
 
+.customer {
+  align-self: flex-end;
+  border-bottom-right-radius: var(--radius-sm);
+  background: var(--color-info-bg);
+}
+
+.failed {
+  border: var(--border-width-thin) solid var(--color-error);
+  background: var(--color-error-bg);
+}
+
 .from {
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-emphasis);
+  color: var(--color-text-subtle);
+}
+
+.failed .from {
+  color: var(--color-text);
+}
+
+.notSent {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-emphasis);
+  color: var(--color-error);
+}
+
+.typing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 0;
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-sm);
+  /* Leaves room for the pinned message field when this row is scrolled into view. */
+  scroll-margin-bottom: 6rem;
+}
+
+.typing:empty {
+  margin: 0;
+}
+
+.dots {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.dots span {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: currentColor;
+  animation: typing-pulse 1.2s ease-in-out infinite;
+}
+
+.dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing-pulse {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+  }
+  30% {
+    opacity: 1;
+  }
 }
 
 .empty {

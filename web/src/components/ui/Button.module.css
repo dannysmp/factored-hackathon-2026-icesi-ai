@@ -1,0 +1,66 @@
+/* Styles for Button: shared base, three emphasis variants, the large and full-width modifiers, and the disabled treatment. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--size-touch-target);
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-width-thin) solid transparent;
+  border-radius: var(--radius-md);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-emphasis);
+  line-height: var(--line-height-base);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-easing),
+    border-color var(--motion-duration-fast) var(--motion-easing),
+    color var(--motion-duration-fast) var(--motion-easing);
+}
+
+.primary {
+  background-color: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.primary:hover:not(:disabled) {
+  background-color: var(--color-accent-hover);
+}
+
+.secondary {
+  background-color: var(--color-bg);
+  border-color: var(--color-border-control);
+  color: var(--color-text);
+}
+
+.secondary:hover:not(:disabled) {
+  background-color: var(--color-bg-subtle);
+}
+
+.quiet {
+  background-color: transparent;
+  color: var(--color-accent);
+}
+
+.quiet:hover:not(:disabled) {
+  background-color: var(--color-bg-subtle);
+}
+
+/* A large button keeps the same touch-target minimum as the base; only its padding and text grow. */
+.large {
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--font-size-md);
+}
+
+.fullWidth {
+  display: flex;
+  width: 100%;
+}
+
+.button:disabled {
+  background-color: var(--color-disabled-bg);
+  border-color: transparent;
+  color: var(--color-disabled-text);
+  cursor: not-allowed;
+}

@@ -1,45 +1,97 @@
+/**
+ * The transcript of the customer chat, with its typing indicator and scroll behavior.
+ */
+import { useEffect, useRef } from 'react'
 import type { JSX } from 'react'
 import type { Message } from '../useConversation'
 import { useT } from '../../../i18n/useT'
 import type { Lang } from '../../../i18n/lang'
+import { classNames } from '../../../components/ui/classNames'
 import styles from './MessageList.module.css'
 
 /**
  * The conversation so far.
  *
- * `aria-live="polite"` announces each new assistant reply to a screen reader without moving
- * focus (frontend standard, section 7: "dynamic content that updates without navigation uses a
- * polite live region"); the customer's own messages need no announcement, since typing them was
- * already the customer's own action. Renders a purpose-built empty state (not a bare, silent
- * list) when nothing has arrived yet, so this component reads correctly on its own regardless of
- * whatever loading text a caller shows alongside it.
+ * The list itself is not a live region: new replies are announced by the chat's own hidden
+ * announcement, so the history is never re-read when a message is added. Renders a
+ * purpose-built empty state (not a bare, silent list) when nothing has arrived yet, so this
+ * component reads correctly on its own regardless of whatever loading text a caller shows
+ * alongside it.
+ *
+ * The customer's messages sit on the right in a tinted bubble and the assistant's on the left,
+ * each with a quiet sender label so the speaker never depends on position or color alone. While
+ * a reply is awaited a typing row closes the list; it lives in an always-present status region so
+ * it is announced once, politely, when it appears. When a message is added or the typing row
+ * appears, the newest content is scrolled into view: a reply from its first line, the person's
+ * own message and the typing row at the nearest edge.
  */
 export function MessageList({
   messages,
   lang,
+  pending,
 }: {
   messages: readonly Message[]
   lang: Lang
+  pending: boolean
 }): JSX.Element {
   const t = useT(lang)
+  const lastRef = useRef<HTMLLIElement>(null)
+  const typingRef = useRef<HTMLDivElement>(null)
+  // What the last effect run saw, so scrolling happens only when something new arrives.
+  const seen = useRef({ count: messages.length, pending })
+  const newest = messages.at(-1)
+
+  useEffect(() => {
+    const before = seen.current
+    seen.current = { count: messages.length, pending }
+    const arrived = messages.length > before.count
+    const typingStarted = pending && !before.pending
+    if (!arrived && !typingStarted) {
+      return
+    }
+    if (pending) {
+      typingRef.current?.scrollIntoView({ block: 'nearest' })
+    } else {
+      lastRef.current?.scrollIntoView({ block: newest?.from === 'assistant' ? 'start' : 'nearest' })
+    }
+  }, [messages.length, pending, newest?.from])
 
   if (messages.length === 0) {
-    return (
-      <p className={styles.empty} aria-live="polite">
-        {t('chat.noMessagesYet')}
-      </p>
-    )
+    return <p className={styles.empty}>{t('chat.noMessagesYet')}</p>
   }
   return (
-    <ol className={styles.list} aria-live="polite" aria-label="Conversation">
-      {messages.map((message) => (
-        <li key={message.id} className={styles.message}>
-          <span className={styles.from}>
-            {message.from === 'assistant' ? t('chat.assistantLabel') : t('chat.customerLabel')}{' '}
-          </span>
-          {message.text}
-        </li>
-      ))}
-    </ol>
+    <>
+      <ol className={styles.list} aria-label={t('chat.messagesLabel')}>
+        {messages.map((message, index) => (
+          <li
+            key={message.id}
+            ref={index === messages.length - 1 ? lastRef : undefined}
+            className={classNames(
+              styles.message,
+              message.from === 'customer' ? styles.customer : styles.assistant,
+              message.failed === true && styles.failed,
+            )}
+          >
+            <span className={styles.from}>
+              {message.from === 'assistant' ? t('chat.assistantLabel') : t('chat.customerLabel')}
+            </span>{' '}
+            <span className={styles.text}>{message.text}</span>
+            {message.failed === true && <span className={styles.notSent}>{t('chat.notSent')}</span>}
+          </li>
+        ))}
+      </ol>
+      <div role="status" ref={typingRef} className={styles.typing}>
+        {pending && (
+          <>
+            <span className={styles.dots} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+            {t('chat.assistantTyping')}
+          </>
+        )}
+      </div>
+    </>
   )
 }
