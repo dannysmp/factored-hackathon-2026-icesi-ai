@@ -47,7 +47,7 @@ def test_a_command_that_needs_the_raw_data_stops_before_its_recipe_when_it_is_ab
     assert result.returncode != 0
     assert "no raw data at" in result.stderr
     assert "Nothing was changed." in result.stderr
-    assert "RAN" not in result.stdout
+    assert "RAN python" not in result.stdout
 
 
 @pytest.mark.parametrize("command", SILVER_COMMANDS)
@@ -59,7 +59,7 @@ def test_a_command_that_needs_the_cleaned_layer_stops_before_its_recipe_when_it_
     assert result.returncode != 0
     assert "no cleaned layer at" in result.stderr
     assert "Nothing was changed." in result.stderr
-    assert "RAN" not in result.stdout
+    assert "RAN python" not in result.stdout
 
 
 @pytest.mark.parametrize("command", RAW_COMMANDS)

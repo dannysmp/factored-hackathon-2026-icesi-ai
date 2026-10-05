@@ -100,11 +100,12 @@ clean: ## Remove caches and build artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .hypothesis .coverage htmlcov
 	find . -type d -name __pycache__ -not -path './.venv/*' -prune -exec rm -rf {} +
 
-# Without the data the pipeline modules finish "successfully" on an empty run and overwrite the
-# committed reports, so the data commands stop here first.
+# With no raw data the profile and silver steps finish "successfully" on an empty run and
+# overwrite their committed reports, so these commands stop here first.
 require-raw-data:
 	@test -d "$(DATA_DIR)" || { echo "make: no raw data at $(DATA_DIR); place the CSV files there or set DATA_DIR (see README, Data). Nothing was changed." >&2; exit 1; }
 
+# With no cleaned layer the analysis step deletes its committed report before failing.
 require-silver:
 	@test -d "$(SILVER_DIR)" || { echo "make: no cleaned layer at $(SILVER_DIR); run 'make pipeline' with the raw data in place or set SILVER_DIR (see README, Data). Nothing was changed." >&2; exit 1; }
 
