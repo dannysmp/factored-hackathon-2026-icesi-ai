@@ -39,11 +39,13 @@ export function QueueScreen({
   client,
   onSelectTicket,
   focusTicketRef = null,
+  onFocusHandled,
   onSessionExpired,
 }: {
   client: QueueClient
   onSelectTicket: (ticketRef: string) => void
   focusTicketRef?: string | null
+  onFocusHandled?: () => void
   onSessionExpired?: () => void
 }): JSX.Element {
   const queue = useQueue(client, onSessionExpired)
@@ -115,6 +117,7 @@ export function QueueScreen({
               items={itemsForView(queue.items, view)}
               onSelectTicket={onSelectTicket}
               focusTicketRef={focusTicketRef}
+              onFocusHandled={onFocusHandled}
             />
           )}
         />
