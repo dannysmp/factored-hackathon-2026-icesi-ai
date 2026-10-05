@@ -3947,7 +3947,13 @@ def test_handoff_not_registered_when_the_outbox_fails(
 
 def _abandoned_conversation(
     policy: Policy, retriever: LexicalRetriever
-) -> tuple[Callable[..., TurnResponse], InMemoryDialogueStore, FakeToolPort, FakeDialogueTurnLog]:
+) -> tuple[
+    Callable[..., TurnResponse],
+    InMemoryDialogueStore,
+    FakeToolPort,
+    FakeDialogueTurnLog,
+    list[ScriptedNlu],
+]:
     """A conversation with a confirmation open, and a way to run further turns on it."""
     store = InMemoryDialogueStore()
     turn_log = FakeDialogueTurnLog()
@@ -3977,8 +3983,7 @@ def _abandoned_conversation(
     run(_file_dispute(transaction=TransactionHint(merchant="Amazon")), "turn-0001")
     asked = run(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE), "turn-0002")
     assert asked.next_expected is Slot.CONFIRMATION
-    run.understood = understood  # type: ignore[attr-defined]
-    return run, store, port, turn_log
+    return run, store, port, turn_log, understood
 
 
 def test_a_conversation_whose_handoff_was_not_registered_files_nothing_on_a_later_turn(
@@ -3987,7 +3992,7 @@ def test_a_conversation_whose_handoff_was_not_registered_files_nothing_on_a_late
     """The confirmation question left open when the handoff failed must not be answerable: the
     conversation answers that nothing was registered and creates no case, calls no model and
     records no history."""
-    run, store, port, turn_log = _abandoned_conversation(policy, retriever)
+    run, store, port, turn_log, understood = _abandoned_conversation(policy, retriever)
     abandoned = run(_plain(NluIntent.REQUEST_PERSON), "turn-0003", failing=True)
     assert abandoned.end_session
     saved = store.get(_SESSION_ID)
@@ -4002,7 +4007,7 @@ def test_a_conversation_whose_handoff_was_not_registered_files_nothing_on_a_late
     assert later.end_session
     assert later.case_number is None
     assert port.create_calls == 0
-    assert run.understood[-1].calls == []  # type: ignore[attr-defined]
+    assert understood[-1].calls == []
     assert len(turn_log.entries) == logged_before
     after = store.get(_SESSION_ID)
     assert after is not None
@@ -4017,7 +4022,7 @@ def test_replaying_the_turn_that_abandoned_the_conversation_returns_the_notice(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
     """Sending the abandoning turn again must not re-ask the confirmation it left open."""
-    run, _, port, _ = _abandoned_conversation(policy, retriever)
+    run, _, port, _, _ = _abandoned_conversation(policy, retriever)
     abandoned = run(_plain(NluIntent.REQUEST_PERSON), "turn-0003", failing=True)
     assert abandoned.next_expected is None
 
