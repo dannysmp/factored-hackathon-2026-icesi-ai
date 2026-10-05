@@ -141,7 +141,7 @@ def _request(
 
 
 def _insert_case_row(dsn: str, **overrides: str) -> None:
-    """A case row inserted directly, bypassing the tool — for seeding a competing row out of
+    """A case row inserted directly, bypassing the tool — for seeding a concurrent row out of
     band, before or during a call the test makes through the port."""
     values = {
         "case_number": "CASE-DIRECT",
@@ -350,9 +350,9 @@ def test_the_same_key_and_payload_filed_twice_replays_the_same_case(dsn: str) ->
 
 @pytest.mark.integration
 def test_a_key_already_taken_before_the_call_replays_via_the_proactive_check(dsn: str) -> None:
-    """The competing row exists before ``create_dispute_case`` is even called, so this exercises
+    """The concurrent row exists before ``create_dispute_case`` is even called, so this exercises
     the proactive ``_find_by_idempotency_key`` pre-check, not the store's ``UniqueViolation``
-    handler — that handler needs a call already in flight when the competing row lands, which
+    handler — that handler needs a call already in flight when the concurrent row lands, which
     only a genuine concurrent race (below) can force."""
     sink = _RecordingSink(dsn)
     port = _port(dsn, sink, customer_id="CLI-A")
@@ -426,7 +426,7 @@ def test_the_idempotency_race_recheck_finding_nothing_fails_closed(dsn: str) -> 
     rather than silently creating a second case for the same key."""
     sink = _RecordingSink(dsn)
     port = _port(dsn, sink, customer_id="CLI-A")
-    # The competing row is filed against TRX-A3 (no open case), while this call targets TRX-A1
+    # The concurrent row is filed against TRX-A3 (no open case), while this call targets TRX-A1
     # (also no open case): the idempotency constraint is scoped only by (customer_id,
     # idempotency_key), so the two rows still collide on insert, but the mismatched transaction
     # keeps the proactive duplicate-open-case check from short-circuiting before that insert.

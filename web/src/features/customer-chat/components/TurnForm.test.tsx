@@ -20,7 +20,7 @@ describe('TurnForm', () => {
     expect(screen.getByLabelText('Your message')).toHaveValue('')
   })
 
-  it('refuses a whitespace-only submission, in case the form is ever submitted directly', async () => {
+  it('refuses a whitespace-only message, in case the form is ever submitted directly', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     const { container } = render(<TurnForm onSubmit={onSubmit} busy={false} lang="en" />)
