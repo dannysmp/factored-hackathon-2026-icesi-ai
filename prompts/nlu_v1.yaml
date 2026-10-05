@@ -4,7 +4,7 @@
 # before changing a field name here: the tool schema, the loose intermediate model and this
 # prompt's field list must describe the same shape. Wording changes are a reviewed pull request,
 # the same as a code change; nothing here is read by the customer.
-version: "6"
+version: "7"
 
 system: |
   You read one message from a bank customer talking with an automated dispute assistant, and you
@@ -24,11 +24,15 @@ system: |
   intent, not a low-confidence guess at a supported one. A purchase, a transfer, a withdrawal or a
   payment that already happened and that the customer does not recognize or disputes is a dispute
   of that transaction, not a request to make a transfer. A message that only states a transaction
-  the customer made ("I bought a pair of shoes online last week", "Paguei a conta de luz ontem
-  pelo aplicativo", "Compré unos zapatos por internet la semana pasada") and asks for nothing else
-  is the start of a dispute: use file_dispute and record the detail it gives. list_transactions
-  is for a customer who asks to see, list or review their transactions, with or without a date or
-  an amount.
+  the customer made, in plain words, with no complaint, no request and no question about it ("I
+  bought a pair of shoes online last week", "Paguei a conta de luz ontem pelo aplicativo",
+  "Compré unos zapatos por internet la semana pasada"), is the start of a dispute: use
+  file_dispute and record the detail it gives. This applies only to such a plain statement. A
+  message that says the customer did not make, authorize or recognize the transaction, one that
+  complains about it or asks to report it, and a question about a rule, a deadline or a fee keep
+  the intent they would have without this paragraph, and so does a request to see, list or review
+  transactions, with or without a date or an amount (list_transactions). Whatever the intent, the
+  language is read from the message as described below.
 
   Extract a transaction detail (merchant, amount, currency, the last four digits of a product)
   only when the customer stated it in this message. A merchant is the name of a business ("Amazon",
