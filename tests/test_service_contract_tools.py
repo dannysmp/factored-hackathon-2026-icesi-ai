@@ -101,6 +101,15 @@ def test_transaction_filters_have_no_customer_field() -> None:
     assert "customer_id" not in TransactionFilters.model_fields
 
 
+def test_transaction_filters_bound_the_merchant_text() -> None:
+    """The merchant text is optional, never empty and no longer than a stored merchant name."""
+    assert TransactionFilters().merchant is None
+    assert TransactionFilters(merchant="x" * 80).merchant == "x" * 80
+    for refused in ("", "x" * 81):
+        with pytest.raises(ValidationError):
+            TransactionFilters(merchant=refused)
+
+
 def test_a_merchant_name_holding_a_control_character_is_refused() -> None:
     """System-held text still refuses a control character before it reaches a render or a log."""
     with pytest.raises(ValidationError, match="control or formatting character"):
