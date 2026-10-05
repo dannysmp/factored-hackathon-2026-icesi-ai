@@ -5,10 +5,10 @@ Demo Personas
 Overview
 --------
 Reads the demo sign-in broker's persona file into a validated ``PersonaList``, and checks each
-customer persona against the seed at start-up (ADR-18). The demo broker route
-accepts a persona slug, never a customer identifier or a document number; this module is what
-turns a slug into a customer_id, and only after start-up has already proven that customer_id
-resolves to a real, active, seeded customer.
+customer persona against the seed at start-up. The demo broker route accepts a persona slug,
+never a customer identifier or a document number; this module is what turns a slug into a
+customer_id, and only after start-up has already proven that customer_id resolves to a real,
+active, seeded customer.
 
 Scope
 -----
@@ -22,9 +22,9 @@ Design Principles
 ------------------
 - Fail loudly at start-up, exactly like the policy loader: an unreadable, malformed or invalid
   persona file raises ``PersonaError`` naming the file; an unresolvable or inactive customer
-  raises it naming the **slug**, never the customer_id (SECURITY.md: PII minimization) — ADR-18
-  requires active customers only, stricter than the sandbox login's own no-status-gate rule
-  (AC-E4-48 does not apply here: this is a startup data-integrity check, not a sign-in decision).
+  raises it naming the **slug**, never the customer_id (SECURITY.md: PII minimization). Only active
+  customers are accepted, which is stricter than the sandbox login's own no-status-gate rule: this
+  is a start-up data-integrity check, not a sign-in decision.
 - The validation only runs when the caller asks for it (``validate_active_customers``), so an
   environment with ``DEMO_SIGNIN_ENABLED`` off never needs seed data available to start.
 - Models reject unknown fields, matching this codebase's other loaders (the policy, the contracts).
@@ -40,7 +40,8 @@ Limitations
 -----------
 Duplicate slugs in the file are rejected by ``PersonaList``'s own validator, but a duplicate YAML
 *key* within one persona entry is not specially detected (unlike the policy loader's unique-key
-YAML loader) — a persona file is small and hand-reviewed, so this is judged unnecessary here.
+YAML loader) — a persona file is small and reviewed by hand, so the check is judged
+unnecessary.
 """
 
 from __future__ import annotations

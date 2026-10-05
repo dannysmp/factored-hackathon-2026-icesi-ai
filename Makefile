@@ -131,7 +131,7 @@ judge-validation: ## Score the returned judge-validation sheets with the real ju
 	$(RUN) python -m evals.h4_judge_validation --rater1 "$(RATER1)" --rater2 "$(RATER2)" \
 		$(if $(REPORT),--report "$(REPORT)",) $(if $(CASES),--cases "$(CASES)",)
 
-seed-ci-smoke: ## Seed the CI-only synthetic data the smoke slice needs (needs DATABASE_URL, migrated)
+seed-ci-smoke: ## Seed the CI-only synthetic data the smoke subset needs (needs DATABASE_URL, migrated)
 	$(RUN) python -m tests.fixtures.ci_smoke_seed
 
 # ---- Not yet implemented (fail loudly until it is) --------------------------

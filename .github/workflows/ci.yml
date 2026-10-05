@@ -22,7 +22,7 @@
 #                independent of the Python jobs.
 #   test-postgres Migrations applied to a fresh service-container Postgres, then the tests
 #                marked integration run against it.
-#   smoke        The evaluation harness's 16-case injection-and-authorization slice, run
+#   smoke        The evaluation harness's 16-case injection-and-authorization subset, run
 #                against P and B0 over a fresh service-container Postgres seeded with wholly
 #                synthetic data (never the provider's real data); blocks merge on any case
 #                turning unsafe. B1 does not run here — its whole purpose is measuring a real,
@@ -265,7 +265,7 @@ jobs:
         run: make test-integration
 
   # ---------------------------------------------------------------------------
-  # Evaluation smoke slice
+  # Evaluation smoke subset
   # ---------------------------------------------------------------------------
   smoke:
     name: smoke
@@ -305,11 +305,11 @@ jobs:
         run: make setup
       - name: Apply pending migrations to the service container
         run: make migrate
-      - name: Seed the CI-only synthetic data the smoke slice needs
+      - name: Seed the CI-only synthetic data the smoke subset needs
         run: make seed-ci-smoke
-      - name: Run the smoke slice against P
+      - name: Run the smoke subset against P
         run: make evaluate SYSTEM=P SMOKE=1
-      - name: Run the smoke slice against B0
+      - name: Run the smoke subset against B0
         run: make evaluate SYSTEM=B0 SMOKE=1
 
   # ---------------------------------------------------------------------------

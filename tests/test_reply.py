@@ -40,6 +40,7 @@ def test_model_eligible_templates_excludes_every_safety_relevant_or_out_of_scope
     """Value-level, not derived from which templates the scripted flows happen to exercise: a
     template added back to this set by mistake must fail this test, not just lose test coverage."""
     excluded = {
+        TemplateId.PRESENT_LIST,
         TemplateId.NO_CASE_FOUND,
         TemplateId.HANDOFF_CARD_LOSS,
         TemplateId.HANDOFF_REQUESTED,
