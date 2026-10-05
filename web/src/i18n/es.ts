@@ -1,12 +1,11 @@
-// Structural placeholders: real copy for the chat and sign-in screens migrates in separately,
-// through the language review each catalog's strings go through before they ship.
+// Spanish for a bank customer across Latin America: the formal usted throughout, neutral
+// vocabulary, and a first-person "Yo" for the customer's own messages.
 import type { Messages } from './messages'
 
 export const es: Messages = {
   'app.title': 'Disputa de transacciones',
   'app.signOut': 'Cerrar sesión',
   'app.sessionExpired': 'Su sesión expiró. Inicie sesión de nuevo.',
-  'common.loading': 'Cargando…',
   'common.retry': 'Reintentar',
   'common.error.generic': 'Ocurrió un error.',
   'failure.offline':
@@ -17,14 +16,13 @@ export const es: Messages = {
     'El servicio no está disponible por ahora. Inténtelo de nuevo en unos minutos.',
   'chat.regionLabel': 'Conversación con el asistente',
   'chat.messagesLabel': 'Mensajes',
-  'chat.placeholder': 'Escribe tu mensaje',
   'chat.messageLabel': 'Su mensaje',
   'chat.starting': 'Iniciando la conversación…',
   'chat.couldNotStart': 'No se pudo iniciar la conversación.',
   'chat.couldNotSend': 'No se pudo enviar su último mensaje.',
   'chat.noMessagesYet': 'Aún no hay mensajes.',
   'chat.assistantLabel': 'Asistente:',
-  'chat.customerLabel': 'Usted:',
+  'chat.customerLabel': 'Yo:',
   'chat.confirm': 'Confirmar',
   'chat.send': 'Enviar',
   'chat.assistantTyping': 'El asistente está escribiendo…',
@@ -39,7 +37,7 @@ export const es: Messages = {
   'signin.intro': 'Esta es una demostración. Inicie sesión con uno de los siguientes perfiles.',
   'signin.personaLabel': 'Perfil',
   'signin.accessCodeLabel': 'Código de acceso',
-  'signin.refused': 'El código de acceso o el perfil fueron rechazados. Inténtelo de nuevo.',
+  'signin.refused': 'No se aceptó el código de acceso o el perfil. Inténtelo de nuevo.',
   'signin.accessCodeHint': 'Ingrese el código de acceso para continuar.',
   'signin.submit': 'Iniciar sesión',
   'signin.submitting': 'Iniciando sesión…',

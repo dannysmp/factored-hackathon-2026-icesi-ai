@@ -37,8 +37,7 @@
 }
 
 .tabs-trigger:disabled {
-  color: var(--color-text-subtle);
-  opacity: 0.5;
+  color: var(--color-disabled-text);
   cursor: not-allowed;
 }
 

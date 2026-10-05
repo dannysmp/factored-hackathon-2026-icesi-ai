@@ -1,12 +1,11 @@
-// Structural placeholders: real copy for the chat and sign-in screens migrates in separately,
-// through the language review each catalog's strings go through before they ship.
+// English for a bank customer: plain, courteous second person, and "profile" for the demonstration
+// identities rather than the internal term for them.
 import type { Messages } from './messages'
 
 export const en: Messages = {
   'app.title': 'Transaction disputes',
   'app.signOut': 'Sign out',
   'app.sessionExpired': 'Your session has ended. Please sign in again.',
-  'common.loading': 'Loading…',
   'common.retry': 'Retry',
   'common.error.generic': 'Something went wrong.',
   'failure.offline':
@@ -16,7 +15,6 @@ export const en: Messages = {
   'failure.unavailable': 'The service is unavailable right now. Please try again in a few minutes.',
   'chat.regionLabel': 'Conversation with the assistant',
   'chat.messagesLabel': 'Messages',
-  'chat.placeholder': 'Type your message',
   'chat.messageLabel': 'Your message',
   'chat.starting': 'Starting the conversation…',
   'chat.couldNotStart': 'The conversation could not start.',
@@ -35,10 +33,10 @@ export const en: Messages = {
   'signin.loading': 'Loading the demonstration sign-in…',
   'signin.unreachable': 'The demonstration sign-in could not be loaded.',
   'signin.unavailable': 'The demonstration is not available at the moment.',
-  'signin.intro': 'This is a demonstration. Sign in with one of the personas below.',
-  'signin.personaLabel': 'Persona',
+  'signin.intro': 'This is a demonstration. Sign in with one of the profiles below.',
+  'signin.personaLabel': 'Profile',
   'signin.accessCodeLabel': 'Access code',
-  'signin.refused': 'The access code or persona was refused. Please try again.',
+  'signin.refused': 'The access code or profile was not accepted. Please try again.',
   'signin.accessCodeHint': 'Enter the access code to continue.',
   'signin.submit': 'Sign in',
   'signin.submitting': 'Signing in…',

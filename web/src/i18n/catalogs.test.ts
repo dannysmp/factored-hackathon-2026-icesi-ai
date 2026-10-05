@@ -25,10 +25,32 @@ describe('the message catalogs', () => {
     }
   })
 
+  it('labels the customer\u2019s own messages in the first person, never as the system addressing them', () => {
+    expect(CATALOGS.es['chat.customerLabel']).toBe('Yo:')
+    expect(CATALOGS.pt['chat.customerLabel']).toBe('Eu:')
+    expect(CATALOGS.en['chat.customerLabel']).toBe('You:')
+  })
+
+  it('uses each language\u2019s own words for signing in and for the demonstration identities', () => {
+    const portuguese = Object.values(CATALOGS.pt).join(' ')
+    const english = Object.values(CATALOGS.en).join(' ')
+
+    expect(portuguese).not.toMatch(/login/i)
+    expect(english).not.toMatch(/persona/i)
+  })
+
+  it('keeps Spanish in the formal register, with no informal address', () => {
+    for (const text of Object.values(CATALOGS.es)) {
+      expect(text).not.toMatch(
+        /\b(tu|tus|tú|escribe|ingresa|inicia|intenta|inténtalo|revisa|espera)\b/i,
+      )
+    }
+  })
+
   it('flags a catalog missing a key another catalog defines', () => {
     const broken = asRecords(CATALOGS)
     const pt = { ...broken.pt }
-    delete pt['common.loading']
+    delete pt['common.retry']
 
     expect(catalogParityProblems({ ...broken, pt })).not.toEqual([])
   })
@@ -37,7 +59,7 @@ describe('the message catalogs', () => {
     const broken = asRecords(CATALOGS)
 
     expect(
-      catalogParityProblems({ ...broken, en: { ...broken.en, 'chat.placeholder': '   ' } }),
+      catalogParityProblems({ ...broken, en: { ...broken.en, 'chat.send': '   ' } }),
     ).not.toEqual([])
   })
 })
