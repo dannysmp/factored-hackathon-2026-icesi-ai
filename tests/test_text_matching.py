@@ -13,7 +13,7 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from app.domain.text_matching import SQL_FOLD_FROM, SQL_FOLD_TO, fold_text
+from app.domain.text_matching import SQL_BLANKS, SQL_FOLD_FROM, SQL_FOLD_TO, fold_text
 
 
 @pytest.mark.parametrize(
@@ -60,3 +60,13 @@ def test_the_character_map_with_lower_matches_fold_for_every_merchant_in_the_see
     assert rows
     for (name,) in rows:
         assert name.translate(table).lower() == fold_text(name)
+
+
+def test_the_blanks_the_store_trims_are_those_a_strip_removes_within_latin_1() -> None:
+    assert SQL_BLANKS
+    for char in SQL_BLANKS:
+        assert f"{char}x{char}".strip() == "x"
+    for code in range(0x100):
+        char = chr(code)
+        if char not in SQL_BLANKS:
+            assert f"{char}x".strip() == f"{char}x"

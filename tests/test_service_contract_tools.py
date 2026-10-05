@@ -110,6 +110,18 @@ def test_transaction_filters_bound_the_merchant_text() -> None:
             TransactionFilters(merchant=refused)
 
 
+@pytest.mark.parametrize("refused", [" ", "   ", "\u00a0"])
+def test_transaction_filters_refuse_a_merchant_made_of_blanks(refused: str) -> None:
+    """Blanks alone name nothing, and would drop every transaction that has no merchant."""
+    with pytest.raises(ValidationError, match="merchant must hold more than blanks"):
+        TransactionFilters(merchant=refused)
+
+
+def test_transaction_filters_refuse_a_control_character_in_the_merchant() -> None:
+    with pytest.raises(ValidationError, match="control or formatting character"):
+        TransactionFilters(merchant="Super\x00Ahorro")
+
+
 def test_a_merchant_name_holding_a_control_character_is_refused() -> None:
     """System-held text still refuses a control character before it reaches a render or a log."""
     with pytest.raises(ValidationError, match="control or formatting character"):

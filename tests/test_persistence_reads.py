@@ -22,6 +22,7 @@ import psycopg
 import pytest
 
 from app.domain.policy.loader import load_policy
+from app.domain.text_matching import SQL_FOLD_FROM, SQL_FOLD_TO, fold_text
 from app.persistence.audit import PostgresAuditSink
 from app.persistence.migrate import apply_migrations
 from app.persistence.reads import PostgresToolPort
@@ -587,3 +588,28 @@ def test_a_merchant_filter_combines_with_the_date_window(dsn: str) -> None:
 
     assert not isinstance(page, ToolFailure)
     assert [item.ref for item in page.items] == ["TRX-OLD-1"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("lead", ["\t", "\n", "\u00a0", "  \t "])
+def test_a_merchant_filter_looks_past_the_blanks_the_name_starts_with(dsn: str, lead: str) -> None:
+    """The caller sees the name without its leading blanks, clamped to 80 characters; the filter
+    reads the same window, so blanks at the start never push the name's end out of it."""
+    _insert_older_transactions(dsn, [lead + "A" * 80 + "TAILMARK"])
+
+    assert _merchant_refs(dsn, "A" * 80) == ["TRX-OLD-0"]
+    assert _merchant_refs(dsn, "TAILMARK") == []
+
+
+@pytest.mark.integration
+def test_the_stores_character_map_folds_every_covered_letter_as_the_rule_does(dsn: str) -> None:
+    """The query's own fold, run in the store, gives what ``fold_text`` gives for each letter the
+    character map covers."""
+    letters = list(SQL_FOLD_FROM)
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT lower(translate(%s, %s, %s))", ("".join(letters), SQL_FOLD_FROM, SQL_FOLD_TO)
+        )
+        row = cur.fetchone()
+    assert row is not None
+    assert row[0] == "".join(fold_text(char) for char in letters)

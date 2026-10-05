@@ -208,9 +208,6 @@ from contracts.service_v1.tools import (
 
 logger = logging.getLogger(__name__)
 
-# The longest merchant text the listing accepts: the bound the contract puts on a merchant.
-_MERCHANT_FILTER_MAX = 80
-
 # Stands in for the customer's first name, which no tool exposes (see Limitations): agent-facing
 # only, never shown to the customer.
 _UNKNOWN_FIRST_NAME = "Customer"
@@ -572,7 +569,7 @@ def _merchant_filter(hint: TransactionHint) -> str | None:
     controller's own comparison would be looked for among five unrelated transactions."""
     if hint.merchant is None:
         return None
-    return hint.merchant.strip()[:_MERCHANT_FILTER_MAX] or None
+    return hint.merchant.strip() or None
 
 
 def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -> bool:
