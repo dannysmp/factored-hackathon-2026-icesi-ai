@@ -206,6 +206,40 @@ def test_load_seed_refuses_a_tampered_output_before_ever_connecting(tmp_path: Pa
         load_seed("postgresql://unreachable.invalid/nowhere", tmp_path)
 
 
+def _write_seed_output_without_repeat_flag(gold_dir: Path) -> None:
+    """A gold directory whose digests match but whose customers table has no repeat-complainer
+    column, as a seed built before that column existed would be."""
+    gold_dir.mkdir(parents=True, exist_ok=True)
+    digests: dict[str, str] = {}
+    con = duckdb.connect()
+    try:
+        for name, ddl in (
+            (CUSTOMERS_NAME, "customer_id VARCHAR, first_name VARCHAR"),
+            (PRODUCTS_NAME, "product_id VARCHAR"),
+            (TRANSACTIONS_NAME, "transaction_id VARCHAR"),
+        ):
+            table = Path(name).stem
+            con.execute(f"CREATE TABLE {table} ({ddl})")
+            path = gold_dir / name
+            con.execute(f"COPY {table} TO '{path}' (FORMAT PARQUET)")
+            digests[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    finally:
+        con.close()
+    (gold_dir / MANIFEST_NAME).write_text(
+        json.dumps({"reference_date": "2026-06-18", "output_sha256": digests}), encoding="utf-8"
+    )
+
+
+def test_load_seed_refuses_a_seed_without_the_repeat_complainer_column_before_connecting(
+    tmp_path: Path,
+) -> None:
+    """Such a seed would load cleanly and leave every customer reading as not a repeat
+    complainer. The refusal comes before any connection: an unreachable DSN still surfaces it."""
+    _write_seed_output_without_repeat_flag(tmp_path)
+    with pytest.raises(ValueError, match=r"lacks the column\(s\) is_repeat_complainer"):
+        load_seed("postgresql://unreachable.invalid/nowhere", tmp_path)
+
+
 def _write_tiny_silver(root: Path) -> Path:
     """The smallest cleaned layer ``pipelines.ops_seed`` can build from: two Active customers."""
     silver = root / "silver"
