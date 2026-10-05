@@ -20,9 +20,9 @@ then the persona is looked up, the issuance reservations are taken, and the atte
 before a token is returned. The two sign-in brokers share every helper below but are never the
 same route or the same access code, so a leaked customer code leaves the console protected. The
 persona directory carries no access code of its own — it mints no session and reveals nothing
-beyond a slug, a display name, a language and which audience it belongs to (never a customer or
-agent id) — but is gated by the same two settings, so the kill switch hides it exactly like the two
-sign-in routes.
+beyond a slug, a display name, a language, which audience it belongs to (never a customer or
+agent id) and the product's reference date in each language — but is gated by the same two
+settings, so the kill switch hides it exactly like the two sign-in routes.
 Out: validating the persona file or checking it against the seed (``app.security.demo_personas``,
 done once at start-up — the agent list has no seed to check against), issuing or verifying the
 token itself (``SessionService``), the two limiter implementations (``app.security.limits``,
@@ -51,7 +51,8 @@ Runtime Contract
 201 session (public while ``DEMO_SIGNIN_ENABLED`` is true).
 ``POST /v1/auth/demo-agent-sessions``  body ``{"persona": str}``, header ``X-Demo-Access-Code``  ->
 201 session (public while ``DEMO_AGENT_SIGNIN_ENABLED`` is true), its own access code.
-``GET /v1/auth/demo-personas``  -> 200 ``{"personas": [{slug, display_name, language, audience}]}``
+``GET /v1/auth/demo-personas``  -> 200 ``{"personas": [{slug, display_name, language, audience}],
+"reference_date_lines": {es, pt, en}}``, each line the chat's own "data as of" sentence
 (public whenever either kill switch is on; customer personas only, agent personas only, or both,
 matching which switch is on).
 
