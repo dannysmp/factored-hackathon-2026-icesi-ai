@@ -119,6 +119,27 @@ Design rules that follow from this:
   and its wording must agree with the decisions taken.
 - A learned risk score can route a case to human review; it never decides an outcome.
 
+### Risk model and handling cost
+
+**Risk model.** The one learned component was benchmarked on a time split (trained to
+31 March 2025, tuned to 30 September 2025, tested on the period after). On the test period the
+boosted model's PR-AUC is 0.00089 and the logistic baseline's is 0.00085. The difference,
++0.000039, has a 95% interval of -0.000033 to +0.000108, which includes zero, and both sit at about
+the base rate of fraud, one in a thousand (0.00099 in validation). The simpler logistic model was
+kept. No validation threshold reaches the precision floor of 0.0100 within a 5% routed share, so no
+threshold is set and routing is off: the score routes no case. The decision is recorded in
+[`models/model_card.json`](models/model_card.json); the benchmark itself is in
+[`models/experiments.jsonl`](models/experiments.jsonl).
+
+**Handling cost, projected and not measured.** Agent time on a dispute is estimated at USD 0.83
+(USD 0.37 to 2.15 on the low and high assumptions), or USD 275.19 a month at 332 cases. Only the
+handling time, 3.7 minutes, is measured; the agent-hour cost (USD 6, 9 and 14) and the contacts a
+dispute needs (1, 1.5 and 2.5) are stated assumptions, and back-office work is not counted. For
+comparison, the model spend of the system is USD 0.004 per attempted case in the offline
+evaluation, which counts model calls only. The derivation is in section 5 of
+[`reports/workflow-analysis.md`](reports/workflow-analysis.md), and the assumptions are in
+`pipelines/analysis_assumptions.toml`.
+
 ### Models
 
 The system calls the Claude API in two places, and the evaluation uses it in a third:
