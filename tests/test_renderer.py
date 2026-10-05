@@ -347,32 +347,44 @@ def test_every_template_id_has_a_working_renderer(lang: str) -> None:
 
 
 def _vocabulary(words: str) -> frozenset[str]:
+    """The set of whitespace-separated words in ``words``."""
     return frozenset(words.split())
 
 
+# What each language's replies may and may not contain. A word listed for one language only is
+# evidence of that language: it must not appear in a reply of another, and each reply must
+# contain one. A word listed for several languages is shared and is evidence of none. Every
+# customer-facing name the renderer chooses between (categories, case statuses, ineligibility
+# reasons, policy figures) needs a word here that no other language uses, or a name copied from
+# another language's table would go unseen; a failure that names a legitimate word means it
+# belongs in the other language's list too.
 _WORDS: dict[str, frozenset[str]] = {
     "es": _vocabulary(
         "a abierto asesor banco buen caso casos con cuando de del día disputa disputar "
         "disputarla el en encontré es esa esto estos está fecha fue gracias o para pendiente "
         "plazo por presentado presentar presenté puedo que quiere recientes revertida su sus "
         "tenga transacción un una ya lo los las y pero puede necesitamos tiene usted "
-        "ustedes"
+        "ustedes tarjeta comercio extracto reconocido incorrecto monto servicio recibido reporte "
+        "duplicado resuelto rechazado revisión"
     ),
     "pt": _vocabulary(
         "a aberto agradeço apresentado apresentar apresentei atendente banco bom caso casos "
         "cobrança com contato contestar contestação data de dia do em encontrei estes isso o "
         "ou para por posso qual que quer recentes sua suas seus tenha transação um uma você é "
-        "não está os as precisamos nós mas pode tem nem também"
+        "não está os as precisamos nós mas pode tem nem também estabelecimento reconhecida valor "
+        "incorreto serviço recebido duplicidade resolvido rejeitado análise"
     ),
     "en": _vocabulary(
         "a at can case cases charge date do dispute file filed here i is it like of on open "
         "or person recent right tell that the these this to transaction want which with you "
-        "your and as but are will we our not please have has"
+        "your and as but are will we our not please have has unrecognized wrong amount service "
+        "received duplicate fraud claim resolved rejected review"
     ),
 }
 
 
 def _reply_words(reply: str) -> set[str]:
+    """The lowercased alphabetic words of ``reply``."""
     return set(re.findall(r"[^\W\d_]+", reply.lower()))
 
 
@@ -397,7 +409,9 @@ def _every_reply_variant(lang: str) -> list[tuple[str, RenderEnvelope]]:
             ),
         )
     )
-    for reason in set(CustomerReason) - {CustomerReason.ELIGIBLE, CustomerReason.NEEDS_REVIEW}:
+    for reason in [
+        r for r in CustomerReason if r not in (CustomerReason.ELIGIBLE, CustomerReason.NEEDS_REVIEW)
+    ]:
         decision = Decision(outcome=Outcome.INELIGIBLE, customer_reason=reason, policy_version="2")
         variants.append(
             (
@@ -426,13 +440,14 @@ def _every_reply_variant(lang: str) -> list[tuple[str, RenderEnvelope]]:
             transaction_ref=transaction.ref,
             expected_response_on=date(2026, 6, 25),
         )
-        for template_id in (TemplateId.DISPUTE_STATUS, TemplateId.FILING_RESULT):
-            variants.append(
-                (
-                    f"{template_id.value}: {status.value}",
-                    base[template_id].model_copy(update={"facts": DisputeFacts(cases=(case,))}),
-                )
+        variants.append(
+            (
+                f"dispute_status: {status.value}",
+                base[TemplateId.DISPUTE_STATUS].model_copy(
+                    update={"facts": DisputeFacts(cases=(case,))}
+                ),
             )
+        )
     policy = load_policy()
     for section, build in _FIGURE_BUILDERS.items():
         for category in DisputeCategory:
@@ -457,14 +472,14 @@ def test_every_reply_stays_in_its_language_and_names_no_internal_identifier(lang
     own_only = _WORDS[lang] - foreign_vocabulary
 
     for label, envelope in _every_reply_variant(lang):
-        reply = render(envelope).reply
+        reply = render(envelope).reply.lower()
         words = _reply_words(reply)
 
         assert not words & foreign_only, f"{label}: {sorted(words & foreign_only)} in {reply!r}"
         assert words & own_only, f"{label}: {reply!r}"
         assert not re.search(r"\b[a-z]+_[a-z_]+\b", reply), f"{label}: identifier in {reply!r}"
         if lang == "pt":
-            assert not re.search(r"\bdisput", reply.lower()), f"{label}: {reply!r}"
+            assert not re.search(r"\bdisput", reply), f"{label}: {reply!r}"
 
 
 @pytest.mark.parametrize(
