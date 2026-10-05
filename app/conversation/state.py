@@ -22,11 +22,11 @@ Design Principles
 - The clarification counter is one integer bound to whichever slot is currently pending. It counts
   the answers that left the question unsettled: the first time a slot is asked it is zero, asking
   again for the same pending slot increments it, and asking for a different slot or filling the
-  pending one resets it to zero. This is the missing-slot guard the architecture describes: it
-  counts consecutive unsettled answers on one element, whatever the reported confidence.
-- A new login starts a new conversation: this model carries no notion of "resume", and
-  the store is what would have to go out of its way to look up a stale session by a new one's id,
-  which it never does.
+  pending one resets it to zero. This is the missing-slot guard: it counts
+  consecutive unsettled answers on one element, whatever the reported confidence.
+- A new login starts a new conversation: this model carries no notion of "resume", and the store
+  is what would have to go out of its way to look up a stale session by a new one's id, which it
+  never does.
 - Optimistic concurrency: a state carries the version it was read at; the store turns a stale
   write into a conflict rather than a silent overwrite.
 - Immutable: every transition returns a new state, so a caller can never share and mutate one
