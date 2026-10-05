@@ -5,9 +5,9 @@ Case Creation Placement Test
 Component: the codebase under ``app/``. Hermetic: an AST scan of source text, no interpreter
 spawned and no import executed.
 
-Protects AC-E4-38: the create tool (``ToolPort.create_dispute_case``) is reachable from exactly
-two sanctioned files, never a third. ``app.tools.create_dispatch`` is the one place the dialogue
-controller calls into; ``app.reliability.tool_port`` is a generic ``ToolPort`` decorator (E9)
+Protects the placement rule: the create tool (``ToolPort.create_dispute_case``) is reachable from
+exactly two sanctioned files, never a third. ``app.tools.create_dispatch`` is the one place the
+dialogue controller calls into; ``app.reliability.tool_port`` is a generic ``ToolPort`` decorator
 that delegates every method of the protocol, including this one, to whichever port it wraps —
 it is reached only through the dispatcher's own sanctioned call (``port.create_dispute_case``,
 where ``port`` is the decorator instance) and never an independent entry point of its own, so it
