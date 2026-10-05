@@ -10,8 +10,8 @@ function entry(overrides: Partial<TimelineEntry> = {}): TimelineEntry {
     occurred_at: '2026-06-18T14:03:00Z',
     trace_id: 'trace-0001',
     intent: 'present_transactions',
-    state_before: 'awaiting_transaction',
-    state_after: 'awaiting_reason',
+    state_before: 'started',
+    state_after: 'clarifying',
     render_mode: 'template',
     reason_code: null,
     policy_version: null,
@@ -43,8 +43,24 @@ describe('TimelinePanel', () => {
   it('shows the state transition and the reason code when there is one', () => {
     render(<TimelinePanel entries={[entry({ reason_code: 'escalate_fraud_claim' })]} />)
 
-    expect(screen.getByText('awaiting_transaction → awaiting_reason')).toBeInTheDocument()
+    expect(screen.getByText('Iniciada → En aclaración')).toBeInTheDocument()
     expect(screen.getByText('Escalado: reclamo de fraude')).toBeInTheDocument()
+  })
+
+  it('writes the moment of each entry as a date and time, as the row header', () => {
+    render(<TimelinePanel entries={[entry({ occurred_at: '2026-06-18T14:03:00Z' })]} />)
+
+    expect(screen.getByRole('rowheader', { name: '18 jun 2026, 14:03 UTC' })).toBeInTheDocument()
+  })
+
+  it('writes a stage this console does not know as plain words, never as an identifier', () => {
+    render(
+      <TimelinePanel
+        entries={[entry({ state_before: 'started', state_after: 'some_new_state' })]}
+      />,
+    )
+
+    expect(screen.getByText('Iniciada → Sin etiqueta (some new state)')).toBeInTheDocument()
   })
 
   it('shows an em dash when there is no reason code or policy version', () => {

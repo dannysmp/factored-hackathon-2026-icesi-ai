@@ -71,7 +71,7 @@ export function ConsoleApp(): JSX.Element {
           {expired ? (
             <div className={styles.notice}>
               <Notice tone="warning" role="status">
-                Su sesión terminó. Inicie sesión de nuevo.
+                Su sesión expiró. Inicie sesión de nuevo.
               </Notice>
             </div>
           ) : null}

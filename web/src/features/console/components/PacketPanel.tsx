@@ -1,16 +1,21 @@
-import { ScrollRegion } from '../../../components/ui/ScrollRegion'
+import { useId } from 'react'
 import type { JSX } from 'react'
+import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { HandoffPacket, LocalizedTitle } from '../contracts'
 import type { Lang } from '../../customer-chat/contracts'
+import { formatDate, formatMoney, formatShare } from '../format'
 import {
   CATEGORY_LABELS,
   LANGUAGE_LABELS,
   REASON_CODE_LABELS,
+  REQUEST_SUMMARY_LABELS,
   SLOT_LABELS,
   TRANSACTION_STATUS_LABELS,
+  actionLabel,
+  actionResultLabel,
 } from '../labels'
 
-/** The title of a policy source in the ticket's own language — the customer's own words, never
+/** The title of a policy source in the case's own language — the customer's own words, never
  * the console's fixed Spanish (D91 draws that line at console chrome, not case content). Falls
  * back to the first title on record only if the exact language is somehow missing, which the
  * backend's own `SourceRef` validator (one title per language) should never actually produce. */
@@ -18,37 +23,54 @@ function titleInLanguage(titles: readonly LocalizedTitle[], language: Lang): str
   return titles.find((title) => title.lang === language)?.text ?? titles[0]?.text ?? '—'
 }
 
-function formatMoney(amount: string, currency: string): string {
-  return `${amount} ${currency}`
+/** What the system calls a customer it has no name for. */
+const UNKNOWN_FIRST_NAME = 'Customer'
+
+function customerName(firstName: string): string {
+  return firstName === UNKNOWN_FIRST_NAME ? 'Cliente' : firstName
 }
 
 /**
- * The packet (AC-E10-02): request, verified facts, actions taken or refused, evidence (reason
- * codes, policy version, source sections, and the risk score with its uncertainty, base rate and
- * routing threshold when there is one), open questions, the customer's language, and the data
- * reference date. The risk score always renders with a disclosure that it is a synthetic-data
+ * The packet (AC-E10-02): the request first, as a summary of who is asking and why, then the
+ * verified facts, the actions taken or refused, the evidence (reason codes, policy version, source
+ * sections, and the risk score with its uncertainty, base rate and routing threshold when there is
+ * one), and the open questions. Every value is written for an agent reading Spanish: a known
+ * machine value through its label, dates and amounts in the console's own format, a score as a
+ * percentage. The risk score always renders with a disclosure that it is a synthetic-data
  * estimate, not a real fraud signal — wherever the score appears, the caveat appears with it.
+ *
+ * Text in the customer's own language (the policy titles they were shown) carries that language
+ * and a visible cue, so a Spanish reader knows it is not the console speaking.
  *
  * `TransactionFact`/`ProductLabel` carry no document number or full card/account number at all
  * (`contracts/service_v1/envelope.py`) — nothing here can expose one (AC-E10-05).
  */
 export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element {
+  const summaryId = useId()
+  const customerLanguage = LANGUAGE_LABELS[packet.language]
+
   return (
-    <div>
-      <dl>
-        <dt>Solicitud</dt>
-        <dd>{packet.request_summary}</dd>
-        <dt>Idioma del cliente</dt>
-        <dd>{LANGUAGE_LABELS[packet.language]}</dd>
-        <dt>Fecha de referencia</dt>
-        <dd>{packet.reference_date}</dd>
-        {packet.category !== null && (
-          <>
-            <dt>Categoría</dt>
-            <dd>{CATEGORY_LABELS[packet.category]}</dd>
-          </>
-        )}
-      </dl>
+    <div className="packet">
+      <section className="packet-summary" aria-labelledby={summaryId}>
+        <h3 id={summaryId}>Solicitud</h3>
+        <p className="packet-request">{REQUEST_SUMMARY_LABELS[packet.trigger]}</p>
+        <dl>
+          <dt>Cliente</dt>
+          <dd>
+            {customerName(packet.customer.first_name)} · {packet.customer.masked_id}
+          </dd>
+          <dt>Idioma del cliente</dt>
+          <dd>{customerLanguage}</dd>
+          {packet.category !== null && (
+            <>
+              <dt>Categoría</dt>
+              <dd>{CATEGORY_LABELS[packet.category]}</dd>
+            </>
+          )}
+          <dt>Fecha de referencia</dt>
+          <dd>{formatDate(packet.reference_date)}</dd>
+        </dl>
+      </section>
 
       <h3>Transacciones verificadas</h3>
       {packet.verified_facts.length === 0 ? (
@@ -71,7 +93,7 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
               {packet.verified_facts.map((fact) => (
                 <tr key={fact.ref}>
                   <th scope="row">{fact.ref}</th>
-                  <td>{fact.occurred_on}</td>
+                  <td>{formatDate(fact.occurred_on)}</td>
                   <td>{fact.merchant ?? '—'}</td>
                   <td>
                     {fact.amount === null
@@ -97,13 +119,13 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
           {packet.actions.map((action, index) => (
             // Actions carry no identifier of their own; position in the ordered list is stable.
             <li key={`${action.action}-${String(index)}`}>
-              {action.action}: {action.result}
+              {actionLabel(action.action)}: {actionResultLabel(action.result)}
             </li>
           ))}
           {packet.attempted_action !== null && (
             <li>
-              {packet.attempted_action.action} (intentada, no completada):{' '}
-              {packet.attempted_action.result}
+              {actionLabel(packet.attempted_action.action)} (intentada, no completada):{' '}
+              {actionResultLabel(packet.attempted_action.result)}
             </li>
           )}
         </ul>
@@ -111,21 +133,30 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
 
       <h3>Evidencia</h3>
       <dl>
-        <dt>Versión de política</dt>
+        <dt>Versión de la política</dt>
         <dd>{packet.evidence.policy_version}</dd>
-        <dt>Códigos de razón</dt>
+        <dt>Motivos de la decisión</dt>
         <dd>
-          {packet.evidence.reason_codes.length === 0
-            ? '—'
-            : packet.evidence.reason_codes.map((code) => REASON_CODE_LABELS[code]).join(', ')}
+          {packet.evidence.reason_codes.length === 0 ? (
+            '—'
+          ) : (
+            <ul className="packet-plain-list">
+              {packet.evidence.reason_codes.map((code) => (
+                <li key={code}>{REASON_CODE_LABELS[code]}</li>
+              ))}
+            </ul>
+          )}
         </dd>
       </dl>
       {packet.evidence.sources.length > 0 && (
         <>
           <h4>Fuentes citadas</h4>
+          <p className="packet-cue">Texto en el idioma del cliente ({customerLanguage}).</p>
           <ul>
             {packet.evidence.sources.map((source) => (
-              <li key={source.section_id}>{titleInLanguage(source.titles, packet.language)}</li>
+              <li key={source.section_id} lang={packet.language}>
+                {titleInLanguage(source.titles, packet.language)}
+              </li>
             ))}
           </ul>
         </>
@@ -133,23 +164,23 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
       {packet.evidence.risk !== null && (
         <>
           <h4>Puntaje de riesgo</h4>
-          <p>
+          <dl>
+            <dt>Puntaje</dt>
+            <dd>{formatShare(packet.evidence.risk.score)}</dd>
+            <dt>Intervalo</dt>
+            <dd>
+              {formatShare(packet.evidence.risk.interval_low)} –{' '}
+              {formatShare(packet.evidence.risk.interval_high)}
+            </dd>
+            <dt>Tasa base</dt>
+            <dd>{formatShare(packet.evidence.risk.base_rate)}</dd>
+            <dt>Umbral de escalamiento</dt>
+            <dd>{formatShare(packet.evidence.risk.threshold)}</dd>
+          </dl>
+          <p className="packet-cue">
             Este puntaje es una estimación calculada con datos sintéticos, no con datos reales de
             fraude.
           </p>
-          <dl>
-            <dt>Puntaje</dt>
-            <dd>{packet.evidence.risk.score.toFixed(2)}</dd>
-            <dt>Intervalo</dt>
-            <dd>
-              {packet.evidence.risk.interval_low.toFixed(2)} –{' '}
-              {packet.evidence.risk.interval_high.toFixed(2)}
-            </dd>
-            <dt>Tasa base</dt>
-            <dd>{packet.evidence.risk.base_rate.toFixed(2)}</dd>
-            <dt>Umbral de escalamiento</dt>
-            <dd>{packet.evidence.risk.threshold.toFixed(2)}</dd>
-          </dl>
         </>
       )}
 
