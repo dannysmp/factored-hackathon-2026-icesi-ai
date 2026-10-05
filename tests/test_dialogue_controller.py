@@ -2846,10 +2846,11 @@ def test_unverified_filing_hands_off(policy: Policy, retriever: LexicalRetriever
 
 
 def _unverified_filing_dialogue(
-    policy: Policy, retriever: LexicalRetriever
+    policy: Policy, retriever: LexicalRetriever, language: str | None = None
 ) -> tuple[_Dialogue, TurnResponse]:
     """A session whose filing could not be read back and was handed to a person."""
     dialogue = _Dialogue(policy, retriever, _filing_port(cases=(), verified=False))
+    dialogue.language = language
     dialogue.present_amazon()
     dialogue.say(_confirmation(ConfirmationAnswer.YES))
     dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
@@ -2885,6 +2886,32 @@ def test_a_further_yes_after_an_unverified_filing_answers_with_the_ticket(
     assert again.end_session
     saved = dialogue.store.get(_SESSION_ID)
     assert saved is not None and saved.phase is ConversationPhase.HANDED_OFF
+
+
+@pytest.mark.parametrize("language", ["es", "pt", "en"])
+def test_a_further_yes_after_an_unverified_filing_files_nothing_in_every_language(
+    policy: Policy, retriever: LexicalRetriever, language: str
+) -> None:
+    """The customer's repeated yes, in any supported language, gets the ticket of the handoff
+    already made: no second case is created and no second ticket opened."""
+    dialogue, handed_off = _unverified_filing_dialogue(policy, retriever, language)
+
+    again = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert dialogue.port.create_calls == 1
+    assert len(dialogue.outbox.packets) == 1
+    assert again.handoff_ticket == handed_off.handoff_ticket
+    assert again.end_session
+    assert (
+        again.reply
+        == {
+            "es": "Un asesor debe revisar esto. Su referencia es T-0001.",
+            "pt": "Um atendente precisa analisar isso. Sua referência é T-0001.",
+            "en": "A person must review this. Your reference is T-0001.",
+        }[language]
+    )
+    saved = dialogue.store.get(_SESSION_ID)
+    assert saved is not None and saved.lang == language
 
 
 def test_a_no_then_a_new_filing_after_an_unverified_filing_files_nothing(
