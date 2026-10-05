@@ -189,8 +189,9 @@ class Settings(BaseSettings):
         The tool-port circuit breaker, shared by every tool method: the store is one
         dependency, not six, so one outage trips one breaker.
     post_handoff_contact_days_priority, post_handoff_contact_days_default : int
-        The promised contact time after a handoff: 1 calendar day for a fraud report or a lost
-        or stolen card, 2 calendar days for every other trigger, counted
+        The target contact time for a handoff case, shown to agents in the console and never
+        stated to the customer: 1 calendar day for a fraud report or a lost or stolen card, 2
+        calendar days for every other trigger, counted
         from the data reference date. A synthetic configuration value with its own provenance,
         separate from ``Policy.first_response_days`` (which promises a response to a *filed
         dispute*, a different lifecycle event a handoff ticket never reaches) and keyed by the
