@@ -7,7 +7,7 @@ import styles from './ReferenceBanner.module.css'
  *
  * The service renders both texts (`contracts/service_v1/api.py`: the client shows them and decides
  * nothing); this component never computes or guesses either one. It has the `note` role so the date
- * context is announced as supplementary information without interrupting the conversation.
+ * context is exposed as supplementary information without interrupting the conversation.
  */
 export function ReferenceBanner({
   referenceDateLine,

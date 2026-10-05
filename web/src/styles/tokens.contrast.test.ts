@@ -1,4 +1,5 @@
-/** Unit test: every text and surface pair the design tokens define meets WCAG AA. */
+/** Unit test: each text-on-surface and control-boundary pair listed here meets WCAG AA in both
+ * color schemes. A new pair of tokens used together is added to the list. */
 import { describe, expect, it } from 'vitest'
 import TOKENS_CSS from './tokens.css?raw'
 

@@ -1,9 +1,10 @@
 /**
- * Design tokens: the one source for every color, type size, spacing value, radius, shadow,
- * focus ring and motion setting across the chat, the console and the sign-in screen. Components
- * read these custom properties rather than writing their own colors, type sizes and spacing, so a
- * palette or scale change is a one-file edit. The only literals elsewhere are layout measurements
- * and the constants of the visually-hidden technique.
+ * Design tokens: the shared source for color, type size, spacing, radius, shadow, focus ring and
+ * transition timing across the chat, the console and the sign-in screen. Components read these
+ * custom properties rather than writing their own colors, type sizes and spacing, so a palette or
+ * scale change is a one-file edit. Values that belong to one component alone, such as a layout
+ * width, an animation's timing or the constants of the visually-hidden technique, stay in that
+ * component's own styles.
  *
  * The categories are color, typography, spacing and sizing, radius, shadow, focus ring and
  * motion. Each property is named by its category (`--color-*`, `--space-*`, `--font-size-*`, ...)
@@ -11,7 +12,8 @@
  *
  * Colors are `light-dark()` pairs and `color-scheme` is `light dark`, so the interface follows
  * the system setting. `tokens.contrast.test.ts` reads this file and enforces the WCAG contrast
- * of each text and control-boundary pair, so a palette edit that loses legibility fails there.
+ * of the text and control-boundary pairs it lists, so a palette edit that loses legibility in one
+ * of them fails there.
  */
 
 :root {
@@ -22,8 +24,7 @@
    * and links; a small semantic set for status only, each with a tinted background for banners.
    * No decorative gradients or color.
    *
-   * Dark mode uses a near-black page and near-white text rather than pure black and white,
-   * which is easier to read for long stretches.
+   * Dark mode uses a near-black page and near-white text rather than pure black and white.
    * --------------------------------------------------------------------------------------- */
   --color-bg: light-dark(#ffffff, #0f1115);
   --color-bg-subtle: light-dark(#f6f7f9, #171a20);

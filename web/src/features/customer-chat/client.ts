@@ -1,8 +1,8 @@
 /**
  * Chat client: the one seam between the UI and a turn source.
  *
- * Components never call a transport directly; this is the one HTTP client module. `FixtureChatClient` replays a script; `LiveChatClient` is the real HTTP client against
- * the turn endpoint, behind a demo session.
+ * Components talk to a `ChatClient`, never to a transport. `FixtureChatClient` replays a script;
+ * `LiveChatClient` is the real HTTP client against the turn endpoint, behind a demo session.
  */
 import type { Lang, TurnRequest, TurnResponse } from './contracts'
 import { TurnResponseSchema } from './contracts'

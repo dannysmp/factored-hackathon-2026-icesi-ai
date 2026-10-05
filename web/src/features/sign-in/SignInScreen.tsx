@@ -72,8 +72,8 @@ function personaLabel(persona: DemoPersonaSummary): string {
  * changes, so the page around it can follow.
  *
  * `onSignedIn` receives the session token, the chosen persona's language and slug, so the caller
- * can hand them to the chat client and offer the same persona again. The token is held only for the moment it takes to
- * pass it up; nothing here ever writes it to storage.
+ * can hand them to the chat client and offer the same persona again. The token is passed straight
+ * up; nothing here writes it to storage.
  *
  * The customer path follows the selected persona's language; the agent path stays in Spanish, like
  * the rest of the console. Before a persona is selected (loading, the directory error) the screen

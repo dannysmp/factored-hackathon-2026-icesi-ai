@@ -58,11 +58,11 @@ export function QueueScreen({
     )
   }
 
-  // Distinct, non-overlapping treatments: the initial load, a truly empty queue, and
-  // the filters-plus-table view, which may itself show a lesser "nothing for this filter" message
-  // (`QueueTable`'s own) without losing the filters that got it there — a different state from
-  // having no tickets at all. `showUpdating`, below, adds a further treatment when a filter
-  // refetch is in flight over data already on screen.
+  // Distinct, non-overlapping treatments: the initial load, an empty queue, and the
+  // filters-plus-table view. In that view the trigger tabs stay while `QueueTable` shows its own
+  // "nothing for this filter" message. A queue that comes back empty, including one for a language
+  // filter with no matches, takes the empty treatment and has no filters. `showUpdating`, below,
+  // adds a further treatment when a filter refetch is in flight over data already on screen.
   const showLoading = queue.status === 'loading' && queue.referenceDate === null
   const showEmpty = queue.status === 'ready' && queue.items.length === 0
   // A language-filter change re-issues the fetch without clearing the already-loaded table

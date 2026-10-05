@@ -2,8 +2,7 @@
  * Queue client: the one seam between the console UI and a queue source.
  *
  * `FixtureQueueClient` replays a fixed queue and applies the same `language`/`trigger` filter
- * the real `GET /v1/agent/queue` route applies server side (`contracts/service_v1/console.py`'s
- * own filtering), so the screen behaves identically against either source. `LiveQueueClient` is
+ * the real `GET /v1/agent/queue` route applies on the server, so the screen behaves identically against either source. `LiveQueueClient` is
  * the real HTTP client, behind an agent's own demo session. Both validate the payload against
  * `QueueResponseSchema`, so a malformed response fails loudly instead of rendering partially.
  */
@@ -17,7 +16,7 @@ export interface QueueClient {
   fetchQueue: (filters: QueueFilters) => Promise<QueueResponse>
 }
 
-/** Raised when the queue route refuses a request; `message` is the problem document's own title,
+/** Raised when an agent route (the queue or a ticket) refuses a request; `message` is the problem document's own title,
  * safe to show an agent (never the raw response body). */
 export class AgentRequestError extends Error {
   readonly status: number

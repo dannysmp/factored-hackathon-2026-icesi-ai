@@ -5,8 +5,8 @@ import type { TimelineEntry } from '../contracts'
 import { formatDateTime } from '../format'
 import { INTENT_LABELS, REASON_CODE_LABELS, phaseLabel } from '../labels'
 
-/** Orders the audit trail by trace identifier — the backend's own tuple order is not specified
- * to match, so this component orders it rather than assume. */
+/** Orders the audit trail by trace identifier, so the table does not depend on the order in which
+ * the response lists its entries. */
 function byTraceId(a: TimelineEntry, b: TimelineEntry): number {
   return a.trace_id.localeCompare(b.trace_id)
 }

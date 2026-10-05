@@ -2,8 +2,9 @@
  * A scripted Spanish conversation, in `TurnResponse` shape.
  *
  * Synthetic, not derived from a real customer, on the same terms as `FILE_DISPUTE_EN`
- * (`fixtures.ts`): it lets the chat UI be exercised end to end without a server. Unlike that one, every reply line here is copied verbatim from
- * `docs/demo-scripts.md`'s "Normal path in Spanish" script, itself the template renderer's real,
+ * (`fixtures.ts`): it lets the chat UI be exercised end to end without a server. Unlike that one,
+ * every reply line here is copied verbatim from `docs/demo-scripts.md`'s "Normal path in Spanish"
+ * script, itself the template renderer's real,
  * unedited output for the recorded envelope in `tests/fixtures/scripted_flows.es.json` — so this
  * fixture renders the same grounded Spanish text a live session produces for this scenario, not
  * an approximation of it.
