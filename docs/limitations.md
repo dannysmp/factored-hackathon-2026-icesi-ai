@@ -165,6 +165,23 @@ results still to come say so and name the command that completes them.
   from the design-token palette instead, verified in
   [`reports/dashboard-theme-checklist.md`](../reports/dashboard-theme-checklist.md).
 
+## Capacity and retention
+
+- **The system runs on one host and one backend process, and no load or throughput test has been
+  run.** The backend, web server, Postgres and reverse proxy share a single `t3.large` instance,
+  and the backend starts one server process. No figure for concurrent users, requests per second or
+  latency under load is claimed. The one capacity reading is the memory footprint of the running
+  containers that a dashboard deployment logs (see [`infra/README.md`](../infra/README.md)).
+  Serving more customers means measuring first, then moving the database off the host and running
+  more than one backend process.
+- **The sign-in attempt limit is held in memory, per process.** A restart clears it, and with more
+  than one backend process the effective limit is multiplied until a shared store replaces it.
+- **No retention period or purge procedure is implemented.** Conversation state, the per-turn
+  timeline, filed cases, handoffs and audit records are kept until the host's database volume is
+  removed; the application deletes none of them on a schedule. A retention period for each kind of
+  record and a purge procedure are remaining work. For a demonstration,
+  `make reset-demo-personas` deletes the cases the demonstration personas accumulated.
+
 ## Security posture
 
 Every control's actual implementation status, not just its design intent, is tracked in
