@@ -84,6 +84,7 @@ class _ContextFilter(logging.Filter):
     """Attaches the request's trace id and, when authenticated, its session id to every record."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Stamp the record with the current trace and session ids; never drops a record."""
         record_any: Any = record
         record_any.trace_id = current_request_id()
         record_any.session_id = current_session_id()
@@ -99,6 +100,7 @@ class _JsonFormatter(logging.Formatter):
         self._environment = environment
 
     def format(self, record: logging.LogRecord) -> str:
+        """Return the record as one JSON line whose message has card-shaped digit runs redacted."""
         message = redact_pan(record.getMessage()).masked
         event = message.split(" ", 1)[0] if message else ""
         record_any: Any = record

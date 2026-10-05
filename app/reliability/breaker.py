@@ -98,6 +98,7 @@ class InMemoryCircuitBreaker:
         self._opened_at: datetime | None = None
 
     def allow(self) -> bool:
+        """Say whether a call may go ahead; an elapsed reset window admits exactly one trial."""
         with self._lock:
             if self._state == "closed":
                 return True
@@ -112,6 +113,7 @@ class InMemoryCircuitBreaker:
             return True
 
     def record_success(self) -> None:
+        """Close the circuit and clear the failure count, logging when it was not already closed."""
         with self._lock:
             recovered = self._state != "closed"
             self._state = "closed"
@@ -121,6 +123,7 @@ class InMemoryCircuitBreaker:
             logger.info("circuit_breaker_closed dependency=%s", self._name)
 
     def record_failure(self) -> None:
+        """Count a failure: a failed trial reopens the circuit; reaching the threshold opens it."""
         reopened = False
         opened = False
         failures = 0
