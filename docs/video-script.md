@@ -2,8 +2,8 @@
 
 A walk through the deployed system: the problem, the language switch, three paths with one
 demonstration persona each, the evaluation result, four design decisions and the route to operation.
-The total is about four minutes twenty seconds, a length chosen for this video; the Timing table
-gives the pace the narration assumes.
+The total is about three minutes forty-five seconds; the Timing table gives the length of each part
+and of its narration.
 
 ## Before recording
 
@@ -39,7 +39,7 @@ The ones that are take a median of fifteen days, and one in five misses the bank
 target. Meanwhile, customers wait, and many come back: almost one in seven of these complaints is
 from someone who has complained before. That's the problem we set out to solve."
 
-On screen: slide 2 of the deck.
+On screen: the deck's cover for the first four seconds, then slide 2.
 
 ## Opening
 
@@ -49,9 +49,9 @@ language model only understands what the customer says. Every reply comes from a
 filled with verified facts, and a deterministic policy engine makes every decision. In other words:
 the AI listens, the rules decide."
 
-On screen: the deck's cover, then slide 3, then the sign-in page, with the demonstration notice.
-Once signed in, the chat and the console state that the session is a demonstration and show the
-date the data is current as of, June 18, 2026.
+On screen: slide 3 of the deck, then, for the last two seconds, the sign-in page with the
+demonstration notice. Once signed in, the chat and the console state that the session is a
+demonstration and show the date the data is current as of, June 18, 2026.
 
 ## Language switch
 
@@ -134,21 +134,22 @@ you."
 
 ## Timing
 
-The narration assumes a pace of 150 words a minute (2.5 words a second). The remaining time in each
-part is for sign-ins, typing, replies and console navigation.
+Seconds is the length of each part in the video; seconds of speech is the length of its recorded
+narration. The recorded narration runs at about 142 words a minute (514 words in 217.7 seconds).
+The remaining time in each part is for sign-ins, typing, replies and console navigation.
 
 | Part | Seconds | Narration words | Seconds of speech |
 |---|---|---|---|
-| The problem | 35 | 80 | 32 |
-| Opening | 31 | 69 | 28 |
-| Language switch | 11 | 21 | 8 |
-| Path 1 | 33 | 41 | 16 |
-| Path 2 | 12 | 22 | 9 |
-| Path 3 | 33 | 44 | 18 |
-| Results | 37 | 85 | 34 |
-| Design decisions | 41 | 95 | 38 |
-| Closing | 26 | 57 | 23 |
-| Total | 259 | 514 | 206 |
+| The problem | 32 | 80 | 31.5 |
+| Opening | 32 | 69 | 29.0 |
+| Language switch | 10 | 21 | 9.5 |
+| Path 1 | 18 | 41 | 17.6 |
+| Path 2 | 11 | 22 | 10.2 |
+| Path 3 | 18 | 44 | 17.5 |
+| Results | 39 | 85 | 38.7 |
+| Design decisions | 44 | 95 | 43.1 |
+| Closing | 21 | 57 | 20.6 |
+| Total | 225 | 514 | 217.7 |
 
 ## Notes for the recording
 
