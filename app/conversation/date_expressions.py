@@ -36,7 +36,8 @@ Runtime Contract
 ``resolve(expression, *, language, reference_date) -> tuple[date, DateSource] | None``. A numeric
 date (``dd/mm`` or ``dd/mm/yyyy``) resolves with any ``language``, including ``None``; every other
 form needs the language to pick its vocabulary. ``DateSource.RELATIVE`` is a relative day term or a
-weekday, ``DateSource.PARTIAL`` a day of the month, ``DateSource.NUMERIC`` a numeric date.
+weekday, ``DateSource.PARTIAL`` a day of the month or a month and day with no year,
+``DateSource.ABSOLUTE`` a month and day that states a year, ``DateSource.NUMERIC`` a numeric date.
 """
 
 from __future__ import annotations

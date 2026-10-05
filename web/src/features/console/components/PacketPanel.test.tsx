@@ -70,7 +70,23 @@ describe('PacketPanel', () => {
       screen.getByText('Evaluación de la disputa: Escalado: reclamo de fraude'),
     ).toBeInTheDocument()
     expect(
-      screen.getByText('Registro de la disputa (intentada, no completada): Requiere confirmación'),
+      screen.getByText('Registro de la disputa — intento no completado: Requiere confirmación'),
+    ).toBeInTheDocument()
+  })
+
+  it('words an attempted action the same way whatever the action is called', () => {
+    render(
+      <PacketPanel
+        packet={{
+          ...FIRST.packet,
+          actions: [],
+          attempted_action: { action: 'list_transactions', result: 'confirmation_required' },
+        }}
+      />,
+    )
+
+    expect(
+      screen.getByText('Consulta de transacciones — intento no completado: Requiere confirmación'),
     ).toBeInTheDocument()
   })
 
@@ -105,6 +121,35 @@ describe('PacketPanel', () => {
     expect(
       screen.getByText(`${formatShare(risk.interval_low)} – ${formatShare(risk.interval_high)}`),
     ).toBeInTheDocument()
+  })
+
+  it('writes a score under the escalation threshold at the decimals that tell them apart', () => {
+    const { risk } = FIRST.packet.evidence
+    if (risk === null) {
+      throw new Error('fixture setup: FIRST.packet.evidence.risk must be non-null for this test')
+    }
+    render(
+      <PacketPanel
+        packet={{
+          ...FIRST.packet,
+          evidence: {
+            ...FIRST.packet.evidence,
+            risk: {
+              ...risk,
+              score: 0.3996,
+              interval_low: 0.1,
+              interval_high: 0.9,
+              threshold: 0.4001,
+            },
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Puntaje').nextElementSibling).toHaveTextContent('39,96 %')
+    expect(screen.getByText('Umbral de escalamiento').nextElementSibling).toHaveTextContent(
+      '40,01 %',
+    )
   })
 
   it('discloses that the risk score is a synthetic-data estimate, in Spanish, wherever it appears', () => {

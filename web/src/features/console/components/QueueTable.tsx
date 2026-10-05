@@ -83,7 +83,12 @@ export function QueueTable({
                   >
                     {item.ticket_ref}
                   </button>
-                  {item.priority && <PriorityBadge />}
+                  {item.priority && (
+                    <>
+                      <span className="sr-only">, </span>
+                      <PriorityBadge />
+                    </>
+                  )}
                 </th>
                 <td>{TRIGGER_LABELS[item.trigger]}</td>
                 <td>{LANGUAGE_LABELS[item.language]}</td>
