@@ -2,7 +2,7 @@
 
 A walk through the deployed system: the problem, the language switch, three paths with one
 demonstration persona each, the evaluation result, four design decisions and the route to operation.
-The total is about three minutes forty seconds, a length chosen for this video; the Timing table
+The total is about four minutes twenty seconds, a length chosen for this video; the Timing table
 gives the pace the narration assumes.
 
 ## Before recording
@@ -36,8 +36,8 @@ Case and ticket numbers are read off the screen, never from this script: the dep
 Narration: "Every month, a retail bank receives around three hundred and thirty disputes from
 customers who don't recognize a charge. Only one in four of those cases is ever resolved or closed.
 The ones that are take a median of fifteen days, and one in five misses the bank's own service-level
-target. Meanwhile, the customer waits, and almost one in seven of these complaints comes from
-someone who has complained before. That's the problem we set out to solve."
+target. Meanwhile, customers wait, and many come back: almost one in seven of these complaints is
+from someone who has complained before. That's the problem we set out to solve."
 
 On screen: slide 2 of the deck.
 
@@ -46,7 +46,8 @@ On screen: slide 2 of the deck.
 Narration: "So we built an assistant that takes a dispute from the customer's first message all the
 way to a verified, filed case, or to the right person, in Spanish, Portuguese or English. The
 language model only understands what the customer says. Every reply comes from a fixed template
-filled with verified facts, and a deterministic policy engine makes every decision."
+filled with verified facts, and a deterministic policy engine makes every decision. In other words:
+the AI listens, the rules decide."
 
 On screen: the deck's cover, then slide 3, then the sign-in page, with the demonstration notice.
 Once signed in, the chat and the console state that the session is a demonstration and show the
@@ -55,10 +56,9 @@ date the data is current as of, June 18, 2026.
 ## Language switch
 
 On the sign-in page, press Español, then Português, then English. A button selects that language's
-first demonstration persona, unless that language is already selected. Narration: "Spanish and
-Portuguese are the primary languages, and English is supported too. The customer simply writes in
-their language." End on
-Português, which selects João for the first path.
+first demonstration persona, unless that language is already selected. Narration: "It speaks the
+customer's language: Spanish and Portuguese first, and English too. No menus and no forms. The
+customer just writes." End on Português, which selects João for the first path.
 
 ## Path 1: normal filing, João in Portuguese
 
@@ -69,16 +69,18 @@ Customer lines, in order:
 3. "Sim, é essa."
 4. "Sim, registrar"
 
-The reason comes from the first line, so the system asks only which charge, finds one transaction and shows it in US dollars, asks for
-confirmation, then files. Stop on the filed screen with the case number. Narration over the
-confirmation: "Nothing is filed until the customer approves a plain-language summary, and the case
-number appears only after the record is read back."
+The reason comes from the first line, so the system asks only which charge, finds one transaction
+and shows it in US dollars, asks for confirmation, then files. Stop on the filed screen with the
+case number. Narration over the confirmation: "João doesn't recognize a charge. The assistant finds
+it, shows it to him, and files nothing until he approves a plain summary. And the case number only
+appears once the record is confirmed. It never claims an action it hasn't verified."
 
 ## Path 2: unsupported request, Ana in Spanish
 
-Sign out, choose Español and sign in as Ana. Customer line: "Quiero aumentar el límite de mi
-tarjeta de crédito." The system refuses plainly and offers the card section of the bank's app or a
-person. Narration: "A request outside its scope is refused plainly, with a real next step."
+Sign out, choose Español and sign in as Ana. Customer line: "Quiero aumentar el límite de mi tarjeta
+de crédito." The system refuses plainly and offers the card section of the bank's app or a person.
+Narration: "Ana asks for something the assistant can't do. Instead of guessing, it says so plainly,
+and points her to the right place."
 
 ## Path 3: human-required, Carlos in Spanish
 
@@ -86,38 +88,49 @@ Sign out, choose Español if it is not selected, select Carlos's card and sign i
 "Hay un cargo que no reconozco y creo que es un fraude, alguien está usando mi tarjeta." The reply
 hands the case to an advisor, promises no outcome and gives a ticket reference; show it on screen.
 Switch to the agent console, signed in as agent-beatriz, find that ticket in the queue and open its
-packet, with every identifier masked. Narration: "A possible fraud goes to a person, whatever the
-amount. The agent sees the request, verified facts, actions taken and open questions. The console
-is a viewer today."
+packet, with every identifier masked. Narration: "Carlos reports a possible fraud. That never stays
+with the machine: it goes straight to a person, whatever the amount. And the agent doesn't get a raw
+transcript. They get a packet: the request, the verified facts, what was done, and what's still
+open."
 
 ## Results
 
 On screen: slide 5 of the deck, presented as an offline measurement on team-written cases.
-Narration: "On 135 team-written cases, 32 of them adversarial, among them prompt
-injection, attempts to reach another customer's data and corrupted data, there were zero unsafe
-outcomes. Safe automated resolution is 73.5% over the 103 cases in scope, against 33.0% and 36.9%
-for the two baselines. The automated judge did not match both human raters on 80% of replies, so we
-do not report its scores."
+Narration: "We tested it on one hundred and thirty-five cases, thirty-two of them attacks: prompt
+injection, attempts to reach another customer's data, and corrupted records. Zero unsafe outcomes.
+It resolved seventy-three and a half percent of in-scope cases safely on its own, about twice either
+baseline. And when it hands a case over, eighty-three percent of the time it gives the person the
+right reason. We even checked our own automated judge against two people. It didn't meet our bar, so
+we don't use its scores."
 
 ## Design decisions
 
-On screen: slide 4 of the deck, the architecture. Four decisions, each narrated in one sentence:
+On screen: slide 4 of the deck, the architecture. The narration gives one sentence to each of the
+four decisions.
 
-- **Decide, then render:** "A deterministic policy engine decides, with stable reason codes; the
-  model never decides an outcome, and replies are filled templates."
-- **Authorization in the tool layer:** "No tool accepts a customer identifier, so reaching another
-  customer's data cannot even be expressed."
-- **The risk model routes, policy decides:** "A risk score can only send a case to a person, never
-  decide eligibility."
-- **Lexical retrieval with abstention:** "Policy answers come from a small cited corpus; below a
-  relevance floor, the system says so and offers a person."
+Narration:
+
+> "Four decisions make this possible.
+>
+> First, decide, then render. A deterministic policy engine decides, with a stable reason for
+> every outcome. The model never does.
+>
+> Second, authorization lives in the tools. No tool even accepts a customer identifier, so
+> reaching someone else's data can't be expressed.
+>
+> Third, the risk model routes; policy decides. A risk score can only send a case to a person. It
+> never decides eligibility.
+>
+> And finally, retrieval with abstention. Policy answers come from a small, cited corpus. Below a
+> relevance threshold, the assistant says it doesn't know, and offers a person."
 
 ## Closing
 
 On screen: slide 6 of the deck, the limitations and next steps. Narration: "To run this in a bank,
 it would need the bank's own identity, a managed database with backups, and real conversations in
-each language to validate it. What is built, what is deferred and what remains are in the
-limitations report. Nothing here claims more than the code does."
+each language to validate it. Everything it does, and everything it doesn't yet, is measured and
+documented in the repository. An assistant that knows when not to act, and proves what it did. Thank
+you."
 
 ## Timing
 
@@ -126,16 +139,16 @@ part is for sign-ins, typing, replies and console navigation.
 
 | Part | Seconds | Narration words | Seconds of speech |
 |---|---|---|---|
-| The problem | 26 | 78 | 31 |
-| Opening | 18 | 60 | 24 |
-| Language switch | 7 | 19 | 8 |
-| Path 1 | 33 | 22 | 9 |
-| Path 2 | 12 | 13 | 5 |
-| Path 3 | 33 | 28 | 11 |
-| Results | 30 | 65 | 26 |
-| Design decisions | 40 | 69 | 28 |
-| Closing | 20 | 49 | 20 |
-| Total | 219 | 403 | 162 |
+| The problem | 35 | 80 | 32 |
+| Opening | 31 | 69 | 28 |
+| Language switch | 11 | 21 | 8 |
+| Path 1 | 33 | 41 | 16 |
+| Path 2 | 12 | 22 | 9 |
+| Path 3 | 33 | 44 | 18 |
+| Results | 37 | 85 | 34 |
+| Design decisions | 41 | 95 | 38 |
+| Closing | 26 | 57 | 23 |
+| Total | 259 | 514 | 206 |
 
 ## Notes for the recording
 
