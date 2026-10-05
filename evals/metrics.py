@@ -4,10 +4,9 @@ Evaluation Metrics Engine
 
 Overview
 --------
-Implements the formulas of the Metric definitions section of ``plan/docs/evaluation-plan.md``
-exactly, including the "not defined" reporting rule: pure functions from a harness run's
-per-case verdicts (``CaseResult``, produced by the runner of a later slice) to the headline
-metrics of the report.
+Implements the headline metric formulas exactly, including the "not defined" reporting rule: pure
+functions from a harness run's per-case verdicts (``CaseResult``, produced by the runner) to the
+headline metrics of the report.
 
 Scope
 -----
@@ -15,10 +14,9 @@ In: the formulas for safe automated resolution, containment, escalation quality,
 outcomes and operating efficiency, each labeled with its ``basis`` (every metric this module
 computes is ``measured``; a projected metric, such as the SLA-breach projection, is computed
 elsewhere from the workflow analysis and is never produced here).
-Out: running a system variant against the golden set (the runner, a later slice), the LLM judge,
-fairness slicing by language/country/segment (the report generator, a later slice) and the
-learned-component metrics (PR-AUC, calibration; those score a model, not a conversation, and
-live beside the model that produces them).
+Out: running a system variant against the golden set (the runner), the LLM judge, fairness slicing
+by language/country/segment (the report generator) and the learned-component metrics (PR-AUC,
+calibration; those score a model, not a conversation, and live beside the model that produces them).
 
 Design Principles
 -----------------
@@ -31,9 +29,8 @@ Design Principles
 - **Every metric states its denominator.** A rate alone can be misread as more evidence than it
   is; every ratio in ``HeadlineMetrics`` carries the count and the size of the set it was
   computed over, so a report reader (or a test) can see how small a slice is.
-- **Adversarial cases are excluded from the correctness-rate sets (S, A, E) by default**, as the
-  Metric definitions section states, but count fully toward unsafe outcomes: that is exactly
-  what they are for.
+- **Adversarial cases are excluded from the correctness-rate sets (S, A, E) by default**, but
+  count fully toward unsafe outcomes: that is exactly what they are for.
 
 Runtime Contract
 ----------------
@@ -43,15 +40,15 @@ Limitations
 -----------
 ``CaseResult`` reports one verdict per case: unsafe outcomes and latency have no per-category
 breakdown, and latency has no per-turn granularity. A report that needs either slices the
-``results`` sequence itself before calling this module (or, for language/country/segment
-slicing, waits on the report generator of a later slice) rather than this module inferring
-categories it is not given. This module does nothing special for a case the runner could not
-resolve, run or score (``CaseResult.error`` set): its safe-default fields count it as attempted
-nowhere and correct nowhere, so it lowers every rate's numerator without inflating any
-denominator's meaning — naming and surfacing *which* cases errored, and why, is the runner's and
-the report's own job, not this pure-function engine's. ``reply_text`` and ``facts_and_sources`` are
-opaque to every formula here: they exist for a judge or a human rater to read, not for this module
-to score, and ``compute_headline_metrics`` never inspects either.
+``results`` sequence itself before calling this module (or, for language/country/segment slicing,
+uses the report generator) rather than this module inferring categories it is not given. This module
+does nothing special for a case the runner could not resolve, run or score (``CaseResult.error``
+set): its safe-default fields count it as attempted nowhere and correct nowhere, so it lowers every
+rate's numerator without inflating any denominator's meaning — naming and surfacing *which* cases
+errored, and why, is the runner's and the report's own job, not this pure-function engine's.
+``reply_text`` and ``facts_and_sources`` are opaque to every formula here: they exist for a judge or
+a human rater to read, not for this module to score, and ``compute_headline_metrics`` never inspects
+either.
 """
 
 from __future__ import annotations

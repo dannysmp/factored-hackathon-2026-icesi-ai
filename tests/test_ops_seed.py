@@ -175,7 +175,7 @@ class _Silver:
 
 def _write_silver(root: Path) -> Path:
     """A cleaned layer with a small pool of Active customers, one per segment-country pair,
-    plus one customer distinctly tagged per AC-E4-44 stratum, and three excluded (not Active)
+    plus one customer distinctly tagged per stratum, and three excluded (not Active)
     customers who carry every stratum flag, to prove Active-only holds regardless.
 
     Segment-country filler customers: ``FILL-<segment>-<country>`` (12 of them).
@@ -273,7 +273,7 @@ def test_every_stratum_customer_is_selected_and_counted_in_coverage(tmp_path: Pa
 def test_repeat_complainer_uses_the_latest_complaint_on_or_before_the_reference_date(
     tmp_path: Path,
 ) -> None:
-    """The point-in-time rule (ADR-15): a later complaint's flag is never consulted."""
+    """The point-in-time rule: a later complaint's flag is never consulted."""
     silver = _write_silver(tmp_path / "base")
     con = duckdb.connect()
     try:
@@ -361,7 +361,7 @@ def test_coverage_requirements_can_exceed_the_target_customer_count(
 
 
 def test_no_full_email_or_phone_appears_in_the_seed(tmp_path: Path) -> None:
-    """AC-E4-46: a test scans the written output for every full contact value the source held."""
+    """The written output is scanned for every full contact value the source held; none appears."""
     silver = _write_silver(tmp_path / "base")
     build_seed(silver, tmp_path / "gold", code_version="test")
     content = (tmp_path / "gold" / CUSTOMERS_NAME).read_bytes()

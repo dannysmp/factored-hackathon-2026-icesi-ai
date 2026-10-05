@@ -16,7 +16,7 @@ Scope
 In: the 41 `Case` records, the real `data/gold/ops_seed` rows the filed-dispute cases are
 grounded in, and the real policy-corpus sections the policy-answer cases target.
 Out: the other four category groups (their own modules); the status-inquiry subtype of "normal"
-that the evaluation plan's row also names (see Limitations); running or scoring these cases.
+(see Limitations); running or scoring these cases.
 
 Design Principles
 -------------------
@@ -40,14 +40,12 @@ policy-answer cases.
 
 Limitations
 -----------
-The evaluation plan's "Normal" row also names a status-inquiry subtype (asking about an already
-filed case). No case here covers it: `data/gold/ops_seed` seeds no pre-existing cases, and case
-filing itself (slice 1.4) has not merged as of this module — a status-inquiry case would need
-either a live filed case or a frozen one from `data/gold/eval_bank` (slice 3.4b, not built). This
+The normal category also covers a status-inquiry subtype (asking about an already filed case).
+No case here covers it: `data/gold/ops_seed` seeds no pre-existing cases, so a status-inquiry
+case would need either a live filed case or a frozen one from `data/gold/eval_bank`. This
 module's 29 filed-dispute and 12 policy-answer cases are counted against the category's mix
-total (41) as authored; status inquiry is deferred to a follow-up addition to this module once
-its dependency lands, per the standing rule to continue with the next unblocked slice rather than
-stop the whole category over one subtype.
+total (41) as authored; status-inquiry cases can be added to this module once a source of filed
+cases is available.
 """
 
 from __future__ import annotations
@@ -607,7 +605,7 @@ _POLICY_ANSWER_CASES = (
         expected_intent=Intent.POLICY_ANSWER,
         expected_policy_section_id="human-review",
         description=(
-            "Grounded in the human-review section, stated qualitatively per ADR conventions."
+            "Grounded in the human-review section, stated qualitatively, as the corpus states it."
         ),
     ),
     Case(

@@ -61,7 +61,7 @@ def test_every_tool_schema_names_one_of_the_seven_tools() -> None:
 
 def test_create_dispute_case_s_schema_never_declares_a_free_text_content_field() -> None:
     """The model must not even be able to express writing request_summary or reason_codes — the
-    same 'inexpressible, not merely forbidden' discipline ADR-3 applies elsewhere."""
+    same 'inexpressible, not merely forbidden' discipline applied elsewhere."""
     schema = next(s for s in TOOL_SCHEMAS if s["name"] == "create_dispute_case")
     properties = schema["input_schema"]["properties"]  # type: ignore[index]
     assert set(properties) == {"transaction_ref", "category", "confirmed"}

@@ -25,15 +25,15 @@ Design Principles
   agent only when its broker is enabled). In ``local`` a throw-away key is generated per audience
   (sessions end when the process restarts); in ``dev`` and ``prod`` a missing key is a start-up
   error.
-- The service starts only with a resolved domain date (ADR-15): an explicit setting, the real date
-  in the bank zone, or the loaded seed's own reference date; none of the three is a start-up error.
+- The service starts only with a resolved domain date: an explicit setting, the real date in the
+  bank zone, or the loaded seed's own reference date; none of the three is a start-up error.
 - The turns route's own heavy dependencies (a database connection, an LLM provider key) are
   resolved lazily, inside its per-request factory, never at start-up: an app that never calls
   ``/v1/turns`` — most tests, a bare health check — never needs them configured.
-- The console's own read routes (``app.api.agent``), when the agent demo broker is enabled, are
-  the opposite: their collaborators (the queue, the ticket detail and the audit sink) are built
-  eagerly, here, like every other collaborator that only needs ``DATABASE_URL`` — a missing one
-  is a start-up error, not a first-request surprise (``AgentConsolePorts``,
+- The console's own routes (``app.api.agent``), when the agent demo broker is enabled, are the
+  opposite: their collaborators (the queue, the ticket detail, the audit sink and the writes) are
+  built eagerly, here, like every other collaborator that only needs ``DATABASE_URL`` — a missing
+  one is a start-up error, not a first-request surprise (``AgentConsolePorts``,
   ``_default_agent_console``).
 - Configuration resolves first, and structured JSON logging installs immediately after — not
   before it, since the service version and environment logging carries come from that same
@@ -51,7 +51,7 @@ Runtime Contract
 ----------------
 ``GET /health/live``  -> ``{"status": "live"}``
 ``GET /health/ready`` -> ``{"status": "ready", "service_version": str, "environment": str,
-"domain_date": str, "domain_date_origin": str}`` (ADR-15: ``domain_date_origin`` is one of
+"domain_date": str, "domain_date_origin": str}`` (``domain_date_origin`` is one of
 ``setting``, ``seed``, ``system``).
 Authentication routes: see ``app.api.auth``. The turns route: see ``app.api.turns``.
 
@@ -203,7 +203,7 @@ def _signing_key(settings: Settings) -> SecretStr:
 
 
 def _agent_signing_key(settings: Settings) -> SecretStr:
-    """The key that signs agent-audience sessions; never the customer key (ADR-18).
+    """The key that signs agent-audience sessions; never the customer key.
 
     Raises
     ------
@@ -234,7 +234,7 @@ def _load_demo_state(
 
 
 def _domain_calendar(settings: Settings, *, clock: Clock) -> DomainCalendar:
-    """Resolve the domain date once, at start-up (ADR-15).
+    """Resolve the domain date once, at start-up.
 
     The seed is read only when ``DATA_AS_OF_DATE`` does not already settle the question, so a
     deployment that overrides it never needs the database up at start-up.
@@ -266,7 +266,7 @@ class AgentConsolePorts:
 
 
 def _default_customer_lookup(settings: Settings) -> CustomerLookup:
-    """The sandbox login's real, store-backed customer check (AC-E4-47).
+    """The sandbox login's real, store-backed customer check.
 
     Raises
     ------
@@ -345,7 +345,7 @@ def _understanding(llm_client: LlmClient, settings: Settings) -> Understanding:
     ``llm_client`` is the shared, retried and circuit-broken client ``_controller_factory``
     builds once — the stub branch never touches it, and the model-backed branch reuses it
     rather than building a second, unprotected client, so understanding gets the same
-    resilience (E9) as every other LLM call.
+    resilience as every other LLM call.
 
     Raises
     ------
@@ -363,7 +363,7 @@ def _model_renderer(llm_client: LlmClient, settings: Settings) -> LlmRenderer:
     """The model-backed reply renderer for one turn; only built when the feature is enabled.
 
     Checked eagerly, before the renderer is ever constructed: ``llm_client`` is built lazily
-    (E9's ``RetriedLlmClient`` only calls ``_build_anthropic_client`` on first real use), so
+    (``RetriedLlmClient`` only calls ``_build_anthropic_client`` on first real use), so
     without this check a stub provider with rendering enabled would not fail until the first
     actual model call instead of failing closed up front.
 
@@ -550,8 +550,8 @@ def create_app(
     clock : Clock
         Source of the current time for sessions and the login limiters; tests inject their own.
     customer_lookup : CustomerLookup | None
-        The sandbox login's existence check (AC-E4-47), reused to validate the demo broker's
-        persona list against the seed (ADR-18) when it is enabled instead; tests inject a fake
+        The sandbox login's existence check, reused to validate the demo broker's
+        persona list against the seed when it is enabled instead; tests inject a fake
         one. When omitted and either sign-in path is enabled, the real, store-backed one is built
         from ``DATABASE_URL``.
     controller_factory : ControllerFactory | None
@@ -564,9 +564,9 @@ def create_app(
         inject a fake one. When omitted and either broker is enabled, the real, store-backed one
         is built from ``DATABASE_URL``.
     agent_console : AgentConsolePorts | None
-        The console's own queue, ticket-detail and audit collaborators; tests inject a hermetic
-        bundle. When omitted and the agent demo broker is enabled, the real, store-backed ones are
-        built from ``DATABASE_URL``.
+        The console's own queue, ticket-detail, audit and writes collaborators; tests inject a
+        hermetic bundle. When omitted and the agent demo broker is enabled, the real, store-backed
+        ones are built from ``DATABASE_URL``.
 
     Returns
     -------
@@ -578,7 +578,7 @@ def create_app(
     ------
     ConfigError
         When no settings are given and the environment is invalid, when a signing key (customer or
-        agent) is required and missing, when no domain date resolves (ADR-15), or when a sign-in
+        agent) is required and missing, when no domain date resolves, or when a sign-in
         path is enabled, no ``customer_lookup``/``signin_audit`` was injected, and
         ``DATABASE_URL`` is not configured.
     PersonaError
@@ -651,9 +651,9 @@ def create_app(
             attempt_limiter=AttemptLimiter(clock=clock),
         )
 
-    # The console's own two read routes (ADR-17), gated on the same flag as the only broker that
-    # can ever mint an agent token — a second flag would gate the same precondition twice with no
-    # scenario where they should disagree.
+    # The console's own routes, gated on the same flag as the only broker that can ever mint an
+    # agent token — a second flag would gate the same precondition twice with no scenario where
+    # they should disagree.
     agent_router = (
         _build_agent_router(
             resolved, agent_console, calendar=calendar, retriever=retriever, clock=clock
@@ -668,7 +668,7 @@ def create_app(
     app.add_middleware(
         SessionAuthMiddleware,
         sessions=sessions,
-        # Longest-matching-prefix (ADR-18): "/v1/agent" is unreachable when no agent token can
+        # Longest-matching-prefix: "/v1/agent" is unreachable when no agent token can
         # ever be issued (the broker's own flag is off), so listing it here unconditionally costs
         # nothing and keeps this map's shape independent of which brokers happen to be enabled.
         audience_by_prefix={"/v1": "customer", "/v1/agent": "agent"},
@@ -685,7 +685,7 @@ def create_app(
 
     @app.get("/health/ready")
     def ready() -> dict[str, str]:
-        """Report readiness, version information and the resolved domain date (ADR-15)."""
+        """Report readiness, version information and the resolved domain date."""
         return {
             "status": "ready",
             "service_version": resolved.service_version,
