@@ -803,6 +803,94 @@ def test_a_described_answer_that_matches_nothing_counts_whatever_the_intent_the_
     assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
 
 
+def test_an_empty_transaction_list_never_counts_toward_the_budget(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, port=FakeToolPort(transactions=()))
+
+    for _ in range(4):
+        reply = dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+        assert not reply.end_session
+
+    assert dialogue.outbox.packets == []
+    state = dialogue.store.get("sess-1")
+    assert state is not None
+    assert state.clarification_attempts == 0
+
+
+def test_each_turn_logs_how_it_was_understood_and_where_the_dialogue_went(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+
+    with caplog.at_level(logging.INFO, logger="app.conversation.controller"):
+        dialogue.say(_file_dispute())
+        dialogue.say(_plain(NluIntent.UNCLEAR, transaction=_NOBODY))
+        dialogue.say(_plain(NluIntent.UNCLEAR, transaction=_NOBODY))
+
+    decided = [r.getMessage() for r in caplog.records if r.getMessage().startswith("turn_decided")]
+    assert len(decided) == 3
+    assert "understood=file_dispute" in decided[0]
+    assert "has_hint=False" in decided[0]
+    assert "slot_after=transaction attempts_after=0" in decided[0]
+    assert "understood=unclear" in decided[1]
+    assert "has_hint=True" in decided[1]
+    assert "slot_before=transaction attempts_before=0" in decided[1]
+    assert "attempts_after=1" in decided[1]
+    assert "handoff_reason=None" in decided[1]
+    assert "reply=handoff" in decided[2]
+    assert "template=handoff_review" in decided[2]
+    assert "handoff_reason=escalate_low_nlu_confidence" in decided[2]
+
+
+def test_the_turn_decision_log_never_carries_the_customers_description(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    described = TransactionHint(
+        merchant="Nobody",
+        amount=Decimal("1914215.00"),
+        currency="COP",
+        date_on=date(2026, 6, 3),
+        date_source=DateSource.ABSOLUTE,
+        product_last4="4417",
+    )
+
+    with caplog.at_level(logging.INFO, logger="app.conversation.controller"):
+        dialogue.say(_file_dispute(transaction=described))
+
+    assert any(r.getMessage().startswith("turn_decided") for r in caplog.records)
+    everything = " ".join(r.getMessage() for r in caplog.records)
+    for detail in ("Nobody", "1914215", "2026-06-03", "4417"):
+        assert detail not in everything
+
+
+def test_a_replayed_turn_does_not_log_a_second_decision(
+    policy: Policy, retriever: LexicalRetriever, caplog: pytest.LogCaptureFixture
+) -> None:
+    dialogue = _Dialogue(policy, retriever)
+    dialogue.say(_file_dispute(), turn_id="turn-once")
+    caplog.clear()
+
+    with caplog.at_level(logging.INFO, logger="app.conversation.controller"):
+        dialogue.say(_file_dispute(), turn_id="turn-once")
+
+    assert not [r for r in caplog.records if r.getMessage().startswith("turn_decided")]
+
+
+def test_a_described_transaction_that_finds_none_counts_toward_the_budget(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, port=FakeToolPort(transactions=()))
+
+    assert not dialogue.say(_file_dispute(transaction=_NOBODY)).end_session
+    assert not dialogue.say(_file_dispute(transaction=_NOBODY)).end_session
+    assert dialogue.outbox.packets == []
+
+    assert dialogue.say(_file_dispute(transaction=_NOBODY)).end_session
+    assert [packet.trigger.value for packet in dialogue.outbox.packets] == ["low_understanding"]
+
+
 def test_after_a_description_that_matches_nothing_the_transaction_stays_the_open_question(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:

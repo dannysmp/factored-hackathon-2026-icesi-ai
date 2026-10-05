@@ -103,8 +103,12 @@ placeholder: no tool exposes the customer's first name.
 While the transaction is the pending question, a message that describes one is taken as the
 answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a category
 carried by such a message does not replace one already set, the same rule as above. A description
-that matches no transaction, or more than one, counts as one unsettled answer to the question,
-the same as any other reply that leaves it open.
+that matches no transaction, or more than one, is an unsettled answer to the question, the same
+as any other reply that leaves it open: a person is involved once the clarification budget of
+such answers has followed the question. When the opening message already described the
+transaction, that message is itself the question, so with the shipped budget of two the hand-off
+follows the third unmatched description. A request to list transactions that finds none never
+counts; a described transaction that finds none does, like any other unmatched description.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
@@ -428,6 +432,7 @@ class DialogueController:
             )
         state_before = state.phase
         new_state, envelope = self._advance(state, result)
+        self._log_turn_decided(state, new_state, result, envelope)
         self._log_turn_completed(new_state, accounting)
 
         try:
@@ -589,6 +594,43 @@ class DialogueController:
             updated_at=self._now(),
         )
         return fresh, 0, result, accounting
+
+    def _log_turn_decided(
+        self,
+        state_before: DialogueState,
+        state_after: DialogueState,
+        result: NluResult,
+        envelope: RenderEnvelope,
+    ) -> None:
+        """One log line per turn that reaches the decision step, saying how it was understood and
+        where the dialogue went, so a surprising hand-off can be traced to its cause without the
+        customer's words.
+
+        A replayed turn is silent, and so are the hand-offs that never reach the decision step
+        (the turn cap, understanding unavailable), which log their own warnings. The line is
+        emitted before the save, so a turn that then loses a concurrent save still logs one.
+
+        It carries only closed-vocabulary values and counters: the intent the understanding
+        reported and its confidence, whether it carried a transaction hint (a flag, never the
+        hint), the pending slot and clarification count before and after, the reply's intent and
+        template, and the hand-off's first reason code (``None`` when the turn did not hand off).
+        """
+        logger.info(
+            "turn_decided session_id=%s understood=%s confidence=%.2f has_hint=%s "
+            "slot_before=%s attempts_before=%d slot_after=%s attempts_after=%d "
+            "reply=%s template=%s handoff_reason=%s",
+            state_after.session_id,
+            result.intent.value,
+            result.confidence,
+            not result.transaction.is_empty,
+            state_before.pending_slot.value if state_before.pending_slot else None,
+            state_before.clarification_attempts,
+            state_after.pending_slot.value if state_after.pending_slot else None,
+            state_after.clarification_attempts,
+            envelope.intent.value,
+            envelope.template_id.value if envelope.template_id else None,
+            self._handoff_reason.value if self._handoff_reason else None,
+        )
 
     def _log_turn_completed(self, state: DialogueState, accounting: TurnAccounting | None) -> None:
         """One stable-shaped log line per real turn: the real cost, if any, of understanding
@@ -995,8 +1037,9 @@ class DialogueController:
         self, state: DialogueState, template: TemplateId
     ) -> tuple[DialogueState, RenderEnvelope]:
         """The description matched no transaction, or more than one: ask for it again, or hand
-        over once the clarification budget is spent. Each such reply counts as one unsettled
-        answer to the transaction question."""
+        over once the clarification budget is spent. Each such reply is an unsettled answer to the
+        transaction question; the count is zero on the first ask, so the budget is reached by the
+        second answer that follows a question already asked."""
         new_state = state.with_clarification(Slot.TRANSACTION)
         if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
             return self._handoff(
