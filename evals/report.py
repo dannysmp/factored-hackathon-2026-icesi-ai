@@ -54,6 +54,10 @@ exact text ``render_markdown`` puts under its Judge validation heading — expor
 cheaper regeneration of just that section (once the real H4 sample lands) renders identically to a
 full report, never a hand-maintained second copy of the same wording
 (``evals.h4_judge_validation``).
+``withhold_demoted_judge_means(section_body, agreement, human_means) -> str``: the body of the
+Judge-scored quality section with each demoted dimension's judge mean replaced by "not reportable
+by the judge" in every system row, and a note beneath the table giving the raters' means; raises
+``ValueError`` for a demoted dimension with no column or no rater mean.
 
 Limitations
 -----------
@@ -93,6 +97,7 @@ from evals.judge_validation import (
     DEMOTION_THRESHOLD,
     DimensionAgreement,
     DimensionDetail,
+    HumanMean,
     PairDetail,
 )
 from evals.metrics import NOT_DEFINED, CaseResult, Metric
@@ -366,6 +371,82 @@ def _judge_scored_quality_section(report: EvaluationReport) -> str:
         else ""
     )
     return f"{table}{note}\n\n{_judge_cost_line(report)}"
+
+
+_WITHHELD_JUDGE_MEAN = "not reportable by the judge"
+
+_JUDGE_MEAN_COLUMNS = {
+    "Grounding (mean, 0-2)": "grounding",
+    "Language quality (mean, 0-2)": "language_quality",
+    "Clarification (mean, 0-2)": "clarification",
+}
+
+
+def _human_mean_text(mean: HumanMean) -> str:
+    def one(label: str, value: float | None, scored: int) -> str:
+        return f"{label} {NOT_DEFINED}" if value is None else f"{label} {value:.2f} (n={scored})"
+
+    return (
+        f"{mean.dimension}: {one('Rater 1', mean.rater1_mean, mean.rater1_scored)}, "
+        f"{one('Rater 2', mean.rater2_mean, mean.rater2_scored)}"
+    )
+
+
+def withhold_demoted_judge_means(
+    section_body: str,
+    agreement: tuple[DimensionAgreement, ...],
+    human_means: tuple[HumanMean, ...],
+) -> str:
+    """The judge-scored quality section's body with each demoted dimension's judge mean replaced.
+
+    A dimension the judge-validation decision demoted shows "not reportable by the judge" in
+    every system's row, and a line beneath the table gives the two raters' means for it instead,
+    from the validation sample (not the cases the judged run covers). A body with no table (no
+    system was judged) is returned unchanged.
+
+    Raises
+    ------
+    ValueError
+        A demoted dimension has no column in the table, or no rater mean was given for it.
+    """
+    demoted = [entry.dimension for entry in agreement if entry.demoted]
+    lines = section_body.split("\n")
+    header_at = next(
+        (i for i, line in enumerate(lines) if line.startswith("| System |")),
+        None,
+    )
+    if header_at is None or not demoted:
+        return section_body
+    headers = [cell.strip() for cell in lines[header_at].strip("|").split("|")]
+    columns = {
+        _JUDGE_MEAN_COLUMNS[header]: index
+        for index, header in enumerate(headers)
+        if header in _JUDGE_MEAN_COLUMNS
+    }
+    means = {mean.dimension: mean for mean in human_means}
+    missing = [d for d in demoted if d not in columns or d not in means]
+    if missing:
+        raise ValueError(
+            f"the judge-scored quality table has no column or human mean for {missing}"
+        )
+    end = header_at
+    while end < len(lines) and lines[end].startswith("|"):
+        end += 1
+    for row in range(header_at + 2, end):
+        cells = [cell.strip() for cell in lines[row].strip("|").split("|")]
+        for dimension in demoted:
+            cells[columns[dimension]] = _WITHHELD_JUDGE_MEAN
+        lines[row] = "| " + " | ".join(cells) + " |"
+    note = (
+        "**Withheld judge means.** The judge-validation decision demoted "
+        + ", ".join(demoted)
+        + " to human-only, so the judge's mean for it is not stated. The raters' own means over "
+        "the judge-validation sample, a different set of cases from the judged run, are "
+        + "; ".join(_human_mean_text(means[d]) for d in demoted)
+        + "."
+    )
+    lines[end:end] = ["", note]
+    return "\n".join(lines)
 
 
 def _repeated_run_section(systems: tuple[SystemResult, ...]) -> str:
@@ -726,9 +807,9 @@ def _validation_decision(
         if entry.demoted:
             lines.append(
                 f"- **{entry.dimension}: not validated.** {_demotion_reason(entry, threshold)} "
-                "The judge's mean for it in the judge-scored quality section is the judge's own "
-                "output, not a validated measure of quality; the raters' per-case scores are "
-                "in the cases file written beside this report."
+                "The judge-scored quality section withholds the judge's mean for it and shows "
+                "the raters' mean instead; the raters' per-case scores are in the cases file "
+                "the judge-validation command writes, a local working file."
             )
         else:
             lines.append(
@@ -802,7 +883,7 @@ def judge_validation_section(
                 _agreement_cell(entry.rater_to_rater, pairs.rater_to_rater if pairs else None),
                 _agreement_cell(entry.rater1_to_judge, pairs.rater1_to_judge if pairs else None),
                 _agreement_cell(entry.rater2_to_judge, pairs.rater2_to_judge if pairs else None),
-                "yes (judge score not validated)" if entry.demoted else "no",
+                "yes (judge mean withheld)" if entry.demoted else "no",
             ]
         )
     table = _table(

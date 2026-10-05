@@ -45,11 +45,11 @@ selected (read from the experiment log, never re-decided here), reports its cali
 score, expected calibration error, a binned curve) on validation and on test, and searches
 validation for the lowest threshold whose precision is at least the precision floor (0.01, about
 ten times the validation base rate) and whose routed share is at most 5 %. With a threshold, the
-test period is scored once and a customer-resampled bootstrap gives the 95 % interval of its precision;
-routing is switched on only if that precision clears the floor and the interval's lower bound is
-above the test prevalence. Without one, routing stays off and the card records why. `python -m
-models.calibration` appends its result to the experiment log and writes it as the current model
-card.
+test period is scored once and a customer-resampled bootstrap gives the 95 % interval of its
+precision; routing is switched on only if that precision clears the floor and the interval's lower
+bound is above the test prevalence. Without one, routing stays off and the card records why.
+`python -m models.calibration` appends its result to the experiment log and writes it as the
+current model card.
 
 ## Model card
 

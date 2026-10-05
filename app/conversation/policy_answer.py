@@ -4,12 +4,12 @@ Policy Answer
 
 Overview
 --------
-Turns a policy question into the facts and source the renderer needs (ADR-16): a search for the
+Turns a policy question into the facts and source the renderer needs: a search for the
 best-matching corpus section, and — for the handful of sections whose answer is a number the
 policy engine itself owns — the structured value from the loaded ``Policy``, never from the
 corpus text. Retrieval finds *which* section answers the question; it never supplies the figure
 that goes in the reply, so a number can never drift between what the engine enforces and what a
-citation says (the architecture document's own retrieval boundary).
+citation says.
 
 Scope
 -----
@@ -58,15 +58,18 @@ class PolicyAnswer:
 
 
 def _filing_window(category: DisputeCategory, policy: Policy) -> PolicyValue:
+    """The filing window, in days, the policy sets for ``category``."""
     days = policy.categories[category].filing_window_days
     return PolicyValue(name="filing_window_days", value=str(days))
 
 
 def _response_time(category: DisputeCategory, policy: Policy) -> PolicyValue:
+    """The days until a first response the policy sets for ``category``."""
     return PolicyValue(name="first_response_days", value=str(policy.first_response_days[category]))
 
 
 def _evidence(category: DisputeCategory, policy: Policy) -> PolicyValue:
+    """The evidence the policy requires for ``category``, as a comma-separated list."""
     evidence = ", ".join(policy.evidence_required[category])
     return PolicyValue(name="evidence_required", value=evidence)
 
@@ -91,7 +94,28 @@ def answer(
     retriever: LexicalRetriever,
     policy: Policy,
 ) -> PolicyAnswer:
-    """The best answer ``retriever`` and ``policy`` together give ``query``, or an abstention."""
+    """The best answer ``retriever`` and ``policy`` together give ``query``, or an abstention.
+
+    Parameters
+    ----------
+    query : str
+        The customer's policy question, as the understanding step distilled it.
+    lang : Lang
+        The conversation's language; selects which corpus text is searched.
+    category : DisputeCategory | None
+        The category the conversation already knows, or ``None`` when none was named yet.
+    retriever : LexicalRetriever
+        The corpus search; supplies the best-matching section and its citation.
+    policy : Policy
+        The loaded policy; the only source of any figure.
+
+    Returns
+    -------
+    PolicyAnswer
+        No source when the search finds nothing or a category-specific section is matched without
+        a known category (an abstention); the citation alone for a general section; the citation
+        plus the one policy figure for a category-specific section.
+    """
     hits = retriever.search(query, lang)
     if not hits:
         return PolicyAnswer(source=None)

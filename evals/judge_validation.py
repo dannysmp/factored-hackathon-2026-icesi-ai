@@ -41,6 +41,9 @@ Runtime Contract
 ``DimensionAgreement(dimension, rater_to_rater, rater1_to_judge, rater2_to_judge, demoted)``.
 ``compute_agreement(rater1, rater2, judge) -> tuple[DimensionAgreement, ...]``, one entry per
 dimension in ``DIMENSIONS`` order.
+``HumanMean(dimension, rater1_mean, rater2_mean, rater1_scored, rater2_scored)`` and
+``compute_human_means(rater1, rater2) -> tuple[HumanMean, ...]``: what each rater's own scores
+average to, for a dimension the report cannot state a judge score for.
 ``PairDetail(compared, weighted_kappa, first_higher, second_higher)`` and
 ``DimensionDetail(dimension, rater_to_rater, rater1_to_judge, rater2_to_judge)``;
 ``compute_detail(rater1, rater2, judge) -> tuple[DimensionDetail, ...]``: how many pairs each
@@ -125,6 +128,17 @@ class DimensionDetail:
     rater_to_rater: PairDetail
     rater1_to_judge: PairDetail
     rater2_to_judge: PairDetail
+
+
+@dataclass(frozen=True, slots=True)
+class HumanMean:
+    """Each rater's mean score for one dimension over the cases that rater scored."""
+
+    dimension: Dimension
+    rater1_mean: float | None
+    rater2_mean: float | None
+    rater1_scored: int
+    rater2_scored: int
 
 
 def _value(score: RaterScore | JudgeVerdict, dimension: Dimension) -> int | None:
@@ -252,3 +266,31 @@ def compute_detail(
         )
         for dimension in DIMENSIONS
     )
+
+
+def _mean(values: Sequence[int]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def compute_human_means(
+    rater1: Sequence[RaterScore], rater2: Sequence[RaterScore]
+) -> tuple[HumanMean, ...]:
+    """Per dimension, each rater's mean score and how many cases it rests on.
+
+    A case with no score for a dimension (clarification on a case with no clarifying question) is
+    left out of that dimension's mean; a rater with no score at all has a mean of ``None``.
+    """
+    results = []
+    for dimension in DIMENSIONS:
+        first = [v for v in (_value(score, dimension) for score in rater1) if v is not None]
+        second = [v for v in (_value(score, dimension) for score in rater2) if v is not None]
+        results.append(
+            HumanMean(
+                dimension=dimension,
+                rater1_mean=_mean(first),
+                rater2_mean=_mean(second),
+                rater1_scored=len(first),
+                rater2_scored=len(second),
+            )
+        )
+    return tuple(results)
