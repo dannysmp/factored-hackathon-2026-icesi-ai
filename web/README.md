@@ -50,6 +50,23 @@ npm run test         # vitest run --coverage
 
 Node 22 (`.nvmrc`), matching the version CI installs.
 
+## Screens
+
+The captures come from the deployed system with simulated data. Each sign-in page is shown in
+its own language.
+
+| Español                                                                         | Português                                                                          | English                                                                         |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| ![Sign-in page in Spanish on desktop](../docs/images/sign-in-es-desktop.png)    | ![Sign-in page in Portuguese on desktop](../docs/images/sign-in-pt-desktop.png)    | ![Sign-in page in English on desktop](../docs/images/sign-in-en-desktop.png)    |
+| ![Sign-in page in Spanish on a phone](../docs/images/sign-in-es-mobile.png)     | ![Sign-in page in Portuguese on a phone](../docs/images/sign-in-pt-mobile.png)     | ![Sign-in page in English on a phone](../docs/images/sign-in-en-mobile.png)     |
+| ![Opening of the chat in Spanish on a phone](../docs/images/chat-es-mobile.png) | ![Opening of the chat in Portuguese on a phone](../docs/images/chat-pt-mobile.png) | ![Opening of the chat in English on a phone](../docs/images/chat-en-mobile.png) |
+
+On desktop the chat keeps a single readable column and the console uses the full width:
+
+![The customer chat on desktop after a dispute is filed](../docs/images/case-filed.png)
+
+![The agent console queue on desktop](../docs/images/console-queue.png)
+
 ## Accessibility
 
 The screen-level tests and most shared-component tests assert
