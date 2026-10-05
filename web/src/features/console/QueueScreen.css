@@ -285,3 +285,59 @@ tbody th[scope='row'] {
   font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
+
+/* On a phone each row becomes a card: the reference is its heading and every other value sits
+   beside its own column title, so nothing scrolls sideways and no value loses its label. The
+   column titles stay in the markup (visually hidden) so the table keeps its structure for
+   assistive technology; the wide layout is untouched. */
+@media (not (min-width: 48rem)) {
+  .stacked-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .stacked-table,
+  .stacked-table tbody,
+  .stacked-table tr,
+  .stacked-table th,
+  .stacked-table td {
+    display: block;
+  }
+
+  .stacked-table th,
+  .stacked-table td {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .stacked-table tr {
+    margin-bottom: var(--space-3);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .stacked-table tbody th[scope='row'] {
+    background-color: var(--color-bg-subtle);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    font-weight: var(--font-weight-emphasis);
+  }
+
+  .stacked-table td {
+    display: grid;
+    grid-template-columns: minmax(7rem, 38%) minmax(0, 1fr);
+    gap: var(--space-3);
+    border-bottom: none;
+  }
+
+  .stacked-table td::before {
+    content: attr(data-label);
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-emphasis);
+  }
+}
