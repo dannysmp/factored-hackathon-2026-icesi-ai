@@ -192,8 +192,9 @@ The data commands rewrite reports that are committed, so they refuse to run when
 directory is absent: `make profile` and `make pipeline` stop with a message when `data/raw` (or
 `DATA_DIR`) does not exist, and `make analyze` and `make features` stop when `data/silver` (or
 `SILVER_DIR`) does not exist. Nothing is changed in that case. An existing but empty directory is
-treated as data: the commands run and write reports that list every table as missing, which
-`git checkout -- reports` restores.
+treated as data. `make profile` and `make pipeline` then run and write reports that list every
+table as missing, and `make analyze` removes `reports/workflow-analysis.md` before failing;
+`git checkout -- reports` restores them.
 
 `make profile` measures the files against the data dictionary and writes
 [`reports/data-profile.md`](reports/data-profile.md): row counts, schema conformance, duplicate
