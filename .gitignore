@@ -30,6 +30,7 @@ htmlcov/
 !/reports/ops-seed.md
 !/reports/dashboard-theme-checklist.md
 !/reports/evaluation.md
+!/reports/evaluation-comparison.md
 
 # Editor, OS and agent worktrees
 .DS_Store
