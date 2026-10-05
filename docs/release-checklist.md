@@ -41,7 +41,7 @@ This checklist states each obligation of a release and names the evidence a revi
 | Item | Evidence | Done |
 |---|---|---|
 | The video shows the working solution end to end: the normal path, the ambiguous or unsupported path and the human-required path with the handoff and the console | The recording, with the time of each path noted | [ ] |
-| The core architectural decisions are named by their record number and explained in a sentence each | The recording; the decision records | [ ] |
+| The core architectural decisions are named and explained in a sentence each | The recording; [the design decisions named in the video script](video-script.md#design-decisions-named) | [ ] |
 | No secret value, administration screen, key or unmasked identifier appears in the recording | A person watches the whole recording before the release is announced, and records the check by role | [ ] |
 | The video is uploaded and opens from its link | The link, opened live at the freeze and again before the release is announced | [ ] |
 
@@ -56,8 +56,8 @@ Every requirement is checked with a link to its evidence.
 | Data-backed problem selection | [The workflow analysis report](../reports/workflow-analysis.md) and `make analyze`, the command that regenerates it | [x] |
 | Baseline and improvement on the same workload | The evaluation report, proposed system against both baselines | [ ] |
 | Privacy, explainability, fairness, reliability, scalability by design | The security and privacy, reliability and capacity sections; [the ASVS Level 1 checklist](asvs-level1-checklist.md); the disparity analysis in the evaluation report | [ ] |
-| Explicit trade-offs | The decision records; the evaluation report | [ ] |
-| Where AI and where deterministic logic | The decision records; the rule-based baseline comparison | [ ] |
+| Explicit trade-offs | The architecture decisions; the evaluation report | [ ] |
+| Where AI and where deterministic logic | The architecture decisions; the rule-based baseline comparison | [ ] |
 | Three demonstration paths | [The demonstration scripts](demo-scripts.md); the rehearsal checklist | [ ] |
 | Spanish and Portuguese, English added, language limits reported | The evaluation report by language; the limitations report | [ ] |
 | Context, clarification and grounded answers | The conversation criteria results; the policy-question results | [ ] |
@@ -80,7 +80,7 @@ Every requirement is checked with a link to its evidence.
 | The judge rubric validated against human judgments, stricter than a single reviewer's opinion | The judge validation results: agreement of two raters with each other and with the judge | [ ] |
 | Disparity analysis and labeling notes | The disparity section of the evaluation report | [ ] |
 | Public repository, deployed link, slides and video | The repository, deployed, slides and video sections above | [ ] |
-| Evidence for each discipline | Rationale and documentation: the README and decision records. AI engineering: the conversation layer and its evaluation. Data analytics: the workflow analysis and the insights in the evaluation report. Data engineering: the pipeline, contracts and reports. Machine learning: the model card and the experiment log | [ ] |
+| Evidence for each discipline | Rationale and documentation: the README and the architecture decisions. AI engineering: the conversation layer and its evaluation. Data analytics: the workflow analysis and the insights in the evaluation report. Data engineering: the pipeline, contracts and reports. Machine learning: the model card and the experiment log | [ ] |
 
 ## Release verification
 

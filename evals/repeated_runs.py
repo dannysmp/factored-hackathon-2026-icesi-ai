@@ -4,11 +4,10 @@ Repeated-Run Variability
 
 Overview
 --------
-``plan/docs/evaluation-plan.md``'s Execution protocol runs the proposed system (P) three times
-and reports "mean +/- range on headline metrics" plus "a per-case flip list"; B0 and B1 run once
-and have no variability to report. This module computes both, as a pure function of the
-``HeadlineMetrics``/``CaseResult`` sequences the runner (a prior slice) already produces —
-nothing here re-runs a case or calls a system variant.
+The proposed system (P) is run three times and the report gives "mean +/- range on headline metrics"
+plus "a per-case flip list"; B0 and B1 run once and have no variability to report. This module
+computes both, as a pure function of the ``HeadlineMetrics``/``CaseResult`` sequences the runner
+already produces — nothing here re-runs a case or calls a system variant.
 
 Scope
 -----

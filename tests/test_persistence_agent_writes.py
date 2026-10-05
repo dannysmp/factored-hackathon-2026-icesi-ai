@@ -198,7 +198,7 @@ def test_claim_ticket_overwrites_a_prior_claim(
 def test_claim_ticket_audits_with_the_agents_identity(
     dsn: str, outbox: PostgresHandoffOutbox, writes: PostgresAgentWrites
 ) -> None:
-    """ADR-17, and the revert-check for it: the audit row must actually carry ``AGT-1`` and the
+    """The audit row must actually carry ``AGT-1`` and the
     ticket's real trace/customer identity, not a placeholder — reverting the write's ``agent_id``
     argument or the audit call itself would fail this."""
     ticket_ref, trace_id = _ticket(outbox)
@@ -546,7 +546,7 @@ def test_set_case_status_refuses_a_case_already_in_a_terminal_status(
 def test_set_case_status_never_creates_a_case_row(
     dsn: str, outbox: PostgresHandoffOutbox, writes: PostgresAgentWrites
 ) -> None:
-    """A case-status write only ever ``UPDATE``s (``plan/docs/architecture.md``): proven here by
+    """A case-status write only ever ``UPDATE``s (it never creates one): proven here by
     calling it against a real, pre-existing case and confirming the row count never grows, and
     structurally below by confirming the module's own source has no ``INSERT INTO cases``."""
     _insert_case_row(dsn, case_number="CASE-1", status="Open")
