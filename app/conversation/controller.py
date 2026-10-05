@@ -92,11 +92,13 @@ requirement for the category is met. Two or more matches ask for more detail rat
 presenting a numbered list — the same v1 scope decision already made for slot collection, since
 neither a pending-candidate field nor a multi-candidate list exists in ``DialogueState`` yet. A
 session works on one transaction and reason at a time: the selected pair is kept from selection
-until a case is filed, which clears it so the customer's next dispute starts from its own
-transaction and reason. A dispute that ends without a case (cancelled, ineligible, duplicate)
-keeps the pair. A policy question asked after a filing is answered without a reason, so a figure
-that depends on one is declined with an offer of an advisor. The handoff packet's ``first_name``
-is a placeholder: no tool exposes the customer's first name yet.
+until the dispute ends (a case filed, or the filing cancelled, ineligible or refused as a
+duplicate), which clears it so the customer's next dispute starts from its own transaction and
+reason; a no to the transaction presented, or a different transaction named while one awaits a
+yes, replaces the transaction instead. A dispute that ends in a handoff keeps its pair. A policy
+question asked after a dispute has ended without a handoff is answered without a reason, so a
+figure that depends on one is declined with an offer of an advisor. The handoff packet's
+``first_name`` is a placeholder: no tool exposes the customer's first name yet.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
@@ -701,7 +703,7 @@ class DialogueController:
         """The customer's yes or no to filing the evaluated dispute."""
         answer = result.confirmation
         if answer is ConfirmationAnswer.NO:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             return new_state, self._envelope(new_state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
         if answer is not ConfirmationAnswer.YES:
             return self._ask(state, Slot.CONFIRMATION)
@@ -941,7 +943,7 @@ class DialogueController:
         self, state: DialogueState, category: DisputeCategory, decision: PolicyDecision
     ) -> tuple[DialogueState, RenderEnvelope]:
         if decision.outcome is Outcome.INELIGIBLE:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             decisions = (
                 Decision(
                     outcome=Outcome.INELIGIBLE,
@@ -1029,7 +1031,7 @@ class DialogueController:
         existing_case_number: str | None,
     ) -> tuple[DialogueState, RenderEnvelope]:
         if refusal is ToolRefusalCode.DUPLICATE_OPEN_CASE:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             decisions = (
                 Decision(
                     outcome=Outcome.INELIGIBLE,
