@@ -240,4 +240,18 @@ describe('SignInScreen form', () => {
     await screen.findByLabelText(es['signin.personaLabel'])
     expect(screen.getByLabelText(es['signin.personaLabel'])).not.toHaveFocus()
   })
+
+  it('selects the first persona who speaks the preferred language, and speaks it', async () => {
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    render(<SignInScreen preferredLang="pt" onSignedIn={vi.fn()} />)
+
+    expect(await screen.findByLabelText(pt['signin.personaLabel'])).toHaveValue('joao')
+  })
+
+  it('selects the first persona when none speaks the preferred language', async () => {
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
+    render(<SignInScreen preferredLang="en" onSignedIn={vi.fn()} />)
+
+    expect(await screen.findByLabelText(es['signin.personaLabel'])).toHaveValue('ana')
+  })
 })

@@ -54,6 +54,7 @@ export function App(): JSX.Element {
           )}
           <SignInScreen
             focusForm={expiredIn !== null}
+            preferredLang={expiredIn ?? undefined}
             onSignedIn={(token, signedInLang) => {
               setExpiredIn(null)
               setSession({ token, lang: signedInLang })

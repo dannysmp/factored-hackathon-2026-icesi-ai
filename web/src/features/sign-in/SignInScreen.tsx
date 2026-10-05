@@ -57,6 +57,11 @@ function personaLabel(persona: DemoPersonaSummary): string {
  * `focusForm` moves the keyboard to the persona picker as soon as the form appears, for a person
  * who has just been sent back here and would otherwise have lost their place.
  *
+ * `preferredLang` selects the first persona who speaks that language once the directory loads, so
+ * a person sent back after a session in Portuguese or English meets a form in that language
+ * rather than Spanish. Without it, or without a persona in that language, the first persona is
+ * selected.
+ *
  * `onLanguageChange` reports the language this screen is currently speaking, as the selection
  * changes, so the page around it can follow.
  *
@@ -71,11 +76,13 @@ function personaLabel(persona: DemoPersonaSummary): string {
 export function SignInScreen({
   audience = 'customer',
   focusForm = false,
+  preferredLang,
   onSignedIn,
   onLanguageChange,
 }: {
   audience?: SignInAudience
   focusForm?: boolean
+  preferredLang?: Lang
   onSignedIn: (token: string, lang: Lang) => void
   onLanguageChange?: (lang: Lang) => void
 }): JSX.Element {
@@ -114,7 +121,8 @@ export function SignInScreen({
       (fetched) => {
         if (cancelled) return
         setPersonas(fetched)
-        setSelectedSlug(fetched[0]?.slug ?? '')
+        const preferred = fetched.find((persona) => toLang(persona.language) === preferredLang)
+        setSelectedSlug((preferred ?? fetched[0])?.slug ?? '')
         setDirectoryStatus(fetched.length === 0 ? 'unavailable' : 'ready')
       },
       (error: unknown) => {
@@ -127,7 +135,7 @@ export function SignInScreen({
     return () => {
       cancelled = true
     }
-  }, [audience, directoryAttempt])
+  }, [audience, directoryAttempt, preferredLang])
 
   useEffect(() => {
     if (focusForm && directoryStatus === 'ready') personaRef.current?.focus()

@@ -86,7 +86,7 @@ describe('App when the session ends', () => {
     expect(await axe(container)).toHaveNoViolations()
   })
 
-  it('says so in the language the ended session was held in, not the one the sign-in falls back to', async () => {
+  it('brings back a form in the language of the ended session, so the note and the form agree', async () => {
     stubService([401], true)
     const user = userEvent.setup()
     render(<App />)
@@ -97,7 +97,9 @@ describe('App when the session ends', () => {
     await waitFor(() => {
       expect(screen.getByText(es['app.sessionExpired']).closest('[role="status"]')).not.toBeNull()
     })
-    expect(await screen.findByLabelText(en['signin.personaLabel'])).toBeInTheDocument()
+    const picker = await screen.findByLabelText(es['signin.personaLabel'])
+    expect(picker).toHaveValue('ana')
+    expect(screen.getByRole('button', { name: es['signin.submit'] })).toBeInTheDocument()
   })
 
   it('puts the keyboard on the form so the person can sign in again at once', async () => {
