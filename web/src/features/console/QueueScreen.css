@@ -217,7 +217,7 @@ tbody th[scope='row'] {
   }
 }
 
-@media (forced-colors: active) and (max-width: 47.9375rem) {
+@media (forced-colors: active) and (not (min-width: 48rem)) {
   .queue-table-openable .queue-row-priority th[scope='row'] {
     position: relative;
   }
