@@ -192,6 +192,7 @@ class AuditNotYetImplemented:
     def packet_viewed(
         self, *, agent_id: str, session_id: str, ticket_ref: str, packet: HandoffPacket
     ) -> None:
+        """Refuse to record a packet read, so the route cannot return the packet unaudited."""
         raise NotImplementedError(
             "the console's audit-of-agent-reads write is not wired into this application"
         )
@@ -204,6 +205,7 @@ class AuditNotYetImplemented:
         ticket_ref: str,
         timeline: tuple[TimelineEntry, ...],
     ) -> None:
+        """Refuse to record a timeline read, so the route cannot return the timeline unaudited."""
         raise NotImplementedError(
             "the console's audit-of-agent-reads write is not wired into this application"
         )
