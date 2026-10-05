@@ -2964,6 +2964,28 @@ def test_a_merchant_that_names_nothing_keeps_the_presented_transaction(
     assert selected == "TX-1"
 
 
+@pytest.mark.parametrize(
+    "other",
+    [
+        TransactionHint(amount=Decimal("15.99")),
+        TransactionHint(date_on=date(2026, 6, 10), date_source=DateSource.ABSOLUTE),
+    ],
+    ids=["amount", "date"],
+)
+def test_a_blank_merchant_does_not_keep_the_selection_when_another_amount_or_date_is_named(
+    other: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The amount or date beside a blank merchant still drops the transaction that was on offer."""
+    selected, _reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        other.model_copy(update={"merchant": " "}),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected != "TX-1"
+
+
 def test_naming_a_different_merchant_while_one_is_presented_presents_that_one(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
