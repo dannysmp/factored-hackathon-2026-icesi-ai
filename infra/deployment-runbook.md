@@ -21,7 +21,7 @@ Every command below is written so that a secret value appears only on the mainta
 
 - The GitHub CLI is signed in to this repository (`gh auth status`): script `01` and the deploy commands use it.
 - The GitHub Actions repository secret `AWS_ACCOUNT_ID` holds the target account's numeric ID.
-- The operational seed is built on this machine from the raw data already in `data/raw` (`make pipeline && make seed`, which need no AWS profile), so `data/gold/ops_seed/` exists. It is never built in CI or on the host.
+- The operational seed is built on this machine from the raw data already in `data/raw` (`make pipeline && make seed`, which need no AWS profile), so `data/gold/ops_seed/` exists. It is never built in CI or on the host. The seed bucket must hold this same seed: step 4 publishes it and checks it.
 - The repository is on `main`, up to date, and CI is green on the commit that will be deployed.
 - The monthly cost alert and the model provider's spend limit are set. Neither is created by any script or visible in the repository; see [Cost controls outside the repository](#cost-controls-outside-the-repository).
 
@@ -72,7 +72,18 @@ Constraints the backend enforces at start-up, so a mistake here fails the deploy
 
 Regenerating a code after a deployment is running changes nothing until the next deploy, because the host reads the parameters when the stack starts. Redeploy (step 4) after any regeneration.
 
-## 4. Deploy
+## 4. Publish the seed, then deploy
+
+Every deploy reloads the database from the seed bucket, so the bucket must hold the current seed before each dispatch. Refresh it whenever the seed's schema or inputs changed since the last publish, and confirm the bucket's manifest matches the local one (it prints a difference, or `seed bucket matches the local seed`):
+
+```sh
+make pipeline && make seed
+aws s3 sync data/gold/ops_seed/ "s3://$(infra/scripts/11-create-seed-bucket.sh)/ops_seed/" \
+  && aws s3 cp "s3://$(infra/scripts/11-create-seed-bucket.sh)/ops_seed/manifest.json" - | diff - data/gold/ops_seed/manifest.json \
+  && echo "seed bucket matches the local seed"
+```
+
+A bucket built before a column existed leaves that column at its default in the deployed database, so a rule that depends on it never fires: without `customers.is_repeat_complainer`, repeat complainers are not handed to a person. The loader refuses a seed that lacks that column and names it in the error, but it guards only that column. The manifest comparison confirms the publish took effect, so the bucket holds exactly the seed just built.
 
 For a deployment meant to persist, turn the teardown off:
 
