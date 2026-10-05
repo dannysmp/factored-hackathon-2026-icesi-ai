@@ -4,7 +4,13 @@ import type { JSX } from 'react'
 import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { HandoffPacket, LocalizedTitle } from '../contracts'
 import type { Lang } from '../../customer-chat/contracts'
-import { formatDate, formatMoney, formatScoreAgainstThreshold, formatShare } from '../format'
+import {
+  formatDate,
+  formatDateTime,
+  formatMoney,
+  formatScoreAgainstThreshold,
+  formatShare,
+} from '../format'
 import {
   CATEGORY_LABELS,
   LANGUAGE_LABELS,
@@ -34,8 +40,7 @@ function customerName(firstName: string): string {
 
 /**
  * The packet: the request first, as a summary of who is asking and why (with the case already
- * filed for it, when there is one), then the
- * verified facts, the actions taken or refused, the evidence (reason codes, policy version, source
+ * filed for it, when there is one, and the moment of the handoff), then the verified facts, the actions taken or refused, the evidence (reason codes, policy version, source
  * sections, and the risk score with its uncertainty, base rate and routing threshold when there is
  * one), and the open questions. Every value is written for an agent reading Spanish: a known
  * machine value through its label, dates and amounts in the console's own format, a score as a
@@ -83,6 +88,8 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
           )}
           <dt>Fecha de referencia</dt>
           <dd>{formatDate(packet.reference_date)}</dd>
+          <dt>Registrado</dt>
+          <dd>{formatDateTime(packet.created_at)}</dd>
         </dl>
       </section>
 
