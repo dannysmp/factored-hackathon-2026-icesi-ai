@@ -4,7 +4,7 @@
  * four digits.
  */
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DEMO_TICKET_DETAILS } from '../fixtures'
 import { formatDate, formatDateTime, formatMoney as money, formatShare as share } from '../format'
 import { REQUEST_SUMMARY_LABELS } from '../labels'
@@ -299,5 +299,23 @@ describe('PacketPanel', () => {
     const { container } = render(<PacketPanel packet={FIRST.packet} />)
 
     expect(container.querySelector('.queue-table-openable')).toBeNull()
+  })
+
+  it('lists a reason code once per occurrence without a duplicate-key warning', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const code = FIRST.packet.evidence.reason_codes[0]
+    if (code === undefined) {
+      throw new Error('fixture setup: the first packet needs a reason code')
+    }
+    const packet = {
+      ...FIRST.packet,
+      evidence: { ...FIRST.packet.evidence, reason_codes: [code, code] },
+    }
+
+    const { container } = render(<PacketPanel packet={packet} />)
+
+    expect(container.querySelectorAll('.packet-plain-list li')).toHaveLength(2)
+    expect(consoleError).not.toHaveBeenCalled()
+    consoleError.mockRestore()
   })
 })
