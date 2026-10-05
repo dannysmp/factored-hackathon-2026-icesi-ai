@@ -981,7 +981,7 @@ class DialogueController:
         cannot be read back, the hint is searched for afresh rather than assumed to match. The
         hint arrives with a merchant that names nothing already removed, so a customer who answers
         with only a word for a kind of transaction keeps the presented one, which the confirmation
-        shows in full before anything is filed.
+        shows in full before a case is filed.
         """
         if hint.is_empty:
             return False
