@@ -12,6 +12,13 @@
   padding: var(--space-4);
 }
 
+/* A quiet button has no visible edge, so its label should line up with the content below it; the
+   negative margin cancels the button's own horizontal padding and border. */
+.ticket-detail-screen .ticket-back {
+  align-self: flex-start;
+  margin-inline-start: calc(-1 * (var(--space-4) + var(--border-width-thin)));
+}
+
 .ticket-detail-screen dl {
   display: grid;
   grid-template-columns: minmax(9rem, 12rem) 1fr;
