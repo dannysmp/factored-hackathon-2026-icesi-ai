@@ -73,10 +73,19 @@
 #   re-derives or re-touches the data. The closing `restart backend` makes a
 #   backend whose image tag did not change (so `up -d` left it running) pick
 #   up the reloaded seed.
+#   The analytics schema the dashboard reads is loaded right after the
+#   operational seed, from the dispute-demand marts the same bucket holds under
+#   `dispute_demand/` (`pipelines.analytics_load` verifies their manifest first
+#   and reloads every `analytics.*` table in one transaction, with a row-count
+#   and checksum parity check). A bucket without the marts stops the deploy at
+#   that step rather than leaving the dashboard empty. 13-verify-analytics.sh
+#   then checks, from the workflow, that every table a dashboard question reads
+#   holds rows.
 #   Idempotent: `docker compose up -d` reconciles a running stack to the new
 #   image tag rather than erroring on one already up; `load_seed` truncates
-#   and reloads in one transaction, so a redeploy against an already-seeded
-#   database never duplicates rows.
+#   and reloads in one transaction, and so does `analytics_load` for its own
+#   tables, so a redeploy against an already-loaded database never duplicates
+#   rows.
 # Usage:
 #   IMAGE_TAG=<sha> infra/scripts/05-deploy.sh
 # =============================================================================
@@ -201,11 +210,15 @@ echo "ALTER ROLE \${pg_role} PASSWORD :'pw'" | docker compose exec -T postgres \
   psql -v ON_ERROR_STOP=1 -v pw="\${POSTGRES_PASSWORD}" -U "\${pg_role}" -d "\${pg_db}"
 mkdir -p /opt/dispute-intake/seed/ops_seed
 aws s3 sync "s3://${SEED_BUCKET}/ops_seed/" /opt/dispute-intake/seed/ops_seed/
+mkdir -p /opt/dispute-intake/seed/dispute_demand
+aws s3 sync --delete "s3://${SEED_BUCKET}/dispute_demand/" /opt/dispute-intake/seed/dispute_demand/
 chmod -R a+rX /opt/dispute-intake/seed
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -T backend \
   python -m app.persistence.migrate
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -T backend \
   python -m app.persistence.load_seed
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -T backend \
+  python -m pipelines.analytics_load
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.prod.yml restart backend
 SCRIPT

@@ -35,7 +35,9 @@
 #   the image's `/app` working directory), so the deploy step's one-off
 #   `docker compose run` invocations need no extra flag to find it. The
 #   directory is populated by the deploy step itself, from this project's own
-#   seed bucket (11-create-seed-bucket.sh), never baked into the image.
+#   seed bucket (11-create-seed-bucket.sh), never baked into the image. The
+#   dispute-demand marts mount the same way, at `pipelines.analytics_load`'s own
+#   default `--gold` path (`data/gold/dispute_demand`).
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #   (the deploy pipeline sets the environment variables above
@@ -62,6 +64,7 @@ services:
       LLM_DAILY_SPEND_LIMIT_USD: ${LLM_DAILY_SPEND_LIMIT_USD:-10}
     volumes:
       - ./seed/ops_seed:/app/data/gold/ops_seed:ro
+      - ./seed/dispute_demand:/app/data/gold/dispute_demand:ro
     depends_on:
       postgres:
         condition: service_healthy
