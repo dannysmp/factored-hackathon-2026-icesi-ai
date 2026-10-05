@@ -44,7 +44,7 @@ def test_tokenize_drops_stopwords_and_short_words() -> None:
 
 
 def test_tokenize_folds_a_synonym_to_its_canonical_term() -> None:
-    """AC-E5-53: a paraphrase using a synonym reads as the term the corpus itself uses."""
+    """A paraphrase using a synonym reads as the term the corpus itself uses."""
     assert "plazo" in tokenize("¿cuánto tiempo tengo?", "es")
     assert "prazo" in tokenize("qual o tempo que eu tenho?", "pt")
     assert "deadline" in tokenize("what is the time limit?", "en")
@@ -79,7 +79,7 @@ def test_tokenize_returns_nothing_for_text_with_no_content_word() -> None:
 def test_a_covered_question_finds_its_section_within_the_top_three(
     retriever: LexicalRetriever, lang: Lang, query: str, expected_section: str
 ) -> None:
-    """Recall at three (AC-E5-52): the right section is among the best three matches."""
+    """Recall at three: the right section is among the best three matches."""
     hits = retriever.search(query, lang)
 
     assert expected_section in {hit.chunk.section_id for hit in hits[:3]}
@@ -97,7 +97,7 @@ def test_a_question_that_shares_no_term_with_the_corpus_abstains(
 def test_an_unrelated_banking_question_abstains_in_every_language(
     retriever: LexicalRetriever,
 ) -> None:
-    """AC-E5-51: a question outside the corpus abstains, not just in one language."""
+    """A question outside the corpus abstains, not just in one language."""
     assert retriever.search("quiero cambiar mi contraseña de la aplicación", "es") == ()
     assert retriever.search("quero mudar minha senha do aplicativo", "pt") == ()
     assert retriever.search("I need help resetting my password", "en") == ()
@@ -106,7 +106,7 @@ def test_an_unrelated_banking_question_abstains_in_every_language(
 @pytest.mark.parametrize(
     ("lang", "query"),
     [
-        # The originally reported forms (present perfect / conditional).
+        # Present-perfect and conditional forms.
         ("es", "mi hermano ha sido muy amable conmigo hoy"),
         ("pt", "acho que seria bom sair mais cedo do trabalho"),
         # A different tense of the same auxiliary, found on the very sentence in the corpus
@@ -137,8 +137,8 @@ def test_an_unrelated_banking_question_abstains_in_every_language(
 def test_a_common_auxiliary_verb_conjugation_does_not_leak_relevance(
     retriever: LexicalRetriever, lang: Lang, query: str
 ) -> None:
-    """AC-E5-51: an unrelated sentence sharing only a "to be"/"to have" auxiliary — in any
-    person or tense, not only the specific forms first reported — still abstains."""
+    """An unrelated sentence sharing only a "to be"/"to have" auxiliary — in any person or
+    tense, not only the present-perfect and conditional forms — still abstains."""
     assert retriever.search(query, lang) == ()
 
 
@@ -451,8 +451,8 @@ def test_every_auxiliary_verb_form_is_a_stopword(retriever: LexicalRetriever) ->
 def test_a_synonym_folds_across_its_verb_conjugations_without_corrupting_other_words(
     retriever: LexicalRetriever,
 ) -> None:
-    """AC-E5-53: a conjugated form of the synonym still finds its section; a word that merely
-    contains a synonym as a substring is never corrupted by the fold."""
+    """A conjugated form of the synonym still finds its section; a word that merely contains a
+    synonym as a substring is never corrupted by the fold."""
     hits = retriever.search("¿cuándo vencen mis disputas?", "es")
 
     assert "filing-windows" in {hit.chunk.section_id for hit in hits[:3]}
@@ -460,7 +460,7 @@ def test_a_synonym_folds_across_its_verb_conjugations_without_corrupting_other_w
 
 
 def test_search_never_returns_a_hit_from_another_language(retriever: LexicalRetriever) -> None:
-    """AC-E5-54: search runs only within the query's own language."""
+    """Search runs only within the query's own language."""
     for lang in ("es", "pt", "en"):
         hits = retriever.search("dispute fraud claim plazo prazo deadline", lang)
         for hit in hits:

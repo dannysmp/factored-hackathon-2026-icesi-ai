@@ -5,7 +5,7 @@ Secret Export and Optional-Secret Resolution Tests
 Component: the secret-resolution block ``infra/scripts/05-deploy.sh``'s remote script runs
 before ``docker compose ... up -d`` -- the three mandatory secrets (``ANTHROPIC_API_KEY``,
 ``SESSION_SIGNING_KEY``, ``POSTGRES_PASSWORD``), ``resolve_optional_secret()``, and the three
-optional secrets it resolves (issue #275). A genuine SSM lookup failure on any of the six
+optional secrets it resolves. A genuine SSM lookup failure on any of the six
 secrets must refuse the deploy rather than continue toward ``docker compose up`` with an empty
 value. A prior version silently swallowed this: ``export VAR="$(cmd)"`` masks a failing command
 substitution's own exit status behind ``export``'s own success under ``set -euo pipefail``, so a
@@ -72,7 +72,7 @@ esac
 
 
 def _extract_secret_export_block() -> str:
-    """The exact secret-resolution block from 05-deploy.sh's remote script (issue #275).
+    """The exact secret-resolution block from 05-deploy.sh's remote script.
 
     Reads the real file rather than a hand-copied duplicate, so a revert or edit of the
     export-splitting fix changes what this test executes, not just what it would display.
@@ -130,7 +130,7 @@ def _run_block(stub_bin: Path, script: str, **extra_env: str) -> subprocess.Comp
 
 
 def test_a_mandatory_secret_access_failure_refuses_the_deploy(stub_aws: Path) -> None:
-    """Issue #275's core regression: a genuine SSM error must never look like a clean deploy."""
+    """The core regression: a genuine SSM error must never look like a clean deploy."""
     result = _run_block(stub_aws, _extract_secret_export_block(), STUB_MANDATORY_FAIL="1")
 
     assert result.returncode != 0
