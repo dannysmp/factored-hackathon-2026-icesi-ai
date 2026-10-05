@@ -44,10 +44,10 @@ The system takes a customer's dispute from the first message to a verified, file
 right person. The model understands the request; a deterministic policy engine decides, tools
 scoped to the signed-in customer act, and every write is read back before the customer is told.
 
-On 135 scripted cases, run on the golden set against the live model, **safe automated resolution is 72.5%** for this system,
+On 135 scripted cases, run on the golden set against the live model, **safe automated resolution is 73.5%** for this system,
 against 33.0% for a keyword baseline and 36.9% for a model-only agent, with **zero unsafe
-outcomes** for all three. It misses more of the cases that need a person than the model-only agent does
-(missed transfers 15.2% against 9.1%). These are measurements on scripted cases, not
+outcomes** for all three. It misses slightly more of the cases that need a person than the model-only agent does
+(missed transfers 6.1% against 4.5%, a difference the run-to-run spread does not separate). These are measurements on scripted cases, not
 production results; the full table is under [Evaluation](#evaluation).
 
 - [Evaluation report](reports/evaluation.md): workload, metrics, variability, failures and judge validation
@@ -362,14 +362,14 @@ report states "not reportable by the judge" and shows the raters' means instead.
 | Metric (cases) | P | B0 | B1 |
 |---|---|---|---|
 | Runs | 3 | 1 | 1 |
-| Safe automated resolution (103 in scope) | 0.725 (range 0.718-0.728) | 0.330 | 0.369 |
-| Containment (103) | 0.809 (range 0.806-0.816) | 0.845 | 0.757 |
-| Escalation quality (22 needing a person) | 0.727 | 0.455 | 0.273 |
-| Missed transfers (22 needing a person) | 0.152 (range 0.136-0.182) | 0.545 | 0.091 |
-| Unnecessary transfers (81 not needing one) | 0.012 | 0.074 | 0.062 |
+| Safe automated resolution (103 in scope) | 0.735 (range 0.728-0.738) | 0.330 | 0.369 |
+| Containment (103) | 0.790 (range 0.786-0.796) | 0.845 | 0.738 |
+| Escalation quality (22 needing a person) | 0.833 (range 0.818-0.864) | 0.455 | 0.364 |
+| Missed transfers (22 needing a person) | 0.061 (range 0.045-0.091) | 0.545 | 0.045 |
+| Unnecessary transfers (81 not needing one) | 0.012 | 0.074 | 0.074 |
 | Unsafe outcomes (135) | 0.000 | 0.000 | 0.000 |
-| Latency, median / 95th percentile | 2.558 s / 4.402 s | 0.027 s / 0.046 s | 5.105 s / 12.217 s |
-| Cost per attempted case (USD) | 0.005 | 0.000 | 0.008 |
+| Latency, median / 95th percentile | 2.912 s / 4.549 s | 0.073 s / 0.114 s | 6.045 s / 12.898 s |
+| Cost per attempted case (USD) | 0.004 | 0.000 | 0.009 |
 
 P is the mean of its three runs; B0 and B1 ran once, so their figures carry no run-to-run range.
 Zero observed unsafe outcomes means none occurred in the case-runs counted, not that the risk is
@@ -377,10 +377,11 @@ zero. B0 keeps P's dialogue controller, policy engine and tools and replaces onl
 matching, so P against B0 measures what the model adds to the same system, not a comparison with a
 system that has no controller. B1 is the contrast without a controller: the model alone chooses
 the tool calls and outcomes.
-[`reports/evaluation-comparison.md`](reports/evaluation-comparison.md) sets this run beside the two
+[`reports/evaluation-comparison.md`](reports/evaluation-comparison.md) sets this run beside the
 earlier ones and lists the cases that still fail. The figures describe the commit the report names
-(`6cea3b4`), not the current head, which carries later behaviour fixes and whose effect is not
-measured. See [`docs/limitations.md`](docs/limitations.md).
+(`a73f4bc`); changes merged after it are not measured. The previous run measured the repeat-complainer
+rule against a seed that lacked the flag, which the comparison explains. See
+[`docs/limitations.md`](docs/limitations.md).
 
 ### Configuration
 

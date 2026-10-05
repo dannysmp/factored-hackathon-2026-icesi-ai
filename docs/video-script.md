@@ -78,7 +78,7 @@ is a viewer today."
 ## Results
 
 Show the headline table of `reports/evaluation.md`, captioned as an offline measurement on
-team-written cases. Narration: "On 135 team-written cases, safe automated resolution is 72.5%,
+team-written cases. Narration: "On 135 team-written cases, safe automated resolution is 73.5%,
 against 33.0% and 36.9% for the two baselines, with zero unsafe outcomes. The automated judge did
 not match both human raters on 80% of replies, so we do not report its scores."
 
