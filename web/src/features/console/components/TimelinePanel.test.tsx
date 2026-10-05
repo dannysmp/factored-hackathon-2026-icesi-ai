@@ -109,18 +109,22 @@ describe('TimelinePanel', () => {
   })
 
   it('keeps entries recorded at the same instant in the order they arrived', () => {
+    // Neither the turn nor the trace identifiers run in order (ascending or descending) across
+    // the three arrivals, so no tie-break on either can reproduce the arrival order by accident.
     render(
       <TimelinePanel
         entries={[
-          entry({ turn_id: 'turn-z', trace_id: 'trace-first' }),
-          entry({ turn_id: 'turn-a', trace_id: 'trace-second' }),
+          entry({ turn_id: 'turn-b', trace_id: 'trace-m' }),
+          entry({ turn_id: 'turn-c', trace_id: 'trace-x' }),
+          entry({ turn_id: 'turn-a', trace_id: 'trace-c' }),
         ]}
       />,
     )
 
     const rows = screen.getAllByRole('row')
-    expect(rows[1]).toHaveTextContent('trace-first')
-    expect(rows[2]).toHaveTextContent('trace-second')
+    expect(rows[1]).toHaveTextContent('trace-m')
+    expect(rows[2]).toHaveTextContent('trace-x')
+    expect(rows[3]).toHaveTextContent('trace-c')
   })
 
   it('shows the state transition and the reason code when there is one', () => {

@@ -4,8 +4,9 @@ import type { TimelineEntry } from '../contracts'
 import { formatDateTime } from '../format'
 import { INTENT_LABELS, REASON_CODE_LABELS, phaseLabel } from '../labels'
 
-/** Earliest first. Entries at the same instant keep the order they arrived in, since `sort` is
- * stable. */
+/** Earliest first. The service sends every moment in UTC, so the instants compare directly; entries
+ * at the same instant (including ones less than a millisecond apart, which `Date.parse` cannot
+ * tell apart) keep the order they arrived in, since `sort` is stable. */
 function byMoment(a: TimelineEntry, b: TimelineEntry): number {
   return Date.parse(a.occurred_at) - Date.parse(b.occurred_at)
 }
