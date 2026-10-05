@@ -420,6 +420,8 @@ def test_matches_hint_ignores_case_in_an_accented_name_typed_with_its_accent() -
         ("SAO PAULO", "são paulo"),
         ("Pão de Açúcar", "pao de acucar"),
         ("Señor Taco", "senor"),
+        ("Café", " Café "),
+        ("Café", "Café "),
     ],
 )
 def test_matches_hint_ignores_accents_whichever_side_carries_them(stored: str, typed: str) -> None:
@@ -2148,6 +2150,112 @@ def test_tool_failure_during_search_hands_off(policy: Policy, retriever: Lexical
     assert outbox.packets[0].trigger.value == "tool_failure"
 
 
+def _filing_port(*, cases: tuple[CaseRecord, ...], verified: bool = True) -> FakeToolPort:
+    """A port that evaluates the dispute as eligible with a confirmation and files it as D-1."""
+    return FakeToolPort(
+        transactions=(_transaction(),),
+        cases=cases,
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+        get_case_result=_UNSET if verified else None,
+    )
+
+
+def test_the_case_number_is_null_until_the_filing_turn_and_set_on_it(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """Only the reply that reports the verified filing carries the case number."""
+    dialogue = _Dialogue(policy, retriever, _filing_port(cases=(_case(),)))
+    before = [
+        dialogue.present_amazon(),
+        dialogue.say(_confirmation(ConfirmationAnswer.YES)),
+        dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE)),
+    ]
+    assert before[-1].next_expected is Slot.CONFIRMATION
+    assert [turn.case_number for turn in before] == [None, None, None]
+
+    filed = dialogue.say(_confirmation(ConfirmationAnswer.YES), turn_id="turn-filing")
+
+    assert filed.case_number == "D-1"
+    assert filed.handoff_ticket is None
+    assert dialogue.say(_plain(NluIntent.SMALL_TALK)).case_number is None
+
+
+def test_a_retried_filing_turn_carries_the_same_case_number(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The retry reports the case that was filed, and files nothing again."""
+    dialogue = _Dialogue(policy, retriever, _filing_port(cases=(_case(),)))
+    dialogue.present_amazon()
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    first = dialogue.say(_confirmation(ConfirmationAnswer.YES), turn_id="turn-filing")
+
+    retried = dialogue.say(_confirmation(ConfirmationAnswer.YES), turn_id="turn-filing")
+
+    assert retried.case_number == first.case_number == "D-1"
+    assert dialogue.port.create_calls == 1
+
+
+def test_a_retried_later_turn_reports_the_session_case_after_a_fresh_read_back(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A replay reports the latest outcome, so a retry after a filing repeats the filed case."""
+    dialogue = _Dialogue(policy, retriever, _filing_port(cases=(_case(),)))
+    dialogue.present_amazon()
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+    dialogue.say(_confirmation(ConfirmationAnswer.YES), turn_id="turn-filing")
+    later = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-later")
+    assert later.case_number is None
+
+    retried = dialogue.say(_plain(NluIntent.SMALL_TALK), turn_id="turn-later")
+
+    assert retried.case_number == "D-1"
+    assert dialogue.port.create_calls == 1
+
+
+def test_the_case_number_is_null_when_the_filing_could_not_be_verified(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A case the read-back did not find is handed to a person, never reported as filed."""
+    dialogue = _Dialogue(policy, retriever, _filing_port(cases=(), verified=False))
+    dialogue.present_amazon()
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+
+    handed_off = dialogue.say(_confirmation(ConfirmationAnswer.YES))
+
+    assert handed_off.case_number is None
+    assert handed_off.handoff_ticket is not None
+
+
+@pytest.mark.parametrize("closing", ["cancelled", "ineligible"])
+def test_the_case_number_is_null_when_the_dispute_ends_without_a_case(
+    policy: Policy, retriever: LexicalRetriever, closing: str
+) -> None:
+    """A cancelled or refused dispute has no case to report."""
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=(
+            _decision(Outcome.INELIGIBLE, ReasonCode.FILING_WINDOW_EXPIRED)
+            if closing == "ineligible"
+            else _decision(Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True)
+        ),
+    )
+    dialogue = _Dialogue(policy, retriever, port)
+    dialogue.present_amazon()
+    dialogue.say(_confirmation(ConfirmationAnswer.YES))
+    dialogue.say(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE))
+
+    ended = dialogue.say(_confirmation(ConfirmationAnswer.NO))
+
+    assert ended.case_number is None
+    assert port.create_calls == 0
+
+
 # -----------------------------------------------------------------------------
 # Browsing, status and policy questions
 # -----------------------------------------------------------------------------
@@ -3467,6 +3575,43 @@ def _selected_after_naming_then_naming_again(
         first, second, policy=policy, retriever=retriever, port=port
     )
     return selected, reply.reply
+
+
+@pytest.mark.parametrize("typed", ["\u0301", " ", "\u0301 \u0301"])
+def test_a_merchant_that_names_nothing_keeps_the_presented_transaction(
+    typed: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A blank merchant is no description at all, so the transaction on offer stays selected."""
+    selected, _reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(merchant=typed),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected == "TX-1"
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        TransactionHint(amount=Decimal("15.99")),
+        TransactionHint(date_on=date(2026, 6, 10), date_source=DateSource.ABSOLUTE),
+    ],
+    ids=["amount", "date"],
+)
+def test_a_blank_merchant_does_not_keep_the_selection_when_another_amount_or_date_is_named(
+    other: TransactionHint, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The amount or date beside a blank merchant still drops the transaction that was on offer."""
+    selected, _reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        other.model_copy(update={"merchant": " "}),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected != "TX-1"
 
 
 def test_naming_a_different_merchant_while_one_is_presented_presents_that_one(

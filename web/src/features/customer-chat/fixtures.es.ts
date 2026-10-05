@@ -28,6 +28,7 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     next_expected: 'transaction',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -43,6 +44,7 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     next_expected: 'transaction_choice',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -58,6 +60,7 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     next_expected: 'reason',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -73,6 +76,7 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     next_expected: 'confirmation',
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
   },
   {
     contract_version: '1',
@@ -87,7 +91,8 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     choices: [],
     next_expected: null,
     end_session: false,
-    handoff_ticket: 'D-2001',
+    handoff_ticket: null,
+    case_number: 'D-2001',
   },
   {
     contract_version: '1',
@@ -102,5 +107,6 @@ export const FILE_DISPUTE_ES: readonly TurnResponse[] = [
     next_expected: null,
     end_session: true,
     handoff_ticket: null,
+    case_number: null,
   },
 ] as const

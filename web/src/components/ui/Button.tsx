@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, JSX } from 'react'
+import type { ComponentProps, JSX } from 'react'
 import styles from './Button.module.css'
 import { classNames } from './classNames'
 
@@ -26,7 +26,7 @@ export function Button({
   variant?: ButtonVariant
   large?: boolean
   fullWidth?: boolean
-} & ButtonHTMLAttributes<HTMLButtonElement>): JSX.Element {
+} & ComponentProps<'button'>): JSX.Element {
   const classes = classNames(
     styles.button,
     styles[variant],

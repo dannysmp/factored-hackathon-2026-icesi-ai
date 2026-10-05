@@ -1,0 +1,13 @@
+/* The standard visually-hidden idiom: kept in the accessibility tree, removed from the layout.
+   Its 1px values are the technique's own constants, not design-scale values. */
+.announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

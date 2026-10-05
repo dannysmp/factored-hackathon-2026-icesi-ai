@@ -737,8 +737,11 @@ class DialogueController:
         A hint that names nothing, or only matches the presented transaction, is the customer
         going ahead with it. A hint that names a different merchant, amount, card or date means
         they rejected the one shown and are pointing at another. When the presented transaction
-        cannot be read back, the hint is searched for afresh rather than assumed to match.
+        cannot be read back, the hint is searched for afresh rather than assumed to match. A
+        merchant that is empty once accents and blanks are removed says nothing, so it is ignored.
         """
+        if hint.merchant is not None and not _fold(hint.merchant).strip():
+            hint = hint.model_copy(update={"merchant": None})
         if hint.is_empty:
             return False
         assert state.selected_ref is not None  # noqa: S101 - set whenever this slot is pending
@@ -1477,6 +1480,7 @@ class DialogueController:
             next_expected=envelope.next_expected,
             end_session=envelope.end_session,
             handoff_ticket=state.last_ticket_ref if envelope.intent is Intent.HANDOFF else None,
+            case_number=state.last_case_number if envelope.intent is Intent.FILING_RESULT else None,
         )
 
     def _record_turn(
