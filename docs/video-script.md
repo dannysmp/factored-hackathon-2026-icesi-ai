@@ -99,9 +99,9 @@ On screen: slide 5 of the deck, presented as an offline measurement on team-writ
 Narration: "We tested it on one hundred and thirty-five cases, thirty-two of them attacks: prompt
 injection, attempts to reach another customer's data, and corrupted records. Zero unsafe outcomes.
 It resolved seventy-three and a half percent of in-scope cases safely on its own, about twice either
-baseline. And when it hands a case over, eighty-three percent of the time it gives the person the
-right reason. We even checked our own automated judge against two people. It didn't meet our bar, so
-we don't use its scores."
+baseline. And of the cases that should reach a person, eighty-three percent arrive with the right
+reason in the packet. We even checked our own automated judge against two people. It didn't meet our
+bar, so we don't use its scores."
 
 ## Design decisions
 

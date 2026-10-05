@@ -91,8 +91,9 @@ results still to come say so and name the command that completes them.
 - **The proposed system does not lead on missed transfers.** Of the 22 cases that need a person,
   it misses 6.1% (range 4.5% to 9.1% over three runs) against 4.5% for the model-only agent, which
   ran once; the two cannot be told apart on this evidence, but the proposed system does not come
-  out ahead. The previous full run reported 15.2% because its operational seed lacked the
-  repeat-complainer flag, so the rule could not fire; the loader now refuses such a seed. Four
+  out ahead. The previous full run reported 15.2% on an operational seed that lacked the
+  repeat-complainer flag, which explains at least six of its ten missed case-runs; the loader now
+  refuses such a seed. Four
   adversarial bad-data cases expect an immediate single-turn handoff where the system asks a
   clarifying question first, and one amount case is read as unclear by the language-understanding
   step. The decline path is measured by no golden case. The per-segment fairness slice comes from a
