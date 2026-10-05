@@ -31,9 +31,11 @@ from app.persistence.migrate import apply_migrations
 from app.retrieval.corpus_index import CorpusIndexError
 from contracts.service_v1.api import TurnResponse
 from contracts.service_v1.envelope import Intent
+from contracts.service_v1.tools import Tool
 from evals.cost import TurnCostLedger
+from evals.injector import FailureSchedule
 from evals.metrics import CaseResult
-from evals.models import Case, CaseCategory
+from evals.models import Case, CaseCategory, InjectedToolFailure
 from evals.runner.runner import run_cases
 from evals.scoring import RunTranscript
 
@@ -306,6 +308,38 @@ def test_a_cost_ledger_attaches_each_cases_own_session_cost(
     )
 
     assert [r.cost_usd for r in results] == [0.5, 0.25, None]
+
+
+def test_the_failure_schedule_holds_each_cases_own_failure_while_it_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = InjectedToolFailure(tool=Tool.LIST_TRANSACTIONS, cause="timeout")
+    schedule = FailureSchedule()
+    seen: dict[str, InjectedToolFailure | None] = {}
+
+    def recording_run_case(
+        client: object, case: Case, *, customer_id: str, test_login_key: str
+    ) -> RunTranscript:
+        seen[case.case_id] = schedule.failure
+        return _stub_transcript(case, "S-1")
+
+    monkeypatch.setattr("evals.runner.runner.resolve_customer_id", lambda dsn, ref: "CUST-A")
+    monkeypatch.setattr("evals.runner.runner.run_case", recording_run_case)
+    monkeypatch.setattr("evals.runner.runner.score_case", _stub_score)
+
+    run_cases(
+        cast(httpx.Client, object()),
+        "unused-dsn",
+        (
+            _case(case_id="healthy"),
+            _case(case_id="failing", injected_failure=failure),
+        ),
+        test_login_key=LOGIN_KEY,
+        failure_schedule=schedule,
+    )
+
+    assert seen == {"healthy": None, "failing": failure}
+    assert schedule.failure is None
 
 
 def test_without_a_cost_ledger_no_cost_is_attached(monkeypatch: pytest.MonkeyPatch) -> None:

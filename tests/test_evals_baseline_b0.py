@@ -51,6 +51,25 @@ def test_build_b0_app_needs_no_database_when_no_sign_in_path_is_enabled() -> Non
     assert app is not None
 
 
+def test_build_b0_app_hands_the_tool_port_decorator_to_the_application_it_builds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, Any] = {}
+
+    def fake_create_app(settings: Settings, **kwargs: Any) -> str:
+        received.update(kwargs)
+        return "app"
+
+    def decorator(principal: object, port: object) -> object:
+        return port
+
+    monkeypatch.setattr("evals.runner.baselines.b0.create_app", fake_create_app)
+
+    build_b0_app(load_settings(env_file=None), tool_port_decorator=decorator)  # type: ignore[arg-type]
+
+    assert received == {"tool_port_decorator": decorator}
+
+
 def test_build_b0_app_refuses_when_app_env_is_prod() -> None:
     """A ``Settings`` object with ``app_env=prod`` is refused even though ``model_copy`` never
     revalidates ``Settings``'s own ``llm_provider=stub``-in-prod rule; a settings object built
