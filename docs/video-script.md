@@ -2,7 +2,7 @@
 
 A walk through the deployed system: the language switch, three paths with one demonstration persona
 each, the evaluation result and four design decisions. The total is about two minutes forty-five
-seconds, under the three-minute limit.
+seconds, under the three-minute limit; the Timing table gives the pace the narration assumes.
 
 ## Before recording
 
@@ -21,32 +21,31 @@ has, so a persona's customer lines are written for that persona's transactions.
 
 | Path | Persona | Customer lines | Checked against |
 |---|---|---|---|
-| Normal filing | Joao, Portuguese | Written for his Farmacia Salud charge | Played end to end on the deployed system |
+| Normal filing | Joao, Portuguese | Written for his Farmacia Salud charge; the first and third lines are those of demo script 2 | Played end to end on the deployed system |
 | Unsupported request | Ana, Spanish | Demo script 4, verbatim | Wording of the refusal checked in the fixture; not yet played on the deployed system |
 | Fraud handoff | Mariana, Portuguese | Demo script 7, verbatim | Played on the deployed system |
 
 Case and ticket numbers are read off the screen, never from this script: the deployed formats are
 `CASE-` and `T-` followed by the date and eight characters.
 
-## Opening (about 15 seconds)
+## Opening
 
-"This is a transaction-dispute intake system for a simulated bank. A customer describes a problem
-with a charge in Spanish, Portuguese or English. The model only understands the request: the
-language and the intent. Everything the customer reads comes from fixed templates filled with
-verified facts, and what happens next is decided by a deterministic policy engine."
+Narration: "This system takes a bank customer's transaction dispute, in Spanish, Portuguese or
+English. The model only understands the request. Replies are fixed templates filled with verified
+facts, and a deterministic policy engine decides."
 
 On screen: the sign-in page, with the demonstration notice. Once signed in, the chat and the
 console state that the session is a demonstration and show the date the data is current as of,
 June 18, 2026.
 
-## Language switch (about 8 seconds)
+## Language switch
 
-On the sign-in page, press Español, then Português, then English. Each button selects that
-language's first demonstration persona. Narrate: "The assistant works in Spanish and Portuguese,
-and in English as well. A customer simply writes in their language." End on Português, which
-selects Joao for the first path.
+On the sign-in page, press Español, then Português, then English. A button selects that language's
+first demonstration persona, unless that language is already selected. Narration: "Spanish and
+Portuguese are required; English is added. The customer simply writes in their language." End on
+Português, which selects Joao for the first path.
 
-## Path 1: normal filing, Joao in Portuguese (about 35 seconds)
+## Path 1: normal filing, Joao in Portuguese
 
 Customer lines, in order:
 
@@ -55,67 +54,68 @@ Customer lines, in order:
 3. "Sim, é essa."
 4. "Sim, registrar"
 
-The system asks which charge, finds one transaction and shows it in US dollars, asks for
-confirmation, then files. Stop on the filed screen with the case number. Narrate
-over the confirmation: "Nothing is filed until the customer approves a plain-language summary,
-and the case number is shown only after the record has been read back."
+The reason comes from the first line, so the system asks only which charge, finds one transaction and shows it in US dollars, asks for
+confirmation, then files. Stop on the filed screen with the case number. Narration over the
+confirmation: "Nothing is filed until the customer approves a plain-language summary, and the case
+number appears only after the record is read back."
 
-## Path 2: unsupported request, Ana in Spanish (about 12 seconds)
+## Path 2: unsupported request, Ana in Spanish
 
-Sign out, choose Español and sign in as Ana. Customer line: "Quiero aumentar el límite de mi tarjeta de
-crédito." The system refuses plainly and offers the card section of the bank's app or a person.
-Narrate: "A request the system cannot act on is refused with a real next step. It is not guessed
-at."
+Sign out, choose Español and sign in as Ana. Customer line: "Quiero aumentar el límite de mi
+tarjeta de crédito." The system refuses plainly and offers the card section of the bank's app or a
+person. Narration: "A request outside its scope is refused plainly, with a real next step."
 
-## Path 3: human-required, Mariana in Portuguese (about 35 seconds)
+## Path 3: human-required, Mariana in Portuguese
 
-Sign out, choose Português, select Mariana's card and sign in. Customer line: "Tem uma cobrança que eu não reconheço e acho que é uma fraude,
-alguém está usando meu cartão." The reply hands the case to an attendant, promises no outcome and
-gives a ticket reference; show it on screen. Switch to the agent console, signed in as
-agent-beatriz, find that ticket in the queue and open its packet, with every identifier masked.
-Narrate: "A possible fraud always reaches a person, whatever the amount. The agent gets the
-request, the verified facts, the actions taken and the open questions. The console is a viewer
-today: its audited actions exist in the API and have no screen yet."
+Sign out, choose Português, select Mariana's card and sign in. Customer line: "Tem uma cobrança
+que eu não reconheço e acho que é uma fraude, alguém está usando meu cartão." The reply hands the
+case to an attendant, promises no outcome and gives a ticket reference; show it on screen. Switch
+to the agent console, signed in as agent-beatriz, find that ticket in the queue and open its
+packet, with every identifier masked. Narration: "A possible fraud goes to a person, whatever the
+amount. The agent sees the request, verified facts, actions taken and open questions. The console
+is a viewer today."
 
-## Results (about 15 seconds)
+## Results
 
-Show the results table of `reports/evaluation.md`. Narrate: "On 135 scripted cases, this design
-resolves 72.5% of in-scope cases safely and automatically. A keyword baseline reaches 33.0% and a
-model-only agent 36.9%. Unsafe outcomes: zero on all 135, though that is an offline measurement,
-not proof of zero risk. The automated judge that scores wording was checked against two human
-raters and did not reach the 80% agreement bar on any dimension, so we do not report its scores."
+Show the headline table of `reports/evaluation.md`, captioned as an offline measurement on
+team-written cases. Narration: "On 135 team-written cases, safe automated resolution is 72.5%,
+against 33.0% and 36.9% for the two baselines, with zero unsafe outcomes. The automated judge did
+not match both human raters on 80% of replies, so we do not report its scores."
 
-## Design decisions (about 40 seconds, four at about 10 seconds each)
+## Design decisions
 
-- **Decide, then render:** a deterministic policy engine decides eligibility and routing, because a
-  financial decision must be reproducible with a stable reason code. The model never decides an
-  outcome, and replies come from fixed templates filled with verified facts.
-- **Authorization in the tool layer:** no tool accepts a customer identifier as an argument, so
-  reaching another customer's data is not forbidden but inexpressible.
-- **The risk model routes, policy decides:** a risk score can only send a case to human review. It
-  never determines eligibility or the outcome.
-- **Lexical retrieval with abstention:** policy questions are answered from a small versioned
-  corpus with a relevance floor, and below that floor the system says it does not have the answer
-  and offers a person.
+Four decisions, each narrated in one sentence:
 
-## Closing (about 7 seconds)
+- **Decide, then render:** "A deterministic policy engine decides, with stable reason codes; the
+  model never decides an outcome, and replies are filled templates."
+- **Authorization in the tool layer:** "No tool accepts a customer identifier, so reaching another
+  customer's data cannot even be expressed."
+- **The risk model routes, policy decides:** "A risk score can only send a case to a person, never
+  decide eligibility."
+- **Lexical retrieval with abstention:** "Policy answers come from a small cited corpus; below a
+  relevance floor, the system says so and offers a person."
 
-"What is built, what is deferred and what remains is written in the repository's limitations
-report. Nothing in this recording claims more than the code behind it does."
+## Closing
+
+Narration: "What is built, what is deferred and what remains are in the limitations report.
+Nothing here claims more than the code does."
 
 ## Timing
 
-| Part | Seconds |
-|---|---|
-| Opening | 15 |
-| Language switch | 8 |
-| Path 1 | 35 |
-| Path 2 | 12 |
-| Path 3 | 35 |
-| Results | 15 |
-| Design decisions | 40 |
-| Closing | 7 |
-| Total | 167 |
+The narration assumes a pace of 150 words a minute (2.5 words a second). The remaining time in each
+part is for sign-ins, typing, replies and console navigation.
+
+| Part | Seconds | Narration words | Seconds of speech |
+|---|---|---|---|
+| Opening | 15 | 33 | 13 |
+| Language switch | 7 | 15 | 6 |
+| Path 1 | 33 | 22 | 9 |
+| Path 2 | 12 | 13 | 5 |
+| Path 3 | 33 | 28 | 11 |
+| Results | 18 | 41 | 16 |
+| Design decisions | 40 | 69 | 28 |
+| Closing | 9 | 22 | 9 |
+| Total | 167 | 243 | 97 |
 
 ## Notes for the recording
 
