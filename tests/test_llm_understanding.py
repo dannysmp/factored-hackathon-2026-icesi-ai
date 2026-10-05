@@ -60,7 +60,7 @@ def test_a_well_formed_tool_call_maps_to_a_validated_nlu_result() -> None:
     assert str(result.transaction.amount) == "125.50"
     assert result.transaction.currency == "MXN"
     assert accounting == TurnAccounting(
-        model=_MODEL, prompt_version="5", input_tokens=0, output_tokens=0, latency_ms=0.0
+        model=_MODEL, prompt_version="8", input_tokens=0, output_tokens=0, latency_ms=0.0
     )
 
 
@@ -216,7 +216,7 @@ def test_the_request_carries_the_configured_model_and_the_prompt_version() -> No
     nlu.understand("algo", language_hint="es", reference_date=_REFERENCE_DATE)
 
     assert llm.requests[0].model == _MODEL
-    assert llm.requests[0].prompt_version == "5"
+    assert llm.requests[0].prompt_version == "8"
     assert llm.requests[0].temperature == 0.0
 
 
@@ -254,7 +254,7 @@ def test_a_successful_calls_accounting_matches_the_completions_own_fields() -> N
     _result, accounting = nlu.understand("algo", language_hint="es", reference_date=_REFERENCE_DATE)
 
     assert accounting == TurnAccounting(
-        model=_MODEL, prompt_version="5", input_tokens=120, output_tokens=40, latency_ms=812.5
+        model=_MODEL, prompt_version="8", input_tokens=120, output_tokens=40, latency_ms=812.5
     )
 
 
