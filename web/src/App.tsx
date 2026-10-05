@@ -50,7 +50,7 @@ export function App(): JSX.Element {
   if (session === null || client === null) {
     return (
       <>
-        <PageHeader title={t('app.title')} />
+        <PageHeader title={t('app.title')} width="form" />
         <main>
           {expiredIn !== null && (
             <div className={styles.notice} lang={expiredIn}>

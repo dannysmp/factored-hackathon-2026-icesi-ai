@@ -1,6 +1,6 @@
 /** Component test: the app shell walks sign-in into the live chat, with no accessibility
  * violations on the sign-in screen. Both the sign-in and the turn endpoint are a mocked `fetch`. */
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -163,6 +163,30 @@ describe('App', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getAllByRole('main')).toHaveLength(1)
   })
+
+  it.each([
+    ['es', es],
+    ['pt', pt],
+    ['en', en],
+  ] as const)(
+    'names the product once on the sign-in step in %s, the card heading being the task',
+    async (language, catalog) => {
+      stubTheWholeFlow({ personaLanguage: language })
+      render(<App />)
+
+      await screen.findByRole('group', { name: catalog['signin.personaGroupLabel'] })
+      await waitFor(() => {
+        expect(document.documentElement.lang).toBe(language)
+      })
+      const title = screen.getByRole('heading', { level: 1 })
+      expect(title).toHaveTextContent(catalog['app.title'])
+      const sectionHeadings = within(screen.getByRole('main')).getAllByRole('heading')
+      expect(sectionHeadings.map((heading) => heading.tagName)).toEqual(['H2'])
+      expect(sectionHeadings[0]).toHaveTextContent(catalog['signin.heading'])
+      expect(sectionHeadings[0]?.textContent).not.toBe(title.textContent)
+      expect(screen.getAllByText(catalog['app.title'])).toHaveLength(1)
+    },
+  )
 
   it('frames the chat step with the same banner, title and single main landmark', async () => {
     stubTheWholeFlow()

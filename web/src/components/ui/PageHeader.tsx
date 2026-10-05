@@ -8,9 +8,9 @@ import styles from './PageHeader.module.css'
  * optional slot on the right for actions that belong to the whole page (signing out, for example).
  *
  * It renders a `banner` landmark, so it sits beside `main` rather than inside it. `width` matches
- * the page's own content area: `narrow` for the single-column chat and sign-in, `wide` for the
- * console's tables, so the header's edges line up with the main column. A narrower element inside
- * that column, such as the sign-in card, stays centered under it.
+ * the page's own content area: `narrow` for the single-column chat, `form` for the sign-in card
+ * and `wide` for the console's tables, so the header's brand lines up with the left edge of the
+ * content beneath it.
  */
 export function PageHeader({
   title,
@@ -18,12 +18,12 @@ export function PageHeader({
   children,
 }: {
   title: string
-  width?: 'narrow' | 'wide'
+  width?: 'narrow' | 'form' | 'wide'
   children?: ReactNode
 }): JSX.Element {
   return (
     <header className={styles.header}>
-      <div className={classNames(styles.inner, width === 'wide' ? styles.wide : styles.narrow)}>
+      <div className={classNames(styles.inner, styles[width])}>
         <div className={styles.brand}>
           <svg className={styles.mark} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
             <rect width="32" height="32" rx="7" fill="currentColor" />

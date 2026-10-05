@@ -66,7 +66,7 @@ export function ConsoleApp(): JSX.Element {
   if (session === null || queueClient === null || ticketDetailClient === null) {
     return (
       <>
-        <PageHeader title={CONSOLE_TITLE} width="wide" />
+        <PageHeader title={CONSOLE_TITLE} width="form" />
         <main>
           {expired ? (
             <div className={styles.notice}>

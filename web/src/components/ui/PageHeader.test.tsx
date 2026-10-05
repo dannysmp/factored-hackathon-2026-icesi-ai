@@ -38,14 +38,18 @@ describe('PageHeader', () => {
     expect(container.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
   })
 
-  it.each(['narrow', 'wide'] as const)('sizes its content to the %s page width', (width) => {
-    const { container } = render(<PageHeader title="Dispute intake" width={width} />)
+  it.each(['narrow', 'form', 'wide'] as const)(
+    'sizes its content to the %s page width',
+    (width) => {
+      const { container } = render(<PageHeader title="Dispute intake" width={width} />)
 
-    const inner = container.querySelector('header > div')
-    const other = width === 'wide' ? 'narrow' : 'wide'
-    expect(inner?.className).toMatch(new RegExp(width))
-    expect(inner?.className).not.toMatch(new RegExp(other))
-  })
+      const inner = container.querySelector('header > div')
+      for (const other of ['narrow', 'form', 'wide'].filter((w) => w !== width)) {
+        expect(inner?.className).not.toMatch(new RegExp(other))
+      }
+      expect(inner?.className).toMatch(new RegExp(width))
+    },
+  )
 
   it('is as narrow as the single-column pages by default', () => {
     const { container } = render(<PageHeader title="Dispute intake" />)
@@ -53,7 +57,7 @@ describe('PageHeader', () => {
     expect(container.querySelector('header > div')?.className).toMatch(/narrow/)
   })
 
-  it.each(['narrow', 'wide'] as const)(
+  it.each(['narrow', 'form', 'wide'] as const)(
     'has no accessibility violations at %s width',
     async (width) => {
       const { container } = render(
