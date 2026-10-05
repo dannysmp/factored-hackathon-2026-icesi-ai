@@ -97,7 +97,7 @@ def _source() -> SourceRef:
     ],
 )
 def test_format_date_is_absolute_and_carries_the_year(lang: str, expected: str) -> None:
-    """AC-E5-47: every date is written in words with the year, in the reply language."""
+    """Every date is written in words with the year, in the reply language."""
     assert format_date(_DOMAIN_DATE, lang) == expected  # type: ignore[arg-type]
 
 
@@ -110,7 +110,7 @@ def test_format_date_is_absolute_and_carries_the_year(lang: str, expected: str) 
     ],
 )
 def test_reference_date_line_matches_the_acceptance_example(lang: str, expected: str) -> None:
-    """AC-E5-48: the exact wording the acceptance criterion gives."""
+    """The reference-date line states the date in the exact wording the product specifies."""
     assert reference_date_line(_DOMAIN_DATE, lang) == expected  # type: ignore[arg-type]
 
 
@@ -130,7 +130,7 @@ def test_format_money_uses_each_language_s_separators(lang: str, expected: str) 
 
 
 def test_demo_notice_is_stated_in_every_language() -> None:
-    """AC-E5-49: the demonstration notice exists in all three reply languages."""
+    """The demonstration notice exists in all three reply languages."""
     for lang in ("es", "pt", "en"):
         assert "sintéticos" in demo_notice(lang) or "synthetic" in demo_notice(lang)
 
@@ -375,7 +375,7 @@ def test_render_refuses_a_non_template_envelope() -> None:
 
 
 def test_a_transaction_without_a_merchant_is_shown_without_inventing_one() -> None:
-    """AC-E5-59: a null merchant is never filled in with an invented name."""
+    """A null merchant is never filled in with an invented name."""
     envelope = _envelope(
         intent=Intent.PRESENT_TRANSACTIONS,
         template_id=TemplateId.PRESENT_ONE,
@@ -532,7 +532,7 @@ def test_every_ineligible_reason_has_its_own_plain_wording(
 
 
 def test_the_policy_answer_cites_the_section_title_in_the_reply_language() -> None:
-    """AC-E5-28: the reply names the source by its readable title, not its identifier."""
+    """The reply names the source by its readable title, not its identifier."""
     source = _source()
     envelope = _envelope(
         intent=Intent.POLICY_ANSWER,
