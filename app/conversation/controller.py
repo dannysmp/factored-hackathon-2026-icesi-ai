@@ -1252,7 +1252,12 @@ class DialogueController:
         assert request is not None  # noqa: S101 - set at the top of handle_turn
         # A replay's own re-understanding is not a new turn (per-turn accounting is scoped to
         # handle_turn's own call in _start_turn); its accounting, if any, is not logged again here.
+        # Only the "show the list again" reading is taken from the number: an in-range number
+        # always clears the list on the turn it selects, so a list still on offer beside one was
+        # left by a turn the model read, which the model reads again.
         result = _number_from_list(state, request.text)
+        if result is not None and result.intent is not NluIntent.LIST_TRANSACTIONS:
+            result = None
         try:
             if result is None:
                 result, _replay_accounting = self._understanding.understand(
