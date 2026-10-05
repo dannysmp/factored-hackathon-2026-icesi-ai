@@ -165,6 +165,9 @@ class TransactionFact(ContractModel):
     present and falls back to ``description`` (the source's own transaction description)
     otherwise. The tool implementation decides which one a page carries; this contract
     only says that either, both or neither may be present, never inventing one from the other.
+
+    ``amount`` is always in US dollars; ``original_amount`` is the figure in the currency the
+    transaction was made in, so that an amount the customer quotes in that currency can be matched.
     """
 
     # Opaque reference of the transaction, the handle every later call uses.
