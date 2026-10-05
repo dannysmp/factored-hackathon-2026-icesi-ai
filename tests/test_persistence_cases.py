@@ -350,7 +350,7 @@ def test_the_same_key_and_payload_filed_twice_replays_the_same_case(dsn: str) ->
 
 @pytest.mark.integration
 def test_a_key_already_taken_before_the_call_replays_via_the_proactive_check(dsn: str) -> None:
-    """The concurrent row exists before ``create_dispute_case`` is even called, so this exercises
+    """The pre-existing row exists before ``create_dispute_case`` is even called, so this exercises
     the proactive ``_find_by_idempotency_key`` pre-check, not the store's ``UniqueViolation``
     handler — that handler needs a call already in flight when the concurrent row lands, which
     only a genuine concurrent race (below) can force."""

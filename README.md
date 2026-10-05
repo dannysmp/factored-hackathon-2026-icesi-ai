@@ -8,7 +8,8 @@ summary, whenever a person is required.
 
 The guiding principle is that **AI is not autonomous just because it can be**: the language model
 only understands the request, while deterministic code decides and acts. Replies are fixed
-templates filled with verified facts, so the model never writes what the customer reads.
+templates filled with verified facts; in the shipped configuration the model writes nothing the
+customer reads.
 
 ## Try it
 
@@ -26,8 +27,10 @@ not in this repository; they come separately with the delivery.
 | Beatriz (agent) | Portuguese, Spanish | The console: the handoff queue and the packet a person receives |
 | Diego (agent) | Spanish | The console as a fraud specialist |
 
-A case handed over as Carlos or Mariana appears in the console's queue. A customer session lasts
-30 minutes and an agent session 60.
+Customers use the chat at the address above; agents use the console at `/console.html`. A case
+handed over as Carlos or Mariana appears in the console's queue. A customer session lasts 30
+minutes and an agent session 60, and a profile that someone else is using is refused until that
+session ends.
 
 ## At a glance
 
@@ -35,10 +38,11 @@ The system takes a customer's dispute from the first message to a verified, file
 right person. The model understands the request; a deterministic policy engine decides, tools
 scoped to the signed-in customer act, and every write is read back before the customer is told.
 
-On 135 team-written cases, run offline, **safe automated resolution is 72.5%** for this system,
+On 135 scripted cases, run offline against the live model, **safe automated resolution is 72.5%** for this system,
 against 33.0% for a keyword baseline and 36.9% for a model-only agent, with **zero unsafe
-outcomes** for all three. These are measurements on scripted cases, not production results; the
-full table is under [Evaluation](#evaluation).
+outcomes** for all three. It misses more of the cases that need a person than the model-only agent does
+(missed transfers 15.2% against 9.1%). These are measurements on scripted cases, not
+production results; the full table is under [Evaluation](#evaluation).
 
 - [Evaluation report](reports/evaluation.md): workload, metrics, variability, failures and judge validation
 - [Limitations report](docs/limitations.md): what is built, deferred and still open
@@ -99,12 +103,12 @@ The system calls the Claude API in two places, and the evaluation uses it in a t
 
 | Use | Model | Role |
 |---|---|---|
-| Understanding | `claude-haiku-4-5-20251001` | Reads each customer message and returns language, intent and details in a strict schema. Always used. |
+| Understanding | `claude-haiku-4-5-20251001` | Reads each customer message and returns language, intent and details in a strict schema. Skipped when the message is only a position in a list the system just showed, once a session reaches `DIALOGUE_MAX_TURNS`, once the day's `LLM_DAILY_SPEND_LIMIT_USD` is reached, and with `LLM_PROVIDER=stub`. |
 | Rendering | `claude-sonnet-5` | Drafts an eligible reply when `MODEL_RENDERER_ENABLED=true`. Off by default: replies are fixed templates filled with verified facts. |
-| Evaluation judge | `claude-sonnet-5` | Scores replies in the evaluation harness only. Not validated against human raters, so its scores are not reported. |
+| Evaluation judge | `claude-sonnet-5` | Scores replies in the evaluation harness only. Compared with two human raters, it agreed with each on fewer than 80% of replies on every dimension, so its scores are not reported. |
 
 The ids are the defaults of `NLU_MODEL`, `RENDER_MODEL` and `JUDGE_MODEL`; each must be in the
-allowed list in `app/config.py`. Card numbers are masked before any request to the model.
+allowed list in `app/config.py`. Card-shaped digit runs and document-number shapes in the customer's message are masked before any request to the model; numbers split across messages or written in words are not detected (see [`docs/limitations.md`](docs/limitations.md)).
 
 ## Repository structure
 
