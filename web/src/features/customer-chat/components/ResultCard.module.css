@@ -1,7 +1,7 @@
 .card {
   margin: var(--space-4) 0;
   padding: var(--space-4);
-  border: 1px solid var(--result-edge);
+  border: var(--border-width-thin) solid var(--result-edge);
   border-left-width: var(--space-1);
   border-radius: var(--radius-md);
   background: var(--result-bg);
@@ -45,7 +45,7 @@
 .ticket {
   margin: var(--space-4) 0 0;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
+  border: var(--border-width-thin) solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-bg);
 }

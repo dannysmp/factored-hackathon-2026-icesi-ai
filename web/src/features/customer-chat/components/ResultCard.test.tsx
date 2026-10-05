@@ -71,15 +71,16 @@ describe('ResultCard', () => {
 
   it('tells a customer handed to a person what happens next, in each language', () => {
     for (const [lang, text] of [
-      ['en', 'No further action is needed here. A person will pick up your request.'],
-      ['es', 'No necesita hacer nada más por ahora. Un asesor tomará su solicitud.'],
-      [
-        'pt',
-        'Você não precisa fazer mais nada por enquanto. Um atendente vai assumir sua solicitação.',
-      ],
+      ['en', 'A person will pick up your request and follow up.'],
+      ['es', 'Un asesor tomará su solicitud y le dará seguimiento.'],
+      ['pt', 'Um atendente vai assumir sua solicitação e dar andamento.'],
     ] as const) {
       const { unmount } = render(<ResultCard lang={lang} caseNumber={null} handoffTicket="H-1" />)
       expect(screen.getByText(text)).toBeInTheDocument()
+      // A hand-off can follow a card-loss instruction, so the card never says nothing is left to do.
+      expect(
+        screen.queryByText(/no further action|no necesita hacer nada|não precisa fazer nada/i),
+      ).not.toBeInTheDocument()
       unmount()
     }
   })
