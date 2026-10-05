@@ -264,11 +264,11 @@ def _answer_to_filing_question(state: DialogueState, text: str) -> NluResult | N
     """The understanding of a message that is exactly a yes or a no to the pending filing question.
 
     The understanding step reads each message without the conversation, so it cannot tell that a
-    bare "no" or a quick-reply label such as "No, no registrar" answers a question. The controller
+    bare "no", which is what the decline button sends, answers a question. The controller
     knows the question is pending, and reads only a whole-message match (``read_quick_answer``);
     any longer or mixed message is left to the understanding step.
     """
-    if state.pending_slot is not Slot.CONFIRMATION or state.phase in _PHASES_WITHOUT_SELECTION:
+    if state.pending_slot is not Slot.CONFIRMATION:
         return None
     answer = read_quick_answer(text)
     if answer is None:

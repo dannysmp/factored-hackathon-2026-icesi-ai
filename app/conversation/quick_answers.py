@@ -5,8 +5,8 @@ Quick Answers
 Overview
 --------
 Reads a message that is exactly a yes or a no to the question the dialogue is waiting on, without
-a model call: the quick-reply labels the chat offers and the short forms customers type in their
-place, in Spanish, Portuguese and English.
+a model call: the fixed "yes" and "no" the chat's buttons send and the short forms customers type
+in their place, in Spanish, Portuguese and English.
 
 Scope
 -----
@@ -19,8 +19,8 @@ Design Principles
 - A whole-message match against a closed set, never a substring: "no, la otra transacción" is a
   correction, not a decline, and stays with the understanding step.
 - The model reads each message without the conversation, so it cannot know a question is pending
-  and reads a label such as "No, no registrar" as unclear. The controller knows, and asks this
-  module only while a yes or no is awaited.
+  and can read a bare "no" as unclear. The controller knows, and asks this module only while a yes
+  or no is awaited.
 - Accents, case and punctuation do not matter; the words do.
 
 Runtime Contract
@@ -81,6 +81,7 @@ _NO_PHRASES = frozenset(
         "no la registre",
         "no registrarla",
         "no confirmo",
+        "no quiero",
         "no gracias",
         "mejor no",
         "no por favor",
@@ -109,7 +110,7 @@ def _normalized(text: str) -> str:
     """The message lower-cased, without accents or apostrophes, with other punctuation as spaces."""
     decomposed = unicodedata.normalize("NFKD", text.casefold())
     unaccented = "".join(char for char in decomposed if not unicodedata.combining(char))
-    without_apostrophes = re.sub("['\u2019`\u00b4]", "", unaccented)
+    without_apostrophes = re.sub("['\u2019`]", "", unaccented)
     return " ".join(re.sub(r"[^a-z0-9]+", " ", without_apostrophes).split())
 
 

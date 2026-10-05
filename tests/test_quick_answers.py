@@ -2,9 +2,10 @@
 Quick Answers Tests
 ===================
 
-Component: ``app.conversation.quick_answers``. The labels of the chat's quick replies are read from
-the web's own translation files, so a relabelled button that the dialogue no longer recognises
-fails here rather than in front of a customer.
+Component: ``app.conversation.quick_answers``. The texts the chat's buttons send are read from the
+web's own contract, so a button whose text the dialogue no longer recognises fails here rather than
+in front of a customer. The labels the buttons display are covered too, for a customer who types
+what they see.
 """
 
 from __future__ import annotations
@@ -15,9 +16,17 @@ import pytest
 # Local modules
 from app.conversation.quick_answers import read_quick_answer
 from contracts.service_v1.nlu import ConfirmationAnswer
-from tests.web_labels import web_label
+from tests.web_labels import web_label, web_sent_text
 
 _LANGUAGES = ("es", "pt", "en")
+
+
+def test_the_text_the_confirm_button_sends_is_a_yes() -> None:
+    assert read_quick_answer(web_sent_text("CONFIRMATION_TEXT")) is ConfirmationAnswer.YES
+
+
+def test_the_text_the_decline_button_sends_is_a_no() -> None:
+    assert read_quick_answer(web_sent_text("DECLINE_TEXT")) is ConfirmationAnswer.NO
 
 
 @pytest.mark.parametrize("language", _LANGUAGES)
