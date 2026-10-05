@@ -19,10 +19,11 @@ the scoped tools of the service layer and belong to the dialogue controller.
 Design Principles
 -----------------
 - Structured state only, masked, the same shape discipline as the envelope's own facts.
-- The clarification counter is one integer bound to whichever slot is currently pending; asking
-  again for the same slot increments it, asking for a different one resets it to 1, and filling
-  the pending slot resets it to zero. It is the missing-slot guard's counter: it counts
-  consecutive attempts on one element, whatever the reported confidence.
+- The clarification counter is one integer bound to whichever slot is currently pending. It counts
+  the answers that left the question unsettled: the first time a slot is asked it is zero, asking
+  again for the same pending slot increments it, and asking for a different slot or filling the
+  pending one resets it to zero. This is the missing-slot guard the architecture describes: it
+  counts consecutive unsettled answers on one element, whatever the reported confidence.
 - A new login starts a new conversation: this model carries no notion of "resume", and
   the store is what would have to go out of its way to look up a stale session by a new one's id,
   which it never does.
@@ -34,10 +35,11 @@ Design Principles
 Runtime Contract
 ----------------
 ``DialogueState`` with ``with_clarification(slot)``, ``with_slot_filled()``,
-``with_language(lang)``, ``with_phase(phase)``, ``with_case_filed(case_number)`` and
-``with_handed_off(ticket_ref)``, plus ``is_opening``, which is true while no dispute step has
-been taken yet, and ``turns_applied``, the number of customer turns the session has applied
-(equal to ``version``; the dialogue controller compares it with its turn cap).
+``with_dispute_closed()``, ``with_language(lang)``, ``with_phase(phase)``,
+``with_case_filed(case_number)`` and ``with_handed_off(ticket_ref)``, plus ``is_opening``, which is
+true while no dispute step has been taken yet, and ``turns_applied``, the number of customer turns
+the session has applied (equal to ``version``; the dialogue controller compares it with its turn
+cap).
 ``ConversationPhase`` names where the conversation stands.
 
 Limitations
@@ -129,13 +131,15 @@ class DialogueState(BaseModel):
         )
 
     def with_clarification(self, slot: Slot) -> DialogueState:
-        """Ask for ``slot`` again.
+        """Ask for ``slot``.
 
-        The attempt count carries over when it is the same slot already pending, and starts at 1
-        when a different slot becomes the blocker (a filled slot is never re-asked with a stale
-        count from something else).
+        The count is of answers that left the question unsettled. It grows by one when the slot
+        is the one already pending (the customer was asked and did not answer it), and starts at 0
+        when a different slot becomes the blocker: a question asked for the first time has not yet
+        been answered badly, and a filled slot is never re-asked with a stale count from something
+        else.
         """
-        attempts = self.clarification_attempts + 1 if slot == self.pending_slot else 1
+        attempts = self.clarification_attempts + 1 if slot == self.pending_slot else 0
         return self.model_copy(
             update={
                 "phase": ConversationPhase.CLARIFYING,
@@ -156,11 +160,27 @@ class DialogueState(BaseModel):
         """Move to ``phase`` without touching anything else."""
         return self.model_copy(update={"phase": phase})
 
+    def with_dispute_closed(self) -> DialogueState:
+        """The dispute ended without a handoff (filed, cancelled, ineligible or duplicate): closed.
+
+        Nothing about the dispute stays open: the pending question, the clarification count, the
+        selected transaction and the reason are cleared, so a later message neither answers the old
+        question nor re-presents the dispute that just ended, and a new dispute starts from its own
+        transaction.
+        """
+        return self.model_copy(
+            update={
+                "phase": ConversationPhase.CLOSED,
+                "pending_slot": None,
+                "clarification_attempts": 0,
+                "selected_ref": None,
+                "category": None,
+            }
+        )
+
     def with_case_filed(self, case_number: str) -> DialogueState:
         """A case was filed this turn: closed, with the case number a replay re-reads from."""
-        return self.model_copy(
-            update={"phase": ConversationPhase.CLOSED, "last_case_number": case_number}
-        )
+        return self.with_dispute_closed().model_copy(update={"last_case_number": case_number})
 
     def with_handed_off(self, ticket_ref: str) -> DialogueState:
         """The conversation was handed to a person: nothing about the ticket changes on replay."""

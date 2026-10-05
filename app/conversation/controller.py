@@ -90,12 +90,25 @@ clarification budget. The question stays pending across a reply to an unrelated
 message (small talk, a policy question, a list request), as the reason and confirmation questions
 do, so the customer's yes after such a reply still selects the presented transaction. The
 unrelated reply itself files nothing; a case is filed only once the policy's confirmation
-requirement for the category is met. Two or more matches ask for more detail rather than
-presenting a numbered list — the same v1 scope decision already made for slot collection, since
-``DialogueState`` has no pending-candidate field and no multi-candidate list. A
-session identifies and evaluates at most one transaction/category pair: nothing here resets
-``selected_ref``/``category`` once set, so a second, different dispute needs a new session. The
-handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name.
+requirement for the category is met. Two or more matches ask for more detail rather than presenting
+a numbered list, since ``DialogueState`` has no pending-candidate field and no multi-candidate list.
+A session works on one transaction and reason at a time: the selected pair is kept from selection
+until the dispute ends (a case filed, or the filing cancelled, ineligible or refused as a
+duplicate), which clears it so the customer's next dispute starts from its own transaction and
+reason; a no to the transaction presented, or a different transaction named while one awaits a yes,
+replaces the transaction instead. A dispute that ends in a handoff keeps its pair. A policy question
+asked after a dispute has ended without a handoff is answered without a reason, so a figure that
+depends on one is declined with an offer of an advisor. The handoff packet's ``first_name`` is a
+placeholder: no tool exposes the customer's first name.
+While the transaction is the pending question, a message that describes one is taken as the
+answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a category
+carried by such a message does not replace one already set, the same rule as above. A description
+that matches no transaction, or more than one, is an unsettled answer to the question, the same
+as any other reply that leaves it open: a person is involved once the clarification budget of
+such answers has followed the question. When the opening message already described the
+transaction, that message is itself the question, so with the shipped budget of two the hand-off
+follows the third unmatched description. A request to list transactions that finds none never
+counts; a described transaction that finds none does, like any other unmatched description.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
@@ -271,6 +284,20 @@ def _fold(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
 
 
+def _without_blank_merchant(result: NluResult) -> NluResult:
+    """``result`` with an empty merchant description removed from its transaction hint.
+
+    A merchant that is empty once accents and surrounding blanks are removed describes nothing,
+    so the rest of the hint (an amount, a date, a card) is what identifies the transaction.
+    """
+    merchant = result.transaction.merchant
+    if merchant is None or _fold(merchant).strip():
+        return result
+    return result.model_copy(
+        update={"transaction": result.transaction.model_copy(update={"merchant": None})}
+    )
+
+
 def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -> bool:
     """Whether ``fact`` could be what the customer described in ``hint``.
 
@@ -365,6 +392,7 @@ class DialogueController:
         # every method signature. Safe because one instance ever handles exactly one turn.
         self._request: TurnRequest | None = None
         self._principal: Principal | None = None
+        self._handoff_reason: ReasonCode | None = None
 
     # -------------------------------------------------------------------------------------
     # Entry point
@@ -418,6 +446,7 @@ class DialogueController:
             )
         state_before = state.phase
         new_state, envelope = self._advance(state, result)
+        self._log_turn_decided(state, new_state, result, envelope)
         self._log_turn_completed(new_state, accounting)
 
         try:
@@ -580,6 +609,43 @@ class DialogueController:
         )
         return fresh, 0, result, accounting
 
+    def _log_turn_decided(
+        self,
+        state_before: DialogueState,
+        state_after: DialogueState,
+        result: NluResult,
+        envelope: RenderEnvelope,
+    ) -> None:
+        """One log line per turn that reaches the decision step, saying how it was understood and
+        where the dialogue went, so a surprising hand-off can be traced to its cause without the
+        customer's words.
+
+        A replayed turn is silent, and so are the hand-offs that never reach the decision step
+        (the turn cap, understanding unavailable), which log their own warnings. The line is
+        emitted before the save, so a turn that then loses a concurrent save still logs one.
+
+        It carries only closed-vocabulary values and counters: the intent the understanding
+        reported and its confidence, whether it carried a transaction hint (a flag, never the
+        hint), the pending slot and clarification count before and after, the reply's intent and
+        template, and the hand-off's first reason code (``None`` when the turn did not hand off).
+        """
+        logger.info(
+            "turn_decided session_id=%s understood=%s confidence=%.2f has_hint=%s "
+            "slot_before=%s attempts_before=%d slot_after=%s attempts_after=%d "
+            "reply=%s template=%s handoff_reason=%s",
+            state_after.session_id,
+            result.intent.value,
+            result.confidence,
+            not result.transaction.is_empty,
+            state_before.pending_slot.value if state_before.pending_slot else None,
+            state_before.clarification_attempts,
+            state_after.pending_slot.value if state_after.pending_slot else None,
+            state_after.clarification_attempts,
+            envelope.intent.value,
+            envelope.template_id.value if envelope.template_id else None,
+            self._handoff_reason.value if self._handoff_reason else None,
+        )
+
     def _log_turn_completed(self, state: DialogueState, accounting: TurnAccounting | None) -> None:
         """One stable-shaped log line per real turn: the real cost, if any, of understanding
         it, and which case (if any, by this point) the session belongs to.
@@ -663,6 +729,7 @@ class DialogueController:
         when a hint is available and none is selected, ask for the reason, and finally evaluate the
         dispute for the selected transaction and category.
         """
+        result = _without_blank_merchant(result)
         if result.category is not None and state.category is None:
             state = state.model_copy(update={"category": result.category})
 
@@ -689,8 +756,11 @@ class DialogueController:
         A hint that names nothing, or only matches the presented transaction, is the customer
         going ahead with it. A hint that names a different merchant, amount, card or date means
         they rejected the one shown and are pointing at another. When the presented transaction
-        cannot be read back, the hint is searched for afresh rather than assumed to match.
+        cannot be read back, the hint is searched for afresh rather than assumed to match. A
+        merchant that is empty once accents and blanks are removed says nothing, so it is ignored.
         """
+        if hint.merchant is not None and not _fold(hint.merchant).strip():
+            hint = hint.model_copy(update={"merchant": None})
         if hint.is_empty:
             return False
         assert state.selected_ref is not None  # noqa: S101 - set whenever this slot is pending
@@ -784,7 +854,7 @@ class DialogueController:
         """The customer's yes or no to filing the evaluated dispute."""
         answer = result.confirmation
         if answer is ConfirmationAnswer.NO:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             return new_state, self._envelope(new_state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
         if answer is not ConfirmationAnswer.YES:
             return self._ask(state, Slot.CONFIRMATION)
@@ -891,8 +961,12 @@ class DialogueController:
     def _handle_unroutable(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
-        """``choice`` and ``correction`` have no route of their own; they share ``unclear``'s
-        fallback."""
+        """``choice`` and ``correction`` share ``unclear``'s fallback, except
+        when the transaction is what was just asked for and the message describes one: the model
+        reads each message on its own, so a plain answer to that question can come back under any
+        of these intents, and the description is the answer."""
+        if state.pending_slot is Slot.TRANSACTION and not result.transaction.is_empty:
+            return self._handle_file_dispute(state, result)
         return self._fallback(state, result)
 
     # -------------------------------------------------------------------------------------
@@ -908,7 +982,7 @@ class DialogueController:
         return state, self._envelope(state, Intent.CLARIFY, TemplateId.GREETING)
 
     def _ask(self, state: DialogueState, slot: Slot) -> tuple[DialogueState, RenderEnvelope]:
-        """Ask again for ``slot``, or escalate once the clarification budget is spent."""
+        """Ask for ``slot``, or escalate once the clarification budget is spent."""
         new_state = state.with_clarification(slot)
         if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
             return self._handoff(
@@ -960,17 +1034,9 @@ class DialogueController:
 
         matches = tuple(item for item in page.items if _matches_hint(item, hint))
         if not matches:
-            return state, self._envelope(state, Intent.CLARIFY, TemplateId.NOT_FOUND)
+            return self._ask_for_a_better_description(state, TemplateId.NOT_FOUND)
         if len(matches) > 1:
-            new_state = state.with_clarification(Slot.TRANSACTION)
-            if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
-                return self._handoff(
-                    new_state,
-                    trigger=HandoffTrigger.LOW_UNDERSTANDING,
-                    reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
-                    template=TemplateId.HANDOFF_REVIEW,
-                )
-            return new_state, self._envelope(new_state, Intent.CLARIFY, TemplateId.PRESENT_NARROW)
+            return self._ask_for_a_better_description(state, TemplateId.PRESENT_NARROW)
 
         fact = to_envelope_transaction(matches[0])
         new_state = state.model_copy(
@@ -981,6 +1047,23 @@ class DialogueController:
             }
         )
         return new_state, self._present_selected(new_state, fact)
+
+    def _ask_for_a_better_description(
+        self, state: DialogueState, template: TemplateId
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """The description matched no transaction, or more than one: ask for it again, or hand
+        over once the clarification budget is spent. Each such reply is an unsettled answer to the
+        transaction question; the count is zero on the first ask, so the budget is reached by the
+        second answer that follows a question already asked."""
+        new_state = state.with_clarification(Slot.TRANSACTION)
+        if new_state.clarification_attempts >= self._policy.routing.clarification_budget:
+            return self._handoff(
+                new_state,
+                trigger=HandoffTrigger.LOW_UNDERSTANDING,
+                reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
+                template=TemplateId.HANDOFF_REVIEW,
+            )
+        return new_state, self._envelope(new_state, Intent.CLARIFY, template)
 
     def _evaluate_and_present(
         self, state: DialogueState, ref: str, category: DisputeCategory
@@ -1045,7 +1128,7 @@ class DialogueController:
         list of codes, using the fraud wording when the reason is a fraud claim.
         """
         if decision.outcome is Outcome.INELIGIBLE:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             decisions = (
                 Decision(
                     outcome=Outcome.INELIGIBLE,
@@ -1148,7 +1231,7 @@ class DialogueController:
         the tool gave one.
         """
         if refusal is ToolRefusalCode.DUPLICATE_OPEN_CASE:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             decisions = (
                 Decision(
                     outcome=Outcome.INELIGIBLE,
@@ -1244,6 +1327,7 @@ class DialogueController:
                 new_state, Intent.HANDOFF, TemplateId.HANDOFF_NOT_REGISTERED, end_session=True
             )
 
+        self._handoff_reason = reason_codes[0] if reason_codes else None
         new_state = state.with_handed_off(packet.ticket_ref)
         decisions = (_escalate_decision(self._policy),) if template in _ROUTED_HANDOFFS else ()
         facts = DisputeFacts(ticket_ref=packet.ticket_ref, category=category)
@@ -1274,7 +1358,9 @@ class DialogueController:
         rendered directly from its stored ticket; a pending clarification is a pure re-render.
         The ticket takes precedence over a case when the session is handed off or filed no case,
         so a session holding both replays its handoff, which is the latest outcome but not
-        necessarily the one the replayed turn id originally produced.
+        necessarily the one the replayed turn id originally produced. The same holds for a
+        session with a filed case: a retried turn id that followed the filing, and answered
+        something other than the filing, replays the filing result.
         ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
         cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
         clears the pending slot and leaves no case or ticket behind, so it can never be confused
@@ -1430,9 +1516,10 @@ class DialogueController:
 
         Nothing is written when no turn log was injected.
 
-        ``reason_code`` is always ``None`` in the entry: the domain ``ReasonCode`` behind a policy
-        decision is not carried on ``Decision``, so there is nothing for this to read. A failed
-        database write is logged as a warning and swallowed; any other error propagates.
+        ``reason_code`` is the first reason code of the handoff this turn registered, and ``None``
+        for a turn that did not hand off: the domain ``ReasonCode`` behind a policy decision is not
+        carried on ``Decision``, so only handoffs name theirs. A failed database write is logged as
+        a warning and swallowed; any other error propagates.
         """
         if self._turn_log is None:
             return
@@ -1446,7 +1533,7 @@ class DialogueController:
             state_before=state_before.value,
             state_after=state.phase.value,
             render_mode=rendered.render_mode,
-            reason_code=None,
+            reason_code=self._handoff_reason,
             policy_version=envelope.decisions[0].policy_version if envelope.decisions else None,
         )
         try:
