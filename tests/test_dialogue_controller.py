@@ -3470,6 +3470,48 @@ def test_a_list_request_numbers_each_transaction_in_the_reply_and_the_choices(
     assert state.offered_refs == ("TX-1", "TX-2", "TX-3")
 
 
+def test_a_dispute_described_while_a_list_is_on_offer_replaces_the_list_with_its_transaction(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+
+    presented = dialogue.say(
+        _file_dispute(
+            transaction=TransactionHint(merchant="Netflix"),
+            category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        )
+    )
+
+    assert presented.next_expected is Slot.TRANSACTION_CHOICE
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.offered_refs == ()
+    assert state.selected_ref == "TX-2"
+
+    later = dialogue.say(_plain(NluIntent.CHOICE, choice=3))
+
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-2"
+    assert later.next_expected is Slot.TRANSACTION_CHOICE
+
+
+def test_a_correction_while_a_list_is_on_offer_leaves_the_list_to_choose_from(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS))
+
+    dialogue.say(_plain(NluIntent.CORRECTION))
+    picked = dialogue.say(_plain(NluIntent.CHOICE, choice=1))
+
+    assert picked.next_expected is Slot.REASON
+    state = dialogue.store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-1"
+
+
 def test_a_reply_that_is_not_a_list_offers_no_choices(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:

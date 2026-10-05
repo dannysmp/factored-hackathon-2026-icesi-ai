@@ -35,9 +35,9 @@ Runtime Contract
 ``render(envelope) -> RenderedReply``. ``reference_date_line(domain_date, lang)``.
 ``demo_notice(lang)``. ``transaction_line(transaction, lang)`` is the one-line description of a
 transaction used for a numbered list. ``format_money``/``format_date``/``amount_text``/
-``CATEGORY_NAMES``/``INELIGIBLE_TEXT`` are exported so the model-rendered path's own slot values
-(``app.conversation.slot_values``) format a figure identically to the template path, rather than
-a second, independently maintained copy.
+``CATEGORY_NAMES``/``INELIGIBLE_TEXT``/``case_status_label`` are exported so the model-rendered
+path's own slot values (``app.conversation.slot_values``) format a figure identically to the
+template path, rather than a second, independently maintained copy.
 
 Limitations
 -----------
@@ -56,6 +56,7 @@ from typing import Literal  # Which path produced a reply
 
 # Local modules
 from app.domain.policy.models import DisputeCategory, Outcome  # Shared vocabulary
+from contracts.service_v1.cases import CaseStatus  # The statuses a case moves through
 from contracts.service_v1.envelope import (  # The envelope and its typed facts
     CustomerReason,
     Lang,
@@ -172,6 +173,43 @@ _URGENT_CHANNEL: dict[Lang, str] = {
     "pt": "a linha de emergência do banco",
     "en": "the bank's emergency line",
 }
+
+# -----------------------------------------------------------------------------
+# Case status wording
+# -----------------------------------------------------------------------------
+
+CASE_STATUS_NAMES: dict[Lang, dict[CaseStatus, str]] = {
+    "es": {
+        CaseStatus.OPEN: "abierto",
+        CaseStatus.IN_REVIEW: "en revisión",
+        CaseStatus.RESOLVED: "resuelto",
+        CaseStatus.REJECTED: "rechazado",
+    },
+    "pt": {
+        CaseStatus.OPEN: "aberto",
+        CaseStatus.IN_REVIEW: "em análise",
+        CaseStatus.RESOLVED: "resolvido",
+        CaseStatus.REJECTED: "rejeitado",
+    },
+    "en": {
+        CaseStatus.OPEN: "open",
+        CaseStatus.IN_REVIEW: "in review",
+        CaseStatus.RESOLVED: "resolved",
+        CaseStatus.REJECTED: "rejected",
+    },
+}
+
+
+def case_status_label(status: str, lang: Lang) -> str:
+    """The wording for a case's status as the case service states it, in ``lang``.
+
+    Raises
+    ------
+    ValueError
+        When ``status`` is not one of the case service's statuses.
+    """
+    return CASE_STATUS_NAMES[lang][CaseStatus(status)]
+
 
 # -----------------------------------------------------------------------------
 # Category and reason wording
@@ -530,17 +568,17 @@ def _ineligible(e: RenderEnvelope) -> str:
 
 def _dispute_status(e: RenderEnvelope) -> str:
     """List the customer's recent cases with their status and filing date, one per line."""
-    lines = [
-        {
-            "es": f"Caso {case.case_number}: {case.status}, presentado el "
-            f"{format_date(case.filed_on, e.lang)}.",
-            "pt": f"Caso {case.case_number}: {case.status}, apresentado em "
-            f"{format_date(case.filed_on, e.lang)}.",
-            "en": f"Case {case.case_number}: {case.status}, filed on "
-            f"{format_date(case.filed_on, e.lang)}.",
-        }[e.lang]
-        for case in e.facts.cases
-    ]
+    lines = []
+    for case in e.facts.cases:
+        status = case_status_label(case.status, e.lang)
+        filed_on = format_date(case.filed_on, e.lang)
+        lines.append(
+            {
+                "es": f"Caso {case.case_number}: {status}, presentado el {filed_on}.",
+                "pt": f"Caso {case.case_number}: {status}, apresentado em {filed_on}.",
+                "en": f"Case {case.case_number}: {status}, filed on {filed_on}.",
+            }[e.lang]
+        )
     intro = {
         "es": "Estos son sus casos recientes:",
         "pt": "Estes são seus casos recentes:",

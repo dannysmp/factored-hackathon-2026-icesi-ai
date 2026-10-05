@@ -11,3 +11,18 @@ export const LANGUAGE_NAMES: Record<Lang, string> = {
   pt: 'Português',
   en: 'English',
 }
+
+/** The language `value` names, or `undefined` when it is not one of `LANGUAGES`. */
+export function parseLang(value: unknown): Lang | undefined {
+  return (LANGUAGES as readonly unknown[]).includes(value) ? (value as Lang) : undefined
+}
+
+/**
+ * The language a screen speaks before anything on it has chosen one: the language the person
+ * already chose, when it is valid, else the browser's own language by its primary subtag
+ * (`pt-BR` is Portuguese), else Spanish, the product's first language.
+ */
+export function startingLanguage(chosen: unknown, browserLanguage: string | undefined): Lang {
+  const primarySubtag = browserLanguage?.split(/[-_]/, 1)[0]?.toLowerCase()
+  return parseLang(chosen) ?? parseLang(primarySubtag) ?? 'es'
+}
