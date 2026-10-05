@@ -27,8 +27,8 @@
 #   directory — on a redeploy against an already-initialized volume (any
 #   `teardown_after: false` run, which is exactly what a persisting preview
 #   or evaluation deployment is), the official image silently ignores it, so
-#   this script also rotates the live role's real password after the stack
-#   is up, the same `psql -v pw=... ALTER ROLE ... PASSWORD :'pw'` pattern
+#   this script also rotates the live role's real password once the
+#   database is up, the same `psql -v pw=... ALTER ROLE ... PASSWORD :'pw'` pattern
 #   08-deploy-metabase.sh already established for the Metabase-side roles —
 #   piped over stdin, never `-c`, since `:'var'` substitution only takes
 #   effect that way (verified against a real Postgres server, not assumed).

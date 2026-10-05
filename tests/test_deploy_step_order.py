@@ -49,14 +49,16 @@ def test_the_database_is_migrated_and_seeded_before_the_stack_is_updated() -> No
     assert pull < postgres_only < rotation < migrate < load_seed < stack < restart
 
 
-def test_nothing_before_the_migration_starts_the_backend() -> None:
+def test_nothing_before_the_migration_starts_a_service_other_than_the_database() -> None:
     commands = _remote_commands()
     migrate = _index(commands, "app.persistence.migrate")
 
     starting = [
         line
         for line in commands[:migrate]
-        if " up " in f" {line} " and line != f"{_COMPOSE} up -d postgres"
+        if line.startswith(_COMPOSE)
+        and any(f" {verb} " in f"{line} " for verb in ("up", "start", "restart", "create"))
+        and line != f"{_COMPOSE} up -d postgres"
     ]
 
     assert starting == []
