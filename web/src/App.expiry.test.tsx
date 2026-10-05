@@ -7,6 +7,7 @@ import { App } from './App'
 import { findMessage } from './features/customer-chat/findMessage'
 import { en } from './i18n/en'
 import { es } from './i18n/es'
+import { findPersonaRadio } from './features/sign-in/personaRadios'
 
 const SESSION_BODY = {
   access_token: 'token-abc',
@@ -104,14 +105,14 @@ describe('App when the session ends', () => {
     stubService([401], { spanishPersona: true })
     const user = userEvent.setup()
     render(<App />)
-    await user.selectOptions(await screen.findByLabelText(en['signin.personaLabel']), 'ana')
+    await user.click(await findPersonaRadio('ana'))
     await user.type(await screen.findByLabelText(es['signin.accessCodeLabel']), 'the-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
 
     await waitFor(() => {
       expect(screen.getByText(es['app.sessionExpired']).closest('[role="status"]')).not.toBeNull()
     })
-    const picker = await screen.findByLabelText(es['signin.personaLabel'])
+    const picker = await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     expect(picker).toHaveValue('ana')
     expect(screen.getByRole('button', { name: es['signin.submit'] })).toBeInTheDocument()
   })
@@ -127,7 +128,7 @@ describe('App when the session ends', () => {
     await waitFor(() => {
       expect(screen.getByText(es['app.sessionExpired']).closest('[role="status"]')).not.toBeNull()
     })
-    expect(await screen.findByLabelText(es['signin.personaLabel'])).toHaveValue('ana')
+    expect(await screen.findByRole('radio', { checked: true })).toHaveAttribute('value', 'ana')
     expect(document.documentElement.lang).toBe('es')
   })
 
@@ -135,11 +136,11 @@ describe('App when the session ends', () => {
     stubService([401], { secondEnglishPersona: true })
     const user = userEvent.setup()
     render(<App />)
-    await user.selectOptions(await screen.findByLabelText(en['signin.personaLabel']), 'noah')
+    await user.click(await findPersonaRadio('noah'))
     await signIn(user)
 
     await screen.findByText(en['app.sessionExpired'])
-    expect(await screen.findByLabelText(en['signin.personaLabel'])).toHaveValue('noah')
+    expect(await screen.findByRole('radio', { checked: true })).toHaveAttribute('value', 'noah')
   })
 
   it('puts the keyboard on the form so the person can sign in again at once', async () => {
@@ -149,7 +150,7 @@ describe('App when the session ends', () => {
     await signIn(user)
 
     await waitFor(() => {
-      expect(screen.getByLabelText(en['signin.personaLabel'])).toHaveFocus()
+      expect(screen.getByRole('radio', { checked: true })).toHaveFocus()
     })
   })
 
@@ -175,7 +176,7 @@ describe('App when the session ends', () => {
     await findMessage(TURN_BODY.reply)
     await user.click(screen.getByRole('button', { name: en['app.signOut'] }))
 
-    await screen.findByLabelText(en['signin.personaLabel'])
+    await screen.findByRole('group', { name: en['signin.personaGroupLabel'] })
     expect(screen.queryByText(en['app.sessionExpired'])).not.toBeInTheDocument()
   })
 
@@ -183,12 +184,12 @@ describe('App when the session ends', () => {
     stubService([200])
     const user = userEvent.setup()
     render(<App />)
-    await screen.findByLabelText(en['signin.personaLabel'])
+    await screen.findByRole('group', { name: en['signin.personaGroupLabel'] })
     await signIn(user)
     await findMessage(TURN_BODY.reply)
     await user.click(screen.getByRole('button', { name: en['app.signOut'] }))
 
-    await screen.findByLabelText(en['signin.personaLabel'])
+    await screen.findByRole('group', { name: en['signin.personaGroupLabel'] })
     expect(screen.queryByText(en['app.sessionExpired'])).not.toBeInTheDocument()
   })
 })

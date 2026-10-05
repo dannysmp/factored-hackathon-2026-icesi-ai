@@ -8,6 +8,7 @@ import { SignInError } from './api'
 import { SignInScreen } from './SignInScreen'
 import { es } from '../../i18n/es'
 import { pt } from '../../i18n/pt'
+import { findPersonaRadio } from './personaRadios'
 
 /** Two customer personas, one speaking Spanish and one Portuguese. */
 const PERSONAS = [
@@ -66,7 +67,9 @@ describe('SignInScreen when the persona directory fails', () => {
 
     await user.click(await screen.findByRole('button', { name: es['common.retry'] }))
 
-    expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
+    expect(
+      await screen.findByRole('group', { name: es['signin.personaGroupLabel'] }),
+    ).toBeInTheDocument()
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -109,7 +112,7 @@ describe('SignInScreen when the sign-in is refused', () => {
     const user = userEvent.setup()
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
-    await user.selectOptions(await screen.findByLabelText(es['signin.personaLabel']), 'joao')
+    await user.click(await findPersonaRadio('joao'))
     await user.type(screen.getByLabelText(pt['signin.accessCodeLabel']), 'a-code')
     await user.click(screen.getByRole('button', { name: pt['signin.submit'] }))
 
@@ -161,7 +164,7 @@ describe('SignInScreen when the sign-in is refused', () => {
     const button = await screen.findByRole('button', { name: es['signin.submitting'] })
     expect(button).toBeDisabled()
     expect(screen.getByLabelText(es['signin.accessCodeLabel'])).toBeDisabled()
-    expect(screen.getByLabelText(es['signin.personaLabel'])).toBeDisabled()
+    expect(screen.getByRole('group', { name: es['signin.personaGroupLabel'] })).toBeDisabled()
   })
 })
 
@@ -224,7 +227,7 @@ describe('SignInScreen form', () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     expect(screen.getByRole('region', { name: es['signin.regionLabel'] })).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { level: 2, name: es['signin.regionLabel'] }),
@@ -236,7 +239,7 @@ describe('SignInScreen form', () => {
     render(<SignInScreen focusForm onSignedIn={vi.fn()} />)
 
     await waitFor(() => {
-      expect(screen.getByLabelText(es['signin.personaLabel'])).toHaveFocus()
+      expect(screen.getByRole('radio', { checked: true })).toHaveFocus()
     })
   })
 
@@ -244,35 +247,35 @@ describe('SignInScreen form', () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
-    expect(screen.getByLabelText(es['signin.personaLabel'])).not.toHaveFocus()
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
+    expect(screen.getByRole('radio', { checked: true })).not.toHaveFocus()
   })
 
   it('selects the first persona who speaks the preferred language, and speaks it', async () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
     render(<SignInScreen preferredLang="pt" onSignedIn={vi.fn()} />)
 
-    expect(await screen.findByLabelText(pt['signin.personaLabel'])).toHaveValue('joao')
+    expect(await screen.findByRole('radio', { checked: true })).toHaveAttribute('value', 'joao')
   })
 
   it('selects the preferred persona when they speak the preferred language', async () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(TWO_IN_PORTUGUESE)
     render(<SignInScreen preferredLang="pt" preferredSlug="beatriz" onSignedIn={vi.fn()} />)
 
-    expect(await screen.findByLabelText(pt['signin.personaLabel'])).toHaveValue('beatriz')
+    expect(await screen.findByRole('radio', { checked: true })).toHaveAttribute('value', 'beatriz')
   })
 
   it('ignores the preferred persona when they do not speak the preferred language', async () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(TWO_IN_PORTUGUESE)
     render(<SignInScreen preferredLang="pt" preferredSlug="ana" onSignedIn={vi.fn()} />)
 
-    expect(await screen.findByLabelText(pt['signin.personaLabel'])).toHaveValue('joao')
+    expect(await screen.findByRole('radio', { checked: true })).toHaveAttribute('value', 'joao')
   })
 
   it('selects the first persona when none speaks the preferred language', async () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
     render(<SignInScreen preferredLang="en" onSignedIn={vi.fn()} />)
 
-    expect(await screen.findByLabelText(es['signin.personaLabel'])).toHaveValue('ana')
+    expect(await screen.findByRole('radio', { checked: true })).toHaveAttribute('value', 'ana')
   })
 })

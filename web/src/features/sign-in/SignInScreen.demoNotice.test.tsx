@@ -7,6 +7,7 @@ import { SignInScreen } from './SignInScreen'
 import { en } from '../../i18n/en'
 import { es } from '../../i18n/es'
 import { pt } from '../../i18n/pt'
+import { getPersonaRadio } from './personaRadios'
 
 /** One customer persona per language, so the notice is checked in each. */
 const PERSONAS = [
@@ -40,9 +41,9 @@ describe('SignInScreen demonstration notice', () => {
       vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
       const user = userEvent.setup()
       render(<SignInScreen onSignedIn={vi.fn()} />)
-      await screen.findByLabelText(es['signin.personaLabel'])
+      await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
 
-      await user.selectOptions(screen.getByLabelText(es['signin.personaLabel']), slug)
+      await user.click(getPersonaRadio(slug))
 
       expect(screen.getByText(catalog['signin.intro'])).toBeInTheDocument()
     },
@@ -53,7 +54,7 @@ describe('SignInScreen demonstration notice', () => {
     vi.spyOn(api, 'signIn').mockRejectedValue(new api.SignInError(401, 'Wrong access code'))
     const user = userEvent.setup()
     render(<SignInScreen onSignedIn={vi.fn()} />)
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
 
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'wrong')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))

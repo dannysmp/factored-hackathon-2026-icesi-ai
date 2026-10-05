@@ -54,7 +54,7 @@ function stubBackend(
 }
 
 async function signIn(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await screen.findByLabelText(es['signin.personaLabel'])
+  await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
   await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
   await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
 }

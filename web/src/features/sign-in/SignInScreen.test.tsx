@@ -8,6 +8,7 @@ import { SignInError } from './api'
 import { SignInScreen } from './SignInScreen'
 import { en } from '../../i18n/en'
 import { es } from '../../i18n/es'
+import { getPersonaRadio } from './personaRadios'
 
 /** Two customer personas, one speaking Spanish and one English. */
 const PERSONAS = [
@@ -24,7 +25,9 @@ describe('SignInScreen', () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
-    expect(await screen.findByLabelText(es['signin.personaLabel'])).toBeInTheDocument()
+    expect(
+      await screen.findByRole('group', { name: es['signin.personaGroupLabel'] }),
+    ).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Ana — Español' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Emma — English' })).toBeInTheDocument()
   })
@@ -78,8 +81,8 @@ describe('SignInScreen', () => {
     const user = userEvent.setup()
     render(<SignInScreen onSignedIn={onSignedIn} />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
-    await user.selectOptions(screen.getByLabelText(es['signin.personaLabel']), 'emma')
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
+    await user.click(getPersonaRadio('emma'))
     await user.type(screen.getByLabelText(en['signin.accessCodeLabel']), 'the-code')
     await user.click(screen.getByRole('button', { name: en['signin.submit'] }))
 
@@ -98,7 +101,7 @@ describe('SignInScreen', () => {
     // Spanish before the customer touches anything.
     expect(await screen.findByRole('button', { name: es['signin.submit'] })).toBeInTheDocument()
 
-    await user.selectOptions(screen.getByLabelText(es['signin.personaLabel']), 'emma')
+    await user.click(getPersonaRadio('emma'))
     expect(screen.getByRole('button', { name: en['signin.submit'] })).toBeInTheDocument()
   })
 
@@ -123,7 +126,7 @@ describe('SignInScreen', () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
     const { container } = render(<SignInScreen onSignedIn={vi.fn()} />)
 
-    await screen.findByLabelText(es['signin.personaLabel'])
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
     expect(await axe(container)).toHaveNoViolations()
   })
 
