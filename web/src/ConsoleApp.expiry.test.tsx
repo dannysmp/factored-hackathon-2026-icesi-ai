@@ -127,7 +127,7 @@ describe('ConsoleApp session expiry', () => {
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
     await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
 
-    expect(await screen.findByRole('heading', { name: ticketRef })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: `Caso ${ticketRef}` })).toBeInTheDocument()
     const ticketCalls = calls.filter((call) => call.url.includes(encodeURIComponent(ticketRef)))
     expect(ticketCalls.map((call) => call.authorization)).toEqual([
       'Bearer agent-token-1',
