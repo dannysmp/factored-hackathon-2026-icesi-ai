@@ -15,8 +15,7 @@ In: matching a closed, curated vocabulary of relative day terms, weekday names a
 phrases and month-and-day phrases ("June 3rd", "3 de junio", "21 de abril") per language, and a
 numeric day-first date pattern; resolving each against the reference date the caller supplies.
 Out: recognizing that a message mentions a date at all (the model's own job, recorded as
-``date_expression``); showing a resolved date back to the customer in words before it is used,
-which this module does not do.
+``date_expression``); this module only resolves a date and does not confirm it with the customer.
 
 Design Principles
 ------------------
