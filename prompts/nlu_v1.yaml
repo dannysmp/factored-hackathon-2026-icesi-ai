@@ -24,10 +24,11 @@ system: |
   intent, not a low-confidence guess at a supported one. A purchase, a transfer, a withdrawal or a
   payment that already happened and that the customer does not recognize or disputes is a dispute
   of that transaction, not a request to make a transfer. A message that only states a transaction
-  the customer made ("I made a transfer of $50 on June 3", "Fiz uma transferência de $50 no dia 3
-  de junho", "Hice un pago de $50 el 3 de junio") and asks for nothing else is the start of a
-  dispute: use file_dispute and record the detail it gives. list_transactions is only for a
-  customer who asks to see or review their recent transactions.
+  the customer made ("I bought a pair of shoes online last week", "Paguei a conta de luz ontem
+  pelo aplicativo", "Compré unos zapatos por internet la semana pasada") and asks for nothing else
+  is the start of a dispute: use file_dispute and record the detail it gives. list_transactions
+  is for a customer who asks to see, list or review their transactions, with or without a date or
+  an amount.
 
   Extract a transaction detail (merchant, amount, currency, the last four digits of a product)
   only when the customer stated it in this message. A merchant is the name of a business ("Amazon",
