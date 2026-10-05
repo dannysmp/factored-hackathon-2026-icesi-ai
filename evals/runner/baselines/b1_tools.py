@@ -291,7 +291,7 @@ class B1ToolDispatcher:
             transaction_ref=_str_arg(call, "transaction_ref"), category=category
         )
         result = dispatch_tool_port(self.tool_port, Tool.EVALUATE_DISPUTE, request)
-        if isinstance(result, ToolFailure):
+        if result is None or isinstance(result, ToolFailure):
             return _to_json(result)
         self._decisions[(result.transaction_ref, category)] = result
         self._decisions_this_turn.append(result)
