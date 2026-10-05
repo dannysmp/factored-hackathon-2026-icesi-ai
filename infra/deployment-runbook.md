@@ -91,7 +91,7 @@ gh run watch "$run_id" --exit-status
 
 Set `deploy_metabase=true` only when the Metabase parameters listed in `README.md` exist. For a clean-account reproduction that is then removed, leave `teardown_after` at its default (on).
 
-The run builds and scans both images, pushes them, brings the stack up over SSM, seeds the database, and runs the smoke test and the hardening check. Any failed step fails the run.
+The run builds and scans both images, pushes them, deploys over SSM (the database is migrated and seeded before the rest of the stack is brought up), and runs the smoke test and the hardening check. Any failed step fails the run.
 
 The host name is public (`<address-with-dashes>.sslip.io`). It appears in the run log where the smoke test step is echoed with it (same `run_id` as above):
 
