@@ -97,31 +97,83 @@ describe('ChatFeature', () => {
     expect(card).toHaveTextContent('DEMO-1234')
   })
 
-  it('presents a case number as a filed result, ahead of a hand-off reference', async () => {
-    const [lastTurn] = FILE_DISPUTE_EN.slice(-1)
-    if (lastTurn === undefined) {
-      throw new Error('fixture FILE_DISPUTE_EN must have at least one turn')
+  describe('a dispute filed on a turn that does not end the conversation', () => {
+    const [filing, farewell] = FILE_DISPUTE_EN.slice(-2)
+    if (filing === undefined || farewell === undefined) {
+      throw new Error('fixture FILE_DISPUTE_EN must end with a filing turn and a farewell')
     }
-    const filed = { ...lastTurn, case_number: 'D-2001', handoff_ticket: 'DEMO-1234' }
-    render(<ChatFeature client={new FixtureChatClient([filed])} lang="en" />)
-    await findMessage('Thanks for reaching out. Have a good day!')
-    const card = screen.getByRole('region', { name: 'Dispute filed' })
-    expect(card).toHaveTextContent('D-2001')
-    expect(card).not.toHaveTextContent('DEMO-1234')
-  })
 
-  it('announces the outcome and its reference together with the last assistant reply', async () => {
-    const [lastTurn] = FILE_DISPUTE_EN.slice(-1)
-    if (lastTurn === undefined) {
-      throw new Error('fixture FILE_DISPUTE_EN must have at least one turn')
+    async function sendOnce(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+      await user.type(screen.getByLabelText('Your message'), 'no, thanks')
+      await user.click(screen.getByRole('button', { name: 'Send' }))
     }
-    const filed = { ...lastTurn, case_number: 'D-2001' }
-    render(<ChatFeature client={new FixtureChatClient([filed])} lang="en" />)
-    await findMessage('Thanks for reaching out. Have a good day!')
 
-    expect(announcement()).toHaveTextContent(
-      'Thanks for reaching out. Have a good day! Dispute filed. Case reference: D-2001.',
-    )
+    it('shows the filed card with its number as soon as the dispute is filed, with the form still open', async () => {
+      render(<ChatFeature client={new FixtureChatClient([filing])} lang="en" />)
+      await findMessage(/case DEMO-1234/)
+
+      expect(screen.getByRole('region', { name: 'Dispute filed' })).toHaveTextContent('DEMO-1234')
+      expect(screen.getByLabelText('Your message')).toBeInTheDocument()
+      expect(announcement()).toHaveTextContent(
+        `${filing.reply} Dispute filed. Case reference: DEMO-1234.`,
+      )
+    })
+
+    it('shows the card when the filing arrives as the answer to a message', async () => {
+      const user = userEvent.setup()
+      const opening = FILE_DISPUTE_EN[0]
+      if (opening === undefined)
+        throw new Error('fixture FILE_DISPUTE_EN must have an opening turn')
+      render(<ChatFeature client={new FixtureChatClient([opening, filing])} lang="en" />)
+      await findMessage(opening.reply)
+      expect(screen.queryByRole('region', { name: 'Dispute filed' })).not.toBeInTheDocument()
+
+      await sendOnce(user)
+      await findMessage(/case DEMO-1234/)
+
+      expect(screen.getByRole('region', { name: 'Dispute filed' })).toHaveTextContent('DEMO-1234')
+    })
+
+    it('keeps the number on the card after the farewell, which carries none', async () => {
+      const user = userEvent.setup()
+      render(<ChatFeature client={new FixtureChatClient([filing, farewell])} lang="en" />)
+      await findMessage(/case DEMO-1234/)
+      await sendOnce(user)
+      await findMessage(farewell.reply)
+
+      expect(screen.getByRole('region', { name: 'Dispute filed' })).toHaveTextContent('DEMO-1234')
+      expect(screen.queryByRole('region', { name: 'Conversation ended' })).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Your message')).not.toBeInTheDocument()
+      expect(announcement()).toHaveTextContent(
+        `${farewell.reply} Dispute filed. Case reference: DEMO-1234.`,
+      )
+    })
+
+    it('does not announce the outcome again on a reply in between', async () => {
+      const user = userEvent.setup()
+      const between = { ...farewell, reply: 'Anything else I can help with?', end_session: false }
+      render(<ChatFeature client={new FixtureChatClient([filing, between])} lang="en" />)
+      await findMessage(/case DEMO-1234/)
+      await sendOnce(user)
+      await findMessage(between.reply)
+
+      expect(announcement()).toHaveTextContent(between.reply)
+      expect(announcement()).not.toHaveTextContent('Dispute filed')
+      expect(screen.getByRole('region', { name: 'Dispute filed' })).toHaveTextContent('DEMO-1234')
+    })
+
+    it('leads with the hand-off reference when the conversation then ends in a hand-off', async () => {
+      const user = userEvent.setup()
+      const handoff = { ...farewell, handoff_ticket: 'HND-77' }
+      render(<ChatFeature client={new FixtureChatClient([filing, handoff])} lang="en" />)
+      await findMessage(/case DEMO-1234/)
+      await sendOnce(user)
+      await findMessage(handoff.reply)
+
+      const card = screen.getByRole('region', { name: 'A person will review your request' })
+      expect(card).toHaveTextContent('HND-77')
+      expect(screen.queryByRole('region', { name: 'Dispute filed' })).not.toBeInTheDocument()
+    })
   })
 
   it('announces the new assistant reply and never reads the customer’s own message back', async () => {

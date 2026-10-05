@@ -88,8 +88,8 @@ export const FILE_DISPUTE_EN: readonly TurnResponse[] = [
     choices: [],
     next_expected: null,
     end_session: false,
-    handoff_ticket: 'DEMO-1234',
-    case_number: null,
+    handoff_ticket: null,
+    case_number: 'DEMO-1234',
   },
   {
     contract_version: '1',

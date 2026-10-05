@@ -31,7 +31,6 @@ export interface Messages {
   'chat.notSent': string
   /** `{count}` is replaced with the number of characters the customer may still type. */
   'chat.charactersLeft': string
-  /** `{ticket}` is replaced with the handoff ticket at render time. */
   'chat.result.filedTitle': string
   'chat.result.escalatedTitle': string
   'chat.result.closedTitle': string
