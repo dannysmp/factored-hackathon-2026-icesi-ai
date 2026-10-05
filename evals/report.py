@@ -1,56 +1,50 @@
 """
 Evaluation Report Generator
-=============================
+===========================
 
 Overview
 --------
-Turns one full harness run's already-computed results — P's three repeated runs, B0's and B1's
-single runs, the live judge's own verdicts over P's last run, and the human judge-validation
-sample's agreement — into ``reports/evaluation.md``, the single generated evaluation artifact. Every
-piece it reads is produced elsewhere (the runner, the metrics engine, the judge, the
-judge-validation agreement computation); this module only assembles and renders what they produced.
-The judge-scored-quality section (a system's own live-judge verdicts) and the judge-validation
-section (the judge's agreement with human raters) answer two different questions from two different
-data sources and are never conflated.
+Turns the results of one full harness run into ``reports/evaluation.md``, the single generated
+evaluation artifact: P's three repeated runs, B0's and B1's single runs, the live judge's verdicts
+over P's last run, and the agreement between the judge and the human raters. Every input is
+produced elsewhere (the runner, the metrics engine, the judge, the judge-validation computation);
+this module assembles and renders them. The judge-scored-quality section (a system's own live-judge
+verdicts) and the judge-validation section (the judge's agreement with human raters) answer
+different questions from different data and are never conflated.
 
 Scope
 -----
 In: ``EvaluationReport``, the typed input every section renders from, and ``render_markdown``, a
 pure function of it.
-Out: running any system variant, computing any metric, or calling the judge — this module reads
-finished results, exactly the boundary ``pipelines.profile_report`` already draws against
-``pipelines.profile`` for the data profile.
+Out: running any system variant, computing any metric, or calling the judge; this module reads
+finished results, the same boundary ``pipelines.profile_report`` keeps against
+``pipelines.profile``.
 
 Design Principles
 -----------------
-- **Pure function of the report, like ``pipelines.profile_report``.** No clock, no filesystem, no
-  randomness; the same input always renders byte-identical text. The CLI is the only place that
-  touches the filesystem, the same split ``pipelines.profile`` already draws with its own renderer.
+- **A pure function of the report.** No clock, no filesystem, no randomness: the same input
+  renders byte-identical text. Writing the file is the caller's job (``evals.cli``,
+  ``evals.h4_judge_validation``).
 - **A synthetic judge-validation sample never reaches the report as real.** ``EvaluationReport``
-  carries the agreement sample's own ``provenance``; the judge-validation section renders the real
-  agreement numbers only when it reads ``"human"``, and a placeholder stating the human sample is
-  pending — never a fabricated agreement rate — for anything else, including the synthetic
-  placeholder fixture (``evals.golden.judge_validation_sample``). A test proves the two paths render
-  different, not just non-empty, text.
-- **Every metric states its basis.** ``evals.metrics.Metric.basis`` already carries "measured" or
-  "projected"; this renderer surfaces it on every row rather than repeating the OFFLINE
-  caveat once and letting a reader forget it applies to every number in the table.
-- **A gap this codebase already discloses elsewhere is repeated, not silently duplicated or
-  invented.** The learned-component metrics (PR-AUC, calibration, NLU accuracy) are explicitly out
-  of ``evals.metrics``'s own scope ("those score a model, not a conversation, and live beside the
-  model that produces them"); this report's own Learned-component section says exactly that and
-  points at the model experiment log, rather than fabricating a number this module has no way to
-  compute.
+  carries the agreement sample's ``provenance``. The judge-validation section renders agreement
+  rates only when it is ``"human"``; for anything else, including the synthetic sample of
+  ``evals.golden.judge_validation_sample``, it renders a statement that the human sample is
+  pending and no rate.
+- **Every metric states its basis.** ``evals.metrics.Metric.basis`` is "measured" or "projected";
+  the headline table shows it on every row rather than stating the offline caveat once.
+- **A gap is stated, not filled.** The learned-component metrics (PR-AUC, calibration, NLU
+  accuracy) are outside ``evals.metrics`` because they score a model, not a conversation; the
+  Learned components section says so and points at the model experiment log instead of reporting
+  a number this module cannot compute.
 
 Runtime Contract
------------------
+----------------
 ``Versions``, ``SystemResult``, ``EvaluationReport``.
 ``render_markdown(report) -> str``.
 ``judge_validation_section(agreement, provenance, detail=None, facts_coverage=None) -> str``: the
-exact text ``render_markdown`` puts under its Judge validation heading — exported so a cheaper
-regeneration of just that section (once the real human sample is available) renders identically to a
-full report, never a hand-maintained second copy of the same wording
-(``evals.h4_judge_validation``).
+exact text ``render_markdown`` puts under its Judge validation heading. It is exported so that
+``evals.h4_judge_validation`` can regenerate only that section and render it identically to a full
+report, with no second copy of the wording to maintain.
 ``withhold_demoted_judge_means(section_body, agreement, human_means) -> str``: the body of the
 Judge-scored quality section with each demoted dimension's judge mean replaced by "not reportable
 by the judge" in every system row, and a note beneath the table giving the raters' means; raises
@@ -58,18 +52,16 @@ by the judge" in every system row, and a note beneath the table giving the rater
 
 Limitations
 -----------
-The failure gallery reports which deterministic check failed (``correct_outcome``,
-``is_unsafe``, an escalation mismatch) or, for a case ``evals.scoring.error_result`` recorded, its
-own error message — not a deeper root-cause classification beyond that. ``CaseResult`` itself
-carries only those flags, and building a richer taxonomy is outside this module's scope. The failure
-gallery draws from ``case_results`` alone, the last run only; the Unsafe outcomes section is the one
-that reports every unsafe result from every repeated run, each tagged with which of the harness's
-own checks fired (``unsafe_reasons``) and its run's number. That section also states that zero
-observed unsafe outcomes does not establish zero risk and sizes the set per golden-set category; a
-category's case-runs are its last-run case count times the run count. Repeated-run variability and
-the flip list are rendered only for a ``SystemResult`` whose ``run_count`` is greater than one (P
-runs three times); B0 and B1 report a single run and show no range, by construction, not because
-their own results are omitted.
+The failure gallery reports which deterministic check failed (``correct_outcome``, ``is_unsafe``,
+an escalation mismatch) or, for a case ``evals.scoring.error_result`` recorded, its error message;
+``CaseResult`` carries no deeper root-cause classification. The gallery draws from ``case_results``
+alone, the last run only. The Unsafe outcomes section reports every unsafe result from every
+repeated run, each tagged with the checks that fired (``unsafe_reasons``) and its run's number; it
+also states that zero observed unsafe outcomes does not establish zero risk and sizes the set per
+golden-set category (a category's case-runs are its last-run case count times the run count).
+Repeated-run variability and the flip list are rendered only for a ``SystemResult`` whose
+``run_count`` is greater than one; B0 and B1 run once and show no range by construction, not
+because their results are omitted.
 """
 
 from __future__ import annotations
@@ -106,9 +98,8 @@ from evals.repeated_runs import (
     VariabilityValue,
 )
 
-# One (label, accessor) pair per headline metric, in the order the metric definitions list them;
-# shared by the headline table and the repeated-run variability table so the two never drift out of
-# sync with each other.
+# One (label, accessor) pair per headline metric, in the order ``evals.metrics`` defines them; the
+# accessor names a field of ``HeadlineMetricsVariability``.
 _HEADLINE_METRICS: tuple[tuple[str, str], ...] = (
     ("Safe automated resolution", "safe_automated_resolution"),
     ("Attempted share", "attempted_share"),
@@ -127,7 +118,10 @@ _HEADLINE_METRICS: tuple[tuple[str, str], ...] = (
 
 @dataclass(frozen=True, slots=True)
 class Versions:
-    """Every version the report states, gathered once per report."""
+    """Every model, prompt, policy and code version the report states, gathered once per report.
+
+    ``git_sha`` is the repository version the run was produced from.
+    """
 
     nlu_model: str
     render_model: str
@@ -141,7 +135,13 @@ class Versions:
 
 @dataclass(frozen=True, slots=True)
 class SystemResult:
-    """One system variant's finished run(s): P has three, B0 and B1 have one each."""
+    """One system variant's finished run(s): P has three, B0 and B1 have one each.
+
+    Raises
+    ------
+    ValueError
+        ``run_count`` is below one, or a single run carries flips.
+    """
 
     system: Literal["P", "B0", "B1"]
     run_count: int
@@ -159,6 +159,7 @@ class SystemResult:
     run did not repeat is otherwise unrecoverable from ``case_results`` alone."""
 
     def __post_init__(self) -> None:
+        """Reject a run count below one and a flip list on a single run."""
         if self.run_count < 1:
             raise ValueError("run_count must be at least 1")
         if self.run_count == 1 and self.flips:
@@ -167,7 +168,12 @@ class SystemResult:
 
 @dataclass(frozen=True, slots=True)
 class EvaluationReport:
-    """Every finished result one full evaluation pass produced, ready to render."""
+    """Every finished result one full evaluation pass produced, ready to render.
+
+    ``judge_validation`` and its ``judge_validation_provenance`` describe the sample behind the
+    judge-validation section; ``reference_date``, its source and ``bank_timezone`` are stated in
+    the Limitations section.
+    """
 
     versions: Versions
     golden_cases: tuple[Case, ...]
@@ -179,9 +185,8 @@ class EvaluationReport:
     bank_timezone: str
     scope_note: str = ""
     """Set by the caller when ``golden_cases`` is a subset of the full golden set (for example the
-    16-case CI-smoke subset) — empty for a full-golden-set run. Rendered as a prominent callout,
-    never silently inferred from a case count this module has no independent way to call "full" or
-    "partial"."""
+    smoke subset); empty for a full run. Rendered as a prominent callout and as a limitation. It is
+    never inferred from a case count, which this module cannot judge to be full or partial."""
     judge_call_count: int = 0
     """Calls the live judge made while producing this report; zero when it was not run."""
     judge_cost_usd: float | None = None
@@ -193,10 +198,12 @@ class EvaluationReport:
 
 
 def _count(value: int) -> str:
+    """An integer with thousands separators."""
     return f"{value:,}"
 
 
 def _table(headers: list[str], rows: list[list[str]]) -> str:
+    """A Markdown table; with no rows, only the header and separator."""
     header_row = "| " + " | ".join(headers) + " |"
     separator = "| " + " | ".join("---" for _ in headers) + " |"
     body = "\n".join("| " + " | ".join(row) + " |" for row in rows)
@@ -204,17 +211,20 @@ def _table(headers: list[str], rows: list[list[str]]) -> str:
 
 
 def _fmt_variability_value(value: VariabilityValue) -> str:
+    """A variability statistic to three decimals, or ``not defined``."""
     if value == NOT_DEFINED:
         return NOT_DEFINED
     return f"{value:.3f}"
 
 
 def _variability_at(variability: HeadlineMetricsVariability, accessor: str) -> VariabilityValue:
+    """The mean of the headline metric ``accessor`` names."""
     field = getattr(variability, accessor)
     return field.mean  # type: ignore[no-any-return]
 
 
 def _workload_section(cases: tuple[Case, ...]) -> str:
+    """The case count, and per category the count, language mix and provenance."""
     rows = []
     for category in CaseCategory:
         in_category = [case for case in cases if case.category is category]
@@ -237,6 +247,7 @@ def _workload_section(cases: tuple[Case, ...]) -> str:
 
 
 def _versions_section(versions: Versions) -> str:
+    """The versions as a field and value table."""
     rows = [
         ["NLU model", versions.nlu_model],
         ["Render model", versions.render_model],
@@ -290,6 +301,10 @@ def _sample_size_rows(results: Sequence[SystemResult]) -> list[list[str]]:
 
 
 def _headline_table(systems: tuple[SystemResult, ...]) -> str:
+    """The sample-size rows and one row per headline metric, a column per system present.
+
+    A system that ran more than once shows its mean with the range across runs.
+    """
     by_system = {result.system: result for result in systems}
     present = [s for s in ("P", "B0", "B1") if s in by_system]
     headers = ["Metric", *present, "Basis"]
@@ -311,6 +326,7 @@ def _headline_table(systems: tuple[SystemResult, ...]) -> str:
 
 
 def _judge_dimension_mean(values: Sequence[int]) -> str:
+    """The mean of ``values`` to three decimals, or ``not defined`` for none."""
     if not values:
         return NOT_DEFINED
     return f"{sum(values) / len(values):.3f}"
@@ -370,8 +386,10 @@ def _judge_scored_quality_section(report: EvaluationReport) -> str:
     return f"{table}{note}\n\n{_judge_cost_line(report)}"
 
 
+# What replaces the judge's mean for a demoted dimension.
 _WITHHELD_JUDGE_MEAN = "not reportable by the judge"
 
+# The judge-scored table's column headers and the dimension each reports.
 _JUDGE_MEAN_COLUMNS = {
     "Grounding (mean, 0-2)": "grounding",
     "Language quality (mean, 0-2)": "language_quality",
@@ -380,7 +398,10 @@ _JUDGE_MEAN_COLUMNS = {
 
 
 def _human_mean_text(mean: HumanMean) -> str:
+    """A dimension's two raters' means and their case counts, for the note under the table."""
+
     def one(label: str, value: float | None, scored: int) -> str:
+        """One rater's mean and case count, or "not defined" when the rater scored nothing."""
         return f"{label} {NOT_DEFINED}" if value is None else f"{label} {value:.2f} (n={scored})"
 
     return (
@@ -447,6 +468,7 @@ def withhold_demoted_judge_means(
 
 
 def _repeated_run_section(systems: tuple[SystemResult, ...]) -> str:
+    """Per repeated system, the cases whose verdict flipped across runs."""
     repeated = [result for result in systems if result.run_count > 1]
     if not repeated:
         return "No system variant in this report ran more than once."
@@ -470,6 +492,7 @@ def _repeated_run_section(systems: tuple[SystemResult, ...]) -> str:
 
 
 def _failure_gallery(systems: tuple[SystemResult, ...]) -> str:
+    """Every last-run case that errored, was unsafe or had an incorrect outcome, per system."""
     rows = []
     for result in systems:
         for case_result in result.case_results:
@@ -495,6 +518,7 @@ def _failure_gallery(systems: tuple[SystemResult, ...]) -> str:
     return _table(["System", "Case", "Failure class", "Expected vs observed"], rows)
 
 
+# The statement that a count of zero is not a safety claim, shown above the sizing table.
 _UNSAFE_CAVEAT = (
     "Zero observed unsafe outcomes does not establish zero risk: it means none occurred in the "
     "case-runs counted below, no more. A system's unsafe-outcome rate in a single run divides by "
@@ -548,6 +572,7 @@ def _unsafe_sizing_rows(
 
 
 def _unsafe_outcomes_section(report: EvaluationReport) -> str:
+    """The caveat, the per-category sizing table and every unsafe occurrence from every run."""
     sizing = _table(
         ["System", "Category", "Cases per run", "Runs", "Case-runs observed", "Unsafe observed"],
         _unsafe_sizing_rows(report.systems, report.golden_cases),
@@ -573,16 +598,24 @@ def _unsafe_outcomes_section(report: EvaluationReport) -> str:
 
 
 def _fmt_slice_metric(metric: Metric) -> str:
+    """A slice metric with its denominator, or ``not defined`` with it."""
     if metric.value == NOT_DEFINED:
         return f"{NOT_DEFINED} (n={metric.denominator})"
     return f"{metric.value:.3f} (n={metric.denominator})"
 
 
 def _category_counts(counts: Sequence[tuple[str, int]]) -> str:
+    """``category count`` pairs joined by commas."""
     return ", ".join(f"{category} {count}" for category, count in counts)
 
 
 def _disparity_note(disparity: Disparity) -> str:
+    """The investigation note for one flagged slice, above or below the rest of its dimension.
+
+    For a slice below the rest, it names the failing and errored cases and states whether the
+    failures concentrate in one category, so the reader does not attribute a case-mix effect to the
+    slice.
+    """
     small = (
         f" Small sample (fewer than {SMALL_SAMPLE_THRESHOLD} in-scope cases)."
         if disparity.small_sample
@@ -660,6 +693,7 @@ def _unavailable_notice(profiles: Mapping[str, CaseProfile] | None) -> str:
 
 
 def _fairness_section(report: EvaluationReport) -> str:
+    """P's last run sliced by language, country, segment and phrasing, with the disparity notes."""
     proposed = next((result for result in report.systems if result.system == "P"), None)
     if proposed is None:
         return "System P was not run, so there is nothing to slice."
@@ -722,6 +756,7 @@ def _fairness_section(report: EvaluationReport) -> str:
 
 
 def _agreement_cell(value: VariabilityValue, detail: PairDetail | None) -> str:
+    """An agreement rate, with its pair count and kappa when ``detail`` is given."""
     if detail is None:
         return _fmt_variability_value(value)
     kappa = detail.weighted_kappa
@@ -730,6 +765,7 @@ def _agreement_cell(value: VariabilityValue, detail: PairDetail | None) -> str:
 
 
 def _direction_table(detail: tuple[DimensionDetail, ...]) -> str:
+    """Per dimension, how often each side of a pairing scored higher where the two differ."""
     rows = [
         [
             entry.dimension,
@@ -750,8 +786,8 @@ def _direction_table(detail: tuple[DimensionDetail, ...]) -> str:
     )
 
 
-#: A judge-versus-rater gap is called one-sided from this many differences, when at least this
-#: share of them run the same way.
+# A judge-versus-rater gap is called one-sided from this many differences, when at least this
+# share of them run the same way.
 _LEAN_MIN_DIFFERENCES = 5
 _LEAN_SHARE = 0.8
 
@@ -797,6 +833,7 @@ def _validation_decision(
     agreement: tuple[DimensionAgreement, ...],
     detail: tuple[DimensionDetail, ...] | None,
 ) -> str:
+    """The per-dimension decision (judge-scored or not), one-sided offsets and a reading note."""
     threshold = f"{DEMOTION_THRESHOLD:.0%}"
     lines = []
     by_dimension = {entry.dimension: entry for entry in detail or ()}
@@ -839,6 +876,7 @@ def _validation_decision(
 
 
 def _facts_coverage_note(facts_coverage: tuple[int, int]) -> str:
+    """The limitation stating how many sheet rows had no case facts to ground against."""
     without, total = facts_coverage
     return (
         f"**Limitation: the facts column.** {without} of the {total} sheet rows carried the "
@@ -895,6 +933,7 @@ def judge_validation_section(
     return "\n\n".join(parts)
 
 
+# The Learned components section: a pointer to where those metrics live, not a number.
 _LEARNED_COMPONENT_SECTION = (
     "Risk-model and NLU learned-component metrics (PR-AUC, recall at the validated precision "
     "target, calibration, NLU accuracy/F1 per language) are computed and versioned in the model "
@@ -904,6 +943,7 @@ _LEARNED_COMPONENT_SECTION = (
 
 
 def _limitations_section(report: EvaluationReport) -> str:
+    """The measured-only statement, cost basis, reference date and any pending or scope notes."""
     lines = [
         "- All measurements in this report are labeled **measured**; no projected metric (for "
         "example a business-savings projection from cost inputs) is computed here.",

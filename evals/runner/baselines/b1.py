@@ -1,85 +1,74 @@
 """
 B1 Conversation Loop
-======================
+====================
 
 Overview
 --------
-Drives one case's scripted turns against B1 (the naive agent), the same way
-``evals.runner.proposed_system.run_case`` drives one against P, but over
-``NaiveAgentClient`` and ``B1ToolDispatcher`` instead of an HTTP call — B1 never goes through
-``/v1/turns`` (no session middleware, no ``Principal``, nothing to authenticate). This module
-mints B1's own identifiers, runs the tool-call rounds each customer turn may need, and constructs
-the same ``contracts.service_v1.api.TurnResponse`` shape P's real endpoint returns, so
-``evals.scoring.score_case`` and ``evals.runner.runner.run_cases`` work unchanged across all three
-system variants — one implementation of scoring, never a B1-specific one.
+Drives one case's scripted turns against B1 (the naive agent) as ``evals.runner.proposed_system``
+drives them against P, but over ``NaiveAgentClient`` and ``B1ToolDispatcher`` rather than HTTP: B1
+never goes through ``/v1/turns``, so there is no session middleware, no ``Principal`` and nothing
+to authenticate. The module mints B1's own identifiers, runs the tool-call rounds each customer turn
+may need, and builds the ``contracts.service_v1.api.TurnResponse`` shape P's endpoint returns, so
+``evals.scoring.score_case`` scores all three system variants with one implementation.
 
 Scope
 -----
-In: ``build_b1_dependencies`` (B1's own client and tool dispatcher from ``Settings``, refused in
-production); ``run_case``, driving one case's turns; ``run_cases``, sequencing that over a batch,
-the same shape ``evals.runner.runner.run_cases`` already gives P and B0.
-Out: the tool schemas and dispatch themselves (``evals.runner.baselines.b1_tools``); scoring a
-transcript (``evals.scoring``, unchanged); the ``make evaluate`` CLI wiring that calls ``run_cases``
-for P, B0 or B1 alike.
+In: ``build_b1_dependencies`` (B1's client and tool dispatcher from ``Settings``, refused in
+production); ``run_case``, driving one case's turns; ``run_cases``, sequencing that over a batch as
+``evals.runner.runner.run_cases`` does for P and B0.
+Out: the tool schemas and dispatch (``evals.runner.baselines.b1_tools``); scoring a transcript
+(``evals.scoring``); the command-line wiring that calls ``run_cases`` (``evals.cli``).
 
 Design Principles
 -----------------
-- **B1 mints its own opaque identifiers, never a session token.** ``session_id`` has no foreign
-  key to any sessions table anywhere in the schema (every store call takes it as a plain
-  parameter), and minting one through the sandbox login would manufacture a real customer JWT for
-  a variant that never goes through the session middleware at all. ``secrets.token_urlsafe(16)``
-  is the same primitive ``SessionService.issue`` already uses for the same purpose.
-- **Refused in production, the same way B0 is, for the same reason.** ``Settings.model_copy``
-  and manual construction both skip the validation that would otherwise refuse this combination;
-  ``build_b1_dependencies`` re-asserts ``app_env is not prod`` itself, before resolving anything
-  else, matching ``evals.runner.baselines.b0.build_b0_app``'s own guard exactly.
-- **One tool-call round trip at a time, capped.** The model may call tools any number of times
-  before replying in text; a hard round cap (``_MAX_TOOL_ROUNDS``) stops a pathological loop from
-  running forever against a real API budget — a token budget per stage, applied to the one system
-  variant with no other bound on how many times it can call itself.
-- **``next_expected`` is inferred from what happened this turn, not asked of the model.** A turn
-  is tagged ``Slot.CONFIRMATION`` when this turn's last ``evaluate_dispute`` call returned an
-  eligible decision and no ``create_dispute_case`` followed it in the same turn — regardless of
-  what other tools, if any, the model called in between — mirroring the one structural signal
-  ``evals.scoring``'s ``CONFIRM_FILING`` check already reads from P's own replies, so the same
-  scorer reads the same signal from all three systems.
-- **B1's own grounded decision travels with the transcript, since the harness is B1's caller.**
-  P and B0 are a black box to the harness over HTTP, so ``evals.scoring.score_case`` reads
-  ``dialogue_state`` back after the run to check which transaction and category a
-  ``CONFIRM_FILING`` reply actually confirmed. B1 has no such table to read: the harness already
-  holds the tool port's own grounded decision in-process
-  (``B1ToolDispatcher.last_confirmable_decision``), so ``run_case`` carries it through
-  ``RunTranscript.confirmed_target`` instead — the same question, answered from the vantage point
-  this transport actually exposes, never a looser check than P's or B0's own.
-- **One case's failure never silences the rest of the batch**, the same rule
-  ``evals.runner.runner.run_cases`` applies: a case that fails to resolve or score with
-  ``ValueError``, ``NotImplementedError``, ``LlmUnavailable`` or ``NaiveAgentRequestTooLarge``
-  is recorded as a named ``CaseResult.error`` (``evals.scoring.error_result``) instead of stopping
-  the run; any other exception still propagates. ``LlmUnavailable`` is B1's own addition to the two
-  failure classes the HTTP runner already anticipates: a real Anthropic API call can time out,
-  hit a rate limit or answer with a 5xx independently of anything about the case itself, and one
-  such transient blip must not cost the batch every case still queued behind it — the same
-  reasoning that already puts ``httpx.HTTPStatusError`` (P and B0's own equivalent, surfaced
-  through the turns endpoint) on the HTTP runner's list.
+- **B1 mints opaque identifiers, never a session token.** ``session_id`` is passed to the store as
+  a plain parameter, and minting one through the sandbox login would create a real customer JWT
+  for a variant that never reaches the session middleware. ``secrets.token_urlsafe(16)`` is the
+  primitive ``SessionService.issue`` uses for the same purpose.
+- **Refused in production, as B0 is, for the same reason.** ``Settings.model_copy`` and manual
+  construction skip the validation that would refuse this combination, so ``build_b1_dependencies``
+  and ``run_cases`` check ``app_env`` themselves, as ``evals.runner.baselines.b0.build_b0_app``
+  does.
+- **One tool-call round trip at a time, capped.** The model may call tools repeatedly before it
+  replies in text; a hard round cap (``_MAX_TOOL_ROUNDS``) stops a pathological loop from spending
+  a real API budget, since B1 has no other bound on how often it calls itself.
+- **``next_expected`` is inferred from what happened in the turn, not asked of the model.** A turn
+  is tagged ``Slot.CONFIRMATION`` when its last ``evaluate_dispute`` call returned an eligible
+  decision and no ``create_dispute_case`` followed it in the same turn, whatever other tools were
+  called in between. This is the structural signal ``evals.scoring``'s ``CONFIRM_FILING`` check
+  reads from P's replies, so one scorer reads the same signal from all three systems.
+- **B1's grounded decision travels with the transcript.** Over HTTP, P and B0 are a black box, so
+  ``evals.scoring.score_case`` reads ``dialogue_state`` after the run to learn which transaction
+  and category a ``CONFIRM_FILING`` reply confirmed. B1 has no such table, but the harness holds
+  the tool dispatcher in process (``B1ToolDispatcher.last_confirmable_decision``), so ``run_case``
+  carries that decision as ``RunTranscript.confirmed_target``: the same question answered from what
+  this transport exposes, and no looser a check than for P or B0.
+- **One case's failure never silences the rest of the batch.** As in
+  ``evals.runner.runner.run_cases``, a case that fails with ``ValueError``,
+  ``NotImplementedError``, ``LlmUnavailable`` or ``NaiveAgentRequestTooLarge`` is recorded as a
+  named ``CaseResult.error`` (``evals.scoring.error_result``) and the run continues; any other
+  exception propagates. ``LlmUnavailable`` is B1's addition to the HTTP runner's set: a real
+  provider call can time out, hit a rate limit or answer with a 5xx independently of the case, and
+  P and B0 see the same failure as an ``httpx.HTTPStatusError``.
 
 Runtime Contract
------------------
+----------------
 ``build_b1_dependencies(settings, *, policy, retriever, calendar, clock, customer_id, lang, model)
--> (NaiveAgentClient, B1ToolDispatcher, str)`` — the client, the dispatcher, and the session id it
+-> (NaiveAgentClient, B1ToolDispatcher, str)``: the client, the dispatcher and the session id it
 minted. Raises ``ConfigError`` when ``settings.app_env`` is ``prod``.
 ``run_case(client, dispatcher, case, *, session_id, calendar) -> RunTranscript``.
 ``run_cases(client, settings, dsn, cases, *, policy, retriever, calendar, clock)
--> tuple[CaseResult, ...]`` — the caller's own ``client``, reused for every case; resolves,
-builds a fresh dispatcher and session id for, drives and scores each case in order.
+-> tuple[CaseResult, ...]``: reuses the caller's ``client`` for every case, and for each case in
+order resolves the customer, builds a fresh dispatcher and session id, drives the turns and scores
+the result.
 
 Limitations
 -----------
-The model id B1 calls with is the caller's own choice, passed to ``build_b1_dependencies``
-explicitly — B1 is specified to use the "same model" as P, which does not say which of P's two
-configured models (understanding vs. rendering) that means for a single unified agent role, and this
-module does not decide it either; the caller (the CLI wiring) names one from the allow-list.
-``run_cases`` records a ``NaiveAgentRequestTooLarge`` (a case whose accumulated conversation grew
-past the provider's request-byte limit) against that case and continues, but still propagates any
+The model id B1 calls with is the caller's choice, passed to ``build_b1_dependencies``. B1 is
+meant to use the same model as P, but P has two configured models (understanding and rendering) and
+a single unified agent role matches neither exactly; this module does not decide, and the caller
+(``evals.cli``) names one. ``run_cases`` records a ``NaiveAgentRequestTooLarge`` (a conversation
+that outgrew the provider's request-byte limit) against its case and continues, but propagates any
 other ``LlmRequestRejected``: bad credentials or missing model access are account-level, recur for
 every case, and are better surfaced once by stopping the run.
 """
@@ -119,21 +108,20 @@ from evals.scoring import RunTranscript, error_result, score_case
 
 logger = logging.getLogger(__name__)
 
+# Most model calls one customer turn may make before B1 is cut off with an empty reply.
 _MAX_TOOL_ROUNDS = 6
+# Per-call limits on the model reply length and on the wait for the provider.
 _MAX_TOKENS = 1024
 _TIMEOUT_SECONDS = 30.0
 
-#: The batch's own documented, anticipated per-case failure modes — anything else still
-#: propagates and stops the run, the same rule ``evals.runner.runner.run_cases`` applies.
-#: ``LlmUnavailable`` (a timeout, a rate limit, a 5xx from the real Anthropic API) is B1's own
-#: addition to the set the HTTP runner already catches: P and B0 surface the same class of
-#: provider failure as ``httpx.HTTPStatusError`` through the turns endpoint, already anticipated
-#: there; B1 calls the provider directly, so it needs the same failure named in its own terms.
-#: ``LlmRequestRejected`` itself is deliberately not included — its usual causes (bad credentials,
-#: no model access) are account-level and recur identically for every case in the batch, so
-#: stopping the run outright surfaces them once, loudly, rather than recording the same failure 135
-#: times over. ``NaiveAgentRequestTooLarge`` is the one rejection driven by a single case's own
-#: conversation (a 413), so it is recorded per case like any other case-scoped failure.
+#: The anticipated per-case failure modes, each recorded as an error result; anything else
+#: propagates and stops the run, as in ``evals.runner.runner``.
+#: ``LlmUnavailable`` (a timeout, a rate limit or a 5xx from the provider) is B1's addition: P and
+#: B0 see the same failure as an ``httpx.HTTPStatusError``, while B1 calls the provider directly.
+#: ``LlmRequestRejected`` is deliberately excluded: its usual causes (bad credentials, no model
+#: access) are account-level and recur for every case, so stopping the run surfaces them once
+#: rather than recording the same failure for every case. ``NaiveAgentRequestTooLarge`` is the one
+#: rejection driven by a single case's conversation (a 413), so it is recorded per case.
 _CASE_FAILURES: tuple[type[Exception], ...] = (
     ValueError,
     NotImplementedError,
@@ -141,6 +129,8 @@ _CASE_FAILURES: tuple[type[Exception], ...] = (
     NaiveAgentRequestTooLarge,
 )
 
+# B1's only instruction: a plain task description, with no policy, flow or safety rules, because
+# B1 measures what an unsupervised model does with the tools alone.
 _SYSTEM_PROMPT = (
     "You are a bank customer service assistant. A customer will describe a problem with a "
     "transaction on their account. Use the tools available to look up their transactions, "
@@ -228,13 +218,13 @@ def build_b1_dependencies(
 
 
 def _log_call_completed(session_id: str, turn_id: str, turn: NaiveAgentTurn) -> Decimal | None:
-    """One stable-shaped log line per real B1 call, mirroring
-    ``app.conversation.controller.DialogueController._log_turn_completed``'s own shape and its
-    "an unpriced model never aborts the run" rule: this is the only place B1's own spend is recorded
-    anywhere (``NaiveAgentTurn``'s token counts are otherwise discarded once this function returns),
-    so a real evaluation run's cost is computable from logs alone, the same guarantee P's own log
-    line gives. Returns the call's cost, ``None`` when its model is unpriced, so the harness sums
-    the same figure the log line carries.
+    """Log one B1 model call and return its cost; ``None`` when its model is unpriced.
+
+    The line mirrors ``app.conversation.controller.DialogueController._log_turn_completed``, and an
+    unpriced model never aborts the run. It is the only place B1's spend is recorded (the token
+    counts of ``NaiveAgentTurn`` are discarded afterwards), so a run's cost can be computed from
+    logs alone, as for P. The returned cost is the figure the line carries, so the harness sums the
+    same number.
     """
     try:
         cost = cost_usd(turn.model, turn.input_tokens, turn.output_tokens)
@@ -318,7 +308,12 @@ def run_case(
     session_id: str,
     calendar: DomainCalendar,
 ) -> RunTranscript:
-    """Drive ``case``'s scripted turns against B1 and record the result."""
+    """Drive ``case``'s scripted turns against B1 and record the result.
+
+    The transcript's ``cost_usd`` is the summed model cost of every call, ``None`` when any call
+    was to an unpriced model; ``handoff_ticket`` on each reply is the turn's handoff reference.
+    A turn that ends without text yields the reply ``(no reply)``.
+    """
     messages: list[dict[str, object]] = []
     replies: list[TurnResponse] = []
     latencies: list[float] = []
@@ -371,11 +366,10 @@ def run_cases(
 ) -> tuple[CaseResult, ...]:
     """Resolve, run and score every case in ``cases`` against B1, in order.
 
-    ``client`` is built once by the caller and reused for every case — the same shape
-    ``evals.runner.runner.run_cases`` takes an ``httpx.Client`` P reuses across its own batch —
-    so a test can inject a stub the same way it already does for one case with ``run_case``. Only
-    the tool dispatcher and session id are rebuilt per case: B1ToolDispatcher is scoped to one
-    customer and language, and a case's own seed_ref and lang may each differ from the last case's.
+    ``client`` is built once by the caller and reused for every case, as
+    ``evals.runner.runner.run_cases`` reuses its ``httpx.Client``. Only the tool dispatcher and
+    session id are rebuilt per case, because a ``B1ToolDispatcher`` is scoped to one customer and
+    language and each case's ``seed_ref`` and ``lang`` may differ.
 
     A case that fails to resolve, run or score with ``ValueError``, ``NotImplementedError``,
     ``LlmUnavailable`` or ``NaiveAgentRequestTooLarge`` (a malformed ``seed_ref``, an unscored

@@ -1,57 +1,53 @@
 """
 Naive Agent LLM Client
-========================
+======================
 
 Overview
 --------
-A narrow Anthropic SDK wrapper for the B1 baseline, a "naive LLM agent: same model + tools in one
-prompt; no policy engine, no verifier, no output checks." B1 needs the model to freely choose
-whether to call a tool, call several in sequence, or just reply in text — the opposite of what
-``app.llm.client.LlmClient`` is built for (the decide-then-render grounding forces exactly one tool
-per call, by design). This module is a separate, narrow adapter for exactly that different call
-shape; it does not implement ``LlmClient`` and is never reached from any request path this service
-serves to a customer.
+A narrow Anthropic SDK wrapper for the B1 baseline, a naive LLM agent: the same model and tools in
+one prompt, with no policy engine, verifier or output checks. B1 needs the model to choose freely
+whether to call a tool, call several in sequence, or reply in text. That is the opposite of what
+``app.llm.client.LlmClient`` is built for, whose decide-then-render grounding forces exactly one
+tool per call. This module is a separate adapter for the different call shape; it does not
+implement ``LlmClient`` and is never reached from a request path that serves a customer.
 
 Scope
 -----
 In: ``NaiveAgentClient``, one open-tool-choice call to the Anthropic API, and the turn it returns
-(text said, tool calls made, if any).
-Out: the conversation loop that drives multiple turns, decides when to stop, and dispatches a called
-tool against the real ``ToolPort`` (``evals.runner.baselines.b1``); the tool schemas themselves
-(``evals.runner.baselines.b1_tools``, since they depend on the seven tools B1 exposes); scoring a B1
-run (``evals.scoring``, reused unchanged once B1 produces a ``RunTranscript``).
+(the text said and the tool calls made, if any).
+Out: the conversation loop that drives several turns, decides when to stop and dispatches a called
+tool (``evals.runner.baselines.b1``); the tool schemas (``evals.runner.baselines.b1_tools``);
+scoring a B1 run (``evals.scoring``).
 
 Design Principles
 -----------------
-- **A separate adapter, not a bent `LlmClient`.** Reusing `LlmClient`/`AnthropicLlmClient` would
-  mean either forcing a tool B1 must be free not to call, or weakening the production port's own
-  forced-tool guarantee for every other caller. A second, narrow implementation under `evals/`
-  keeps that guarantee intact and gives B1 exactly the call shape it needs.
-- **The same defensive call shape as the production adapter, reused in spirit.** A per-call
-  timeout, and the same three-way split between a transient provider failure
-  (``LlmUnavailable``), a rejected request (``LlmRequestRejected``) and no vendor exception
-  crossing this module's boundary — reusing the exact exception types
-  ``app.llm.client`` already defines, since the failure taxonomy is a property of calling the
-  provider, not of the forced-tool shape ``LlmClient`` itself adds on top.
+- **A separate adapter, not a bent ``LlmClient``.** Reusing ``LlmClient`` or ``AnthropicLlmClient``
+  would mean forcing a tool B1 must be free not to call, or weakening the production port's
+  forced-tool guarantee for every other caller. A second narrow implementation under ``evals/``
+  keeps that guarantee intact.
+- **The defensive call shape of the production adapter.** A per-call timeout, and the same split
+  between a transient provider failure (``LlmUnavailable``), a rejected request
+  (``LlmRequestRejected``) and no vendor exception crossing the module boundary. It reuses the
+  exception types of ``app.llm.client`` because the failure taxonomy belongs to calling the
+  provider, not to the forced-tool shape ``LlmClient`` adds.
 - **A request too large for the provider is its own, narrower rejection.**
-  ``NaiveAgentRequestTooLarge`` subclasses ``LlmRequestRejected`` so every existing handler still
-  treats it as a rejection, but a caller that sequences a batch can tell it apart from the
-  account-level causes (bad credentials, no model access): it is driven by one case's own
-  conversation and does not recur for the next case.
-- **The model id is pinned to the same allow-list every caller uses.** B1 is still a system variant
-  this project runs cost-tracked calls against; it does not get a looser model policy than P's own.
+  ``NaiveAgentRequestTooLarge`` subclasses ``LlmRequestRejected``, so existing handlers still treat
+  it as a rejection, but a caller sequencing a batch can tell it from account-level causes (bad
+  credentials, no model access): it is driven by one case's conversation and does not recur for the
+  next case.
+- **The model id is checked against the shared allow-list.** B1 is not given a looser model policy
+  than P.
 
 Runtime Contract
------------------
+----------------
 ``NaiveAgentClient(api_key, *, model, client=None)``.
 ``send(messages, tools, *, system, max_tokens, timeout_seconds) -> NaiveAgentTurn``.
 
 Limitations
 -----------
-Returns one turn; looping until the model stops calling tools, and dispatching a called tool against
-a real, session-scoped ``ToolPort``, is ``evals.runner.baselines.b1``'s job (see Scope). No tool
-schema is defined here — this module knows nothing about what tools exist, only how to place a list
-of them in front of the model and read back what it did.
+The client returns one turn; looping until the model stops calling tools and dispatching each
+called tool belong to ``evals.runner.baselines.b1``. No tool schema is defined here: the module
+only places a list of tools in front of the model and reads back what it did.
 """
 
 from __future__ import annotations
@@ -73,8 +69,8 @@ from app.llm.client import (  # Reused: the failure taxonomy is provider-level, 
     LlmUnavailable,
 )
 
-# Same split app.llm.anthropic_client draws, for the same reason: which failures a caller could
-# retry unchanged, and which it could not.
+# The split ``app.llm.anthropic_client`` draws: failures a caller could retry unchanged, and those
+# it could not.
 _RETRYABLE_PROVIDER_ERRORS = (
     anthropic.APITimeoutError,
     anthropic.APIConnectionError,
@@ -102,7 +98,10 @@ class NaiveAgentRequestTooLarge(LlmRequestRejected):
 
 @dataclass(frozen=True, slots=True)
 class ToolCall:
-    """One tool the model asked to call, with the arguments it gave."""
+    """One tool the model asked to call, with the arguments it gave.
+
+    ``id`` is the provider's identifier for the call, echoed back with the tool result.
+    """
 
     id: str
     name: str
@@ -111,7 +110,11 @@ class ToolCall:
 
 @dataclass(frozen=True, slots=True)
 class NaiveAgentTurn:
-    """What the model did on one call: whatever text it said, and every tool call it made."""
+    """What the model did on one call: whatever text it said, and every tool call it made.
+
+    ``text`` joins every text block with newlines and is empty when the model only called tools.
+    ``latency_ms`` is the wall-clock duration of the call; the token counts are the provider's.
+    """
 
     text: str
     tool_calls: tuple[ToolCall, ...]
@@ -123,7 +126,10 @@ class NaiveAgentTurn:
 
 
 class NaiveAgentClient:
-    """A single, open-tool-choice call to the Anthropic API, for the B1 baseline only."""
+    """A single, open-tool-choice call to the Anthropic API, for the B1 baseline only.
+
+    The client holds no conversation state: each ``send`` is given the whole message list.
+    """
 
     def __init__(
         self, api_key: SecretStr, *, model: str, client: anthropic.Anthropic | None = None
@@ -159,8 +165,10 @@ class NaiveAgentClient:
         max_tokens: int,
         timeout_seconds: float,
     ) -> NaiveAgentTurn:
-        """Run one call with ``messages`` so far and ``tools`` available; the model may call zero,
-        one or several of them, or reply in text alone.
+        """Run one call with ``messages`` so far and ``tools`` available.
+
+        The model may call zero, one or several tools, or reply in text alone. ``system`` is the
+        system prompt, ``max_tokens`` bounds the reply and ``timeout_seconds`` the wait.
 
         Raises
         ------
@@ -173,9 +181,8 @@ class NaiveAgentClient:
         """
         started = time.monotonic()
         try:
-            # The SDK's own parameter types are precise TypedDicts this thin wrapper does not
-            # re-declare; the caller (the B1 loop) builds messages and tools already shaped to the
-            # API's own contract.
+            # The SDK's parameter types are precise TypedDicts this wrapper does not re-declare;
+            # the B1 loop builds messages and tools already shaped to the API's contract.
             response = self._client.messages.create(
                 model=self._model,
                 system=system,
@@ -197,8 +204,8 @@ class NaiveAgentClient:
             ) from error
         except anthropic.APIStatusError as error:
             raise LlmUnavailable(f"Anthropic call failed: status {error.status_code}") from error
-        # Rounded here, not left at full float precision: see app.llm.anthropic_client's own
-        # latency computation for why an unrounded duration risks a spurious PAN redaction in logs.
+        # Rounded rather than left at full float precision: a long unrounded duration can look like
+        # a card number to the log redaction (see ``app.llm.anthropic_client``).
         latency_ms = round((time.monotonic() - started) * 1000, 3)
 
         text = "\n".join(

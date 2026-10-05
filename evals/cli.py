@@ -1,89 +1,76 @@
 """
 Evaluation CLI
-================
+==============
 
 Overview
 --------
-Two modes, both accepting ``--smoke`` to narrow the case set to
-``evals.runner.smoke.smoke_cases()`` (16 cases) instead of the full golden set,
-``evals.golden.case_sheet.ALL_CASES`` (135 cases, including all 32 adversarial cases).
-``make evaluate SYSTEM={P|B0|B1} [SMOKE=1]``: runs one system variant once and logs the resulting
-headline metrics, the run the CI-gating smoke job gates on.
-``make evaluate FULL=1 [SMOKE=1]``: runs every system variant (P three times, B0 and B1 once each)
-and writes the full ``reports/evaluation.md``, the single generated report. The full 135-case golden
-set (every ``expected_intent`` it declares, including all 32 adversarial cases) runs either way;
-``SMOKE=1`` stays available as a deliberately narrower, faster scope for a quick check, and the
-written report's own ``scope_note`` discloses the narrowing whenever it is used, rather than
-silently under-reporting. ``--full`` additionally scores P's last run with the live judge
-(``_JUDGED_SYSTEMS``), feeding the report's own judge-scored-quality section — B0 and B1 carry no
-judge verdicts, for the same reason the human judge validation is scoped to the proposed system
-alone.
+Runs the golden set against the system variants and reports the result. Two modes, both accepting
+``--smoke`` to narrow the case set to ``evals.runner.smoke.smoke_cases()`` instead of the full
+golden set, ``evals.golden.case_sheet.ALL_CASES``:
+
+- ``make evaluate SYSTEM={P|B0|B1} [SMOKE=1]`` runs one system variant once and logs its headline
+  metrics; this is the run the continuous-integration smoke job gates on.
+- ``make evaluate FULL=1 [SMOKE=1]`` runs every system variant (P three times, B0 and B1 once each)
+  and writes the single generated report, ``reports/evaluation.md``. Under ``--smoke`` the report's
+  ``scope_note`` discloses the narrower case set rather than silently under-reporting. The full
+  mode also scores P's last run with the live judge (``_JUDGED_SYSTEMS``), which feeds the report's
+  judge-scored-quality section; B0 and B1 carry no judge verdicts.
 
 Scope
 -----
-In: choosing and building the right dependencies for the requested system variant(s), running the
-batch(es), logging a summary or writing the full report, scoring P's last ``--full`` run with the
-live judge, and the process exit code the CI smoke job (and, for ``--full``, any run of any
-variant) gates on.
-Out: loading any seed data into the target store — the caller's own responsibility (``make
-load-seed`` for a real run against ``data/gold/ops_seed``, followed by ``make load-eval-bank`` for
-the full 32-case adversarial set (the 16-case CI-smoke subset needs only ``ops_seed``), a CI-only
-fixture for the smoke job);
-the judge-validation (agreement-with-human) section, which still reads the human sample separately
-(synthetic today, the real returned sheets later; see ``evals.judge_validation``) — a live judge
-call over P's own run answers "how good is this run," not "how well does the judge agree with a
-human," which is a different question this module leaves alone.
+In: choosing and building the dependencies of each requested variant, running the batches, logging
+a summary or writing the full report, scoring P's last full-mode run with the live judge, and the
+process exit code.
+Out: loading seed data into the target store, which the caller does first (``make load-seed``
+for ``data/gold/ops_seed``, then ``make load-eval-bank`` for the adversarial cases that need the
+evaluation bank; the smoke subset needs only the operational seed). Also out: the agreement-with-
+human section of the report, which reads a separate rater sample (see ``evals.judge_validation``) —
+a live judge call over P's run answers "how good is this run", not "how well does the judge agree
+with a human".
 
 Design Principles
 -----------------
-- **P and B0 drive over the real HTTP surface, in process.** Both are built with
-  ``app.main.create_app`` (B0 via ``evals.runner.baselines.b0.build_b0_app``, which additionally
-  forces a stubbed LLM) and driven through ``starlette.testclient.TestClient``, the same shape every
-  integration test already uses — never a real network socket, never a second, separate HTTP
-  client construction path.
-- **B1 never touches the HTTP surface at all.** Its own batch runner
-  (``evals.runner.baselines.b1.run_cases``) builds a real ``NaiveAgentClient`` against a real
-  Anthropic key; there is no stub path for B1's own model call, since B1 exists specifically to
-  measure what an unsupervised model does. A stubbed B1 run is a contradiction in terms, not a
-  cheaper smoke test of one — which is also why B1 never runs in the PR-gating CI smoke job.
-- **The sandbox login must already be enabled; this module never turns it on.** P and B0 both
-  authenticate through ``POST /v1/auth/test-sessions``, which only exists when
-  ``settings.test_identity_enabled`` is already true. Forcing it on here — the way
-  ``build_b0_app`` forces ``llm_provider`` — would mean a CLI invocation could silently expose a
-  public, no-password login path an operator's own configuration never asked for; this module
-  fails loudly instead, naming the two settings to set.
-- **The model id B1 calls with is ``settings.nlu_model``.** B1 is specified to use the "same model"
-  as P, which does not distinguish, for a single unified agent role, between P's two configured
-  models (understanding vs. rendering); B1's defining behavior is deciding which tool to call next,
-  the closer analogue of the understanding role, so this module names that one. Disclosed here, not
-  hidden, in case a different choice proves better — see ``evals.runner.baselines.b1``'s own
-  Limitations, which names this exact open question.
-- **The exit code is the enforcement mechanism, not a separate check.** A batch with any
-  ``CaseResult.is_unsafe`` exits ``1`` — the literal mechanism behind "a regression that turns any
-  adversarial case unsafe blocks merge".
-- **A judge call that cannot complete aborts ``--full``, not just that one case.** ``evals.judge``
-  already documents this as deliberate ("a judge call has no customer waiting on it: any
-  ``LlmError`` propagates to the caller"); this module does not add a swallow-and-continue around
-  it that the judge's own module explicitly chose not to have.
+- **P and B0 drive the real HTTP surface, in process.** Both are built with
+  ``app.main.create_app`` (B0 via ``evals.runner.baselines.b0.build_b0_app``, which also forces a
+  stubbed LLM) and driven through ``starlette.testclient.TestClient``: no network socket and no
+  second HTTP client construction path.
+- **B1 never touches the HTTP surface.** Its batch runner (``evals.runner.baselines.b1.run_cases``)
+  builds a real ``NaiveAgentClient`` against a real Anthropic key. B1 exists to measure what an
+  unsupervised model does, so it has no stub path, which is also why it does not run in the
+  continuous-integration smoke job.
+- **The sandbox login must already be enabled; this module never turns it on.** P and B0
+  authenticate through ``POST /v1/auth/test-sessions``, which exists only when
+  ``settings.test_identity_enabled`` is true. Forcing it on here, as ``build_b0_app`` forces
+  ``llm_provider``, would let a command-line invocation expose a passwordless login the operator's
+  configuration did not ask for; the module fails loudly instead, naming the two settings.
+- **B1 calls the model named by ``settings.nlu_model``.** B1 is a single unified agent role, so
+  neither of P's two configured models (understanding, rendering) maps onto it exactly; B1's
+  defining behaviour is choosing the next tool, which is closest to the understanding role. See the
+  Limitations of ``evals.runner.baselines.b1``.
+- **The exit code is the enforcement mechanism.** A batch with any ``CaseResult.is_unsafe`` exits
+  ``1``, so a regression that turns any case unsafe fails the job that ran it.
+- **A judge call that cannot complete aborts the full run.** ``evals.judge`` lets any ``LlmError``
+  propagate because no customer waits on a judge call; this module does not swallow it and
+  continue.
 
 Runtime Contract
------------------
+----------------
 ``main(argv) -> int``. Command line: ``python -m evals.cli --system {P,B0,B1} [--smoke]`` or
 ``python -m evals.cli --full [--smoke] [--report PATH]`` (default ``reports/evaluation.md``);
-exactly one of ``--system``/``--full`` is required, and ``--smoke`` applies to either.
+exactly one of ``--system`` and ``--full`` is required. The exit code is ``1`` when any case in any
+run was unsafe, otherwise ``0``; a missing prerequisite (database URL, API key, sandbox login)
+raises ``ConfigError`` instead.
 
 Limitations
 -----------
-A case that fails to resolve, run or score with one of ``evals.runner.runner``'s or
-``evals.runner.baselines.b1``'s own documented failure classes no longer aborts the batch; it is
-recorded as a named ``CaseResult.error`` and the batch continues, on both ``--system`` and
-``--full`` (each of ``--full``'s several batches applies this independently, one system at a time).
-An unanticipated exception outside those documented classes still propagates and stops the run.
-``--full``'s judge-validation (agreement-with-human) section is only as real as its own data source
-(see Scope); it is not itself run per system per call. The live judge scores P's last run only, and
-only the cases that run actually captured a transcript for (``evals.runner.runner``'s own
-Limitations (capture)) — a case capture missed is silently absent from the judge-scored-quality
-section's own denominator, not reported as a zero.
+A case that fails to resolve, run or score with one of the documented failure classes of
+``evals.runner.runner`` or ``evals.runner.baselines.b1`` does not abort the batch: it is recorded
+as a named ``CaseResult.error`` and the batch continues, independently for each batch of a full
+run. An exception outside those classes propagates and stops the run. The agreement-with-human
+section reads its rater sample once and is not recomputed per system. The live judge scores P's
+last run only, and only the cases for which that run captured a transcript (see the Limitations of
+``evals.runner.runner``); a case the capture missed is absent from the judge-scored-quality
+section's denominator rather than reported as a zero.
 """
 
 from __future__ import annotations
@@ -151,18 +138,18 @@ _SILVER_DIR = Path(__file__).resolve().parents[1] / "data" / "silver"
 # change since 1993.
 _BANK_TIMEZONE_LABEL = "America/Bogota (UTC-5)"
 
-# How many times each system runs for a full report: 3 for P (repeated runs expose run-to-run
-# variability), 1 for a baseline (there is nothing to average or flip across a single run).
+# How many times each system runs for a full report: three for P (repeated runs expose run-to-run
+# variability), one for a baseline (a single run has nothing to average or flip across).
 _RUN_COUNTS = {"P": 3, "B0": 1, "B1": 1}
 
-# The systems the live judge scores in a full report: P only, the same scope the human judge
-# validation uses (B0 is structurally verified already and needs no judge to trust; B1 is a
-# safety comparison baseline, not a system the judge's reliability is demonstrated against) — the
-# same reasoning applies to judge-sourced report metrics generally, not only to human validation.
+# The systems the live judge scores in a full report: P only, the scope the human judge validation
+# also uses. B0 is verified structurally and needs no judge; B1 is a safety comparison baseline,
+# not a system the judge's reliability is demonstrated against.
 _JUDGED_SYSTEMS: frozenset[str] = frozenset({"P"})
 
 
 def _select_cases(*, smoke: bool) -> tuple[Case, ...]:
+    """The smoke subset when ``smoke`` is set, otherwise the whole golden set."""
     return smoke_cases() if smoke else ALL_CASES
 
 
@@ -197,6 +184,11 @@ def _resolve_calendar(settings: Settings, *, clock: Clock) -> DomainCalendar:
 def _run_p(
     settings: Settings, cases: Sequence[Case], *, capture_transcripts: bool = False
 ) -> tuple[CaseResult, ...]:
+    """One run of the proposed system over ``cases``, with per-turn cost recorded.
+
+    ``capture_transcripts`` keeps each case's reply text and facts so the live judge can score the
+    run afterwards.
+    """
     dsn = settings.require_database_url().get_secret_value()
     test_login_key = _require_test_login_key(settings)
     client = TestClient(create_app(settings))
@@ -212,6 +204,7 @@ def _run_p(
 
 
 def _run_b0(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]:
+    """One run of baseline B0 (the deterministic pipeline behind a stubbed LLM) over ``cases``."""
     dsn = settings.require_database_url().get_secret_value()
     test_login_key = _require_test_login_key(settings)
     client = TestClient(build_b0_app(settings))
@@ -220,6 +213,10 @@ def _run_b0(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]
 
 
 def _run_b1(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]:
+    """One run of baseline B1 (the unsupervised tool-calling agent) over ``cases``.
+
+    Calls the real model; it takes no transcript-capture option because the judge does not score B1.
+    """
     dsn = settings.require_database_url().get_secret_value()
     calendar = _resolve_calendar(settings, clock=_real_clock)
     client = NaiveAgentClient(settings.require_anthropic_key(), model=settings.nlu_model)
@@ -235,6 +232,8 @@ def _run_b1(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]
     )
 
 
+# The batch runner of each system. Every runner takes ``(settings, cases)``; only P also accepts
+# ``capture_transcripts``.
 _RUNNERS: dict[str, Callable[..., tuple[CaseResult, ...]]] = {
     "P": _run_p,
     "B0": _run_b0,
@@ -247,12 +246,11 @@ def _score_with_judge(
 ) -> tuple[JudgeVerdict, ...]:
     """Score every case whose transcript was captured (``reply_text`` set) with the live judge.
 
-    Matched by ``case_id``, the same key ``evals.golden.h4_export.build_h4_rows`` already matches
-    a captured result against, rather than assuming ``cases`` and ``results`` share one order and
-    length — a case ``results`` carries nothing for (or nothing captured, matching
-    ``evals.runner.runner``'s own Limitations (capture): a declared policy section that failed to
-    resolve) is skipped here, not scored against empty text, which would let a judge call
-    trivially score "grounded" for having invented nothing, misstating a gap as a pass.
+    Results are matched to cases by ``case_id`` (the key ``evals.golden.h4_export.build_h4_rows``
+    also uses) rather than by position. A case with no result, or none captured (see the
+    Limitations of ``evals.runner.runner``), is skipped rather than scored against empty text,
+    which the judge would score as "grounded" for having invented nothing and so misstate a gap as a
+    pass.
     """
     results_by_case_id = {result.case_id: result for result in results}
     verdicts = []
@@ -280,10 +278,9 @@ def _build_system_result(
 ) -> SystemResult:
     """One system's ``SystemResult``, from its repeated (or single) runs' raw case results.
 
-    The live judge scores only the last run of a system in ``_JUDGED_SYSTEMS`` (matching
-    ``case_results``' own "last run only" convention) and only the cases that run captured a
-    transcript for; every other system reports an empty ``judge_verdicts``, exactly as before this
-    capability existed.
+    The live judge scores only the last run of a system in ``_JUDGED_SYSTEMS`` (the run
+    ``case_results`` keeps) and only the cases that run captured a transcript for; every other
+    system reports an empty ``judge_verdicts``.
     """
     headline_runs = [compute_headline_metrics(run) for run in runs]
     judge_verdicts = _score_with_judge(judge, cases, runs[-1]) if system in _JUDGED_SYSTEMS else ()
@@ -301,23 +298,18 @@ def _build_system_result(
 def _run_full_report(settings: Settings, *, smoke: bool) -> tuple[EvaluationReport, bool]:
     """Run every system variant a full report covers, and assemble the report.
 
-    P runs three times, B0 and B1 once each (``_RUN_COUNTS``); the judge-validation
-    (agreement-with-human) section reads its own synthetic placeholder sample until the real
-    returned sheets replace it (see ``evals.golden.judge_validation_sample``) — a separate question
-    from the judge-scored-quality section, which scores P's own last run directly with the live
-    judge (``_JUDGED_SYSTEMS``).
+    P runs three times, B0 and B1 once each (``_RUN_COUNTS``). The agreement-with-human section
+    reads the synthetic rater sample of ``evals.golden.judge_validation_sample`` and is labelled
+    with its provenance; ``evals.h4_judge_validation`` patches the real sheets' result into the
+    written report. It is a separate question from the judge-scored-quality section, which scores
+    P's own last run directly with the live judge (``_JUDGED_SYSTEMS``).
 
     Parameters
     ----------
     smoke : bool
-        Narrows the case set to ``evals.runner.smoke.smoke_cases()`` (16 cases, the CI-gating
-        subset) instead of the full golden set (135 cases, including all 32 adversarial cases).
-        The full set is fully runnable today (``app.persistence.load_eval_bank`` resolves every
-        adversarial case's data, and ``evals.scoring.score_case`` covers every outcome class the
-        golden set declares); ``--smoke`` stays available as a deliberately narrower, faster scope
-        for a quick check, not a fallback for a missing dependency. The resulting report's own
-        ``scope_note`` discloses the narrowing whenever it is used; nothing about the pipeline
-        itself changes.
+        Narrows the case set to ``evals.runner.smoke.smoke_cases()`` instead of the full golden
+        set. The report's ``scope_note`` discloses the narrowing; the pipeline is otherwise
+        unchanged.
 
     Returns
     -------
@@ -402,9 +394,9 @@ def _load_profiles(settings: Settings, cases: Sequence[Case]) -> dict[str, CaseP
 def _log_errored_cases(system: str, results: Sequence[CaseResult]) -> None:
     """Log every case in ``results`` that ``evals.scoring.error_result`` recorded, if any.
 
-    Shared by both run modes: ``--system`` logs it once per call via ``_log_report``; ``--full``
-    logs it once per system per run, since ``SystemResult.case_results`` keeps only the last run
-    and an error in a discarded run would otherwise never surface anywhere.
+    Shared by both run modes: ``--system`` logs once per call through ``_log_report``; ``--full``
+    logs once per system per run, because ``SystemResult.case_results`` keeps only the last run and
+    an error in a discarded run would otherwise surface nowhere.
     """
     errored = [(result.case_id, result.error) for result in results if result.error is not None]
     if errored:
@@ -417,12 +409,14 @@ def _log_errored_cases(system: str, results: Sequence[CaseResult]) -> None:
 
 
 def _fmt(metric: Metric) -> str:
+    """A metric as ``value(n=denominator)`` for a log line, ``not_defined(n=...)`` if undefined."""
     if metric.value == NOT_DEFINED:
         return f"not_defined(n={metric.denominator})"
     return f"{metric.value:.3f}(n={metric.denominator})"
 
 
 def _log_report(system: str, results: Sequence[CaseResult], metrics: HeadlineMetrics) -> None:
+    """Log one system's headline metrics, cost and latency, and any unsafe or errored cases."""
     logger.info("evaluation_run system=%s cases=%d", system, len(results))
     logger.info(
         "headline_metrics safe_automated_resolution=%s attempted_share=%s "
@@ -456,11 +450,10 @@ def _log_report(system: str, results: Sequence[CaseResult], metrics: HeadlineMet
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the evaluation harness; return the process exit code.
 
-    Either ``--system {P,B0,B1} [--smoke]`` (one variant, one run, logged, as the CI-gating smoke
-    job does) or ``--full [--smoke] [--report PATH]`` (every variant, P three times, written as
-    ``reports/evaluation.md``). ``--full --smoke`` narrows the full run to the 16-case CI-smoke
-    subset too, for a faster check; the written report discloses the narrowing in its own
-    ``scope_note``.
+    Either ``--system {P,B0,B1} [--smoke]`` (one variant, one run, logged) or ``--full [--smoke]
+    [--report PATH]`` (every variant, P three times, written to ``--report``). ``--full --smoke``
+    narrows the full run to the smoke subset; the written report discloses that in its
+    ``scope_note``. Returns ``1`` when any case was unsafe, otherwise ``0``.
     """
     parser = argparse.ArgumentParser(description="Run the evaluation harness.")
     parser.add_argument("--system", choices=_SYSTEMS)

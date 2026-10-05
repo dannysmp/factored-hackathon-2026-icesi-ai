@@ -1,58 +1,53 @@
 """
 Case Runner
-============
+===========
 
 Overview
 --------
 Ties three pieces into one pass over a set of cases: resolve each case's customer
 (``evals.runner.seed_resolution``), drive its scripted turns against the running system
-(``evals.runner.proposed_system``), and score the result (``evals.scoring``). This is the proposed
-system's (P) own runner; a baseline variant reuses the same shape.
+(``evals.runner.proposed_system``), and score the result (``evals.scoring``). It serves the
+proposed system (P) and baseline B0, which are both driven over the HTTP surface.
 
 Scope
 -----
 In: ``run_cases``, sequencing the three pieces over a batch.
-Out: building any of the three pieces themselves; the 3-repeated-runs-for-P and
-1-run-for-baselines protocol (``evals.golden``'s cases run once per call here; repetition is the
-caller's own loop); a report generator; the judge; CI wiring (``make evaluate``).
+Out: building any of the three pieces; repeating a run (each call runs every case once, and the
+caller loops for P's repeated runs); report generation; the judge; command-line wiring
+(``evals.cli``).
 
 Design Principles
 -----------------
-- **One case's failure never silences the rest of the batch.** A case that fails to resolve, run or
-  score (a malformed reference, a non-2xx response, an intent this module's scorer has not been
-  taught to read) is recorded as a named ``CaseResult.error`` (``evals.scoring.error_result``) and
-  the batch continues — the rule that "all results, including failures, land in the report" means
-  one case's failure is itself a fact worth recording, not one that should hide every other case's
-  own result behind it. A batch this size, run against a real system and a real model, cannot afford
-  one bad case aborting the other 134.
-- **Only the three failure classes this module already names are ever caught.** ``ValueError``
-  (a malformed or unresolvable ``seed_ref``), ``httpx.HTTPStatusError`` (a non-2xx turn response)
-  and ``NotImplementedError`` (an ``expected_intent`` the scorer does not read) are the batch's
-  own documented, anticipated failure modes; anything else (a programming error, a connection
-  refused before any HTTP exchange happens) still propagates and stops the run, since silently
-  swallowing an unanticipated exception would hide a real bug behind a misleading "case failed"
-  record.
-- **The same store connection resolves and scores; nothing is cached between the two.** Resolving
-  a customer and scoring a run both read the real store fresh, each through its own already-built
-  module, so a case's own data staying current between the two calls is never assumed.
+- **One case's failure never silences the rest of the batch.** A case that fails to resolve, run
+  or score (a malformed reference, a non-2xx response, an intent the scorer does not read) is
+  recorded as a named ``CaseResult.error`` (``evals.scoring.error_result``) and the batch
+  continues. The failure is itself a result worth reporting, and a long batch against a real
+  system and model cannot afford one bad case aborting the rest.
+- **Only the three anticipated failure classes are caught.** ``ValueError`` (a malformed or
+  unresolvable ``seed_ref``), ``httpx.HTTPStatusError`` (a non-2xx turn response) and
+  ``NotImplementedError`` (an ``expected_intent`` the scorer does not read) are the documented
+  per-case failures. Anything else (a programming error, a connection refused before any HTTP
+  exchange) propagates and stops the run, since swallowing it would hide a real bug behind a
+  misleading "case failed" record.
+- **Resolution and scoring each read the store fresh.** Neither caches anything between the two
+  calls, so a case's data is never assumed to be unchanged between them.
 
 Runtime Contract
------------------
+----------------
 ``run_cases(client, dsn, cases, *, test_login_key, capture_transcripts=False, cost_ledger=None) ->
-tuple[CaseResult, ...]``, one result per case, in the given order — a normal verdict, or a named
-error result for a case that could not resolve, run or be scored. ``capture_transcripts`` is the
-opt-in step (default off, no behavior change for any existing caller) that additionally fills each
-result's ``reply_text``/``facts_and_sources`` fields (``evals.facts.attach_masked_transcript``) for
-a judge or a human rater to read later.
+tuple[CaseResult, ...]``, one result per case in the given order: a normal verdict, or a named
+error result for a case that could not resolve, run or be scored. ``capture_transcripts`` (off by
+default) additionally fills each result's ``reply_text`` and ``facts_and_sources``
+(``evals.facts.attach_masked_transcript``) for a judge or a human rater to read.
 
-Limitations (capture)
-----------------------
-A capture failure (``CorpusIndexError``, ``KeyError`` — a declared policy section that does not
-resolve) never demotes an otherwise-valid ``CaseResult`` to an error result: the case's real
-verdict stands, only its two extra fields stay unset for that one case, logged so it is not silent.
-This is deliberately narrower than ``_CASE_FAILURES``: those two exceptions still abort a run that
-never opts into capture (``capture_transcripts=False``, every caller before this flag existed),
-exactly as before.
+Limitations
+-----------
+A capture failure (``CorpusIndexError`` or ``KeyError``, for example a declared policy section that
+does not resolve) never demotes an otherwise valid ``CaseResult`` to an error result: the case's
+verdict stands, its two extra fields stay unset, and the failure is logged. Capture failures are
+deliberately narrower than ``_CASE_FAILURES``: raised anywhere outside the capture step, those
+exceptions are not caught and stop the run. A case without captured fields is therefore absent
+from anything that needs a transcript, such as the live judge's scores.
 """
 
 from __future__ import annotations
@@ -77,13 +72,12 @@ from evals.scoring import error_result, score_case  # Turns a run (or a failure)
 
 logger = logging.getLogger(__name__)
 
-#: Capture failure modes that leave a case's real verdict standing with its two extra fields
-#: unset, rather than aborting the run — narrower than ``_CASE_FAILURES``, and only ever reached
-#: when the caller opts into ``capture_transcripts``.
+#: Capture failure modes that leave a case's verdict standing with its two extra fields unset
+#: instead of aborting the run; reached only when the caller opts into ``capture_transcripts``.
 _CAPTURE_FAILURES: tuple[type[Exception], ...] = (CorpusIndexError, KeyError)
 
-#: The batch's own documented, anticipated per-case failure modes — anything else still
-#: propagates and stops the run (see the module's own Design Principles).
+#: The anticipated per-case failure modes, each recorded as an error result; anything else
+#: propagates and stops the run.
 _CASE_FAILURES: tuple[type[Exception], ...] = (
     ValueError,
     NotImplementedError,
@@ -107,14 +101,14 @@ def run_cases(
     client : httpx.Client
         Drives each case's scripted turns against the running system.
     dsn : str
-        Connection string ``resolve_customer_id`` and ``score_case`` each read fresh, per case.
+        Connection string ``resolve_customer_id`` and ``score_case`` each open per case.
     cases : Sequence[Case]
         The cases to run, in the order the returned results preserve.
     test_login_key : str
         Forwarded to the running system for every case's turns.
     capture_transcripts : bool
         Opt-in, default off: also fills each result's ``reply_text``/``facts_and_sources`` fields
-        for a judge or a human rater to read later (see the module's own Limitations (capture)).
+        for a judge or a human rater to read later (see this module's Limitations).
     cost_ledger : TurnCostLedger | None
         When given, each case's result carries the model cost the ledger recorded for the case's
         session (``None`` where it recorded none); when omitted, no cost is attached.
@@ -129,11 +123,9 @@ def run_cases(
     ------
     Exception
         Any exception other than ``ValueError``, ``NotImplementedError`` or
-        ``httpx.HTTPStatusError`` propagates unchanged and stops the batch immediately, without
-        attempting the cases still queued behind it; those three are this module's own
-        documented, anticipated failure modes and are recorded as a named ``CaseResult.error``
-        instead (see the module's own Design Principles). A capture failure never propagates this
-        far regardless (see Limitations (capture)).
+        ``httpx.HTTPStatusError`` propagates unchanged and stops the batch, leaving the remaining
+        cases unrun; those three are recorded as a named ``CaseResult.error`` instead. A capture
+        failure never propagates (see this module's Limitations).
     """
     results = []
     for case in cases:

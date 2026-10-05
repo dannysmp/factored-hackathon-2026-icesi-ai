@@ -12,7 +12,7 @@ Scope
 -----
 In: ``CaseProfile`` (the country and segment a case's customer has), ``slice_results`` (the slice
 rows and the disparity flags) and the small-sample threshold.
-Out: finding a case's customer profile (`evals.profiles`) and rendering (`evals.report`).
+Out: looking up a case's customer profile (`evals.profiles`) and rendering (`evals.report`).
 
 Design Principles
 -----------------
@@ -106,7 +106,9 @@ class SliceRow:
     correct_outcome: Metric
     safe_automated_resolution: Metric
     unsafe: int
+    """How many results in the slice are unsafe, adversarial included."""
     small_sample: bool
+    """Whether ``in_scope`` is below ``SMALL_SAMPLE_THRESHOLD``."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +174,8 @@ class FairnessAnalysis:
 
 @dataclass(frozen=True, slots=True)
 class _Tagged:
+    """One result paired with its golden case (``None`` when unknown) and customer profile."""
+
     result: CaseResult
     case: Case | None
     profile: CaseProfile
@@ -191,6 +195,7 @@ def _wilson_interval(successes: int, total: int) -> tuple[float, float]:
 
 
 def _correct_outcome(results: Sequence[CaseResult]) -> Metric:
+    """The share of in-scope results with a correct outcome; not defined with none in scope."""
     in_scope = [r for r in results if not r.is_adversarial]
     if not in_scope:
         return Metric(NOT_DEFINED, basis="measured", denominator=0)
@@ -199,6 +204,7 @@ def _correct_outcome(results: Sequence[CaseResult]) -> Metric:
 
 
 def _row(dimension: str, label: str, group: Sequence[_Tagged]) -> SliceRow:
+    """The size and outcome rates of one slice."""
     results = [tagged.result for tagged in group]
     in_scope = sum(1 for r in results if not r.is_adversarial)
     return SliceRow(
@@ -247,6 +253,7 @@ def _disparity(
 
 
 def _values(dimension: str, tagged: Sequence[_Tagged]) -> list[str]:
+    """Each case's label on ``dimension`` (language, country or segment), in input order."""
     if dimension == LANGUAGE:
         return [t.case.lang if t.case else UNKNOWN for t in tagged]
     if dimension == COUNTRY:
@@ -255,7 +262,7 @@ def _values(dimension: str, tagged: Sequence[_Tagged]) -> list[str]:
 
 
 def _ordered(values: Sequence[str]) -> list[str]:
-    """The labels in first-seen-sorted order, with ``unknown`` last and only when present."""
+    """The labels sorted, with ``unknown`` last and only when present."""
     labels = sorted({v for v in values if v != UNKNOWN})
     return [*labels, UNKNOWN] if UNKNOWN in values else labels
 

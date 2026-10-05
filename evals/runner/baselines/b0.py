@@ -1,58 +1,50 @@
 """
 B0 Baseline: Deterministic Scripted Flow
-==========================================
+========================================
 
 Overview
 --------
-Builds the B0 baseline, a "deterministic scripted flow: keyword/menu NLU, same policy engine and
-tools, no LLM." B0 is not a second implementation of the dialogue controller — it is the proposed
-system's own application, with its understanding port forced to the deterministic, keyword-based
-classifier instead of the LLM, so the comparison measures exactly one thing that changed. That swap
-already exists in ``app.main._understanding``, selected by ``LlmProvider.STUB`` (added for the CI
-smoke job's own network-free run); this module names that same construction as B0's own definition,
-rather than leaving every caller to remember the provider setting an evaluation run needs.
+Builds the B0 baseline: a deterministic scripted flow with keyword and menu understanding, the same
+policy engine and tools, and no LLM. B0 is not a second implementation of the dialogue controller.
+It is the proposed system's own application with its understanding port forced to the deterministic
+keyword classifier instead of the LLM, so a comparison with P measures exactly one change. That
+swap is made by ``app.main._understanding`` when ``llm_provider`` is ``LlmProvider.STUB``; this
+module names that construction as B0's definition so callers need not remember the provider
+setting.
 
 Scope
 -----
-In: ``build_b0_app``, forcing ``llm_provider`` to the value that already selects the deterministic
+In: ``build_b0_app``, forcing ``llm_provider`` to the value that selects the deterministic
 classifier.
-Out: everything else about the running application — the tool port, the retriever, the policy, the
-handoff outbox and the store are untouched, exactly as the comparison requires to isolate the LLM's
-own contribution; running a case against the result (``evals.runner.proposed_system.run_case``,
-already generic over any client and reused as-is).
+Out: everything else about the running application. The tool port, retriever, policy, handoff
+outbox and store are untouched, which is what isolates the LLM's contribution. Running a case
+against the result is ``evals.runner.proposed_system.run_case``, which is generic over any client.
 
 Design Principles
 -----------------
-- **One implementation, not a fork.** ``app.main.create_app`` and its real ``_controller_factory``
-  already build exactly the application B0 needs once ``llm_provider`` selects the deterministic
-  classifier; this module reuses them unchanged rather than re-implementing controller
-  construction under ``evals/``.
-- **The enum member, never its string value.** ``Settings.model_copy`` skips pydantic validation on
-  the fields it updates, so passing the literal string ``"stub"`` would leave ``llm_provider`` as a
-  plain ``str`` instead of the ``LlmProvider`` member ``app.main._understanding``'s identity check
-  requires. This module passes the enum member itself.
-- **The prod restriction is re-asserted here, not only trusted from validation.** ``Settings``'s
-  own ``_stub_llm_rules`` model validator refuses ``llm_provider=stub`` when ``app_env=prod`` — but
-  only when ``Settings`` is actually constructed through validation. ``model_copy`` never
-  validates, so a caller that already holds a ``Settings`` object with ``app_env=prod`` (however it
-  was built) could otherwise sail straight through this function into a working B0 application in
-  a production environment, defeating the very restriction that setting exists to enforce. This
-  function checks ``app_env`` itself, before ever touching ``llm_provider``, so the restriction
-  holds regardless of what ``model_copy`` does or does not revalidate.
+- **One implementation, not a fork.** ``app.main.create_app`` and its ``_controller_factory``
+  already build the application B0 needs once ``llm_provider`` selects the deterministic
+  classifier; this module reuses them rather than re-implementing controller construction.
+- **The enum member, never its string value.** ``Settings.model_copy`` skips validation on the
+  fields it updates, so the literal string ``"stub"`` would leave ``llm_provider`` a plain ``str``
+  where ``app.main._understanding``'s identity check requires the ``LlmProvider`` member.
+- **The production restriction is re-asserted, not trusted to validation.** ``Settings`` refuses
+  ``llm_provider=stub`` when ``app_env=prod`` (``_stub_llm_rules``), but only when it is built
+  through validation, and ``model_copy`` does not validate. Without its own check, a ``Settings``
+  already holding ``app_env=prod`` would yield a working B0 application in production. The function
+  tests ``app_env`` first, before touching ``llm_provider``.
 
 Runtime Contract
------------------
+----------------
 ``build_b0_app(settings) -> FastAPI``. Raises ``ConfigError`` when ``settings.app_env`` is
 ``prod``.
 
 Limitations
 -----------
-``app.conversation.understanding.FakeNlu`` never sets a dispute category on any ``NluResult``, in
-any of its routed intents (checked directly in its source). A ``NORMAL``-category case whose
-scripted turns reach the point where the controller needs a category to proceed — the reason-
-clarification step of a filing conversation — cannot complete through B0 the same way it cannot
-complete through a stub-driven P run either; this is a genuine limitation of the shared classifier,
-not something this module introduces or is responsible for closing.
+``app.conversation.understanding.FakeNlu`` never sets a dispute category on an ``NluResult``. A
+``NORMAL``-category case whose turns reach the controller's reason-clarification step, which needs
+a category, cannot complete through B0, and equally not through a P run on the stub provider. This
+is a limit of the shared keyword classifier that B0 inherits.
 """
 
 from __future__ import annotations

@@ -14,13 +14,12 @@ Scope
 -----
 In: parsing a ``seed_ref``'s source and identifier, and resolving a transaction or customer
 reference to its owning customer id from the store — ``ops_seed`` and ``eval_bank`` alike, since
-both sources land in the same ``transactions`` table by the time a case runs (``eval_bank``'s own
-design: "anything that reads a seed_ref treats an eval_bank row exactly like a seed row").
+both sources land in the same ``transactions`` table by the time a case runs, so a reader treats
+an ``eval_bank`` row exactly like a seed row.
 Out: minting the session itself (the runner's HTTP layer calls the sandbox login
 with the id this module returns); loading the seed data in the first place — ``ops_seed`` via
-``app.persistence.load_seed``, run once per harness run before any case executes; an
-``eval_bank``-anchored case's row is the caller's own responsibility to have loaded first (a
-CI-only synthetic substitute for the smoke subset, or a real loader before a full run).
+``app.persistence.load_seed`` and ``eval_bank`` via ``app.persistence.load_eval_bank``, both of
+which the caller runs before any case executes.
 
 Design Principles
 -----------------
@@ -42,9 +41,9 @@ runner resolves every case's customer once, at the start of that case's run, nev
 
 Limitations
 -----------
-No golden-set case today declares an ``eval_bank`` *customer* reference (``eval_bank:CLI-...``);
-the identifier branch that would handle one returns it unchecked, exactly as it already does for
-``ops_seed``, but that path has no case exercising it yet.
+A customer reference (``CLI-...``), from either source, is returned exactly as given: it is not
+looked up in the store here, so a customer id that does not exist is not caught by this module.
+Only a transaction reference is checked against the store.
 """
 
 from __future__ import annotations

@@ -1,73 +1,64 @@
 """
 B1 Tool Schemas and Dispatch
-==============================
+============================
 
 Overview
 --------
-The seven tools B1 (the naive agent baseline) may call — the six real ``ToolPort`` methods plus
-``get_policy`` and ``handoff`` — as Anthropic tool schemas, and ``B1ToolDispatcher``, which turns
-one model tool call into a real effect against the same store, retriever and handoff outbox P and B0
-use. B1 gets exactly the same tools P has; it does not get a looser or wider surface, and the
-comparison rests on that being true.
+The seven tools B1 (the naive agent baseline) may call, as Anthropic tool schemas: the six real
+``ToolPort`` methods plus ``get_policy`` and ``handoff``. ``B1ToolDispatcher`` turns one model tool
+call into a real effect against the store, retriever and handoff outbox that P and B0 use. B1 gets
+the same tools as P and no wider surface, which the comparison depends on.
 
 Scope
 -----
 In: the seven tool schemas; ``B1ToolDispatcher.dispatch``, executing one call and returning the
 tool-result text the model reads next.
 Out: the conversation loop that decides when to call the model again and when a customer turn is
-done (``evals.runner.baselines.b1``); scoring a run (``evals.scoring``, unchanged).
+done (``evals.runner.baselines.b1``); scoring a run (``evals.scoring``).
 
 Design Principles
 -----------------
-- **The model decides; this module's own code writes.** Every persisted, content-bearing field of a
-  handoff packet — ``request_summary``, ``reason_codes``, ``first_name``, ``policy_version`` — is
-  built by this dispatcher from facts it already holds, never taken from the model's tool-call
-  arguments. The tool schema this module exposes to the model does not even declare a parameter for
-  any of them: the same "inexpressible, not merely forbidden" discipline already applied to
-  ``create_dispute_case``, extended here to the one other tool that writes a persisted record a
-  human later reads. The model's only real degree of freedom is *whether* to hand off and *which*
-  named trigger to cite; the packet's content is exactly as disciplined for B1 as it is for P.
-- **``create_dispute_case`` reads the real decision it already holds, never the model's own.** The
-  model can request a filing by transaction and category; the ``PolicyDecision`` that filing must
-  match is the one this dispatcher's own most recent ``evaluate_dispute`` call for that same
-  transaction and category produced, tracked here, the same "the controller's own record, never
-  the caller's" rule ``CreateDisputeCaseRequest.decision`` already enforces for every other caller.
-  A filing request with no matching tracked decision is refused before the tool port is even
-  called (fail closed).
-- **``get_policy`` returns raw corpus text, not the policy engine's own injected figures.** It
-  wraps ``LexicalRetriever.search`` directly — never ``app.conversation.policy_answer.answer``,
-  which additionally injects policy-engine-owned numbers (filing-window days, evidence lists) by
-  category before P ever renders them. Giving B1 that injection would hand it P's own grounding
-  discipline and defeat the comparison; B1 must read any number a policy answer needs out of
-  corpus prose itself, exactly like a free-form model would with no engine behind it. This is safe
-  only because the corpus is generated from the same policy file the engine enforces (its own
-  drift check keeps the two from disagreeing) — a property of corpus generation, not of this tool.
-- **One decision path, duplicated by necessity, not by choice.** ``_REQUEST_SUMMARY_OF`` mirrors
-  ``app.conversation.controller``'s own private table verbatim; it is not exported there, and
-  changing a shared production file to export it is a larger, separate decision than this module
-  warrants. The table is small (ten entries, one per ``HandoffTrigger``) and the two copies are
-  checked to agree by test.
+- **The model decides; this module's code writes.** Every persisted, content-bearing field of a
+  handoff packet (``request_summary``, ``reason_codes``, ``first_name``, ``policy_version``) is
+  built by the dispatcher from facts it holds, never taken from the model's tool-call arguments. The
+  tool schema declares no parameter for any of them, so they are inexpressible, not merely
+  forbidden, as with ``create_dispute_case``. The model's only freedom is whether to hand off and
+  which named trigger to cite, so the packet a human reads is as disciplined for B1 as for P.
+- **``create_dispute_case`` uses the decision the dispatcher holds, never the model's.** The model
+  can request a filing by transaction and category; the ``PolicyDecision`` the filing must match is
+  the one the dispatcher's own most recent ``evaluate_dispute`` call for that transaction and
+  category produced, the rule ``CreateDisputeCaseRequest.decision`` enforces for every caller. A
+  filing request with no matching decision is passed on with ``decision=None`` and refused by the
+  tool port.
+- **``get_policy`` returns raw corpus text, not the policy engine's injected figures.** It wraps
+  ``Retriever.search`` directly and not ``app.conversation.policy_answer.answer``, which also
+  injects policy-engine-owned numbers (filing-window days, evidence lists) by category before P
+  renders them. Giving B1 that injection would hand it P's grounding discipline and defeat the
+  comparison; B1 must read any figure out of corpus prose, as a free-form model would. This is
+  safe only because the corpus is generated from the policy file the engine enforces, whose drift
+  check keeps the two in agreement; that is a property of corpus generation, not of this tool.
+- **One decision path, duplicated by necessity.** ``_REQUEST_SUMMARY_OF`` mirrors the private table
+  of ``app.conversation.controller`` (one entry per ``HandoffTrigger``) because that table is not
+  exported, and a test asserts the two are equal.
 
 Runtime Contract
------------------
+----------------
 ``TOOL_SCHEMAS``: the seven Anthropic tool schemas, in a fixed order.
 ``B1ToolDispatcher(tool_port, retriever, outbox, policy, calendar, clock, *, customer_id, lang)``.
 ``dispatch(call, *, session_id, turn_id, trace_id) -> str``, the tool-result text for the model.
-``start_turn()``: clears the this-turn decision list ``handoff``'s reason-code lookup reads, the
-last turn's handoff ticket, and the last confirmable decision; the caller (the conversation loop)
-calls this once per customer turn, before dispatching that turn's tool-call rounds.
-``handoff_ticket``: the current turn's handoff ticket reference, or ``None``; the caller reads
-this after a turn to know whether to end the run.
-``last_confirmable_decision``: this turn's last eligible ``evaluate_dispute`` decision, or
-``None`` once a filing attempt follows it or none has happened yet; the caller reads this to build
-``evals.scoring.RunTranscript.confirmed_target``, the same fact ``dialogue_state`` would name for
-a system reached over HTTP.
+``start_turn()``: clears the list of this turn's decisions that ``handoff``'s reason-code lookup
+reads, the last turn's handoff ticket and the last confirmable decision; the conversation loop
+calls it once per customer turn, before that turn's tool-call rounds.
+``handoff_ticket``: the current turn's handoff ticket reference, or ``None``.
+``last_confirmable_decision``: this turn's last eligible ``evaluate_dispute`` decision, or ``None``
+once a filing attempt follows it or none has happened; the loop reads it to build
+``evals.scoring.RunTranscript.confirmed_target``, the fact ``dialogue_state`` names for a system
+reached over HTTP.
 
 Limitations
 -----------
-``first_name`` is always the same ``_UNKNOWN_FIRST_NAME`` placeholder P and B0 use today: no tool
-in this system exposes a customer's first name yet, and B1 does not get a capability the other two
-systems lack.
+``first_name`` is always the ``_UNKNOWN_FIRST_NAME`` placeholder that P and B0 also use: no tool
+exposes a customer's first name, and B1 gets no capability the other systems lack.
 """
 
 from __future__ import annotations
@@ -100,8 +91,8 @@ from evals.runner.baselines.naive_agent_client import ToolCall
 
 _UNKNOWN_FIRST_NAME = "Customer"
 
-# Mirrors app.conversation.controller._REQUEST_SUMMARY_OF exactly (see the module's own Design
-# Principles for why this is a deliberate, tested duplication rather than an import).
+# Mirrors ``app.conversation.controller._REQUEST_SUMMARY_OF`` exactly; see the module's Design
+# Principles for why this is a tested copy rather than an import.
 _REQUEST_SUMMARY_OF: dict[HandoffTrigger, str] = {
     HandoffTrigger.FRAUD_REPORT: "Customer reported a possible fraud.",
     HandoffTrigger.CARD_LOSS: "Customer reported a lost or stolen card.",
@@ -115,9 +106,12 @@ _REQUEST_SUMMARY_OF: dict[HandoffTrigger, str] = {
     HandoffTrigger.FILING_UNVERIFIED: "A dispute filing could not be confirmed after creation.",
 }
 
+# The closed value sets the schemas offer the model as enums.
 _CATEGORY_VALUES = [category.value for category in DisputeCategory]
 _TRIGGER_VALUES = [trigger.value for trigger in HandoffTrigger]
 
+#: The tool schemas handed to the model, in a fixed order: the six ``ToolPort`` tools, then
+#: ``get_policy`` and ``handoff``. No schema carries a customer identifier.
 TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
     {
         "name": "list_transactions",
@@ -210,18 +204,20 @@ TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
 
 
 def _str_arg(call: ToolCall, name: str) -> str:
-    """One of ``call.input``'s own values, already the tool schema's required string type."""
+    """The argument ``name`` of ``call`` as a string; the schema marks it required."""
     return str(call.input[name])
 
 
 def _idempotency_key(turn_id: str) -> str:
-    """The same derivation ``app.conversation.controller`` uses: a turn_id may be longer than the
-    idempotency key's own 32-character bound, so it is hashed, not passed through."""
+    """The idempotency key for ``turn_id``, derived as ``app.conversation.controller`` does.
+
+    A ``turn_id`` can exceed the key's 32-character bound, so it is hashed, not passed through.
+    """
     return hashlib.sha256(turn_id.encode("utf-8")).hexdigest()[:32]
 
 
-# The four tools with no side effect and no state to track across calls: a closed mapping, so an
-# unhandled one is a loud KeyError at the call site, matching app.tools.dispatcher's own rule.
+# The four tools with no side effect and no state to track across calls, as a closed mapping that
+# ``dispatch`` consults before the stateful tools.
 _READ_TOOLS: dict[str, Callable[[ToolPort, ToolCall], object]] = {
     "list_transactions": lambda port, call: dispatch_tool_port(
         port,
@@ -240,7 +236,13 @@ _READ_TOOLS: dict[str, Callable[[ToolPort, ToolCall], object]] = {
 
 @dataclass
 class B1ToolDispatcher:
-    """Executes one model tool call at a time against the real store, retriever and outbox."""
+    """Executes one model tool call at a time against the real store, retriever and outbox.
+
+    One instance serves one case: it is scoped to a customer and language, and tracks the
+    ``evaluate_dispute`` decisions it has produced so a filing can be matched to one. The two
+    non-``init`` fields are the harness's read-outs: the turn's handoff ticket and its last
+    confirmable decision.
+    """
 
     tool_port: ToolPort
     retriever: Retriever
@@ -258,9 +260,8 @@ class B1ToolDispatcher:
     _decisions_this_turn: list[PolicyDecision] = field(default_factory=list, init=False)
 
     def start_turn(self) -> None:
-        """Reset the per-turn decision list ``handoff``'s reason-code lookup reads, the last
-        turn's handoff ticket, and the last confirmable decision, so none of them carries into a
-        later turn's synthetic reply."""
+        """Clear the per-turn state: this turn's decisions, the handoff ticket and the last
+        confirmable decision, so none of them carries into a later turn's reply."""
         self._decisions_this_turn = []
         self.handoff_ticket = None
         self.last_confirmable_decision = None
@@ -286,6 +287,7 @@ class B1ToolDispatcher:
         raise ValueError(f"unknown tool: {call.name!r}")
 
     def _evaluate_dispute(self, call: ToolCall) -> str:
+        """Evaluate a transaction and category, recording an eligible decision as confirmable."""
         category = DisputeCategory(_str_arg(call, "category"))
         request = EvaluateDisputeRequest(
             transaction_ref=_str_arg(call, "transaction_ref"), category=category
@@ -295,15 +297,18 @@ class B1ToolDispatcher:
             return _to_json(result)
         self._decisions[(result.transaction_ref, category)] = result
         self._decisions_this_turn.append(result)
-        # Mirrors evals.runner.baselines.b1._run_turn's own reached_confirmable signal: this
-        # turn's last eligible decision, cleared the moment a filing actually happens (see
-        # _create_dispute_case) — the same fact evals.scoring.score_case grounds a CONFIRM_FILING
-        # case's own correctness in, for a system the harness drives in-process rather than over
-        # HTTP.
+        # The decision a confirmation reply would be about: the turn's last eligible one, until a
+        # filing is attempted (see ``_create_dispute_case``). ``evals.scoring`` grounds a
+        # CONFIRM_FILING check in it for a system driven in process rather than over HTTP.
         self.last_confirmable_decision = result if result.outcome is Outcome.ELIGIBLE else None
         return _to_json(result)
 
     def _create_dispute_case(self, call: ToolCall, *, turn_id: str) -> str:
+        """File a case with the decision this dispatcher recorded for the transaction and category.
+
+        The tool port refuses the request when there is no recorded decision or the customer has
+        not confirmed.
+        """
         transaction_ref = _str_arg(call, "transaction_ref")
         category = DisputeCategory(_str_arg(call, "category"))
         decision = self._decisions.get((transaction_ref, category))
@@ -315,12 +320,12 @@ class B1ToolDispatcher:
             decision=decision,
         )
         result = self.tool_port.create_dispute_case(request)
-        # Mirrors evals.runner.baselines.b1._run_turn's own reached_confirmable reset: a filing
-        # attempt, successful or not, means the turn is no longer merely awaiting confirmation.
+        # A filing attempt, successful or not, means the turn is no longer awaiting confirmation.
         self.last_confirmable_decision = None
         return _to_json(result)
 
     def _get_policy(self, call: ToolCall) -> str:
+        """The corpus sections matching the query, as JSON of section id, title and body."""
         hits = self.retriever.search(_str_arg(call, "query"), self.lang)
         return json.dumps(
             [
@@ -334,6 +339,11 @@ class B1ToolDispatcher:
         )
 
     def _handoff(self, call: ToolCall, *, session_id: str, turn_id: str, trace_id: str) -> str:
+        """Record a handoff packet for the named trigger and return its ticket reference.
+
+        The reason codes are those of this turn's decisions that escalate; every other packet field
+        is built here, not taken from the model.
+        """
         trigger = HandoffTrigger(_str_arg(call, "trigger"))
         reason_codes: tuple[ReasonCode, ...] = tuple(
             decision.reason_code
