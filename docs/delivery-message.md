@@ -56,6 +56,7 @@ Things to know:
 - A profile is reserved for the full session length from the moment it signs in, even if the page is reloaded or the tab is closed, because the page keeps no sign-in once it is left. A reserved profile is refused with a generic message until its time runs out, so choose another profile or wait. Each address can hold five live sessions on each side, which is one per customer profile, so readers sharing a network may exhaust it.
 - Several wrong access codes from the same address are temporarily refused, so copy the code rather than retyping it.
 - The accounts and transactions are synthetic data; nobody's real information is involved.
+- Please sign out when you finish. It frees your profile at once for the next reader; closing the tab does not, and the profile then stays in use for up to 30 minutes (customer) or 60 (agent).
 - An access code is the only credential for a demonstration session, so please do not forward this message. It gates the demonstration only: the system's authentication and authorization are enforced whether or not a code is known.
 - What the system does not do, and what is still to be measured, is listed in `docs/limitations.md` in the repository.
 
