@@ -162,8 +162,8 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
             '—'
           ) : (
             <ul className="packet-plain-list">
-              {packet.evidence.reason_codes.map((code) => (
-                <li key={code}>{REASON_CODE_LABELS[code]}</li>
+              {packet.evidence.reason_codes.map((code, index) => (
+                <li key={`${code}-${String(index)}`}>{REASON_CODE_LABELS[code]}</li>
               ))}
             </ul>
           )}

@@ -6,7 +6,7 @@ import type { QueueItem } from '../contracts'
 import { formatAge, formatDate } from '../format'
 import { CATEGORY_LABELS, LANGUAGE_LABELS, STATUS_LABELS, TRIGGER_LABELS } from '../labels'
 
-/** Whether a case has run past the contact time the customer was promised — the reference
+/** Whether a case has run past the queue's contact-by target date — the reference
  * date and `promised_contact_by` are both plain ISO dates (`YYYY-MM-DD`), so a lexicographic
  * comparison is a correct date comparison. */
 function isOverdue(referenceDate: string, promisedContactBy: string): boolean {
