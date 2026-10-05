@@ -126,6 +126,9 @@ class TimelineEntry(ContractModel):
 
     occurred_at: UtcDatetime
     trace_id: Annotated[str, Field(min_length=1, max_length=64)]
+    # The turn this entry records. Every entry of one conversation shares its trace identifier, so
+    # this is what tells two entries apart; it is unique within a trace.
+    turn_id: Annotated[str, Field(min_length=1, max_length=64)]
     # The intent of the reply sent, and the conversation state before and after the step.
     intent: Intent
     state_before: Annotated[str, Field(min_length=1, max_length=48)]

@@ -712,6 +712,7 @@ def test_a_ticket_detail_holds_the_packet_and_a_timeline_without_message_text() 
             TimelineEntry(
                 occurred_at=datetime(2026, 9, 26, 15, 0, tzinfo=UTC),
                 trace_id="trace-1",
+                turn_id="turn-0001",
                 intent=Intent.HANDOFF,
                 state_before="collect_reason",
                 state_after="handed_off",
@@ -1089,6 +1090,24 @@ def test_the_priority_flag_follows_the_trigger() -> None:
     assert _queue_item(trigger=HandoffTrigger.AMOUNT_REVIEW, priority=False)
 
 
+@pytest.mark.parametrize("turn_id", [None, "", "t" * 65])
+def test_a_timeline_entry_needs_a_turn_identifier_of_bounded_length(turn_id: str | None) -> None:
+    """The turn identifier tells apart entries that share one trace identifier."""
+    values: dict[str, object] = {
+        "occurred_at": datetime(2026, 9, 26, 15, 0, tzinfo=UTC),
+        "trace_id": "trace-1",
+        "intent": Intent.HANDOFF,
+        "state_before": "a",
+        "state_after": "b",
+        "render_mode": "template",
+    }
+    if turn_id is not None:
+        values["turn_id"] = turn_id
+
+    with pytest.raises(ValidationError, match="turn_id"):
+        TimelineEntry(**values)
+
+
 def test_instants_of_record_are_utc_everywhere() -> None:
     """The queue row and the timeline hold UTC like the packet does."""
     bogota = timezone(timedelta(hours=-5))
@@ -1099,6 +1118,7 @@ def test_instants_of_record_are_utc_everywhere() -> None:
         TimelineEntry(
             occurred_at=datetime(2026, 9, 26, 10, 0, tzinfo=bogota),
             trace_id="trace-1",
+            turn_id="turn-0001",
             intent=Intent.HANDOFF,
             state_before="a",
             state_after="b",

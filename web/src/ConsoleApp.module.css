@@ -1,0 +1,6 @@
+/* The session-ended notice sits above the sign-in form and shares its column. */
+.notice {
+  max-width: 24rem;
+  margin: var(--space-6) auto 0;
+  padding: 0 var(--space-6);
+}
