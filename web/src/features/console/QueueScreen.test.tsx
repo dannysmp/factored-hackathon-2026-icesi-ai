@@ -49,7 +49,7 @@ describe('QueueScreen', () => {
   it('shows the empty state when there are no open tickets at all', async () => {
     render(<QueueScreen client={new FixtureQueueClient(EMPTY_QUEUE)} onSelectTicket={vi.fn()} />)
 
-    expect(await screen.findByText('No hay tickets abiertos en este momento.')).toBeInTheDocument()
+    expect(await screen.findByText('No hay casos abiertos en este momento.')).toBeInTheDocument()
   })
 
   it('narrows the table to the priority tab, then back to all', async () => {
@@ -57,13 +57,36 @@ describe('QueueScreen', () => {
     render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={vi.fn()} />)
     await screen.findAllByRole('row')
 
-    await user.click(screen.getByRole('tab', { name: 'Fraude y pérdida de tarjeta' }))
+    await user.click(screen.getByRole('tab', { name: /^Fraude y pérdida de tarjeta \(\d+\)$/ }))
 
     const priorityRows = screen.getAllByRole('row')
     expect(priorityRows).toHaveLength(DEMO_QUEUE.items.filter((item) => item.priority).length + 1)
 
-    await user.click(screen.getByRole('tab', { name: 'Todos' }))
+    await user.click(screen.getByRole('tab', { name: /^Todos \(\d+\)$/ }))
     expect(screen.getAllByRole('row')).toHaveLength(DEMO_QUEUE.items.length + 1)
+  })
+
+  it('shows how many cases each view holds in its tab', async () => {
+    render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={vi.fn()} />)
+    await screen.findAllByRole('row')
+
+    const priority = DEMO_QUEUE.items.filter((item) => item.priority).length
+    const all = DEMO_QUEUE.items.length
+    expect(screen.getByRole('tab', { name: `Todos (${String(all)})` })).toBeInTheDocument()
+    expect(
+      screen.getByRole('tab', { name: `Fraude y pérdida de tarjeta (${String(priority)})` }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('tab', { name: `Otros (${String(all - priority)})` }),
+    ).toBeInTheDocument()
+  })
+
+  it('writes the reference date the way an agent reads a date', async () => {
+    render(<QueueScreen client={new FixtureQueueClient(DEMO_QUEUE)} onSelectTicket={vi.fn()} />)
+
+    expect(
+      await screen.findByText('Fecha de referencia de los datos: 18 jun 2026.'),
+    ).toBeInTheDocument()
   })
 
   it('shows an updating affordance over the still-visible table during a filter refetch', async () => {
@@ -160,7 +183,7 @@ describe('QueueScreen', () => {
       <QueueScreen client={new FixtureQueueClient(EMPTY_QUEUE)} onSelectTicket={vi.fn()} />,
     )
 
-    await screen.findByText('No hay tickets abiertos en este momento.')
+    await screen.findByText('No hay casos abiertos en este momento.')
     expect(await axe(container)).toHaveNoViolations()
   })
 })

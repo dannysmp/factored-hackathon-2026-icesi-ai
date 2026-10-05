@@ -419,12 +419,12 @@ def _present_narrow(e: RenderEnvelope) -> str:
 def _not_found(e: RenderEnvelope) -> str:
     """Say no transaction matched and offer a wider date range or a person."""
     return {
-        "es": "No encontré ninguna transacción con esos datos. Puedo ampliar el rango de "
-        "fechas o pasarla con un asesor.",
-        "pt": "Não encontrei nenhuma transação com esses dados. Posso ampliar o período ou "
-        "encaminhar você para um atendente.",
-        "en": "I couldn't find a transaction matching that. I can widen the date range or "
-        "connect you with a person.",
+        "es": "No encontré ninguna transacción con esos datos. Dígame el comercio, el monto "
+        "exacto o la fecha tal como aparecen en su extracto, o pídame hablar con un asesor.",
+        "pt": "Não encontrei nenhuma transação com esses dados. Informe o estabelecimento, o "
+        "valor exato ou a data como aparecem no seu extrato, ou peça para falar com um atendente.",
+        "en": "I couldn't find a transaction matching that. Tell me the merchant, the exact "
+        "amount or the date as it appears on your statement, or ask to speak with a person.",
     }[e.lang]
 
 

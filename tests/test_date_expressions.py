@@ -231,6 +231,12 @@ def test_a_numeric_date_with_no_year_matching_the_reference_date_resolves() -> N
         ("on June the 3rd", "en", date(2026, 6, 3)),
         ("MAY 3", "en", date(2026, 5, 3)),
         ("mar 3", "en", date(2026, 3, 3)),
+        ("in 3 June", "en", date(2026, 6, 3)),
+        ("on 3 June", "en", date(2026, 6, 3)),
+        ("on the 3rd of June", "en", date(2026, 6, 3)),
+        ("the June 3rd", "en", date(2026, 6, 3)),
+        ("o 3 de junho", "pt", date(2026, 6, 3)),
+        ("o dia 3 de junho", "pt", date(2026, 6, 3)),
     ],
 )
 def test_a_month_and_day_phrase_without_a_year_resolves_as_a_partial_date(
@@ -248,6 +254,8 @@ def test_a_month_and_day_phrase_without_a_year_resolves_as_a_partial_date(
         ("3 June 2025", "en", date(2025, 6, 3)),
         ("el 3 de junio de 2025", "es", date(2025, 6, 3)),
         ("3 de junho de 2025", "pt", date(2025, 6, 3)),
+        ("June 3 1999", "en", date(1999, 6, 3)),
+        ("3 de junio de 1900", "es", date(1900, 6, 3)),
     ],
 )
 def test_a_month_and_day_phrase_with_a_year_resolves_as_an_absolute_date(
@@ -288,6 +296,8 @@ def test_a_month_and_day_phrase_naming_a_day_that_does_not_exist_resolves_to_not
         ("June 3 2025 5", "en"),
         ("June 3 0025", "en"),
         ("June 3 1850", "en"),
+        ("June 3 1899", "en"),
+        ("em o 3 de junho", "pt"),
         ("3 de marzo de 0026", "es"),
         ("el 3 de junio, creo", "es"),
         ("I may 3", "en"),
@@ -317,3 +327,20 @@ def test_the_leap_day_resolves_only_in_a_year_that_has_one() -> None:
         date(2024, 2, 29),
         DateSource.PARTIAL,
     )
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("3/6/2025", (date(2025, 6, 3), DateSource.NUMERIC)),
+        ("3/6/1900", (date(1900, 6, 3), DateSource.NUMERIC)),
+        ("3/6/1899", None),
+        ("3/6/1850", None),
+        ("3/6/125", None),
+        ("3/6/2100", None),
+    ],
+)
+def test_a_numeric_date_with_an_implausible_year_resolves_to_nothing(
+    expression: str, expected: tuple[date, DateSource] | None
+) -> None:
+    assert resolve(expression, language="en", reference_date=_REFERENCE_DATE) == expected

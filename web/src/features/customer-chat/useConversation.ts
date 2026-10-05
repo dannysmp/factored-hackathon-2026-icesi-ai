@@ -8,11 +8,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatClient } from './client'
 import type { TurnResponse } from './contracts'
+import { classifyFailure } from '../../lib/failure'
+import type { FailureKind } from '../../lib/failure'
 
 export interface Message {
   id: string
   from: 'assistant' | 'customer'
   text: string
+  /** What was sent to the endpoint when that differs from the words shown, such as a list number. */
+  sent?: string
+  /** The customer's message may not have reached the assistant; `retry` sends it again. */
+  failed?: boolean
+  /** The id the turn endpoint treats as the identity of this message, so a resend cannot advance the conversation twice. */
+  turnId?: string
 }
 
 export type ConversationStatus = 'loading' | 'ready' | 'error'
@@ -21,12 +29,27 @@ interface ConversationState {
   status: ConversationStatus
   messages: Message[]
   latest: TurnResponse | null
-  error: string | null
+  /** The case number of the dispute filed in this conversation, kept after the turn that carried it; `null` until one is filed. */
+  filedCase: string | null
+  /** What went wrong while the status is `error`; `null` otherwise. */
+  failure: FailureKind | null
 }
 
 export interface Conversation extends ConversationState {
-  /** Send the customer's text; a no-op once the conversation has ended or is already loading. */
-  send: (text: string) => void
+  /**
+   * Send the customer's text; a no-op once the conversation has ended or is already loading.
+   * `shown` is what the transcript displays when that differs from what is sent, such as the
+   * full description of a listed option that is sent as its number.
+   *
+   * A message that failed earlier is dropped from the transcript: the customer chose to say
+   * something else, and it may not have reached the assistant.
+   */
+  send: (text: string, shown?: string) => void
+  /**
+   * Try again after a failure: resends the message that failed under its original id, or, when
+   * the conversation never started, asks for the opening message again. A no-op otherwise.
+   */
+  retry: () => void
 }
 
 function assistantMessage(turn: TurnResponse): Message {
@@ -37,7 +60,8 @@ const INITIAL_STATE: ConversationState = {
   status: 'loading',
   messages: [],
   latest: null,
-  error: null,
+  filedCase: null,
+  failure: null,
 }
 
 export function useConversation(client: ChatClient): Conversation {
@@ -62,45 +86,46 @@ export function useConversation(client: ChatClient): Conversation {
     setState(next)
   }, [])
 
-  // If a caller ever swaps `client` for a genuinely different one (the fixture client today;
-  // the live client is the next slice's), this effect re-runs and starts a new conversation, but
-  // the previous one's messages linger until the new `start()` resolves. A caller that needs an
-  // immediate reset should remount by changing this component's `key`, React's own tool for
-  // that, rather than this hook resetting state itself from inside an effect.
-  useEffect(() => {
-    mounted.current = true
+  const begin = useCallback((): void => {
     client.start().then(
       (turn) => {
-        commit({ status: 'ready', messages: [assistantMessage(turn)], latest: turn, error: null })
+        commit({
+          status: 'ready',
+          messages: [assistantMessage(turn)],
+          latest: turn,
+          filedCase: turn.case_number,
+          failure: null,
+        })
       },
       (error: unknown) => {
         commit({
           status: 'error',
           messages: [],
           latest: null,
-          error: error instanceof Error ? error.message : 'the conversation could not start',
+          filedCase: null,
+          failure: classifyFailure(error),
         })
       },
     )
+  }, [client, commit])
+
+  // If a caller ever swaps `client` for a genuinely different one, this effect re-runs and starts
+  // a new conversation, but the previous one's messages linger until the new `start()` resolves.
+  // A caller that needs an immediate reset should remount by changing this component's `key`,
+  // React's own tool for that, rather than this hook resetting state itself from inside an effect.
+  useEffect(() => {
+    mounted.current = true
+    begin()
     return () => {
       mounted.current = false
     }
-  }, [client, commit])
+  }, [begin])
 
-  const send = useCallback(
-    (text: string) => {
-      const current = latestState.current
-      if (current.status === 'loading' || current.latest?.end_session === true) {
-        return
-      }
-      const customerMessage: Message = {
-        id: `customer-${String(current.messages.length)}`,
-        from: 'customer',
-        text,
-      }
-      commit({ ...current, status: 'loading', messages: [...current.messages, customerMessage] })
+  const dispatch = useCallback(
+    (text: string, turnId: string, history: Message[]): void => {
+      commit({ ...latestState.current, status: 'loading', messages: history })
 
-      client.sendTurn(text).then(
+      client.sendTurn(text, turnId).then(
         (turn) => {
           const before = latestState.current
           commit({
@@ -108,7 +133,8 @@ export function useConversation(client: ChatClient): Conversation {
             status: 'ready',
             messages: [...before.messages, assistantMessage(turn)],
             latest: turn,
-            error: null,
+            filedCase: turn.case_number ?? before.filedCase,
+            failure: null,
           })
         },
         (error: unknown) => {
@@ -116,7 +142,10 @@ export function useConversation(client: ChatClient): Conversation {
           commit({
             ...before,
             status: 'error',
-            error: error instanceof Error ? error.message : 'the message could not be sent',
+            messages: before.messages.map((message) =>
+              message.turnId === turnId ? { ...message, failed: true } : message,
+            ),
+            failure: classifyFailure(error),
           })
         },
       )
@@ -124,5 +153,47 @@ export function useConversation(client: ChatClient): Conversation {
     [client, commit],
   )
 
-  return { ...state, send }
+  const send = useCallback(
+    (text: string, shown?: string) => {
+      const current = latestState.current
+      if (current.status === 'loading' || current.latest?.end_session === true) {
+        return
+      }
+      const turnId = crypto.randomUUID()
+      const customerMessage: Message = {
+        id: `customer-${turnId}`,
+        from: 'customer',
+        text: shown ?? text,
+        ...(shown === undefined ? {} : { sent: text }),
+        turnId,
+      }
+      dispatch(text, turnId, [
+        ...current.messages.filter((m) => m.failed !== true),
+        customerMessage,
+      ])
+    },
+    [dispatch],
+  )
+
+  const retry = useCallback(() => {
+    const current = latestState.current
+    if (current.status === 'error' && current.latest === null) {
+      commit({ ...INITIAL_STATE })
+      begin()
+      return
+    }
+    const failed = current.messages.find((message) => message.failed === true)
+    if (failed?.turnId === undefined) {
+      return
+    }
+    dispatch(
+      failed.sent ?? failed.text,
+      failed.turnId,
+      current.messages.map((message) =>
+        message === failed ? { ...message, failed: false } : message,
+      ),
+    )
+  }, [begin, commit, dispatch])
+
+  return { ...state, send, retry }
 }
