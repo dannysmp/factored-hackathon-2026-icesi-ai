@@ -21,7 +21,7 @@ def test_the_shipped_nlu_prompt_loads_and_validates() -> None:
     """``prompts/nlu_v1.yaml`` is a real, valid prompt file, not just a fixture."""
     prompt = load_prompt("nlu_v1")
 
-    assert prompt.version == "9"
+    assert prompt.version == "10"
     assert prompt.system.strip()
     assert prompt.placeholders() == {"language_hint", "message"}
 
@@ -128,15 +128,16 @@ _MIXED_LANGUAGE_RULE = (
 
 _STATEMENT_PARAGRAPH = (
     "One more case, and only this one: a message that is nothing but a plain statement of a "
-    "transaction the customer made, with no complaint, no question, no word of not recognizing it "
-    "and no request to report, dispute or list it "
+    "transaction the customer made, with no complaint, no question, no word of not having made "
+    "or recognized it and no request to report, dispute or list it "
     '("I bought a pair of shoes online last week", "Paguei a conta de luz ontem pelo aplicativo", '
     '"Compré unos zapatos por internet la semana pasada"), is the start of a dispute: use '
     "file_dispute and record the detail it gives. Every other message, in particular one that "
     'says the customer did not make or does not recognize a transaction ("no fui yo", "não fui '
-    'eu", "no reconozco", "I did not make this"), one that asks to report it, and one that asks '
-    "a question about a rule, a deadline or a fee, is read exactly as it would be without this "
-    "case."
+    'eu", "no reconozco", "I did not make this"), one that asks to report it, even without '
+    'naming what ("lo quiero reportar", "quero reportar isso", "I want to report it"), and one '
+    "that asks a question about a rule, a deadline or a fee, is read exactly as it would be "
+    "without this case."
 )
 
 # Sentences the prompt teaches by example; none may restate a turn the evaluation scores.
