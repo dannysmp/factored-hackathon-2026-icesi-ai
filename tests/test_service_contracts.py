@@ -216,7 +216,7 @@ def _field_names(schema: Any) -> Iterator[str]:
 
 
 def test_the_package_init_is_empty() -> None:
-    """Neither stream edits the other's files through the package: its init holds nothing."""
+    """The package init holds nothing, so importing the package pulls in no contract."""
     assert Path(service_v1.__file__ or "").read_text() == ""
 
 
@@ -482,6 +482,11 @@ def test_a_verifier_result_agrees_with_its_own_outcome() -> None:
 
 
 def _routed_envelope() -> Envelope:
+    """Build a handoff envelope routed by a rule, carrying agent-only decisions and risk evidence.
+
+    It is the one envelope that holds detail meant for a person and never for the customer, so
+    the tests on what each audience may see start from it.
+    """
     return _envelope(
         intent=Intent.HANDOFF,
         end_session=True,
@@ -1233,8 +1238,8 @@ def test_the_response_version_choices_and_readiness_are_closed() -> None:
 # Closed sets only grow
 # -----------------------------------------------------------------------------
 
-# Every value a closed set held when the contract was frozen. A later version may add values to a
-# set, never rename or remove one: these pins fail on any rename or removal.
+# Every value a closed set held when the contract was released. A later version may add values to
+# a set, never rename or remove one: these pins fail on any rename or removal.
 _FROZEN_VALUES: dict[type[StrEnum], set[str]] = {
     Intent: {
         "clarify",
@@ -1325,7 +1330,7 @@ _FROZEN_VALUES: dict[type[StrEnum], set[str]] = {
 
 @pytest.mark.parametrize("enumeration", list(_FROZEN_VALUES), ids=lambda e: e.__name__)
 def test_a_closed_set_keeps_every_value_it_was_frozen_with(enumeration: type[StrEnum]) -> None:
-    """A rename or a removal in a frozen closed set fails; an addition does not."""
+    """A rename or a removal in a released closed set fails; an addition does not."""
     assert _FROZEN_VALUES[enumeration] <= {member.value for member in enumeration}
 
 

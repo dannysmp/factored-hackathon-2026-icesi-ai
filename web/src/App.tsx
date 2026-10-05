@@ -4,7 +4,7 @@ import { ChatFeature } from './features/customer-chat/ChatFeature'
 import { LiveChatClient } from './features/customer-chat/client'
 import type { Lang } from './features/customer-chat/contracts'
 import { SignInScreen } from './features/sign-in/SignInScreen'
-import styles from './App.module.css'
+import { PageHeader } from './components/ui/PageHeader'
 
 /**
  * The app shell: the demonstration sign-in, then the customer chat against the real, live turn
@@ -21,21 +21,25 @@ export function App(): JSX.Element {
 
   if (session === null || client === null) {
     return (
-      <main>
-        <h1 className={styles.heading}>Dispute intake</h1>
-        <SignInScreen
-          onSignedIn={(token, lang) => {
-            setSession({ token, lang })
-          }}
-        />
-      </main>
+      <>
+        <PageHeader title="Dispute intake" />
+        <main>
+          <SignInScreen
+            onSignedIn={(token, lang) => {
+              setSession({ token, lang })
+            }}
+          />
+        </main>
+      </>
     )
   }
 
   return (
-    <main>
-      <h1 className={styles.heading}>Dispute intake</h1>
-      <ChatFeature client={client} lang={session.lang} />
-    </main>
+    <>
+      <PageHeader title="Dispute intake" />
+      <main>
+        <ChatFeature client={client} lang={session.lang} />
+      </main>
+    </>
   )
 }
