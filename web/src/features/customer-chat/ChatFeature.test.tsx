@@ -149,6 +149,28 @@ describe('ChatFeature', () => {
       )
     })
 
+    it('keeps the card and its number through a failed send and its retry', async () => {
+      const user = userEvent.setup()
+      let failNext = true
+      const client: ChatClient = {
+        start: () => Promise.resolve(filing),
+        sendTurn: () => {
+          if (failNext) {
+            failNext = false
+            return Promise.reject(new TypeError('Failed to fetch'))
+          }
+          return Promise.resolve(farewell)
+        },
+      }
+      render(<ChatFeature client={client} lang="en" />)
+      await findMessage(/case DEMO-1234/)
+      await sendOnce(user)
+      await user.click(await screen.findByRole('button', { name: 'Retry' }))
+      await findMessage(farewell.reply)
+
+      expect(screen.getByRole('region', { name: 'Dispute filed' })).toHaveTextContent('DEMO-1234')
+    })
+
     it('does not announce the outcome again on a reply in between', async () => {
       const user = userEvent.setup()
       const between = { ...farewell, reply: 'Anything else I can help with?', end_session: false }
@@ -172,7 +194,11 @@ describe('ChatFeature', () => {
 
       const card = screen.getByRole('region', { name: 'A person will review your request' })
       expect(card).toHaveTextContent('HND-77')
+      expect(card).toHaveTextContent('DEMO-1234')
       expect(screen.queryByRole('region', { name: 'Dispute filed' })).not.toBeInTheDocument()
+      expect(announcement()).toHaveTextContent(
+        'A person will review your request. Case reference: HND-77. Dispute filed earlier, case reference: DEMO-1234.',
+      )
     })
   })
 

@@ -35,6 +35,7 @@ export const es: Messages = {
   'chat.result.closedTitle': 'Conversación finalizada',
   'chat.result.caseNumberLabel': 'Número de caso',
   'chat.result.keepNumber': 'Conserve este número para cualquier consulta sobre su solicitud.',
+  'chat.result.filedEarlierLabel': 'Disputa registrada antes, número de caso',
   'signin.regionLabel': 'Inicio de sesión de demostración',
   'signin.loading': 'Cargando el inicio de sesión de demostración…',
   'signin.unreachable': 'No se pudo cargar el inicio de sesión de demostración.',

@@ -112,8 +112,8 @@ export function ChatFeature({
     conversation.messages.findLast((m) => m.from === 'assistant')?.text ?? ''
   // A dispute is filed on a turn that does not end the conversation, and the farewell that ends
   // it carries no case number: the card shows the filing from the moment it happens and keeps its
-  // number to the end, unless the conversation ends in a hand-off, whose own reference then leads.
-  const caseNumber = latest?.handoff_ticket === null ? conversation.filedCase : null
+  // number to the end. A hand-off after a filing leads with its own reference and lists the case.
+  const caseNumber = conversation.filedCase
   const handoffTicket = latest?.handoff_ticket ?? null
   const showResult = latest !== null && (ended || caseNumber !== null)
   const result = showResult ? resultOf(caseNumber, handoffTicket) : null
@@ -125,7 +125,11 @@ export function ChatFeature({
       ? ''
       : result.reference === null
         ? t(`chat.result.${result.variant}Title`)
-        : `${t(`chat.result.${result.variant}Title`)}. ${t('chat.result.caseNumberLabel')}: ${result.reference}.`
+        : `${t(`chat.result.${result.variant}Title`)}. ${t('chat.result.caseNumberLabel')}: ${result.reference}.${
+            result.filedEarlier === null
+              ? ''
+              : ` ${t('chat.result.filedEarlierLabel')}: ${result.filedEarlier}.`
+          }`
   const announcement = [lastAssistantText, closing].filter((part) => part !== '').join(' ')
 
   return (
