@@ -44,8 +44,8 @@ to its text. ``LANGUAGES`` and ``SECTION_IDS`` name what is rendered.
 Limitations
 -----------
 The prose is fixed per language, not per country. A native review of the final wording is still
-recommended before customer use. The text is synthetic policy
-prose written for this project, not legal advice.
+recommended before customer use. The text is synthetic policy prose written for this project, not
+legal advice.
 """
 
 from __future__ import annotations
@@ -61,6 +61,7 @@ from app.domain.policy.models import (  # Vocabulary rendered in the text
     TransactionStatus,
 )
 
+# Languages of the corpus, in the order the documents are produced.
 LANGUAGES: tuple[str, ...] = ("es", "pt", "en")
 
 # Stable identifiers of the sections, in reading order; identical in every language.
@@ -76,12 +77,21 @@ SECTION_IDS: tuple[str, ...] = (
     "decision-codes",
 )
 
+# File name of the policy document inside each language directory.
 DOCUMENT_NAME = "dispute-policy.md"
 
 
 @dataclass(frozen=True, slots=True)
 class Messages:
-    """Every piece of prose of one language."""
+    """Every piece of prose of one language: titles, sentence templates and vocabulary.
+
+    Templates use ``str.format`` placeholders that the section builders fill from the policy
+    (for example ``{days}`` or ``{products}``), so the numbers come from the policy and never from
+    the prose. The mappings translate the engine's own identifiers (categories, transaction
+    statuses, product and transaction-type codes, reason codes, evidence ids) into customer
+    language; ``and_word``, ``or_word``, ``nor_word``, ``day_one`` and ``day_many`` are the small
+    grammatical pieces used when joining lists and counting days.
+    """
 
     title: str
     section_titles: dict[str, str]
@@ -582,6 +592,7 @@ _EN = Messages(
     day_many="days",
 )
 
+# The message set of each language, keyed by the language code in LANGUAGES.
 MESSAGES: dict[str, Messages] = {"es": _ES, "pt": _PT, "en": _EN}
 
 
@@ -591,7 +602,10 @@ MESSAGES: dict[str, Messages] = {"es": _ES, "pt": _PT, "en": _EN}
 
 
 def _join(items: list[str], word: str) -> str:
-    """Join with commas and a final conjunction: ``a, b and c``."""
+    """Join with commas and a final conjunction (``word``): ``a, b and c``.
+
+    An empty list gives an empty string and a single item is returned as it is.
+    """
     if len(items) <= 1:
         return "".join(items)
     return f"{', '.join(items[:-1])} {word} {items[-1]}"
@@ -642,12 +656,20 @@ KNOWN_TRANSACTION_TYPES: tuple[str, ...] = (
 
 
 def _in_reading_order(accepted: frozenset[str], known: tuple[str, ...]) -> list[str]:
-    """The accepted codes, known ones first in their fixed order, then any others by name."""
+    """The accepted codes, known ones first in their fixed order, then any others by name.
+
+    A deterministic order keeps the rendered text identical between runs.
+    """
     return [code for code in known if code in accepted] + sorted(accepted - set(known))
 
 
 def _who_can_dispute(policy: Policy, m: Messages) -> str:
-    """The conditions a transaction must meet, and what the policy leaves out."""
+    """The conditions a transaction must meet, and what the policy leaves out.
+
+    Products and transaction types the policy accepts are listed; the known ones it does not
+    accept are stated as excluded, so a product or transaction-type exclusion appears only when
+    the policy makes it. The declined, pending and reversed statuses are always stated as excluded.
+    """
     accepted_products = _in_reading_order(policy.in_scope_product_types, KNOWN_PRODUCT_TYPES)
     other_products = [p for p in KNOWN_PRODUCT_TYPES if p not in policy.in_scope_product_types]
     accepted_types = _in_reading_order(policy.disputable_transaction_types, KNOWN_TRANSACTION_TYPES)
@@ -656,6 +678,7 @@ def _who_can_dispute(policy: Policy, m: Messages) -> str:
     ]
 
     def names(codes: list[str]) -> str:
+        """The display names of product codes, joined with the language's conjunction."""
         return _join([_label(m.product_names, code) for code in codes], m.and_word)
 
     charges = _join([_label(m.transaction_types_indefinite, t) for t in accepted_types], m.or_word)
@@ -679,7 +702,10 @@ def _who_can_dispute(policy: Policy, m: Messages) -> str:
 
 
 def _filing_windows(policy: Policy, m: Messages) -> str:
-    """The deadline rule with a worked example, then one line per category with its window."""
+    """The deadline rule with a worked example, then one line per category with its window.
+
+    The example uses the policy's shortest window: its last day is valid and the day after is not.
+    """
     windows = [policy.categories[category].filing_window_days for category in DisputeCategory]
     example = min(windows)
     intro = m.windows_intro.format(
@@ -696,7 +722,10 @@ def _filing_windows(policy: Policy, m: Messages) -> str:
 
 
 def _confirmation(policy: Policy, m: Messages) -> str:
-    """Which dispute categories the customer must confirm before filing."""
+    """Which dispute categories the customer must confirm before filing.
+
+    States that all, some (naming them) or none of the categories require confirmation.
+    """
     required = [c for c in DisputeCategory if policy.categories[c].requires_confirmation]
     if not required:
         return m.confirmation_none
@@ -752,7 +781,12 @@ def _decision_codes(m: Messages) -> str:
 
 
 def _render_language(policy: Policy, language: str, source: str) -> str:
-    """The whole document of one language."""
+    """The whole Markdown document of one language.
+
+    The document is a front matter block (language, policy version, generated flag and source
+    path), the title, and every section in ``SECTION_IDS`` order under a heading that carries the
+    stable ``{#section-id}`` anchor.
+    """
     m = MESSAGES[language]
     bodies = {
         "overview": m.overview,

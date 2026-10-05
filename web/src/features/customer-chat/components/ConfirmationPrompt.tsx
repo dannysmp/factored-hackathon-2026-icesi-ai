@@ -1,3 +1,4 @@
+/** The confirmation button shown while the assistant is waiting for the customer to confirm. */
 import type { JSX } from 'react'
 import { Button } from '../../../components/ui/Button'
 import { CONFIRMATION_TEXT, DECLINE_TEXT } from '../contracts'

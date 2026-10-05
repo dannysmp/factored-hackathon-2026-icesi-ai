@@ -11,9 +11,9 @@ request into the right type, does not need a hand-written branch per tool to inv
 Scope
 -----
 In: routing the five tools ``ToolPort`` implements today (everything but ``create_dispute_case``,
-slice 1.4's).
+which has its own dispatch).
 Out: choosing which tool to call, validating the payload into its request type (the dialogue
-controller, stream 2), and ``create_dispute_case``'s own dispatch.
+controller), and ``create_dispute_case``'s own dispatch.
 
 Design Principles
 ------------------
@@ -29,7 +29,8 @@ Runtime Contract
 Limitations
 -----------
 ``create_dispute_case`` is deliberately not dispatched here: it carries permission invariants
-(``ADR-3``) a future, separate dispatch path for it should not casually share with these five.
+(``Permission.CONTROLLER_ONLY``), so it has its own dispatch path, ``app.tools.create_dispatch``,
+rather than sharing this table.
 """
 
 from __future__ import annotations

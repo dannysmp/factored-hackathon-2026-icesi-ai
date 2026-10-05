@@ -170,6 +170,23 @@ def test_a_case_filed_and_a_handoff_survive_a_round_trip(store: DialogueStore) -
     assert read_back.phase is ConversationPhase.CLOSED
 
 
+def test_the_offered_transaction_references_survive_a_round_trip_in_order(
+    store: DialogueStore,
+) -> None:
+    """The references shown in a list read back in the order shown; an empty list stays empty."""
+    store.save(
+        _state(offered_refs=("TX-3", "TX-1", "TX-2")), expected_version=0, turn_id="t-1", now=_NOW
+    )
+    read_back = store.get("s-1")
+    assert read_back is not None
+    assert read_back.offered_refs == ("TX-3", "TX-1", "TX-2")
+
+    store.save(_state(version=2, offered_refs=()), expected_version=1, turn_id="t-2", now=_NOW)
+    cleared = store.get("s-1")
+    assert cleared is not None
+    assert cleared.offered_refs == ()
+
+
 # -----------------------------------------------------------------------------
 # Postgres-only: telemetry
 # -----------------------------------------------------------------------------

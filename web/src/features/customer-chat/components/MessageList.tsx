@@ -1,3 +1,6 @@
+/**
+ * The transcript of the customer chat, with its typing indicator and scroll behavior.
+ */
 import { useEffect, useRef } from 'react'
 import type { JSX } from 'react'
 import type { Message } from '../useConversation'
@@ -37,6 +40,7 @@ export function MessageList({
   const t = useT(lang)
   const lastRef = useRef<HTMLLIElement>(null)
   const typingRef = useRef<HTMLDivElement>(null)
+  // What the last effect run saw, so scrolling happens only when something new arrives.
   const seen = useRef({ count: messages.length, pending })
   const newest = messages.at(-1)
 

@@ -1,3 +1,7 @@
+/**
+ * The customer chat screen: composes the conversation hook with the message list, the choice
+ * buttons, the confirmation button and the text form, and owns focus and announcement behavior.
+ */
 import { useEffect, useRef } from 'react'
 import type { JSX } from 'react'
 import { ChoiceButtons } from './components/ChoiceButtons'
@@ -20,9 +24,10 @@ import styles from './ChatFeature.module.css'
 /**
  * The customer chat, wired to whatever `ChatClient` its caller passes in.
  *
- * Renders every state deliberately (frontend standard, section 6): loading, error (with a
- * retryable message, never a stack trace), and ready, where the confirmation button, the choice
- * buttons and the text form each appear only when the assistant's last turn calls for them.
+ * Renders every state deliberately: loading, error (a message saying what failed and how to go
+ * on, never a stack trace; it offers Retry unless the session has expired), and ready. When
+ * ready, the choice buttons appear when the last turn offers choices, the confirmation button
+ * when it awaits confirmation, and the text form with every turn until the conversation ends.
  *
  * `lang` is the persona's selected language, known from sign-in before any turn exists; once a
  * turn arrives, its own `lang` (the server's grounded value) takes over, so the chrome never
@@ -64,6 +69,8 @@ export function ChatFeature({
     onLanguageChange?.(activeLang)
   }, [activeLang, onLanguageChange])
 
+  // An expired session cannot be retried from here, so the Retry button is hidden and the
+  // parent is told to send the person back to sign-in.
   const expired = conversation.failure === 'unauthorized'
   useEffect(() => {
     if (expired) onSessionExpired?.()
@@ -112,8 +119,8 @@ export function ChatFeature({
   const lastAssistantText = lastAssistant?.text ?? ''
   // A dispute is filed on a turn that does not end the conversation, and the farewell that ends
   // it carries no case number: the card shows the filing from the moment it happens and keeps its
-  // number to the end, unless the conversation ends in a hand-off, whose own reference then leads.
-  const caseNumber = latest?.handoff_ticket === null ? conversation.filedCase : null
+  // number to the end. A hand-off after a filing leads with its own reference and lists the case.
+  const caseNumber = conversation.filedCase
   const handoffTicket = latest?.handoff_ticket ?? null
   const showResult = latest !== null && (ended || caseNumber !== null)
   const result = showResult ? resultOf(caseNumber, handoffTicket) : null
@@ -125,7 +132,11 @@ export function ChatFeature({
       ? ''
       : result.reference === null
         ? t(`chat.result.${result.variant}Title`)
-        : `${t(`chat.result.${result.variant}Title`)}. ${t('chat.result.caseNumberLabel')}: ${result.reference}.`
+        : `${t(`chat.result.${result.variant}Title`)}. ${t('chat.result.caseNumberLabel')}: ${result.reference}.${
+            result.filedEarlier === null
+              ? ''
+              : ` ${t('chat.result.filedEarlierLabel')}: ${result.filedEarlier}.`
+          }`
   const announcement = [lastAssistantText, closing].filter((part) => part !== '').join(' ')
 
   return (

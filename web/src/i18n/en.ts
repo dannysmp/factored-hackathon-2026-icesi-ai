@@ -1,12 +1,13 @@
-// Structural placeholders: real copy for the chat and sign-in screens migrates in separately,
-// through the language review each catalog's strings go through before they ship.
+// English catalog, for a bank customer: plain, courteous second person, and "profile" for the
+// demonstration identities rather than the internal term for them. Every key in `Messages` must be
+// present and non-blank, and every `{placeholder}` must survive; the catalog tests enforce both.
 import type { Messages } from './messages'
 
+/** Every interface message in English. */
 export const en: Messages = {
   'app.title': 'Transaction disputes',
   'app.signOut': 'Sign out',
-  'app.sessionExpired': 'Your session has ended. Please sign in again.',
-  'common.loading': 'Loading…',
+  'app.sessionExpired': 'Your session has expired. Please sign in again.',
   'common.retry': 'Retry',
   'common.error.generic': 'Something went wrong.',
   'failure.offline':
@@ -16,7 +17,6 @@ export const en: Messages = {
   'failure.unavailable': 'The service is unavailable right now. Please try again in a few minutes.',
   'chat.regionLabel': 'Conversation with the assistant',
   'chat.messagesLabel': 'Messages',
-  'chat.placeholder': 'Type your message',
   'chat.messageLabel': 'Your message',
   'chat.starting': 'Starting the conversation…',
   'chat.couldNotStart': 'The conversation could not start.',
@@ -38,14 +38,15 @@ export const en: Messages = {
   'chat.result.closedTitle': 'Conversation ended',
   'chat.result.caseNumberLabel': 'Case reference',
   'chat.result.keepNumber': 'Keep this number for any question about your request.',
+  'chat.result.filedEarlierLabel': 'Dispute filed earlier, case reference',
   'signin.regionLabel': 'Demonstration sign-in',
   'signin.loading': 'Loading the demonstration sign-in…',
   'signin.unreachable': 'The demonstration sign-in could not be loaded.',
   'signin.unavailable': 'The demonstration is not available at the moment.',
-  'signin.intro': 'This is a demonstration. Sign in with one of the personas below.',
-  'signin.personaLabel': 'Persona',
+  'signin.intro': 'This is a demonstration. Sign in with one of the profiles below.',
+  'signin.personaLabel': 'Profile',
   'signin.accessCodeLabel': 'Access code',
-  'signin.refused': 'The access code or persona was refused. Please try again.',
+  'signin.refused': 'The access code or profile was not accepted. Please try again.',
   'signin.accessCodeHint': 'Enter the access code to continue.',
   'signin.submit': 'Sign in',
   'signin.submitting': 'Signing in…',

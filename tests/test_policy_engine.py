@@ -158,6 +158,7 @@ def test_the_fraud_window_still_marks_the_gate_for_the_person_who_receives_the_c
     window = policy.categories[DisputeCategory.FRAUD_CLAIM].filing_window_days
 
     def facts(days: int) -> dict[str, str]:
+        """The fact names and values of the escalation for a fraud claim of the given age."""
         request = make_request(
             category=DisputeCategory.FRAUD_CLAIM, transaction_date=TODAY - timedelta(days=days)
         )

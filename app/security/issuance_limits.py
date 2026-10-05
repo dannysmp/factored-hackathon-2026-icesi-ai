@@ -5,7 +5,7 @@ Issuance Limiter
 Overview
 --------
 Bounds concurrent successful demo sign-ins per key — a client address, the whole broker, or one
-persona slot (ADR-18). A reservation counts against its key's cap for exactly as long as the
+persona slot. A reservation counts against its key's cap for exactly as long as the
 session it backs would remain active, and ages out on that same schedule: no separate "session
 ended" event is needed, since a reservation's own expiry already matches the session's.
 
@@ -20,8 +20,8 @@ Design Principles
 ------------------
 - **Counts successes, not failures** (the opposite of ``AttemptLimiter``): a caller reserves
   capacity only once it has already decided to issue a session, never speculatively. Mixing the
-  two contracts in one class was rejected on purpose: the fix that made ``AttemptLimiter`` safe
-  (issues #30/#31) depends on it never counting anything but a reported failure.
+  two contracts in one class is deliberately avoided: ``AttemptLimiter`` stays safe only while it
+  counts nothing but a reported failure.
 - One key, one cap: the same class is used three times by the caller — once per client address,
   once for the whole broker, once per persona slot — each with its own cap and TTL, rather than
   three purpose-built classes for what is structurally the same operation.

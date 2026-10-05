@@ -1,6 +1,7 @@
 /**
- * Unit tests: the rules a naive Zod mirror of `contracts/service_v1/console.py`'s field shapes
- * alone would miss.
+ * Unit tests: the console schemas enforce the rules a naive Zod mirror of
+ * `contracts/service_v1/console.py`'s field shapes alone would miss: strict objects, ISO dates,
+ * decimal-string amounts, and the cross-field checks on the packet and the ticket detail.
  */
 import { describe, expect, it } from 'vitest'
 import { DEMO_TICKET_DETAILS } from './fixtures'

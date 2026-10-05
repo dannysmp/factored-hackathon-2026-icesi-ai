@@ -5,7 +5,7 @@
 //   One file for the bundler and the test runner (Vitest reads its `test` field), so there is
 //   a single source for how the app is built and how it is tested.
 // Design:
-//   The coverage gate matches the Python side's floor (pyproject.toml): 85% lines, 80% branches.
+//   The coverage gate requires 85% of lines and 80% of branches.
 //   The bootstrap files (src/main.tsx, src/console-main.tsx) are excluded: each only wires
 //   `createRoot`/`render`. Two HTML entries (index.html, console.html) make this a multi-page
 //   build (Vite's own documented pattern, no router library): the customer chat and the agent
@@ -41,7 +41,6 @@ export default defineConfig({
       include: ['src/**/*.{ts,tsx}'],
       // The bootstrap files: each only wires `createRoot`/`render` and has no branch worth a test.
       exclude: ['src/main.tsx', 'src/console-main.tsx'],
-      // The same combined line+branch floor as the Python side (pyproject.toml).
       thresholds: { lines: 85, branches: 80 },
     },
   },

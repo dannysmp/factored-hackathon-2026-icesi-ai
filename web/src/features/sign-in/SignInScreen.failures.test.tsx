@@ -9,10 +9,12 @@ import { SignInScreen } from './SignInScreen'
 import { es } from '../../i18n/es'
 import { pt } from '../../i18n/pt'
 
+/** Two customer personas, one speaking Spanish and one Portuguese. */
 const PERSONAS = [
   { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' as const },
   { slug: 'joao', display_name: 'João', language: 'pt', audience: 'customer' as const },
 ]
+/** The same personas plus a second Portuguese speaker, for preferred-persona selection. */
 const TWO_IN_PORTUGUESE = [
   ...PERSONAS,
   { slug: 'beatriz', display_name: 'Beatriz', language: 'pt', audience: 'customer' as const },
@@ -22,6 +24,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+/** Types `code` into the access code field and presses the sign-in button. */
 async function submitCode(user: ReturnType<typeof userEvent.setup>, code: string): Promise<void> {
   await user.type(await screen.findByLabelText(es['signin.accessCodeLabel']), code)
   await user.click(screen.getByRole('button', { name: es['signin.submit'] }))

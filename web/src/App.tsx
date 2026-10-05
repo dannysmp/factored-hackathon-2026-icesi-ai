@@ -1,3 +1,4 @@
+/** The customer app shell: sign-in, then the live chat, with the session held in memory. */
 import { useCallback, useMemo, useState } from 'react'
 import type { JSX } from 'react'
 import { ChatFeature } from './features/customer-chat/ChatFeature'
@@ -12,12 +13,16 @@ import { useT } from './i18n/useT'
 import styles from './App.module.css'
 
 /**
- * The app shell: the demonstration sign-in, then the customer chat against the real, live turn
- * endpoint (ADR-18, `LiveChatClient`). The session token lives only in this component's own
- * state, never storage — the same "held in memory only" rule the sign-in screen itself follows.
+ * The app shell: the demonstration sign-in, then the customer chat against the live turn
+ * endpoint (`LiveChatClient`). The session token lives only in this component's own state, never
+ * in browser storage, so closing the tab ends the session; the sign-in screen follows the same
+ * held-in-memory rule.
  *
  * When the service reports the session has ended, the person is returned to the sign-in with a
- * note saying so, in the language the conversation was last in, and the keyboard lands on the form.
+ * note saying so, in the language the conversation was last in, and the keyboard lands on the
+ * form. The same persona is offered again so signing back in takes one step.
+ *
+ * Both the sign-in and the chat render inside a `PageHeader` banner and a single `main` landmark.
  */
 export function App(): JSX.Element {
   const [session, setSession] = useState<{ token: string; lang: Lang; slug: string } | null>(null)
@@ -32,9 +37,8 @@ export function App(): JSX.Element {
   const tExpired = useT(expiredIn ?? lang)
   useDocumentLanguage(lang, t('app.title'))
 
-  // Built once per signed-in session, not on every render (frontend standard, section 3): a
-  // client is a resource. A new sign-in (a new token) is a new session in every sense, so a new
-  // client for it is correct, not wasteful.
+  // Built once per signed-in session, not on every render: a client is a resource. A new sign-in
+  // (a new token) is a new session in every sense, so a new client for it is correct, not wasteful.
   const client = useMemo(() => (session === null ? null : new LiveChatClient(session)), [session])
 
   const handleExpired = useCallback(() => {

@@ -7,6 +7,7 @@ import { FixtureChatClient } from './client'
 import { FILE_DISPUTE_EN } from './fixtures'
 import { findMessage } from './findMessage'
 
+/** The demonstration notice the fixture script carries on every turn. */
 const NOTICE = 'This is a demonstration conversation, not your real account.'
 
 describe('ChatFeature demonstration notice', () => {

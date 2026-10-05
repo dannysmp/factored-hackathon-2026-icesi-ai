@@ -1,12 +1,16 @@
+/**
+ * Buttons for the numbered options the assistant offers.
+ */
 import type { JSX } from 'react'
 import { Button } from '../../../components/ui/Button'
 import type { Choice } from '../contracts'
 import styles from './ChoiceButtons.module.css'
 
 /**
- * The numbered options the assistant offered, each a real button (frontend standard, section 7:
- * semantic HTML first). A click sends the option's number, exactly as a customer typing it would,
+ * The numbered options the assistant offered, each a real button
+ * (semantic HTML first). A click sends the option's number, exactly as a customer typing it would,
  * while the conversation shows the option's full description as what the customer said.
+ * Renders nothing when there are no options; `disabled` blocks clicks while a reply is awaited.
  */
 export function ChoiceButtons({
   choices,

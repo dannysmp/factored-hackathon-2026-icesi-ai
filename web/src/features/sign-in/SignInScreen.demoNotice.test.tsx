@@ -8,6 +8,7 @@ import { en } from '../../i18n/en'
 import { es } from '../../i18n/es'
 import { pt } from '../../i18n/pt'
 
+/** One customer persona per language, so the notice is checked in each. */
 const PERSONAS = [
   { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' as const },
   { slug: 'bruno', display_name: 'Bruno', language: 'pt', audience: 'customer' as const },

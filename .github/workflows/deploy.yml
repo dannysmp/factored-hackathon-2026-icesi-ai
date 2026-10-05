@@ -5,10 +5,10 @@
 #   Builds both images, scans them, pushes to ECR, brings the compose stack
 #   up on the tagged host over SSM (no SSH), proves the deployed path
 #   answers over HTTPS, and proves the edge carries the hardening baseline
-#   ADR-13 requires (HSTS, an enforcing CSP, no version disclosure, TLS 1.1
-#   and below refused). A one-off smoke exercise runs this once against
-#   whatever is on main today, with no sign-in enabled, and tears down after
-#   — the default input below; a deployment meant to persist disables it.
+#   (HSTS, an enforcing CSP, no version disclosure, TLS 1.1 and below
+#   refused). A one-off smoke exercise runs this once against whatever is on
+#   main today, with no sign-in enabled, and tears down after — the default
+#   input below; a deployment meant to persist disables it.
 #   The Metabase dashboard is a separate, opt-in job on top of the same
 #   deployment: `deploy_metabase` leaves it out of a base-stack-only smoke
 #   exercise, and stands it up alongside a deployment meant to persist.

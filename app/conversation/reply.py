@@ -63,7 +63,9 @@ from contracts.service_v1.envelope import RenderEnvelope, TemplateId
 
 logger = logging.getLogger(__name__)
 
-# Every template eligible for model rendering. Deliberately excludes: NO_CASE_FOUND and
+# Every template eligible for model rendering. Deliberately excludes: PRESENT_LIST (its numbered
+# lines are the options the customer picks from, and a model-worded reply is free to drop or
+# reorder them, so the options stay fixed text); NO_CASE_FOUND and
 # HANDOFF_NOT_REGISTERED (the contract itself permits building a model-mode envelope for either
 # state from facts alone, but nothing here elects to render one through the model — an explicit
 # scope choice, not a contract-level impossibility); HANDOFF_CARD_LOSS, HANDOFF_REQUESTED and
@@ -73,13 +75,12 @@ logger = logging.getLogger(__name__)
 # contract's own _wording_matches_the_mode forbids a refusal from ever rendering in model mode);
 # ABSTAIN_POLICY (Intent.ABSTAIN has no required grounded field at all — the verifier only rejects
 # a digit, a malformed placeholder or a missing *required* field, so nothing would force a
-# model-rendered reply to actually state the required abstention sentence rather than any
-# other digit-free text); and every purely procedural template (a greeting, a clarification, a
+# model-rendered reply to actually state the abstention sentence rather than any other
+# digit-free text); and every purely procedural template (a greeting, a clarification, a
 # farewell, a cancellation) with no grounded content to gain from model wording.
 MODEL_ELIGIBLE_TEMPLATES = frozenset(
     {
         TemplateId.PRESENT_ONE,
-        TemplateId.PRESENT_LIST,
         TemplateId.PRESENT_NARROW,
         TemplateId.CONFIRM_FILING,
         TemplateId.FILING_RESULT,

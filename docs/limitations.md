@@ -107,6 +107,15 @@ results still to come say so and name the command that completes them.
   still emits a structured `config_invalid` event (naming the failing setting, never its value)
   through a fallback logger before the process exits, rather than surfacing only as an
   unstructured traceback.
+- **Model use has no per-session token budget.** Two limits bound it: the turn cap
+  (`DIALOGUE_MAX_TURNS`, 30 customer turns a session) and the daily spend limit
+  (`LLM_DAILY_SPEND_LIMIT_USD`, 10 US dollars across all customers). Neither caps the tokens a
+  single session or customer may use, so one session can spend up to the turn cap, and a few
+  sessions can use the whole day's limit before other customers are handed to a person.
+- **Concurrent requests on one session are not serialized.** The turn cap counts the turns a
+  session has already saved, so requests that arrive together on the same session can each reach
+  the model before the first is saved, and each can pass the cap and the spend check. The cap is
+  a bound on a conversation, not a rate limit.
 
 ## Deployment
 
