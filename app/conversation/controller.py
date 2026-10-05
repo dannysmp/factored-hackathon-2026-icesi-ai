@@ -754,7 +754,13 @@ class DialogueController:
         A brand-new session whose first message is too ambiguous to place in Spanish or
         Portuguese is offered both, deferring its actual request to the next turn (the renderer's
         own documented job of combining a best guess with the offer to switch, in one reply).
+
+        A conversation already handed to a person is answered with its ticket, whatever the message
+        says: nothing is evaluated, filed or handed off again, so a late confirmation can neither
+        file a second case nor open a second ticket.
         """
+        if state.phase is ConversationPhase.HANDED_OFF and state.last_ticket_ref is not None:
+            return state, self._ticket_envelope(state)
         if state.last_turn_id is None and result.language is None:
             return state, self._envelope(state, Intent.CLARIFY, TemplateId.LANGUAGE_OFFER)
         handler = _ROUTES[result.intent]
@@ -1240,11 +1246,8 @@ class DialogueController:
         tool-failure handoff. The case the tool reports is then read through ``get_case``: when that
         read fails or its transaction or category differs from what was filed, the outcome is a
         handoff for an unverified filing that names the case number, and the customer is not told it
-        succeeded. A conversation already handed to a person files nothing: it is answered with its
-        existing ticket, so a late confirmation can neither file again nor open a second handoff.
+        succeeded.
         """
-        if state.phase is ConversationPhase.HANDED_OFF and state.last_ticket_ref is not None:
-            return state, self._ticket_envelope(state)
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
         idempotency_key = _idempotency_key(request.turn_id)

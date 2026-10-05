@@ -203,11 +203,17 @@ class DialogueState(BaseModel):
         return self.with_dispute_closed().model_copy(update={"last_case_number": case_number})
 
     def with_handed_off(self, ticket_ref: str) -> DialogueState:
-        """The conversation was handed to a person: nothing about the ticket changes on replay."""
+        """The conversation was handed to a person: nothing about the ticket changes on replay.
+
+        No question stays pending, since the person now has the conversation and nothing the
+        customer says is an answer to it; the selected transaction and the reason stay.
+        """
         return self.model_copy(
             update={
                 "phase": ConversationPhase.HANDED_OFF,
                 "last_ticket_ref": ticket_ref,
+                "pending_slot": None,
+                "clarification_attempts": 0,
                 "offered_refs": (),
             }
         )
