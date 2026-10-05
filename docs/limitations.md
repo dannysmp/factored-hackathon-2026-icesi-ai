@@ -169,18 +169,23 @@ results still to come say so and name the command that completes them.
 
 - **The system runs on one host and one backend process, and no load or throughput test has been
   run.** The backend, web server, Postgres and reverse proxy share a single `t3.large` instance,
-  and the backend starts one server process. No figure for concurrent users, requests per second or
-  latency under load is claimed. The one capacity reading is the memory footprint of the running
-  containers that a dashboard deployment logs (see [`infra/README.md`](../infra/README.md)).
-  Serving more customers means measuring first, then moving the database off the host and running
-  more than one backend process.
-- **The sign-in attempt limit is held in memory, per process.** A restart clears it, and with more
-  than one backend process the effective limit is multiplied until a shared store replaces it.
+  with the optional dashboard as a fifth service, and the backend starts one server process. No
+  figure for concurrent users, requests per second or latency under load is claimed. The one
+  capacity reading is the memory footprint of the running containers that a dashboard deployment
+  logs (see [`infra/README.md`](../infra/README.md)). Serving more customers means measuring first,
+  then moving the database off the host and moving the in-memory state below to a shared store
+  before running more than one backend process.
+- **Three controls hold their state in memory, per process.** The sign-in attempt limit, the
+  demonstration sign-in issuance limit and the session revocation list are each cleared by a
+  restart and are not shared between processes. With more than one backend process the limits
+  would be multiplied, and a revoked session could keep working on a process that did not see the
+  revocation. Tokens still expire on their own.
 - **No retention period or purge procedure is implemented.** Conversation state, the per-turn
-  timeline, filed cases, handoffs and audit records are kept until the host's database volume is
-  removed; the application deletes none of them on a schedule. A retention period for each kind of
-  record and a purge procedure are remaining work. For a demonstration,
-  `make reset-demo-personas` deletes the cases the demonstration personas accumulated.
+  timeline, handoffs and audit records are kept until the host's database volume is removed; the
+  application deletes none of them on a schedule. Filed cases are also cleared by the seed reload
+  that every deployment performs (see Deployment). A retention period for each kind of record and a
+  purge procedure are remaining work. For a demonstration, `make reset-demo-personas` deletes the
+  cases the demonstration personas accumulated.
 
 ## Security posture
 
