@@ -657,7 +657,7 @@ def _policy_answer(e: RenderEnvelope) -> str:
     if not e.facts.policy_values:
         return {
             "es": f"Puede consultarlo en la sección “{title}” de nuestra política de disputas.",
-            "pt": f"Você pode consultar isso na seção “{title}” da nossa política de disputas.",
+            "pt": f"Você pode consultar isso na seção “{title}” da nossa política de contestação.",
             "en": f"You can find this in the “{title}” section of our dispute policy.",
         }[e.lang]
     clauses = "; ".join(

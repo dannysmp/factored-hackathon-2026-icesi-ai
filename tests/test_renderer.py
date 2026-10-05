@@ -9,6 +9,7 @@ passed in, never a clock, a file or a network call.
 from __future__ import annotations
 
 # Standard libraries
+import re  # Word-boundary checks on rendered replies
 from datetime import date  # Fixed reference and transaction dates
 from decimal import Decimal  # Money in the tests
 
@@ -345,6 +346,41 @@ def test_every_template_id_has_a_working_renderer(lang: str) -> None:
         assert rendered.reply.strip()
 
 
+_SPANISH_ONLY = ("usted", "asesor", "cargo", "comercio", "presentar", "extracto", "tarjeta")
+_PORTUGUESE_ONLY = ("você", "não", "atendente", "contestação", "cobrança", "estabelecimento")
+_ENGLISH_ONLY = ("the", "and", "your", "you", "please", "with", "this")
+_FOREIGN_WORDS = {
+    "es": _PORTUGUESE_ONLY + _ENGLISH_ONLY,
+    "pt": _SPANISH_ONLY + _ENGLISH_ONLY + ("disputa", "disputas"),
+    "en": _SPANISH_ONLY + _PORTUGUESE_ONLY,
+}
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_every_reply_stays_in_its_language_and_names_no_internal_identifier(lang: str) -> None:
+    """No template carries a word of another language, or a snake_case identifier, into its
+    reply; the language offer, which addresses every language on purpose, is the one exception."""
+    envelopes = dict(_every_template_envelope(lang))
+    envelopes.pop(TemplateId.LANGUAGE_OFFER)
+    figureless = _envelope(
+        lang=lang,
+        intent=Intent.POLICY_ANSWER,
+        template_id=TemplateId.POLICY_ANSWER,
+        sources=(_source(),),
+    )
+    for template_id, envelope in [
+        *envelopes.items(),
+        ("policy_answer without a figure", figureless),
+    ]:
+        reply = render(envelope).reply.lower()
+
+        foreign = [w for w in _FOREIGN_WORDS[lang] if re.search(rf"\b{w}\b", reply)]
+        assert not foreign, f"{template_id}: {foreign} in {reply!r}"
+        assert not re.search(r"\b[a-z]+_[a-z_]+\b", reply), (
+            f"{template_id}: identifier in {reply!r}"
+        )
+
+
 @pytest.mark.parametrize(
     ("lang", "asked_for", "person"),
     [
@@ -628,7 +664,7 @@ def test_the_policy_answer_cites_the_section_title_in_the_reply_language() -> No
         (
             "pt",
             "Você pode consultar isso na seção “Prazos para contestar” da nossa "
-            "política de disputas.",
+            "política de contestação.",
         ),
         ("en", "You can find this in the “Filing windows” section of our dispute policy."),
     ],
