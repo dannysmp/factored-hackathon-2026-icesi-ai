@@ -20,7 +20,7 @@ import pytest
 from app.conversation.controller import HandoffOutbox
 from app.domain.calendar import DateOrigin, DomainCalendar
 from app.domain.policy.loader import load_policy
-from app.domain.policy.models import DisputeCategory, ReasonCode
+from app.domain.policy.models import DisputeCategory, Outcome, PolicyDecision, ReasonCode
 from app.persistence.audit import PostgresAuditSink
 from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.migrate import apply_migrations
@@ -173,6 +173,18 @@ class _CaseListToolPort:
         return self._cases
 
 
+def _eligible_decision() -> PolicyDecision:
+    return PolicyDecision(
+        outcome=Outcome.ELIGIBLE,
+        reason_code=ReasonCode.ELIGIBLE,
+        policy_version="2",
+        requires_confirmation=True,
+        facts=(),
+        transaction_ref="TRX-EARLIER",
+        category=DisputeCategory.UNRECOGNIZED_CHARGE,
+    )
+
+
 def _dispatcher_over(tool_port: object, retriever: LexicalRetriever) -> B1ToolDispatcher:
     return B1ToolDispatcher(
         tool_port=tool_port,  # type: ignore[arg-type]
@@ -192,6 +204,9 @@ def test_evaluate_dispute_passes_an_unmatched_reference_through_without_tracking
     """A reference the customer does not own comes back as no result; the model must read that
     as-is and the harness must not treat it as a decision."""
     dispatcher = _dispatcher_over(_UnmatchedToolPort(), retriever)
+    earlier = _eligible_decision()
+    dispatcher._decisions[("TRX-EARLIER", DisputeCategory.UNRECOGNIZED_CHARGE)] = earlier
+    dispatcher.last_confirmable_decision = earlier
     call = ToolCall(
         id="t1",
         name="evaluate_dispute",
@@ -201,8 +216,8 @@ def test_evaluate_dispute_passes_an_unmatched_reference_through_without_tracking
     result = dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
 
     assert result == "null"
-    assert dispatcher._decisions == {}
-    assert dispatcher.last_confirmable_decision is None
+    assert dispatcher._decisions == {("TRX-EARLIER", DisputeCategory.UNRECOGNIZED_CHARGE): earlier}
+    assert dispatcher.last_confirmable_decision is earlier
 
 
 def test_list_dispute_cases_dispatches_a_tuple_of_cases_as_a_json_array(
@@ -225,6 +240,31 @@ def test_list_dispute_cases_dispatches_an_empty_case_list_as_an_empty_array(
     result = dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
 
     assert result == "[]"
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("get_transaction", {}),
+        ("get_case", {}),
+        ("get_policy", {}),
+        ("handoff", {}),
+        ("evaluate_dispute", {"category": "unrecognized_charge"}),
+        ("evaluate_dispute", {"transaction_ref": "TRX-1"}),
+        ("create_dispute_case", {"category": "unrecognized_charge"}),
+        ("create_dispute_case", {"transaction_ref": "TRX-1"}),
+    ],
+)
+def test_a_missing_required_argument_is_a_value_error_the_harness_records_per_case(
+    retriever: LexicalRetriever, tool: str, arguments: dict[str, object]
+) -> None:
+    """The model is not bound by the tool schema; a call that omits a required argument must raise
+    ``ValueError`` (a recorded case failure), never ``KeyError`` (which would stop the run)."""
+    dispatcher = _dispatcher_over(object(), retriever)
+    call = ToolCall(id="t1", name=tool, input=arguments)
+
+    with pytest.raises(ValueError, match="required argument"):
+        dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
 
 
 def test_to_json_uses_model_dump_json_for_a_pydantic_value() -> None:
