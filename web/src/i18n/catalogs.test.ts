@@ -218,6 +218,15 @@ describe('the message catalogs', () => {
     for (const text of formal) expect(informalSpanishAddress(text)).toEqual([])
   })
 
+  it('words the decline so it is never a bare no, which the dispute flow reads as a cancellation', () => {
+    for (const catalog of Object.values(CATALOGS)) {
+      const label = catalog['chat.decline'].toLowerCase()
+      expect(label).not.toBe('no')
+      expect(label).not.toBe('não')
+      expect(label).toMatch(/\b(file|registrar|presentar|apresentar)\b/)
+    }
+  })
+
   it('flags a catalog missing a key another catalog defines', () => {
     const broken = asRecords(CATALOGS)
     const pt = { ...broken.pt }
