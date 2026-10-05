@@ -1,11 +1,10 @@
 """
-Judge Validation (H4)
-======================
+Judge Validation
+================
 
 Overview
 --------
-Computes the per-dimension agreement ``plan/docs/evaluation-plan.md``'s Judge validation section
-and ``plan/product/human-tasks/H4-judge-rubric.md`` both name: between the two human raters, and
+Computes the per-dimension agreement the judge rubric names: between the two human raters, and
 between each rater and the automated judge, over the same stratified sample of cases. A dimension
 whose agreement with the judge falls below the committed 80% threshold is demoted to human-only
 scoring for the final report — this module decides that, the report generator only renders it.
@@ -23,17 +22,17 @@ Design Principles
 - **Pure functions over plain records.** No I/O, no clock — the same style ``evals.metrics``
   already applies to the deterministic headline metrics, so this module's tests are exact and fast
   regardless of whether the scores being compared are synthetic or the real returned sheets.
-- **Clarification is compared only where both sides scored it.** ``H4-judge-rubric.md``'s own
-  ``NA`` convention means a case with no clarifying question contributes nothing to that
-  dimension's agreement, in either direction — never a forced "no disagreement" nor a forced
-  "no data," just excluded from that dimension's own denominator.
+- **Clarification is compared only where both sides scored it.** The judge rubric's own ``NA``
+  convention means a case with no clarifying question contributes nothing to that dimension's
+  agreement, in either direction — never a forced "no disagreement" nor a forced "no data," just
+  excluded from that dimension's own denominator.
 - **"Not defined" is a value, not an exception.** A dimension with zero comparable pairs (every
   case's clarification score was ``NA`` on at least one side) reports its agreement as the literal
   ``"not defined"``, the same reporting rule ``evals.metrics`` already applies to cost-per-success.
 - **Provenance travels with the sample, not with this module.** This module does not know or care
   whether the rater scores it was given are real or the synthetic placeholder; the report
   generator is what refuses to present a synthetic sample's numbers as the real ≥50-case human
-  validation the plan requires (see ``evals.golden.judge_validation_sample``).
+  validation (see ``evals.golden.judge_validation_sample``).
 
 Runtime Contract
 -----------------
@@ -51,16 +50,15 @@ agreement rests on, the quadratic-weighted kappa, and which side scored higher w
 
 Limitations
 -----------
-The demotion decision uses the plain share of exact score matches, matching the wording of
-``evaluation-plan.md``'s own demotion rule; the weighted kappa is reported beside it and never
-changes the decision. The kappa is "not defined" when both sides of a pair give one and the same
-score throughout, and it is close to zero whenever one side's scores barely vary, however often the
-two sides match — it is read together with the pair count and the direction counts, not alone. The
-written analysis of why individual cases differ (``H4-disagreement-analysis.md``, a person naming a
-cause per disagreement) is not reproduced here. A case_id present in one input but missing from
-another is silently excluded from every dimension's comparable set, on the assumption the three
-inputs are already the same stratified sample; a test proves a genuinely mismatched sample does not
-silently pass as fully compared.
+The demotion decision uses the plain share of exact score matches, matching the wording of the
+demotion rule; the weighted kappa is reported beside it and never changes the decision. The kappa is
+"not defined" when both sides of a pair give one and the same score throughout, and it is close to
+zero whenever one side's scores barely vary, however often the two sides match — it is read together
+with the pair count and the direction counts, not alone. The written analysis of why individual
+cases differ (a person naming a cause per disagreement) is not reproduced here. A case_id present in
+one input but missing from another is silently excluded from every dimension's comparable set, on
+the assumption the three inputs are already the same stratified sample; a test proves a genuinely
+mismatched sample does not silently pass as fully compared.
 """
 
 from __future__ import annotations
