@@ -63,41 +63,45 @@ from contracts.service_v1.envelope import (  # Shared base, types and vocabulary
 class NluIntent(StrEnum):
     """What the customer wants from this message."""
 
-    FILE_DISPUTE = "file_dispute"
-    LIST_TRANSACTIONS = "list_transactions"
-    DISPUTE_STATUS = "dispute_status"
-    POLICY_QUESTION = "policy_question"
-    CONFIRMATION = "confirmation"
-    CHOICE = "choice"
-    CORRECTION = "correction"
-    REPORT_FRAUD = "report_fraud"
-    REPORT_CARD_LOSS = "report_card_loss"
-    REQUEST_PERSON = "request_person"
-    REQUEST_REVERSAL = "request_reversal"
-    UNSUPPORTED_ACTION = "unsupported_action"
-    SWITCH_LANGUAGE = "switch_language"
-    SMALL_TALK = "small_talk"
-    FAREWELL = "farewell"
-    UNCLEAR = "unclear"
+    FILE_DISPUTE = "file_dispute"  # Wants to dispute a transaction.
+    LIST_TRANSACTIONS = "list_transactions"  # Wants to see recent transactions.
+    DISPUTE_STATUS = "dispute_status"  # Asks where an existing dispute stands.
+    POLICY_QUESTION = "policy_question"  # Asks what the dispute policy allows.
+    CONFIRMATION = "confirmation"  # Answers a pending yes/no prompt.
+    CHOICE = "choice"  # Picks one of the numbered options shown.
+    CORRECTION = "correction"  # Changes something said earlier.
+    REPORT_FRAUD = "report_fraud"  # Says the transaction was not theirs.
+    REPORT_CARD_LOSS = "report_card_loss"  # Says a card was lost or stolen.
+    REQUEST_PERSON = "request_person"  # Asks for a human agent.
+    REQUEST_REVERSAL = "request_reversal"  # Asks for money back outside a dispute.
+    UNSUPPORTED_ACTION = "unsupported_action"  # Asks for something the service does not do.
+    SWITCH_LANGUAGE = "switch_language"  # Asks to continue in another language.
+    SMALL_TALK = "small_talk"  # Greets or chats without a request.
+    FAREWELL = "farewell"  # Ends the conversation.
+    UNCLEAR = "unclear"  # Nothing usable could be read.
 
 
 class ConfirmationAnswer(StrEnum):
     """How the customer answered a pending confirmation prompt."""
 
-    YES = "yes"
-    YES_WITH_CHANGE = "yes_with_change"
-    AMBIGUOUS = "ambiguous"
-    NO = "no"
+    YES = "yes"  # An unqualified, explicit yes: the only answer that can lead to a filing.
+    YES_WITH_CHANGE = "yes_with_change"  # Agrees but also changes something.
+    AMBIGUOUS = "ambiguous"  # A bare "ok", a doubt or anything not clearly yes or no.
+    NO = "no"  # Declines.
 
 
 class TransactionHint(ContractModel):
     """What the customer said about the transaction, in the fields the system searches by."""
 
+    # Each field is None when the customer did not say it.
     merchant: Annotated[SafeText, Field(min_length=1, max_length=80)] | None = None
     amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)] | None = None
+    # Three-letter currency code, when the customer named one.
     currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")] | None = None
+    # The date resolved against the caller's reference date, and how the customer expressed it.
     date_on: date | None = None
     date_source: DateSource | None = None
+    # Last four digits of the card or account, never a longer number.
     product_last4: Annotated[str, Field(pattern=r"^\d{4}$")] | None = None
 
     @property
@@ -120,15 +124,21 @@ class NluResult(ContractModel):
     """The understanding of one message."""
 
     intent: NluIntent
+    # How sure the understanding step is, from 0 to 1; zero when no usable reading was produced.
     confidence: Rate
+    # The language the message was written in, when it could be told.
     language: Lang | None = None
     transaction: TransactionHint = TransactionHint()
     category: DisputeCategory | None = None
+    # The customer's reason in a short phrase; data, never an instruction.
     detail: Annotated[SafeText, Field(min_length=1, max_length=500)] | None = None
+    # Confirmation, choice and requested language are set only for their own intent.
     confirmation: ConfirmationAnswer | None = None
     choice: Annotated[int, Field(ge=1, le=5)] | None = None
     requested_language: Lang | None = None
+    # The customer's policy question, for the policy lookup.
     policy_query: Annotated[SafeText, Field(min_length=1, max_length=200)] | None = None
+    # True when the message also raises a second, different dispute.
     mentions_second_dispute: bool = False
 
     @model_validator(mode="after")

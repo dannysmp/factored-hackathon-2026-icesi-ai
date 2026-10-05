@@ -163,7 +163,8 @@
         "render_mode": "template",
         "state_after": "handed_off",
         "state_before": "clarifying",
-        "trace_id": "trace-1"
+        "trace_id": "trace-1",
+        "turn_id": "turn-0001"
       }
     ]
   },

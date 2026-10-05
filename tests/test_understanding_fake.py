@@ -89,7 +89,7 @@ def test_confirmation_answers_are_read_from_a_closed_set(
 
 
 def test_a_yes_with_a_change_is_not_read_as_a_bare_confirmation() -> None:
-    """AC-E5-21: 'sí, pero...' is not the clean yes the bare pattern matches."""
+    """'sí, pero...' is not the clean yes the bare pattern matches."""
     result = _understand("sí, pero cambien la fecha", language_hint=None)
 
     assert result.confirmation is None

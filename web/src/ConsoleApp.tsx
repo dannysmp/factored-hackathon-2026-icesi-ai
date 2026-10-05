@@ -6,6 +6,9 @@ import { LiveQueueClient } from './features/console/client'
 import { LiveTicketDetailClient } from './features/console/ticketDetailClient'
 import { useConsoleNavigation } from './features/console/useConsoleNavigation'
 import { SignInScreen } from './features/sign-in/SignInScreen'
+import { Notice } from './components/ui/Notice'
+import { PageHeader } from './components/ui/PageHeader'
+import styles from './ConsoleApp.module.css'
 
 /**
  * The console shell: the agent demonstration sign-in (AC-E10-14, its own broker and access code,
@@ -52,38 +55,48 @@ export function ConsoleApp(): JSX.Element {
 
   if (session === null || queueClient === null || ticketDetailClient === null) {
     return (
-      <main>
-        <h1>Consola del agente</h1>
-        {expired ? <p role="status">Su sesión terminó. Inicie sesión de nuevo.</p> : null}
-        <SignInScreen
-          audience="agent"
-          onSignedIn={(token) => {
-            setSession({ token })
-          }}
-        />
-      </main>
+      <>
+        <PageHeader title="Consola del agente" width="wide" />
+        <main>
+          {expired ? (
+            <div className={styles.notice}>
+              <Notice tone="warning" role="status">
+                Su sesión terminó. Inicie sesión de nuevo.
+              </Notice>
+            </div>
+          ) : null}
+          <SignInScreen
+            audience="agent"
+            onSignedIn={(token) => {
+              setSession({ token })
+            }}
+          />
+        </main>
+      </>
     )
   }
 
   return (
-    <main>
-      <h1>Consola del agente</h1>
-      {selectedTicketRef === null ? (
-        <QueueScreen
-          client={queueClient}
-          onSelectTicket={setSelectedTicketRef}
-          onSessionExpired={expireSession}
-        />
-      ) : (
-        <TicketDetailScreen
-          client={ticketDetailClient}
-          ticketRef={selectedTicketRef}
-          onSessionExpired={expireSession}
-          onBack={() => {
-            setSelectedTicketRef(null)
-          }}
-        />
-      )}
-    </main>
+    <>
+      <PageHeader title="Consola del agente" width="wide" />
+      <main>
+        {selectedTicketRef === null ? (
+          <QueueScreen
+            client={queueClient}
+            onSelectTicket={setSelectedTicketRef}
+            onSessionExpired={expireSession}
+          />
+        ) : (
+          <TicketDetailScreen
+            client={ticketDetailClient}
+            ticketRef={selectedTicketRef}
+            onSessionExpired={expireSession}
+            onBack={() => {
+              setSelectedTicketRef(null)
+            }}
+          />
+        )}
+      </main>
+    </>
   )
 }

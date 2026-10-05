@@ -26,10 +26,10 @@ Design Principles
   product; the repeat-complainer cases are further grounded in a real `is_repeat_complainer` flag
   from `data/silver/silver/complaints.parquet`, latest complaint on or before the reference date.
   No case in this module needs `data/gold/eval_bank` (unlike the adversarial category).
-- **Provenance is `team_generated` throughout.** The transaction each case is grounded in is
-  real; the customer's wording is not — the source call-transcript data carries no dispute
-  language at all (see `plan/PROJECT_PLAN.md`'s Assumptions), so no case in the golden set can
-  honestly claim `observed` wording. `team_generated` is the honest label for every case here.
+- **Provenance is `team_generated` throughout.** The transaction each case is grounded in is real;
+  the customer's wording is not — the source call-transcript data carries no dispute language at
+  all, so no case in the golden set can honestly claim `observed` wording. `team_generated` is the
+  honest label for every case here.
 - **Two scripted turns.** An opening line naming the transaction the way a customer would (date,
   amount in the transaction's own currency, merchant when one exists — never an internal
   identifier), then a second line that supplies the one fact the routing rule turns on: naming it

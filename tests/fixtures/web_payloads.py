@@ -170,6 +170,7 @@ def build_payloads() -> dict[str, object]:
             TimelineEntry(
                 occurred_at=_CREATED,
                 trace_id="trace-1",
+                turn_id="turn-0001",
                 intent=Intent.HANDOFF,
                 state_before="clarifying",
                 state_after="handed_off",
