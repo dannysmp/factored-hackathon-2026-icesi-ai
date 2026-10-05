@@ -4,7 +4,7 @@ Evaluation Metrics Engine
 
 Overview
 --------
-Implements the headline metric formulas exactly, including the "not defined" reporting rule: pure
+Implements the headline metric formulas, including the "not defined" reporting rule: pure
 functions from a harness run's per-case verdicts (``CaseResult``, produced by the runner) to the
 headline metrics of the report.
 
@@ -15,7 +15,7 @@ outcomes and operating efficiency, each labeled with its ``basis`` (every metric
 computes is ``measured``; a projected metric, such as the SLA-breach projection, is computed
 elsewhere from the workflow analysis and is never produced here).
 Out: running a system variant against the golden set (the runner), the LLM judge, fairness slicing
-by language/country/segment (the report generator) and the learned-component metrics (PR-AUC,
+by language/country/segment (``evals.fairness``) and the learned-component metrics (PR-AUC,
 calibration; those score a model, not a conversation, and live beside the model that produces them).
 
 Design Principles
@@ -28,9 +28,9 @@ Design Principles
   0 or infinity.
 - **Every metric states its denominator.** A rate alone can be misread as more evidence than it
   is; every ratio in ``HeadlineMetrics`` carries the count and the size of the set it was
-  computed over, so a report reader (or a test) can see how small a slice is.
+  computed over, so a report reader (or a test) can see how small a sample is.
 - **Adversarial cases are excluded from the correctness-rate sets (S, A, E) by default**, but
-  count fully toward unsafe outcomes: that is exactly what they are for.
+  count fully toward unsafe outcomes: that is what they exist to measure.
 
 Runtime Contract
 ----------------
@@ -39,9 +39,9 @@ Runtime Contract
 Limitations
 -----------
 ``CaseResult`` reports one verdict per case: unsafe outcomes and latency have no per-category
-breakdown, and latency has no per-turn granularity. A report that needs either slices the
+breakdown, and latency has no per-turn granularity. A caller that needs either slices the
 ``results`` sequence itself before calling this module (or, for language/country/segment slicing,
-uses the report generator) rather than this module inferring categories it is not given. This module
+uses ``evals.fairness``) rather than this module inferring categories it is not given. This module
 does nothing special for a case the runner could not resolve, run or score (``CaseResult.error``
 set): its safe-default fields count it as attempted nowhere and correct nowhere, so it lowers every
 rate's numerator without inflating any denominator's meaning — naming and surfacing *which* cases
@@ -72,12 +72,17 @@ NOT_DEFINED: Literal["not defined"] = "not defined"
 #: label so the report never confuses the two.
 Basis = Literal["measured", "projected"]
 
+#: A metric's value: a number, or ``NOT_DEFINED``.
 MetricValue = float | Literal["not defined"]
 
 
 @dataclass(frozen=True, slots=True)
 class Metric:
-    """One reported number, always labeled by how it was produced and over how large a set."""
+    """One reported number, always labeled by how it was produced and over how large a set.
+
+    ``value`` is a float or ``NOT_DEFINED``; ``denominator`` is the size of the set it was computed
+    over (zero when ``value`` is ``NOT_DEFINED`` because that set was empty).
+    """
 
     value: MetricValue
     basis: Basis
@@ -90,7 +95,7 @@ class CaseResult:
     could not be produced.
 
     Produced by the runner after replaying a case against a system variant and applying the
-    deterministic checks of the Scoring section; the LLM judge's rubric scores are reported
+    deterministic checks of ``evals.scoring``; the LLM judge's rubric scores are reported
     separately and are not inputs to this engine. When ``error`` is set, the case could not be
     resolved, run or scored — every other field holds its safe default (an unattempted, incorrect,
     non-escalating, non-adversarial-by-record outcome, per ``is_adversarial``'s own value which is
@@ -117,7 +122,7 @@ class CaseResult:
     reply_text: str | None = None
     """Every reply the run produced, joined in order and PAN-masked. ``None`` unless the caller
     opted into capture (``evals.runner.runner.run_cases``'s own ``capture_transcripts`` flag) —
-    every other run leaves this unset, exactly as before this field existed."""
+    every other run leaves this unset."""
     facts_and_sources: str | None = None
     """The grounding text (``evals.facts.assemble_facts_and_sources``) the reply is checked
     against, PAN-masked. Set together with ``reply_text``, by the same opt-in capture step, never
@@ -136,7 +141,7 @@ class TransferCounts:
 
 @dataclass(frozen=True, slots=True)
 class LatencyMetrics:
-    """End-to-end latency, in seconds, over cases that reported a duration."""
+    """End-to-end latency, in seconds, over in-scope cases that reported a duration."""
 
     p50: Metric
     p95: Metric
@@ -144,15 +149,21 @@ class LatencyMetrics:
 
 @dataclass(frozen=True, slots=True)
 class CostMetrics:
-    """Token and infrastructure cost, in US dollars, over cases that reported one."""
+    """Model cost, in US dollars, averaged over in-scope cases that reported one."""
 
     per_attempted_case: Metric
+    """Mean cost of the attempted cases that reported a cost."""
     per_successful_automated_resolution: Metric
+    """Mean cost of the automated successes that reported a cost; ``NOT_DEFINED`` with none."""
 
 
 @dataclass(frozen=True, slots=True)
 class HeadlineMetrics:
-    """Every measured metric of the Metric definitions section, for one system variant's run."""
+    """Every headline metric measured for one system variant's run.
+
+    Over the sets: S is the in-scope (non-adversarial) cases, A the subset of S where automation
+    was attempted, and E the subset of S whose correct handling is an escalation to a person.
+    """
 
     safe_automated_resolution: Metric
     """|correct, policy-compliant outcome with no human| / |S|."""
@@ -212,8 +223,7 @@ def compute_headline_metrics(results: Sequence[CaseResult]) -> HeadlineMetrics:
     Returns
     -------
     HeadlineMetrics
-        Every metric of the Metric definitions section, each labeled ``measured`` with its own
-        denominator.
+        Every headline metric, each labeled ``measured`` with its own denominator.
     """
     in_scope = [r for r in results if not r.is_adversarial]
     scope_size = len(in_scope)

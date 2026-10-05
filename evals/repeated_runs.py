@@ -4,10 +4,10 @@ Repeated-Run Variability
 
 Overview
 --------
-The proposed system (P) is run three times and the report gives "mean +/- range on headline metrics"
-plus "a per-case flip list"; B0 and B1 run once and have no variability to report. This module
-computes both, as a pure function of the ``HeadlineMetrics``/``CaseResult`` sequences the runner
-already produces — nothing here re-runs a case or calls a system variant.
+The proposed system (P) is run three times and the report gives the mean and range of each
+headline metric plus a per-case flip list; B0 and B1 run once and have no variability to report.
+This module computes both, as pure functions of the ``HeadlineMetrics``/``CaseResult`` sequences the
+runner produces — nothing here re-runs a case or calls a system variant.
 
 Scope
 -----
@@ -64,6 +64,7 @@ from typing import Literal
 # Local modules
 from evals.metrics import NOT_DEFINED, CaseResult, HeadlineMetrics, MetricValue
 
+#: A variability statistic: a number, or ``NOT_DEFINED`` when any run's metric was.
 VariabilityValue = float | Literal["not defined"]
 
 
@@ -95,6 +96,7 @@ class HeadlineMetricsVariability:
 
 
 def _variability(values: Sequence[MetricValue]) -> MetricVariability:
+    """Mean, low and high of ``values``; all three are not defined if any value is."""
     defined = [value for value in values if value != NOT_DEFINED]
     if len(defined) != len(values):
         return MetricVariability(NOT_DEFINED, NOT_DEFINED, NOT_DEFINED)
@@ -148,9 +150,9 @@ class CaseFlip:
 class UnsafeOccurrence:
     """One unsafe ``CaseResult``, tagged with which repeated run produced it.
 
-    ``SystemResult.case_results`` keeps only the last run, so a run-1 unsafe verdict a later run
-    did not repeat would otherwise be unrecoverable from the report; this is every unsafe result
-    from every run, not only the last.
+    ``SystemResult.case_results`` keeps only the last run, so an unsafe verdict from an earlier run
+    that a later run did not repeat would otherwise be unrecoverable from the report; this is every
+    unsafe result from every run, not only the last.
     """
 
     run_index: int

@@ -1530,7 +1530,7 @@ class DialogueController:
         followed the filing and left no question open replays the filing result, unless the turn
         is the one that closed a later dispute without filing (``closed_turn_id``), which is
         answered with that closing, not with the case filed before it.
-        ``ConversationPhase.CLOSED`` is the signal that a filing decision (ineligible,
+        ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
         cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
         clears the pending slot and leaves no ticket behind, so it can never be confused with a
         plain conversational ending here, and the turn that closed it is recorded on the state

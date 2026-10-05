@@ -1,39 +1,38 @@
 """
 Golden Set: Human-required Category
-====================================
+===================================
 
 Overview
 --------
-The 22 human-required cases of the golden set's category mix (10 Spanish, 8 Portuguese, 4
-English): a fraud claim, an amount at or above the routing threshold, a repeat complainer, and a
-customer who asks for a person outright. Each of the first three subtypes exercises one routing
-rule of `app.domain.policy.engine` in isolation; the fourth exercises the direct handoff request
-that never reaches the policy engine at all.
+The human-required cases of the golden set: 22 cases (10 Spanish, 8 Portuguese, 4 English) where
+the correct outcome is a handoff to a person: a fraud claim, an amount at or above the routing
+threshold, a repeat complainer, and a customer who asks for a person outright. Each of the first
+three subtypes exercises one routing rule of `app.domain.policy.engine` in isolation; the fourth
+is a direct handoff request that never reaches the policy engine.
 
 Scope
 -----
-In: the 22 `Case` records and the real `data/gold/ops_seed` rows they are grounded in.
-Out: the other five category groups (their own modules); running or scoring these cases.
+In: the 22 `Case` records and the `data/gold/ops_seed` rows they are grounded in.
+Out: the other category modules; running or scoring these cases.
 
 Design Principles
--------------------
-- **One routing rule per case, provably isolated.** Every amount stays under the escalation
-  threshold except the amount-threshold subtype's own cases, which stay within their category's
-  filing window so the routing trigger — not an expired window — is what fires; no case's
-  customer is flagged a repeat complainer except the repeat-complainer subtype's own four.
-- **Grounded in real seeded rows.** Every `seed_ref` is a real `transaction_id` from
-  `data/gold/ops_seed/transactions.parquet`, joined against an Active customer and an in-scope
-  product; the repeat-complainer cases are further grounded in a real `is_repeat_complainer` flag
-  from `data/silver/silver/complaints.parquet`, latest complaint on or before the reference date.
-  No case in this module needs `data/gold/eval_bank` (unlike the adversarial category).
-- **Provenance is `team_generated` throughout.** The transaction each case is grounded in is real;
-  the customer's wording is not — the source call-transcript data carries no dispute language at
-  all, so no case in the golden set can honestly claim `observed` wording. `team_generated` is the
-  honest label for every case here.
-- **Two scripted turns.** An opening line naming the transaction the way a customer would (date,
-  amount in the transaction's own currency, merchant when one exists — never an internal
-  identifier), then a second line that supplies the one fact the routing rule turns on: naming it
-  fraud, confirming no explanation, or asking for a person directly.
+-----------------
+- **One routing rule per case.** Every amount stays under the escalation threshold except the
+  amount-threshold subtype's own cases, which stay inside their category's filing window so the
+  routing trigger, not an expired window, is what fires. No customer is flagged a repeat
+  complainer except in the repeat-complainer subtype's four cases.
+- **Grounded in seeded rows.** Every `seed_ref` is a `transaction_id` from
+  `data/gold/ops_seed/transactions.parquet`, joined to an active customer and an in-scope product.
+  The repeat-complainer cases also rest on the `is_repeat_complainer` flag in
+  `data/silver/silver/complaints.parquet`, taken from the latest complaint on or before the
+  reference date. No case here needs `data/gold/eval_bank`.
+- **Provenance is `team_generated` throughout.** Each transaction is real but the customer's
+  wording is not: the source call-transcript data carries no dispute language, so no case can
+  honestly claim `observed` wording.
+- **Two scripted turns.** An opening line names the transaction as a customer would (date, amount
+  in the transaction's own currency, merchant when one exists, never an internal identifier),
+  then a second line supplies the one fact the routing rule turns on: calling it fraud,
+  confirming there is no explanation, or asking for a person directly.
 
 Runtime Contract
 -----------------
@@ -43,9 +42,9 @@ complainer, then ask-for-human.
 Limitations
 -----------
 The reference date is fixed at 2026-06-18 (the day after the newest seeded transaction); every
-case's transaction date was chosen to fall inside its dispute category's filing window as of that
-date. The "ask for a person" subtype declares no `expected_reason_code` because it is a direct
-routing decision, not a policy-engine outcome, so the case never selects a dispute category.
+case's transaction date falls inside its dispute category's filing window as of that date. The
+"ask for a person" subtype declares no `expected_reason_code` because it is a direct routing
+decision, not a policy-engine outcome, so the case never selects a dispute category.
 """
 
 from __future__ import annotations

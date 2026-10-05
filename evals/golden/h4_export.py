@@ -1,40 +1,38 @@
 """
-Case Sheet Export
-=================
+Rater Case Sheet Export
+=======================
 
 Overview
 --------
-Produces the real ``H4-case-sheet.csv`` that the judge rubric asks two human raters to double-score:
-a stratified 50-case sample of the golden set, with each row's
-``system_replies``/``facts_and_sources`` filled from a real, captured run
-(``CaseResult.reply_text``/``facts_and_sources``, ``evals.facts.attach_masked_transcript``'s own
-opt-in output). Fills, for the two blank columns, whatever synthetic stand-in a caller was using
-before a real run existed to capture them (``evals.golden.judge_validation_sample`` — a different
-fixture, for the agreement computation, not for this sheet).
+Produces ``H4-case-sheet.csv``, the sheet the judge rubric asks two human raters to double-score:
+a stratified sample of the golden set (50 cases by default) in which each row's
+``system_replies`` and ``facts_and_sources`` columns are filled from a captured run of the proposed
+system (``CaseResult.reply_text`` and ``CaseResult.facts_and_sources``, produced when the runner
+is given ``capture_transcripts=True``; see ``evals.facts.attach_masked_transcript``). The sample in
+``evals.golden.judge_validation_sample`` is a separate synthetic fixture for the agreement
+computation; it plays no part in this sheet.
 
 Scope
 -----
-In: ``select_stratified_sample`` (deterministic, proportional to the 135-case mix table, no
-randomness), ``build_h4_rows`` (the golden set's own static columns plus a captured run's two
-blank ones), ``write_h4_case_sheet`` (the file itself).
-Out: running anything, capturing anything, or choosing where the file is distributed once
-written — the caller runs the proposed system with ``capture_transcripts=True`` first
-(``evals.runner.runner``) and passes this module only the sample and the resulting results.
+In: ``select_stratified_sample`` (deterministic, proportional to each category's share of the
+cases given, no randomness), ``build_h4_rows`` (the golden set's static columns plus the two
+columns a captured run fills) and ``write_h4_case_sheet`` (the file itself).
+Out: running or capturing anything, and distributing the file. The caller runs the proposed system
+with ``capture_transcripts=True`` first (``evals.runner.runner``) and passes this module the
+sample and the resulting results.
 
 Design Principles
 -----------------
 - **Proportional, deterministic, reproducible.** Largest-remainder (Hamilton) allocation across the
-  six ``CaseCategory`` values, from each category's own share of the full golden set; a tie in the
-  remainder breaks by ``CaseCategory``'s own declaration order, never at random — re-running this
-  against the same golden set always selects the identical 50 case ids.
-- **A missed capture renders as a blank cell, never as a fabricated placeholder.** A case the
-  captured run has no ``reply_text``/``facts_and_sources`` for (``evals.runner.runner``'s own
-  Limitations (capture): a declared policy section that failed to resolve) renders those two
-  columns empty, matching the rubric's own instruction not to start rating until both columns are
-  filled — an empty cell is visibly incomplete, unlike guessed text.
-- **``user_turns`` needs no captured run at all.** The golden set's own static field, joined the
-  same way ``evals.golden.case_sheet`` already joins it for its own generated files (`` | ``), so
-  the two case-sheet-shaped files this project produces stay visually consistent.
+  six ``CaseCategory`` values, from each category's share of the cases given; a tie in the
+  remainder breaks by ``CaseCategory`` declaration order, never at random, so the same cases
+  always yield the same sample.
+- **A missed capture is a blank cell, never a placeholder.** A case with no ``reply_text`` or
+  ``facts_and_sources`` (see the Limitations of ``evals.runner.runner``: a declared policy section
+  that failed to resolve) renders those two columns empty. The rubric says not to start rating
+  until both are filled, and an empty cell is visibly incomplete where guessed text is not.
+- **``user_turns`` needs no captured run.** It is the golden set's own field, joined with `` | ``
+  exactly as ``evals.golden.case_sheet`` joins it, so the two sheets read alike.
 
 Runtime Contract
 -----------------
@@ -44,12 +42,10 @@ Runtime Contract
 
 Limitations
 -----------
-The largest-remainder allocation assumes ``sample_size <= len(cases)`` and that no category's
-allocation could exceed its own count; both hold for every sample size this module is ever asked
-for against the 135-case golden set (50 of 135), and this module does not guard the general case
-further. This module never validates that ``results`` actually came from a run of exactly the
-cases it is given — the caller's own responsibility, the same trust boundary
-``evals.golden.case_sheet``'s own loader-free design already accepts for `Case` objects generally.
+The allocation assumes ``cases`` is not empty, ``sample_size <= len(cases)`` and that no
+category's allocation exceeds its own case count; none of this is guarded, and an empty ``cases``
+raises ``ZeroDivisionError``. This module does not check that ``results`` came from a run of the
+cases it is given; that is the caller's responsibility.
 """
 
 from __future__ import annotations
@@ -64,6 +60,7 @@ from pathlib import Path
 from evals.metrics import CaseResult
 from evals.models import Case, CaseCategory
 
+# The sheet's columns, in file order.
 _COLUMNS = ("case_id", "language", "category", "user_turns", "system_replies", "facts_and_sources")
 
 
@@ -72,9 +69,21 @@ def select_stratified_sample(cases: Sequence[Case], *, sample_size: int = 50) ->
 
     Each ``CaseCategory``'s share of ``sample_size`` is its share of ``cases`` rounded down, with
     the leftover seats given to the categories with the largest fractional remainder (largest-
-    remainder/Hamilton apportionment); a tie breaks by ``CaseCategory``'s own declaration order.
-    Within a category, the first cases in ``cases``'s own order are taken — deterministic, no
-    randomness, so this always returns the identical 50 case ids for the identical input.
+    remainder/Hamilton apportionment); a tie breaks by ``CaseCategory`` declaration order. Within a
+    category the first cases in ``cases`` order are taken, so identical input always yields the
+    identical sample.
+
+    Parameters
+    ----------
+    cases : Sequence[Case]
+        The full set to sample from; must not be empty.
+    sample_size : int
+        How many cases to select; at most ``len(cases)``.
+
+    Returns
+    -------
+    tuple[Case, ...]
+        The sample, grouped by category in ``CaseCategory`` order.
     """
     total = len(cases)
     by_category: dict[CaseCategory, list[Case]] = {category: [] for category in CaseCategory}
@@ -97,8 +106,23 @@ def select_stratified_sample(cases: Sequence[Case], *, sample_size: int = 50) ->
 
 
 def build_h4_rows(cases: Sequence[Case], results: Mapping[str, CaseResult]) -> list[dict[str, str]]:
-    """One row per case, in ``cases``'s own order; a case the captured run has no result for (or
-    whose result carries no captured transcript) renders its two run-dependent columns empty."""
+    """One sheet row per case, in ``cases`` order.
+
+    A case with no entry in ``results``, or whose result carries no captured transcript, renders
+    its two run-dependent columns (``system_replies``, ``facts_and_sources``) empty.
+
+    Parameters
+    ----------
+    cases : Sequence[Case]
+        The sampled cases.
+    results : Mapping[str, CaseResult]
+        Captured results keyed by ``case_id``.
+
+    Returns
+    -------
+    list[dict[str, str]]
+        One dict per case, keyed by the six sheet columns.
+    """
     rows = []
     for case in cases:
         result = results.get(case.case_id)
@@ -118,7 +142,10 @@ def build_h4_rows(cases: Sequence[Case], results: Mapping[str, CaseResult]) -> l
 
 
 def write_h4_case_sheet(rows: Sequence[Mapping[str, str]], path: Path) -> None:
-    """Write ``rows`` as ``H4-case-sheet.csv``'s own six columns, creating ``path``'s parents."""
+    """Write ``rows`` as the six-column CSV at ``path``, creating its parent directories.
+
+    The file is UTF-8, uses Unix line endings and starts with a header row.
+    """
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=_COLUMNS, lineterminator="\n")
     writer.writeheader()

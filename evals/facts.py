@@ -4,16 +4,14 @@ Judge Grounding Facts
 
 Overview
 --------
-Assembles the ``facts_and_sources`` text the LLM judge (``evals.judge``) and the human
-judge-validation sample both score a case's replies against: what a grounded reply is allowed to
-state. Never reads the running conversation's own envelope (the grounding boundary, the same one
-``evals.scoring``'s deterministic checks already refuse to reopen "from outside the process") —
-every fact here comes from either the store's own tables, by the transcript's own ``session_id``
-(the identical "two vantage points" precedent ``evals.scoring``'s ``_case_row_exists`` and
-``_handoff_ticket_is_backed`` already use), or the golden-set case's own authored, committed
-``expected_policy_section_id``. Also attaches this text, and the run's own reply text, to a finished
-``CaseResult`` (``attach_masked_transcript``) so a judge or a human rater can read both long after
-the run that produced them has ended.
+Assembles the ``facts_and_sources`` text the LLM judge (``evals.judge``) and the
+human judge-validation sample both score a case's replies against: what a grounded reply is allowed
+to state. Never reads the running conversation's own envelope (the grounding boundary that
+``evals.scoring`` also does not reopen from outside the process): every fact here comes either from
+the store's own tables, by the transcript's own ``session_id``, or from the golden-set case's own
+authored ``expected_policy_section_id``. Also attaches this text, and the run's own reply text, to a
+finished ``CaseResult`` (``attach_masked_transcript``) so a judge or a human rater can read both
+long after the run that produced them has ended.
 
 Scope
 -----
@@ -26,8 +24,8 @@ the reasoning that produced the reply, which grounding does not score (see Limit
 
 Design Principles
 -----------------
-- **Two vantage points, never a third.** A direct, read-only ``psycopg`` query against the store's
-  own tables, exactly as ``evals.scoring`` already queries them for its own checks — never through
+- **The store and the case, never the envelope.** A direct, read-only ``psycopg`` query against the
+  store's own tables, as ``evals.scoring`` queries them for its own checks — never through
   ``app.tools.PostgresToolPort``, which would write a spurious audit record into the log the
   conversation under test itself uses.
 - **A case with nothing to ground against is not an error.** A case whose golden-set record names
@@ -36,20 +34,18 @@ Design Principles
   means "invents nothing," not "cites something," and the assembled text says so explicitly rather
   than silently returning an empty string a report reader could mistake for an assembly failure.
 - **Attachment masks unconditionally, with no carve-out for trusted-origin text.** Both attached
-  fields pass through ``redact_pan`` before they are stored, exactly like every other field this
-  project ever sends an LLM or writes to a log — the fact that ``facts_and_sources`` originates
-  from the store rather than the customer is not a reason to skip the same egress control everyone
-  else's outbound text already goes through, and ``redact_pan`` is a safe no-op when nothing
-  card-shaped is present.
+  fields pass through ``redact_pan`` before they are stored, like every other field this
+  project sends to an LLM or writes to a log. That ``facts_and_sources`` originates from the store
+  rather than the customer is not a reason to skip the same egress control; ``redact_pan`` is a
+  no-op when nothing card-shaped is present.
 
 Runtime Contract
 -----------------
 ``assemble_facts_and_sources(dsn, transcript) -> str``.
-``attach_masked_transcript(dsn, transcript, result) -> CaseResult``: the caller's own opt-in step
+``attach_masked_transcript(dsn, transcript, result) -> CaseResult``: the opt-in step
 (``evals.runner.runner.run_cases``'s ``capture_transcripts`` flag) that fills a ``CaseResult``'s
-``reply_text``/``facts_and_sources`` fields for a judge or a human rater to read later, once the
-run itself is long over. Never called by ``evals.scoring.score_case``, which stays exactly as
-narrow as this module's own Scope already draws it.
+``reply_text``/``facts_and_sources`` fields for a judge or a human rater to read after the run has
+ended. ``evals.scoring.score_case`` never calls it.
 
 Limitations
 -----------
@@ -57,8 +53,7 @@ Only the transaction behind a case the session actually filed is included; a sta
 whose transaction already existed in seeded state before this run, but whose session never filed a
 new case, is not resolved here (the transcript alone does not name that transaction id without
 reopening the envelope). Retrieval-quality judgment — whether the system found the *best* of several
-plausible sections — is out of scope for grounding; the deterministic "recall at three of policy
-retrieval" metric covers that separately.
+plausible sections — is out of scope for grounding.
 """
 
 from __future__ import annotations
@@ -96,7 +91,7 @@ class _FiledTransactionFacts:
 
 
 def _query_filed_transaction(dsn: str, session_id: str) -> _FiledTransactionFacts | None:
-    """The transaction behind the case this session filed, if any.
+    """The transaction behind the case this session filed, or ``None`` when it filed none.
 
     See this module's Limitations for what a status-inquiry-only session does not resolve.
     """
@@ -122,6 +117,7 @@ def _query_filed_transaction(dsn: str, session_id: str) -> _FiledTransactionFact
 
 
 def _render_transaction_facts(facts: _FiledTransactionFacts) -> str:
+    """The filed transaction's fields as the plain-text fact block a judge reads."""
     merchant = facts.merchant_name or "no merchant on record"
     return (
         "Filed case's transaction (trusted, from the store):\n"
@@ -139,8 +135,8 @@ def _render_policy_section(case: Case) -> str:
     ------
     CorpusIndexError
         The corpus file for ``case.lang`` cannot be read (a real assembly failure, never
-        swallowed into ``NO_KNOWN_FACTS`` — the golden set's own tests already prove every
-        declared section id resolves, so a failure here means the corpus itself changed).
+        swallowed into ``NO_KNOWN_FACTS``: the golden set's tests prove every declared section id
+        resolves, so a failure here means the corpus itself changed).
     KeyError
         ``case.expected_policy_section_id`` does not resolve in ``case.lang``'s corpus (the same
         real-failure reasoning as ``CorpusIndexError``).

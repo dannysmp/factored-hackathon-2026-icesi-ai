@@ -171,9 +171,9 @@ export function ChatFeature({
       )}
       {latest !== null && !ended && (
         <>
-          <ChoiceButtons choices={latest.choices} onChoose={conversation.send} disabled={busy} />
-          {latest.next_expected === 'confirmation' && (
-            <ConfirmationPrompt onConfirm={conversation.send} disabled={busy} lang={activeLang} />
+          {!busy && <ChoiceButtons choices={latest.choices} onChoose={conversation.send} />}
+          {!busy && latest.next_expected === 'confirmation' && (
+            <ConfirmationPrompt onConfirm={conversation.send} lang={activeLang} />
           )}
           <TurnForm
             onSubmit={conversation.send}

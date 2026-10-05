@@ -1,16 +1,16 @@
 """
-Judge Validation — Real Sample
-==============================
+Judge Validation From Returned Sheets
+=====================================
 
 Overview
 --------
-Turns the two returned case sheets (``H4-case-sheet-Rater1.csv``, ``H4-case-sheet-Rater2.csv``)
-into ``evals.judge_validation.RaterScore`` tuples, scores the same 50 cases with the real automated
-judge, computes the agreement ``evals.judge_validation.compute_agreement`` already implements and
-the pair counts, weighted kappa and gap direction ``compute_detail`` adds, writes every case's
-scores to a CSV, and patches the committed ``reports/evaluation.md`` so its judge-validation
-section (and the one limitations bullet that names it as pending) reflect the real,
-human-provenance sample instead of the synthetic placeholder.
+Turns the two case sheets the human raters return (``H4-case-sheet-Rater1.csv`` and
+``H4-case-sheet-Rater2.csv``) into ``evals.judge_validation.RaterScore`` tuples, scores the same
+cases with the real automated judge, computes the agreement (``compute_agreement``) and the pair
+counts, weighted kappa and gap direction (``compute_detail``), writes every case's scores to a CSV,
+and patches ``reports/evaluation.md`` so its judge-validation section (and the limitations bullet
+that names that section as pending) reflect the real, human-provenance sample instead of the
+synthetic stand-in.
 
 Scope
 -----
@@ -18,8 +18,8 @@ In: parsing the returned sheets' columns, checking the two sheets describe the s
 packet, calling the real judge once per case over the sheet's own ``system_replies``/
 ``facts_and_sources`` (already captured when the sheets were prepared — this module never re-runs
 a system to get them), and patching the report.
-Out: computing agreement itself (``evals.judge_validation``, unchanged); the judge's own scoring
-call (``evals.judge.LlmJudge``, unchanged); the written analysis of where raters and judge
+Out: computing agreement itself (``evals.judge_validation``); the judge's own scoring call
+(``evals.judge.LlmJudge``); the written analysis of where raters and judge
 disagree, which stays a person's job; running the systems that produced
 ``system_replies``/``facts_and_sources`` in the first place.
 
@@ -35,19 +35,18 @@ Design Principles
   the report's shape are all checked up front.
 - **One judge call per case, never a batch call.** ``evals.judge.LlmJudge.score`` is built
   for exactly one transcript at a time; this module does not add a second call shape for a sample
-  this small (50 cases).
+  this small.
 - **A row with no ``clarification`` score (the rubric's own ``NA`` convention) becomes ``None``,
-  never ``0``.** ``evals.judge_validation``'s own exclusion-from-the-denominator rule depends on
-  that distinction, the same rule the synthetic placeholder fixture already exercises.
+  never ``0``.** ``evals.judge_validation``'s exclusion of such cases from the agreement
+  denominator depends on that distinction.
 - **The report is patched, never rebuilt from scratch.** Rebuilding ``EvaluationReport`` fully
-  would mean re-running every system for real money, just to change the one section that actually
-  depends on human data; patching only the judge-validation section, the one limitations bullet
-  that names it as pending and the demoted dimensions' cells of the judge-scored quality table
-  keeps every other section (versions, headline metrics, the failure gallery) exactly as the real
-  run already produced them. The patch targets the exact text ``evals.report``'s own section
-  renderers produce, so a future change to any of those renderers' exact wording needs a
-  matching change here — a test pins this by patching a real, current
-  ``render_markdown`` output, not a hand-typed fixture string.
+  would mean re-running every system at real cost, just to change the one section that depends on
+  human data. Patching only the judge-validation section, the limitations bullet that names it as
+  pending and the demoted dimensions' cells of the judge-scored quality table keeps every other
+  section (versions, headline metrics, the failure gallery) as the real run produced it. The patch
+  targets the exact text ``evals.report``'s section renderers produce, so a change to the wording
+  of those renderers needs a matching change here; a test pins this by patching a real
+  ``render_markdown`` output rather than a hand-typed fixture string.
 
 Runtime Contract
 -----------------
@@ -113,21 +112,28 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_REPORT = Path("reports/evaluation.md")
 
+# The limitations bullet the report carries while its judge validation is pending; removed once
+# the real sample replaces the synthetic one.
 _PENDING_LIMITATIONS_BULLET = re.compile(
     r"^- The judge-validation section is pending the human judge-validation sample; see that "
     r"section for detail\.\n?",
     re.MULTILINE,
 )
 
+# A section is found by its title and any section number, so renumbering the report does not break
+# the patch; its body runs to the next numbered heading.
 _JUDGE_VALIDATION_START = re.compile(r"^## \d+\. Judge validation\n\n", re.MULTILINE)
 _JUDGE_SCORED_START = re.compile(r"^## \d+\. Judge-scored quality\n\n", re.MULTILINE)
 _NEXT_SECTION_BOUNDARY = re.compile(r"\n\n## \d+\.")
 
 _CASES_FILE_NAME = "judge-validation-cases.csv"
+# The scorers each dimension's columns are written for, in column order.
 _CSV_SOURCES = ("rater1", "rater2", "judge")
 
+# How a sheet cell joins several turns or replies.
 _TURN_SEPARATOR = " | "
 
+# The case-sheet columns, in sheet order; every one must be present in a returned sheet.
 _COLUMNS = (
     "case_id",
     "language",
@@ -147,16 +153,18 @@ _SHARED_COLUMNS = ("language", "category", "user_turns", "system_replies", "fact
 
 _ROLES: tuple[str, ...] = get_args(Role)
 
-# The rubric's closed 0-2 scale (evals.judge's own _MIN_SCORE/_MAX_SCORE, restated here since a
-# CSV column is parsed from plain text, not validated by a pydantic field like the judge's own
-# tool-call arguments are).
+# The rubric's closed 0-2 scale, restated from evals.judge because a CSV cell is parsed from plain
+# text rather than validated by a model like the judge's own tool-call arguments.
 _MIN_SCORE = 0
 _MAX_SCORE = 2
 
 
 @dataclass(frozen=True, slots=True)
 class RaterCaseRow:
-    """One row of a returned case sheet, every column the rubric names."""
+    """One row of a returned case sheet, every column the rubric names.
+
+    ``role`` is the rater the sheet belongs to; ``clarification`` is ``None`` for ``NA``.
+    """
 
     case_id: str
     language: str
@@ -177,6 +185,13 @@ def _split_turns(text: str) -> tuple[str, ...]:
 
 
 def _parse_score(value: str, *, column: str, case_id: str) -> int:
+    """A rubric score from a sheet cell.
+
+    Raises
+    ------
+    ValueError
+        ``value`` is not an integer from 0 to 2.
+    """
     try:
         score = int(value)
     except ValueError as exc:
@@ -187,6 +202,7 @@ def _parse_score(value: str, *, column: str, case_id: str) -> int:
 
 
 def _parse_clarification(value: str, *, case_id: str) -> int | None:
+    """A clarification score from a sheet cell; an empty cell or ``NA`` is ``None``."""
     stripped = value.strip()
     if not stripped or stripped.upper() == "NA":
         return None
@@ -247,6 +263,7 @@ def load_rater_sheet(path: Path) -> tuple[RaterCaseRow, ...]:
 
 
 def _as_rater_scores(rows: Sequence[RaterCaseRow]) -> tuple[RaterScore, ...]:
+    """The sheet rows reduced to the scores ``evals.judge_validation`` compares."""
     return tuple(
         RaterScore(
             case_id=row.case_id,
@@ -391,6 +408,7 @@ def _withhold_in_judge_scored_section(
     agreement: tuple[DimensionAgreement, ...],
     human_means: tuple[HumanMean, ...],
 ) -> str:
+    """The Judge-scored quality section with each demoted dimension's judge mean withheld."""
     body_start, end = _judge_scored_bounds(report_markdown)
     return (
         report_markdown[:body_start]
@@ -417,6 +435,7 @@ def _facts_coverage(rows: Sequence[RaterCaseRow]) -> tuple[int, int]:
 
 
 def _score_cell(value: int | None) -> str:
+    """A score as a CSV cell; a missing score is a blank cell."""
     return "" if value is None else str(value)
 
 
@@ -508,7 +527,12 @@ def regenerate_report(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m evals.h4_judge_validation --rater1 PATH --rater2 PATH [--report PATH]``."""
+    """Command-line entry point: ``python -m evals.h4_judge_validation --rater1 PATH --rater2 PATH
+    [--report PATH] [--cases PATH]``; returns the process exit status (0 on success).
+
+    Builds the real judge from the application settings (the model key is read there, never from
+    the arguments) and runs ``regenerate_report``.
+    """
     parser = argparse.ArgumentParser(
         description="Score the returned judge-validation sheets with the real judge and patch "
         "the evaluation report's judge-validation section."

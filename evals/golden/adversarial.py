@@ -1,46 +1,43 @@
 """
 Golden Set: Adversarial Category
-==================================
+================================
 
 Overview
 --------
-The 32 adversarial cases of the golden set's category mix: prompt injection via a user message (6)
-and via a poisoned data field such as a merchant name (4); unauthorized access attempts to another
+The adversarial cases of the golden set: 32 cases covering prompt injection through a user message
+(6) and through a poisoned data field such as a merchant name (4); unauthorized access to another
 customer's transaction or case (6); an expired or invalid session mid-flow (4); an injected tool
-failure — timeout, 5xx, malformed payload (6); incorrect or missing data — an orphan transaction, a
-null field in scope (6). Every case scores on its declared `expected_safe_behavior`, never on task
-completion.
+failure (timeout, 5xx or malformed payload) (6); and incorrect or missing data, such as an orphan
+transaction or a null field in scope (6). Every case scores on its declared
+`expected_safe_behavior`, never on task completion.
 
 Scope
 -----
-In: the 32 `Case` records, grounded either in real `data/gold/ops_seed` rows or in
-`data/gold/eval_bank`'s four frozen scenarios (`pipelines.eval_bank`), whichever a case's
-condition actually needs.
-Out: the other five category groups (their own modules); running or scoring these cases.
+In: the 32 `Case` records, grounded either in `data/gold/ops_seed` rows or in the four fixed
+scenarios of `data/gold/eval_bank` (`pipelines.eval_bank`), whichever a case's condition needs.
+Out: the other category modules; running or scoring these cases.
 
 Design Principles
--------------------
-- **`eval_bank` only where `ops_seed` structurally cannot help.** The poisoned-merchant-field
-  subtype and three of the incorrect/missing-data subtype's six cases reference
-  `data/gold/eval_bank`'s fixed scenarios (an orphan transaction, a null merchant name, an
-  injected merchant name, an unconvertible amount) by their real, committed identifiers
-  (`pipelines.eval_bank`'s `_TRANSACTIONS`), since `ops_seed` only ever selects real, consistent
-  rows and cannot hold a deliberately inconsistent one. A scenario is shared across every case
-  that exercises it — `eval_bank` has one poisoned-merchant row, not four — so `seed_ref`
-  uniqueness does not hold across this module's `eval_bank`-anchored cases the way it does for
-  every `ops_seed`-anchored one.
-- **Every other subtype needs only `ops_seed`.** Prompt injection via a user message, unauthorized
-  access, an expired session and an injected tool failure are properties of the conversation or
-  the runner, not of the underlying data, so those 22 cases ground on real, distinct customers or
-  transactions the same way `evals.golden.human_required` and `evals.golden.normal` do.
-- **`escalate_amount_unknown` lands here, not in human-required.** The golden set requires at least
-  one case for an unknown amount, and the human-required category, the natural policy-reason-code
-  home for it, holds none. The two `unknown_amount` cases here meet that requirement instead, each
-  declaring `expected_reason_code=ReasonCode.ESCALATE_AMOUNT_UNKNOWN` alongside
-  `expected_safe_behavior=SafeBehavior.HANDOFF` — Case allows both fields set together, and this is
-  exactly the case a policy decision and a safe behavior coincide.
-- **Provenance is `injected` for every `eval_bank`-anchored case, `team_generated` for the rest**,
-  so an injected condition is labeled as such and the report says it was not observed.
+-----------------
+- **`eval_bank` only where `ops_seed` cannot help.** The poisoned-merchant subtype and all six
+  incorrect-or-missing-data cases reference `data/gold/eval_bank`'s fixed scenarios (an orphan
+  transaction, a null merchant name, an injected merchant name and an unknown amount) by their
+  committed identifiers (`pipelines.eval_bank`'s `_TRANSACTIONS`), because `ops_seed` holds only
+  consistent rows and cannot hold a deliberately inconsistent one. A scenario is shared by every
+  case that exercises it (`eval_bank` has one poisoned-merchant row, not four), so `seed_ref` is
+  not unique across the ten `eval_bank`-anchored cases as it is across the `ops_seed`-anchored
+  ones.
+- **Every other subtype needs only `ops_seed`.** Prompt injection through a message, unauthorized
+  access, an expired session and an injected tool failure depend on the conversation or the
+  runner, not on the underlying data, so those 22 cases ground on distinct seeded customers or
+  transactions, as in `evals.golden.human_required` and `evals.golden.normal`.
+- **`escalate_amount_unknown` is covered here, not in human-required.** The golden set needs at
+  least one unknown-amount case and the human-required category holds none, so the two
+  unknown-amount cases here declare `expected_reason_code=ReasonCode.ESCALATE_AMOUNT_UNKNOWN`
+  together with `expected_safe_behavior=SafeBehavior.HANDOFF`. `Case` allows both fields, and this
+  is a case where a policy decision and a safe behavior coincide.
+- **Provenance is `injected` for every `eval_bank`-anchored case and `team_generated` for the
+  rest**, so an injected condition is labeled as such and the report says it was not observed.
 
 Runtime Contract
 -----------------

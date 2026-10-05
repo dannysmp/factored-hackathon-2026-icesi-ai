@@ -1,38 +1,32 @@
 """
 Golden Set: Ambiguous Category
-===============================
+==============================
 
 Overview
 --------
-The 17 ambiguous cases of the golden set's category mix (8 Spanish, 6 Portuguese, 3 English):
-a vague transaction reference, a message missing both the transaction and the reason, and a
-message whose intent could plausibly be a dispute or something else. Every case here has the
-same correct reply — the system asks a clarifying question rather than guessing — so every case
-declares `expected_intent=Intent.CLARIFY` and no `expected_reason_code`.
+The ambiguous cases of the golden set: 17 cases (8 Spanish, 6 Portuguese, 3 English) with a vague
+transaction reference, a message missing both the transaction and the reason, or a message whose
+intent could plausibly be a dispute or something else. Every case has the same correct reply, a
+clarifying question rather than a guess, so every case declares `expected_intent=Intent.CLARIFY`
+and no `expected_reason_code`.
 
 Scope
 -----
-In: the 17 `Case` records, and, for the vague-transaction-reference subtype, the real
-`data/gold/ops_seed` customers whose ambiguity is grounded in an actual pair of close-together
-transactions rather than an assertion.
-Out: the other four category groups (their own modules); running or scoring these cases.
+In: the 17 `Case` records and, for the vague-transaction-reference subtype, the `data/gold/ops_seed`
+customers whose ambiguity rests on an actual pair of close-together transactions.
+Out: the other category modules; running or scoring these cases.
 
 Design Principles
--------------------
-- **Every `seed_ref` names a customer, not a transaction.** `ops_seed:CLI-...`, the same
-  convention `evals.golden.normal` uses for its policy-answer cases: the point of an ambiguous
-  case is exactly that no single transaction is yet identified, so anchoring the case to one
-  would misstate its own premise.
-- **Vague reference is grounded in a real pair, not just a claim.** Each of the 6
-  vague-transaction-reference cases names a customer verified to hold at least two real,
-  eligible transactions within days of each other (checked against
-  `data/gold/ops_seed/transactions.parquet` directly), so the ambiguity a vague description
-  creates is genuine, not asserted.
-- **One scripted turn, not two.** A second turn risks accidentally resolving the ambiguity the
-  case exists to test; every case here stops after the customer's single, deliberately
-  under-specified opening line.
-- **Provenance is `team_generated`**, for the same reason every other module in this package
-  states: the source call-transcript data carries no dispute language at all.
+-----------------
+- **Every `seed_ref` names a customer, not a transaction** (`ops_seed:CLI-...`, as in
+  `evals.golden.normal`'s policy-answer cases): an ambiguous case exists because no single
+  transaction is identified yet, so anchoring it to one would contradict its premise.
+- **A vague reference rests on real data.** Each of the 6 vague-transaction-reference cases names
+  a customer verified to hold at least two eligible transactions within days of each other
+  (checked against `data/gold/ops_seed/transactions.parquet`), so the ambiguity is genuine.
+- **One scripted turn.** A second turn could resolve the ambiguity the case exists to test, so
+  every case stops after the customer's single, deliberately under-specified opening line.
+- **Provenance is `team_generated`**: the source call-transcript data carries no dispute language.
 
 Runtime Contract
 -----------------
@@ -41,10 +35,8 @@ two-plausible-intents.
 
 Limitations
 -----------
-The vague-transaction-reference subtype's grounding (two real transactions within days of each
-other) is a property of the customer's seeded data at authoring time; it is not re-verified at
-case-authoring time against a moving reference date, since the golden set is frozen before tuning
-ends.
+The two-transaction grounding is a property of the seeded data and is not re-checked against a
+moving reference date.
 """
 
 from __future__ import annotations

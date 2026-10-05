@@ -84,6 +84,7 @@ def read_segments(silver_dir: Path, customer_ids: Collection[str]) -> dict[str, 
 
 
 def _read_countries(dsn: str, customer_ids: Sequence[str]) -> dict[str, str]:
+    """The stored country name of each given customer in the serving store."""
     if not customer_ids:
         return {}
     with psycopg.connect(dsn) as conn, conn.cursor() as cur:

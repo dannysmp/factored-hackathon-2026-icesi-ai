@@ -34,9 +34,9 @@ describe('ChatFeature demonstration notice', () => {
 
     await user.type(screen.getByLabelText('Your message'), 'unrecognized charge')
     await user.click(screen.getByRole('button', { name: 'Send' }))
-    await screen.findByRole('button', { name: 'Confirm' })
+    await screen.findByRole('button', { name: 'Yes, file it' })
     noticeStays()
-    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    await user.click(screen.getByRole('button', { name: 'Yes, file it' }))
     await findMessage(/case DEMO-1234/)
     noticeStays()
   })

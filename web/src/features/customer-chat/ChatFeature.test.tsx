@@ -70,7 +70,7 @@ describe('ChatFeature', () => {
     await user.type(screen.getByLabelText('Your message'), 'unrecognized charge')
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
-    const confirm = await screen.findByRole('button', { name: 'Confirm' })
+    const confirm = await screen.findByRole('button', { name: 'Yes, file it' })
     await user.click(confirm)
 
     expect(await findMessage(/case DEMO-1234/)).toBeInTheDocument()

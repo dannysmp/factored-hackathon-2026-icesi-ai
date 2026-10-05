@@ -3,9 +3,9 @@
 # put-secret.sh — create or update one secret under the project's SSM prefix
 # =============================================================================
 # Purpose:
-#   The one way any future slice adds a secret the deployed host reads at
-#   start-up (the model API key already lives this way; the session-signing
-#   key the backend needs in prod is the first thing this script is for).
+#   The one way a secret the deployed host reads at start-up is added (the
+#   model API key, the session-signing key and the demonstration access
+#   codes all live this way).
 #   Generic on purpose, so no script anywhere needs to hardcode a new
 #   parameter name to add one.
 # Design:

@@ -123,3 +123,6 @@ export type TurnResponse = z.infer<typeof TurnResponseSchema>
 
 /** The fixed text the confirmation button sends: exactly what a customer typing "yes" would send. */
 export const CONFIRMATION_TEXT = 'yes'
+
+/** The fixed text a click on the decline button sends: the same word a customer typing "no" sends. */
+export const DECLINE_TEXT = 'no'

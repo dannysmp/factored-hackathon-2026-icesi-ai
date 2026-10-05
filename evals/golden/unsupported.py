@@ -1,32 +1,31 @@
 """
 Golden Set: Unsupported Category
-==================================
+================================
 
 Overview
 --------
-The 13 unsupported-request cases of the golden set's category mix (6 Spanish, 5 Portuguese,
-2 English): requests for banking services the dispute-intake system does not handle at all —
-a new transfer, a credit-limit increase, a loan, a new account, investment advice, insurance —
-as opposed to a request the system understands but cannot grant. The correct reply is a safe
-abstention, never a guess at what the customer might have meant.
+The unsupported-request cases of the golden set: 13 cases (6 Spanish, 5 Portuguese, 2 English)
+asking for banking services the dispute-intake system does not handle at all: a new transfer, a
+credit-limit increase, a loan, a new account, investment advice or insurance. That differs from a
+request the system understands but cannot grant. The correct reply is a safe abstention, never a
+guess at what the customer meant.
 
 Scope
 -----
 In: the 13 `Case` records.
-Out: the other five category groups (their own modules); running or scoring these cases.
+Out: the other category modules; running or scoring these cases.
 
 Design Principles
--------------------
-- **Out of scope by product, not by policy.** `policy/corpus/{lang}/dispute-policy.md`'s
-  who-can-dispute section states plainly that loans, investments and insurance have their own
-  channels; these cases test that the system recognizes a request as belonging to one of those
-  channels and abstains, rather than trying to force it through the dispute flow.
-- **No transaction, no special data grounding needed.** Every `seed_ref` names a customer only
-  (`ops_seed:CLI-...`, the same convention `evals.golden.ambiguous` uses for its non-transaction
-  subtypes): what makes a request unsupported is its topic, not any property of the customer's
-  seeded data, so a real, distinct, Active customer is all a case needs.
-- **One scripted turn.** Each case is the customer's single opening request; there is nothing to
-  clarify here, since the correct behavior (abstain) does not depend on any follow-up detail.
+-----------------
+- **Out of scope by product, not by policy.** The who-can-dispute section of
+  `policy/corpus/{lang}/dispute-policy.md` states that loans, investments and insurance have their
+  own channels. These cases test that the system recognizes such a request and abstains instead of
+  forcing it through the dispute flow.
+- **No transaction.** Every `seed_ref` names a customer only (`ops_seed:CLI-...`, as in
+  `evals.golden.ambiguous`): a request is unsupported because of its topic, not the customer's
+  data, so a distinct, active customer is all a case needs.
+- **One scripted turn.** Each case is the customer's single opening request; the correct
+  behavior, abstaining, does not depend on any follow-up detail.
 
 Runtime Contract
 -----------------

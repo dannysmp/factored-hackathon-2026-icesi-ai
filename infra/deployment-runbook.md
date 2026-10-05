@@ -138,7 +138,7 @@ pbcopy </dev/null
 
 The clipboard is not private: a clipboard manager may keep its history, and Universal Clipboard can copy the value to other devices signed in to the same account. Quit any clipboard manager and turn Handoff off for the duration, or clear the clipboard immediately after pasting.
 
-Repeat for `demo-agent-access-code`. Send each code only in the release message itself; do not store it in a document, a ticket or the repository.
+Repeat for `demo-agent-access-code`. Send each code only in the release message itself; do not store it in a document, an issue or the repository.
 
 ## 7. After the release window
 

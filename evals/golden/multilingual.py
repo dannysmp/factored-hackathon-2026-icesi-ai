@@ -1,42 +1,39 @@
 """
 Golden Set: Multilingual Category
-===================================
+=================================
 
 Overview
 --------
-The 10 multilingual-ambiguity cases of the golden set's category mix: code-switching between
-Spanish and Portuguese (4), between English and Spanish (3), and accent-flavored Spanish
-phrasing — Mexican, Colombian and Argentine (3). Every case is a policy question, so the only
-thing under test is the system's language handling, not its dispute-filing or clarification
-logic (already covered by the normal and ambiguous categories).
+The multilingual-ambiguity cases of the golden set: 10 cases of code-switching between Spanish and
+Portuguese (4), between English and Spanish (3), and accent-flavored Spanish from Mexico,
+Colombia and Argentina (3). Every case is a policy question, so what is tested is language
+handling, not dispute filing or clarification (covered by the normal and ambiguous categories).
 
 Scope
 -----
 In: the 10 `Case` records.
-Out: the other five category groups (their own modules); running or scoring these cases.
+Out: the other category modules; running or scoring these cases.
 
 Design Principles
--------------------
-- **What `lang` means here.** `lang` names the language a correct reply must render in for the whole
-  conversation — the conversation's sticky language, per the dialogue-state design (the controller
-  persists one language per session, not per turn) and the language-routing rule ("a miss abstains
-  and offers the language switch; it never returns a hit from the other language's corpus"). `lang`
-  is never the dominant or opening language by a mechanical rule; it is the language a correct
-  system should lock onto and stay in, decided per case and recorded in `description`. For a
-  code-switching case, that is normally the language the customer's turn opens in (the language NLU
-  should lock onto first); for an accent-flavored case it is simply that accent's language.
-- **The customer's wording code-switches freely; `lang` does not.** `user_turns` mixes Spanish,
-  Portuguese and English within a single turn where the subtype calls for it; `lang` stays fixed
-  at whichever value the case's own reasoning (in `description`) establishes.
-- **Every case is a policy question**, matching `evals.golden.normal`'s policy-answer convention:
-  `seed_ref` names a customer only, `expected_intent=Intent.POLICY_ANSWER`, no
-  `expected_reason_code`. This isolates language handling as the single thing scored, the same
-  way `evals.golden.ambiguous` isolates clarification behavior.
+-----------------
+- **What `lang` means here.** `lang` is the language a correct reply must render in for the whole
+  conversation. The controller keeps one language per session rather than per turn, and a language
+  routing miss abstains and offers the language switch instead of returning a hit from the other
+  language's corpus. `lang` is not the dominant or opening language by a mechanical rule; it is the
+  language a correct system should lock onto and stay in, decided per case and recorded in
+  `description`. For a code-switching case that is normally the language the turn opens in; for an
+  accent-flavored case it is that accent's language.
+- **The wording code-switches freely; `lang` does not.** `user_turns` mixes languages within a
+  single turn where the subtype calls for it, while `lang` stays fixed at the value the case's
+  `description` establishes.
+- **Every case is a policy question**, as in `evals.golden.normal`: `seed_ref` names a customer
+  only, `expected_intent=Intent.POLICY_ANSWER` and there is no `expected_reason_code`. That
+  isolates language handling as the one thing scored.
 
 Runtime Contract
 -----------------
 `CASES`: the 10 `Case` records, Spanish/Portuguese code-switching first, then English/Spanish,
-then accent-flavored Spanish.
+then accent-flavored Spanish. `ACCENT_FLAVORED_CASE_IDS`: the ids of the accent-flavored cases.
 """
 
 from __future__ import annotations
