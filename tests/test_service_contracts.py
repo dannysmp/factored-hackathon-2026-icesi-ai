@@ -674,6 +674,24 @@ def test_the_turn_response_carries_no_envelope_or_routing_detail() -> None:
     assert "decisions" not in names
 
 
+def test_the_turn_response_case_number_defaults_to_null_and_must_be_well_formed() -> None:
+    """The case number is absent until a filing is reported, and only a valid number is accepted."""
+    base: dict[str, Any] = {
+        "turn_id": "turn-0001",
+        "conversation_id": "c-1",
+        "state_version": 1,
+        "lang": "es",
+        "reply": "Hola",
+        "reference_date_line": "Fecha de referencia de los datos: 18 de junio de 2026",
+    }
+
+    assert TurnResponse(**base).case_number is None
+    assert TurnResponse(**base, case_number="D-2001").case_number == "D-2001"
+    for malformed in ("", "D 1", "x" * 33, "D-1; drop"):
+        with pytest.raises(ValidationError):
+            TurnResponse(**base, case_number=malformed)
+
+
 def test_readiness_reports_the_reference_date_and_its_origin() -> None:
     """A deployment on an explicit date cannot be mistaken for live data."""
     payload = ReadinessPayload(

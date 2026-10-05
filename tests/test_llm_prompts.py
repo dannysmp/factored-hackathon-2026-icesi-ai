@@ -19,7 +19,7 @@ def test_the_shipped_nlu_prompt_loads_and_validates() -> None:
     """``prompts/nlu_v1.yaml`` is a real, valid prompt file, not just a fixture."""
     prompt = load_prompt("nlu_v1")
 
-    assert prompt.version == "2"
+    assert prompt.version == "3"
     assert prompt.system.strip()
     assert prompt.placeholders() == {"language_hint", "message"}
 
@@ -76,3 +76,22 @@ def test_load_prompt_reports_a_missing_required_field(tmp_path: Path) -> None:
 
     with pytest.raises(PromptError, match="task_template"):
         load_prompt("incomplete", directory=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "choice intent",
+        '"option 2"',
+        '"la segunda"',
+        '"opción 3"',
+        '"a terceira"',
+        "only when the message names a position from 1 to 5",
+        "that field, not a choice",
+        "Fill choice only for the choice intent",
+    ],
+)
+def test_the_shipped_nlu_prompt_teaches_the_choice_intent_and_its_limits(phrase: str) -> None:
+    """The extraction prompt names the choice intent, gives a pick example per language and says
+    when a number is not a choice."""
+    assert phrase in load_prompt("nlu_v1").system

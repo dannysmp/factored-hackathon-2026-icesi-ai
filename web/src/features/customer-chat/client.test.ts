@@ -48,6 +48,7 @@ function turnResponse(overrides: Partial<TurnResponse> = {}): TurnResponse {
     next_expected: null,
     end_session: false,
     handoff_ticket: null,
+    case_number: null,
     ...overrides,
   }
 }
