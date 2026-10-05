@@ -1,13 +1,13 @@
 """
 Operational Metadata Reader
-=============================
+===========================
 
 Overview
 --------
-Reads the loaded seed's own facts about itself — today, only ``data_as_of`` (ADR-15) — from the
-``ops_meta`` table the seed's load job writes. A read that cannot succeed answers ``None``, the
-same as a seed that was never loaded: the caller (the domain calendar) decides what that means,
-this module only reports what it found.
+Reads the loaded seed's own facts about itself (today, only ``data_as_of``, the reference date of
+the loaded data) from the ``ops_meta`` table the seed's load job writes. A read that cannot
+succeed answers ``None``, the same as a seed that was never loaded: the caller (the domain
+calendar) decides what that means, this module only reports what it found.
 
 Scope
 -----
@@ -24,7 +24,7 @@ Design Principles
   rather than hang the whole service waiting on a database that is not there.
 
 Runtime Contract
------------------
+----------------
 ``read_data_as_of(dsn) -> date | None``.
 """
 
@@ -40,7 +40,11 @@ _CONNECT_TIMEOUT_SECONDS = 5
 
 
 def read_data_as_of(dsn: str) -> date | None:
-    """The seed's own reference date, or ``None`` when it cannot be read."""
+    """The seed's own reference date, or ``None`` when it cannot be read.
+
+    ``None`` covers an unreachable store, a missing table or ``data_as_of`` row, and a stored value
+    that is not an ISO date.
+    """
     try:
         with (
             psycopg.connect(dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,

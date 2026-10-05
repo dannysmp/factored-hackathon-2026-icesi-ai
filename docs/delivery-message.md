@@ -1,6 +1,6 @@
 # Delivery message
 
-The draft of the message that accompanies the release: the four links and the instructions for signing in to the deployed system. Every value that does not exist in the repository is a marked blank, filled in by the maintainer when the message is sent.
+The template of the message that accompanies the release: the four links and the instructions for signing in to the deployed system. Every value that does not exist in the repository is a marked blank, filled in by the sender when the message is sent.
 
 ## Filling it in
 

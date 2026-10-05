@@ -41,7 +41,7 @@ def test_an_active_customer_is_found(dsn: str) -> None:
 
 @pytest.mark.integration
 def test_a_suspended_customer_is_still_found_with_its_real_status(dsn: str) -> None:
-    """No status gate here (AC-E4-48): the status is reported as it is, not filtered."""
+    """No status gate here: the status is reported as it is, not filtered."""
     assert customer_status(dsn, "CLI-SUSPENDED") == "Suspended"
 
 

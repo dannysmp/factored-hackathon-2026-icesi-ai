@@ -15,7 +15,7 @@ Scope
 In: the pure decision of which slot, if any, is still missing.
 Out: acting on the answer — asking again, counting the attempt, and escalating at the shared
 budget — is the dialogue controller's job (``DialogueState.with_clarification``,
-``with_slot_filled``; ``Policy.routing.clarification_budget`` for K), wired in the turns endpoint.
+``with_slot_filled``; ``Policy.routing.clarification_budget`` for the attempt budget).
 
 Design Principles
 -----------------

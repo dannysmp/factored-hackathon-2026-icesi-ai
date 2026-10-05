@@ -5,60 +5,58 @@ Postgres Ticket Detail
 Overview
 --------
 One ticket's whole packet and timeline (``contracts.service_v1.console.TicketDetail``) for the
-human-agent console's packet view (AC-E10-02, AC-E10-03). ``app.persistence.handoff_outbox`` never
-stores a full ``TransactionFact`` or a source's localized title — only ``verified_transaction_ref``
-and each source's ``section_id``/``corpus_version`` — by that module's own re-hydrate-elsewhere
-design (mirroring the one-figure-one-source discipline the serving store already follows
-elsewhere), so this module re-hydrates both live, on read: the transaction from the store's own
-``transactions``/``products`` tables, a source's title from the current policy corpus. Everything
-else on the packet — the reason codes, the policy version, the risk evidence, the stored
-``corpus_version`` per source — is the frozen, as-of-handoff record and is never re-derived.
+human-agent console's packet view. ``app.persistence.handoff_outbox`` never stores a full
+``TransactionFact`` or a source's localized title, only ``verified_transaction_ref`` and each
+source's ``section_id``/``corpus_version``, so this module re-hydrates both live, on read: the
+transaction from the store's own ``transactions``/``products`` tables, a source's title from the
+current policy corpus. Everything else on the packet (the reason codes, the policy version, the
+risk evidence, the stored ``corpus_version`` per source) is the frozen, as-of-handoff record and
+is never re-derived.
 
 Scope
 -----
-In: reading ``handoff_outbox`` and its five child tables (including ``handoff_notes``, the narrow
-agent writes' own table) by ``ticket_ref``, re-hydrating the
-transaction and source titles, assembling ``TicketDetail``.
-Out: the customer-scoped ``ToolPort`` (``app.persistence.reads``) — an agent reading a ticket has
-no customer session to scope a lookup to, and the ticket can belong to any customer, so this module
-is deliberately not a ``ToolPort`` and is never reachable from the customer-scoped dispatch path;
-listing the queue (``app.persistence.handoff_queue``); the conversation's own timeline
-(``app.persistence.dialogue_turn_log``); the console's own routes and the audit-of-agent-reads
-write they must perform (ADR-17); writing to the outbox at all (``app.persistence.handoff_outbox``).
+In: reading ``handoff_outbox`` and its five child tables (including ``handoff_notes``, the
+agent notes table) by ``ticket_ref``, re-hydrating the transaction and source titles, assembling
+``TicketDetail``.
+Out: the customer-scoped ``ToolPort`` (``app.persistence.reads``): an agent reading a ticket has
+no customer session to scope a lookup to, and the ticket can belong to any customer, so this
+module is deliberately not a ``ToolPort`` and is never reachable from the customer-scoped
+dispatch path; listing the queue (``app.persistence.handoff_queue``); the conversation's own
+timeline (``app.persistence.dialogue_turn_log``); the console's own routes and the audit of agent
+reads they must perform (``app.persistence.console_audit``); writing to the outbox at all
+(``app.persistence.handoff_outbox``).
 
 Design Principles
 -----------------
 - **No customer parameter, for the opposite reason ``ToolPort`` has none.** A tool takes no
   customer id so it cannot be pointed at someone else's data; this module takes no customer id
-  because an agent's whole reason to read a ticket is that it is not their own — there is no
+  because an agent's whole reason to read a ticket is that it is not their own. There is no
   session to scope it to, and the ticket's ``customer_id`` is not even part of ``QueueItem`` or
   ``HandoffPacket`` (only the masked label is). Authorization is the router's job (an
   ``AgentPrincipal`` reaches this at all), never a filter this module applies itself.
 - **Live where the store is the only source of truth, frozen where the record must not drift.**
   A transaction's current status and a source's current title come from asking the store and the
-  corpus again, the same way the queue view already computes ``age_days`` against the current
-  domain calendar rather than freezing it at handoff time. The stored ``corpus_version`` is kept
-  exactly as recorded, never overwritten by whatever the corpus reports today: it is the
-  historical fact of what actually grounded the decision, and a corpus edit after the fact must
-  not silently rewrite that record.
+  corpus again, the same way the queue view computes ``age_days`` against the current domain
+  calendar rather than freezing it at handoff time. The stored ``corpus_version`` is kept exactly
+  as recorded, never overwritten by whatever the corpus reports today: it is the historical fact
+  of what actually grounded the decision, and a corpus edit after the fact must not silently
+  rewrite that record.
 - **A stored reference that no longer resolves fails the whole read, visibly.** If a source's
   ``section_id`` no longer exists in the current corpus, this raises ``SourceUnavailable`` rather
   than dropping that one source or returning a packet that quietly has fewer sources than it was
-  actually decided on — the feature's own failure clause is explicit that the console "never shows
-  partial or stale packets as current."
+  actually decided on: the console never shows partial or stale packets as current.
 - **The queue row and the timeline are each already someone else's job.** ``PostgresHandoffQueue``
-  answers ``QueueItem`` (including for a ticket that has since left the open queue, via its own
+  answers ``QueueItem`` (including for a ticket that has since left the open queue, via its
   ``get_ticket``); ``PostgresDialogueTurnLog`` answers the timeline by ``trace_id``, itself a
   column this module reads off the outbox row, never derived. This module composes both with its
   own packet re-hydration; it does not re-implement either.
 - **``HandoffPacket``'s own shapes, not the customer-facing tool contracts' same-named ones.**
   ``contracts.service_v1.envelope.TransactionFact``/``ProductLabel``/``Money`` are distinct
   pydantic models from ``contracts.service_v1.tools``' identically-named ones (no ``description``
-  field, ``amount`` a bare ``Money | None`` rather than a provenance-carrying ``DisclosedAmount``)
-  — the two contract modules are independently frozen and never interchangeable, even where a
+  field, ``amount`` a bare ``Money | None`` rather than a provenance-carrying ``DisclosedAmount``).
+  The two contract modules are independently frozen and never interchangeable, even where a
   field set overlaps. This module imports only from ``contracts.service_v1.envelope``/``handoff``,
-  never from ``contracts.service_v1.tools``, matching what ``HandoffPacket`` itself actually
-  declares.
+  never from ``contracts.service_v1.tools``, matching what ``HandoffPacket`` itself declares.
 - **One connection per call**, matching every other module in ``app.persistence``.
 
 Runtime Contract
@@ -151,6 +149,11 @@ class PostgresTicketDetail:
         queue: PostgresHandoffQueue,
         turn_log: PostgresDialogueTurnLog,
     ) -> None:
+        """Keep the collaborators.
+
+        ``retriever`` resolves a source's current titles, ``queue`` supplies the ticket's queue
+        item and ``turn_log`` its conversation timeline.
+        """
         self._dsn = dsn
         self._retriever = retriever
         self._queue = queue
@@ -160,6 +163,10 @@ class PostgresTicketDetail:
         self, ticket_ref: str, *, calendar: DomainCalendar
     ) -> TicketDetail | None:
         """``ticket_ref``'s whole detail, or ``None`` if no such ticket exists.
+
+        The queue item comes first (any status); the outbox row and its child rows are then read
+        on one connection, the packet is assembled with the transaction and source titles
+        re-hydrated, and the timeline is read by the row's ``trace_id``.
 
         Raises
         ------
@@ -191,6 +198,7 @@ class PostgresTicketDetail:
         return TicketDetail(item=item, packet=packet, timeline=timeline, notes=notes)
 
     def _outbox_row(self, cur: psycopg.Cursor, ticket_ref: str) -> _OutboxRow:
+        """The ticket's scalar outbox columns; the caller has already confirmed it exists."""
         cur.execute(
             f"SELECT {_OUTBOX_COLUMNS} FROM handoff_outbox WHERE ticket_ref = %s",  # noqa: S608
             (ticket_ref,),
@@ -200,6 +208,7 @@ class PostgresTicketDetail:
         return _OutboxRow(*row)
 
     def _actions(self, cur: psycopg.Cursor, ticket_ref: str) -> tuple[ActionRecord, ...]:
+        """The actions the system took, in the order they were recorded."""
         cur.execute(
             "SELECT action, result FROM handoff_actions WHERE ticket_ref = %s ORDER BY ord",
             (ticket_ref,),
@@ -209,6 +218,7 @@ class PostgresTicketDetail:
         )
 
     def _open_questions(self, cur: psycopg.Cursor, ticket_ref: str) -> tuple[OpenQuestion, ...]:
+        """The slots still unanswered when the handoff happened, with their attempt counts."""
         cur.execute(
             "SELECT slot, attempts FROM handoff_open_questions WHERE ticket_ref = %s",
             (ticket_ref,),
@@ -218,6 +228,7 @@ class PostgresTicketDetail:
         )
 
     def _reason_codes(self, cur: psycopg.Cursor, ticket_ref: str) -> tuple[ReasonCode, ...]:
+        """The reason codes recorded for the handoff, in the order they were recorded."""
         cur.execute(
             "SELECT reason_code FROM handoff_reason_codes WHERE ticket_ref = %s ORDER BY ord",
             (ticket_ref,),
@@ -225,6 +236,7 @@ class PostgresTicketDetail:
         return tuple(ReasonCode(code) for (code,) in cur.fetchall())
 
     def _notes(self, cur: psycopg.Cursor, ticket_ref: str) -> tuple[Note, ...]:
+        """The agent notes on the ticket, oldest first."""
         cur.execute(
             "SELECT agent_id, note_text, created_at_utc FROM handoff_notes "
             "WHERE ticket_ref = %s ORDER BY ord",
@@ -236,6 +248,13 @@ class PostgresTicketDetail:
         )
 
     def _sources(self, cur: psycopg.Cursor, ticket_ref: str) -> tuple[SourceRef, ...]:
+        """The packet's sources in recorded order, each with its titles re-hydrated.
+
+        Raises
+        ------
+        SourceUnavailable
+            A recorded section no longer exists in the current corpus.
+        """
         cur.execute(
             "SELECT section_id, corpus_version FROM handoff_sources "
             "WHERE ticket_ref = %s ORDER BY ord",
@@ -265,10 +284,13 @@ class PostgresTicketDetail:
         )
 
     def _verified_facts(self, ref: str | None) -> tuple[TransactionFact, ...]:
-        """The transaction ``ref`` re-hydrated as the envelope's own ``TransactionFact`` — the
-        shape ``HandoffPacket`` actually declares, not ``contracts.service_v1.tools``'s
+        """The transaction ``ref`` re-hydrated as the envelope's own ``TransactionFact``.
+
+        That is the shape ``HandoffPacket`` declares, not ``contracts.service_v1.tools``'s
         differently-shaped one of the same name (no ``description``, ``amount`` a bare
-        ``Money | None`` rather than a provenance-carrying ``DisclosedAmount``)."""
+        ``Money | None`` rather than a provenance-carrying ``DisclosedAmount``). Returns an empty
+        tuple when ``ref`` is ``None`` or no longer resolves.
+        """
         if ref is None:
             return ()
         with (
@@ -288,9 +310,9 @@ class PostgresTicketDetail:
             row = cur.fetchone()
         if row is None:
             # The transaction the packet named at handoff time no longer resolves (deleted or
-            # re-keyed data): the packet still shows what was actually verified back then, so it
-            # reports no re-hydrated fact rather than fabricating one or failing the whole read —
-            # unlike a source, this has no customer-visible presentation obligation to satisfy.
+            # re-keyed data): the packet reports no re-hydrated fact rather than fabricating one
+            # or failing the whole read. Unlike a source, there is no presentation obligation to
+            # satisfy here.
             return ()
         (transaction_id, occurred_at, merchant, amount_usd, status, product_type, last4) = row
         money = None if amount_usd is None else Money(amount=amount_usd, currency="USD")
@@ -315,6 +337,11 @@ class PostgresTicketDetail:
         reason_codes: tuple[ReasonCode, ...],
         sources: tuple[SourceRef, ...],
     ) -> HandoffPacket:
+        """Assemble the ``HandoffPacket`` from the outbox row, its child rows and live lookups.
+
+        The attempted action and the risk evidence are present only when their stored columns
+        are; ``needs_language_routing`` is derived from the language not being Spanish.
+        """
         attempted_action = (
             ActionRecord(action=row.attempted_action_action, result=row.attempted_action_result)
             if row.attempted_action_action is not None and row.attempted_action_result is not None

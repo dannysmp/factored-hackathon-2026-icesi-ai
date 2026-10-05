@@ -6,7 +6,7 @@ Component: ``app.persistence.reads``. Needs a real, migrated Postgres — the is
 under test are about what SQL actually returns, not what a fake could be made to return; marked
 ``integration``, skipped when ``DATABASE_URL`` is not set.
 
-Two seeded customers, A and B (AC-E4-06), each with their own product, transaction and case; the
+Two seeded customers, A and B, each with their own product, transaction and case; the
 matrix below calls every reference tool with a reference of customer B's, as given, in a
 different letter case and with surrounding spaces.
 """
@@ -84,7 +84,7 @@ def dsn() -> str:
     if not value:
         pytest.skip("DATABASE_URL is not set")
     apply_migrations(value)
-    # TRUNCATE on audit_log is refused at the store (migration 0003), including for this reset:
+    # TRUNCATE on audit_log is refused at the store, including for this reset:
     # the session's own replication role is switched off for it, since a trigger created without
     # ENABLE REPLICA or ENABLE ALWAYS does not fire under 'replica'.
     with psycopg.connect(value) as conn, conn.cursor() as cur:
@@ -164,7 +164,7 @@ def test_list_dispute_cases_returns_only_the_session_customers_own_rows(dsn: str
 
 
 # -----------------------------------------------------------------------------
-# AC-E4-06: a foreign reference answers exactly like a missing one
+# A foreign reference answers exactly like a missing one
 # -----------------------------------------------------------------------------
 
 
@@ -172,8 +172,8 @@ def test_list_dispute_cases_returns_only_the_session_customers_own_rows(dsn: str
     # The exact-case reference is a real row belonging to customer B, so it exercises the
     # foreign-ownership branch (audited "probed"); the lookup itself is exact-match, so a
     # different case or surrounding spaces never matches any row and exercises the plain
-    # not-found branch instead (audited "viewed") — both branches answer None either way
-    # (AC-E4-06), which is what every variant here asserts; the audited action, asserted per
+    # not-found branch instead (audited "viewed") — both branches answer None either way,
+    # which is what every variant here asserts; the audited action, asserted per
     # variant, is what tells the two branches apart.
     ("ref", "audited_as"),
     [
@@ -216,7 +216,7 @@ def test_get_transaction_returns_the_session_customers_own_row(dsn: str) -> None
 def test_get_transaction_audits_a_foreign_reference_distinguishably_from_a_genuine_miss(
     dsn: str,
 ) -> None:
-    """Issue #73: the customer-visible result is identical either way; the trail is not."""
+    """The customer sees the same result either way; the audit trail tells the two apart."""
     sink = _RecordingSink(dsn)
     port = _port(dsn, sink, customer_id="CLI-A")
 
@@ -266,7 +266,7 @@ def test_get_case_returns_the_session_customers_own_row(dsn: str) -> None:
 def test_evaluate_dispute_answers_the_same_matchless_result_for_a_foreign_and_a_missing_reference(
     dsn: str,
 ) -> None:
-    """A normal matchless result (AC-E4-06): None either way, never a ToolFailure — reserved for
+    """A normal matchless result: None either way, never a ToolFailure — reserved for
     what the store itself could not do, not for a reference that simply does not resolve."""
     sink = _RecordingSink(dsn)
     port = _port(dsn, sink, customer_id="CLI-A")
@@ -300,7 +300,7 @@ def test_evaluate_dispute_decides_on_the_session_customers_own_transaction(dsn: 
 
 @pytest.mark.integration
 def test_evaluate_dispute_routes_a_seeded_repeat_complainer_to_escalation(dsn: str) -> None:
-    """AC-E4-43: a customer the seed marks as a repeat complainer must actually route to
+    """A customer the seed marks as a repeat complainer must actually route to
     ``escalate_repeat_complainer`` through this port, not just at the seed's own selection step —
     the same transaction evaluates as eligible for a customer without the flag (the sibling test
     just above)."""
@@ -377,8 +377,8 @@ def _insert_transaction_with_merchant(dsn: str, transaction_id: str, merchant_na
 
 @pytest.mark.integration
 def test_a_merchant_name_over_the_contracts_bound_is_truncated_not_a_crash(dsn: str) -> None:
-    """A real transaction can carry a merchant_name up to 150 characters (migration 0001's own
-    column width), wider than the contract's 80-character bound; reading it back must not raise."""
+    """A real transaction can carry a merchant_name up to 150 characters (the column's own
+    width), wider than the contract's 80-character bound; reading it back must not raise."""
     overlong = "A" * 150
     _insert_transaction_with_merchant(dsn, "TRX-A-LONG", overlong)
     port = _port(dsn, _RecordingSink(dsn), customer_id="CLI-A")
@@ -407,7 +407,7 @@ def test_a_truncation_logs_a_warning_naming_only_the_lengths(
     assert len(warnings) == 1
     assert "original_length=150" in warnings[0].message
     assert "kept_length=80" in warnings[0].message
-    assert "request_id=" in warnings[0].message  # SECURITY.md: every operational line carries one
+    assert "request_id=" in warnings[0].message  # every operational line carries one
     assert overlong not in warnings[0].message
 
 
