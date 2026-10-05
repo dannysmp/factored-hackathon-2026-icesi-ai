@@ -162,6 +162,12 @@ describe('the message catalogs', () => {
     expect(english).not.toMatch(/\bpersonas?\b/i)
   })
 
+  it('headlines the sign-in card with the task, in each language', () => {
+    expect(CATALOGS.es['signin.heading']).toBe('Elija un perfil para entrar')
+    expect(CATALOGS.pt['signin.heading']).toBe('Escolha um perfil para entrar')
+    expect(CATALOGS.en['signin.heading']).toBe('Choose a profile to sign in')
+  })
+
   it('keeps Spanish in the formal register, with no informal address', () => {
     const spanish = asRecords(CATALOGS).es
     expect(Object.keys(spanish ?? {}).length).toBeGreaterThan(0)
