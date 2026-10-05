@@ -120,7 +120,7 @@ part is for sign-ins, typing, replies and console navigation.
 ## Notes for the recording
 
 - No secret value, access code, administration screen, key or unmasked identifier may appear on
-  screen. A person watches the full recording before delivery, as the release checklist requires.
+  screen. A person watches the full recording before it is shared, as the release checklist requires.
 - The system's replies are shown on screen as the deployed system writes them.
 - The fixture conversations in `docs/demo-scripts.md` cover each path in more than one language
   for a longer cut.

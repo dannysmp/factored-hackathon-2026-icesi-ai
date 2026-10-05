@@ -89,4 +89,4 @@ Every requirement is checked with a link to its evidence.
 |---|---|---|
 | Everything above is verified before the freeze | This checklist with every row checked and its evidence linked. Stated limitation: the rows above that are not ticked each carry their reason. | [ ] |
 | Nothing new is added after the freeze | The commit history after the freeze. Stated limitation: it applies after the freeze, which has not taken place at this commit. | [ ] |
-| The release message carries the repository link, the deployed link, the slides and the video | The message as sent. Stated limitation: [the delivery message](delivery-message.md) is a template; the message as sent does not exist yet. | [ ] |
+| Each evaluator and tester receives the repository link, the deployed link, the slides, the video and an access code, issued directly and never stored in the repository | The messages as sent. Stated limitation: they do not exist yet. | [ ] |

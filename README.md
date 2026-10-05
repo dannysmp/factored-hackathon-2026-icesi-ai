@@ -18,8 +18,8 @@ customer reads.
 ## Try it
 
 The system is deployed at **https://184-195-142-149.sslip.io**. It is a demonstration with
-simulated data: pick a profile on the sign-in page and enter its access code. The access codes are
-not in this repository; they come separately with the delivery.
+simulated data: pick a profile on the sign-in page and enter its access code. Access codes are
+issued directly to each evaluator or tester, and never stored in this repository.
 
 | Profile | Language | What it shows |
 |---|---|---|
@@ -143,7 +143,7 @@ allowed list in `app/config.py`. Card-shaped digit runs and document-number shap
 | `evals/` | Golden set, adversarial cases, evaluation harness and judge rubric |
 | `web/` | React customer chat and human-agent console (a read-only viewer of the handoff queue) |
 | `infra/` | AWS provisioning and deployment scripts, the reverse-proxy configuration and the deployment runbook; the pipeline itself is `.github/workflows/deploy.yml` |
-| `docs/` | Limitations, the security checklist, the release checklist, the demonstration scripts, the video script, the slide content and the delivery message |
+| `docs/` | Limitations, the security checklist, the release checklist, the demonstration scripts, the video script and the slide content |
 | `reports/` | Generated reports (data profile, analyses, operational seed, evaluation results) |
 | `Dockerfile`, `docker-compose*.yml` | The backend image, the local Postgres serving store, and the deployed stack composed on top of it |
 | `scripts/` | Repository tooling, such as the secret-scan self-test |
@@ -454,7 +454,7 @@ Every secret, including the model key and the demonstration access codes, lives 
 Manager Parameter Store under `/transaction-disputes/prod/` and is read by the host with its own
 role. The data provider's credentials exist only in a developer's local AWS profile. What each
 script creates, and the one-time prerequisites, are in [`infra/README.md`](infra/README.md); the
-order of the steps, the checks after each and how to read the codes back for a release message are
+order of the steps, the checks after each and how to read the codes back to issue them to evaluators and testers are
 in [`infra/deployment-runbook.md`](infra/deployment-runbook.md).
 
 ## Quality and security
