@@ -49,12 +49,14 @@ from dataclasses import dataclass  # Immutable calendar and its origin
 from datetime import UTC, date, datetime, timedelta, timezone  # Dates, real clock, fixed zone
 from enum import StrEnum  # Closed set of where the reference date came from
 
+# The bank's operating zone, America/Bogota: a fixed UTC-5 offset.
 BANK_ZONE = timezone(timedelta(hours=-5))
+# Setting value that selects the real current date in the bank zone.
 SYSTEM_KEYWORD = "system"
 
 
 class DateOrigin(StrEnum):
-    """Where the domain date came from."""
+    """Where the domain date came from: an explicit setting, the loaded seed or the real date."""
 
     SETTING = "setting"
     SEED = "seed"
@@ -67,14 +69,18 @@ class DomainCalendarError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class DomainCalendar:
-    """The resolved reference date and where it came from."""
+    """The resolved reference date and where it came from.
+
+    Immutable. ``reference_date`` is the date policy decisions and customer-visible dates treat as
+    "today"; ``origin`` records which source supplied it.
+    """
 
     reference_date: date
     origin: DateOrigin
 
 
 def utc_now() -> datetime:
-    """The current time in UTC; the production real-time source."""
+    """The current time in UTC; the production real-time source, replaced by tests."""
     return datetime.now(UTC)
 
 
@@ -86,6 +92,10 @@ def resolve_domain_calendar(
 ) -> DomainCalendar:
     """Resolve the domain date: an explicit setting, then the seed, then refusal.
 
+    A non-blank ``setting`` decides alone: the literal ``"system"`` (any case) gives the current
+    date in ``BANK_ZONE`` and an ISO date is used as written. A blank or missing setting falls
+    back to ``seed_date``.
+
     Parameters
     ----------
     setting : str | None
@@ -95,6 +105,11 @@ def resolve_domain_calendar(
         the seed has not been loaded or could not be read.
     now : Callable[[], datetime]
         Source of the real instant, for the ``"system"`` setting; tests inject their own.
+
+    Returns
+    -------
+    DomainCalendar
+        The reference date and the origin that supplied it.
 
     Raises
     ------

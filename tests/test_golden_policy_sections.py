@@ -20,12 +20,14 @@ from evals.golden.case_sheet import ALL_CASES
 
 
 def test_every_policy_answer_case_declares_a_section() -> None:
+    """Each golden case expecting a policy answer names the corpus section it should cite."""
     for case in ALL_CASES:
         if case.expected_intent is Intent.POLICY_ANSWER:
             assert case.expected_policy_section_id is not None, case.case_id
 
 
 def test_every_declared_section_resolves_in_its_own_language() -> None:
+    """A section a golden case declares exists in the corpus of that case's language."""
     section_ids = {lang: {chunk.section_id for chunk in load_chunks(lang)} for lang in LANGUAGES}
     for case in ALL_CASES:
         if case.expected_policy_section_id is None:
@@ -35,6 +37,7 @@ def test_every_declared_section_resolves_in_its_own_language() -> None:
 
 @pytest.mark.parametrize("lang", list(LANGUAGES))
 def test_every_corpus_section_id_is_the_same_across_languages(lang: Lang) -> None:
+    """Every language's corpus carries exactly the Spanish corpus's section identifiers."""
     # The corpus generator's own invariant (app.retrieval.corpus_index's docstring): the section
     # identifier and order are the same in every language, so a section declared against one
     # language's corpus is meaningful read against any of the others too.
