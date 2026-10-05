@@ -60,9 +60,10 @@ export function QueueScreen({
 
   // Distinct, non-overlapping treatments: the initial load, an empty queue, and the
   // filters-plus-table view. In that view the trigger tabs stay while `QueueTable` shows its own
-  // "nothing for this filter" message. A queue that comes back empty, including one for a language
-  // filter with no matches, takes the empty treatment and has no filters. `showUpdating`, below,
-  // adds a further treatment when a filter refetch is in flight over data already on screen.
+  // "nothing for this filter" message. A filtered result with no matches stays in that view so the
+  // filter can be undone; only an unfiltered empty queue takes the empty treatment and has no
+  // filters. `showUpdating`, below, adds a further treatment when a filter refetch is in flight
+  // over data already on screen.
   const showLoading = queue.status === 'loading' && queue.referenceDate === null
   // Only a queue with no language filter applied is truly empty: with a filter on, zero matches
   // is a narrower result the agent must be able to undo, so the filters stay on screen.
