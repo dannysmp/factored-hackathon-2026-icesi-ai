@@ -37,7 +37,7 @@ Design Principles
   raised rather than swallowed): unlike a malformed result, it is not the customer's own
   ambiguity, so it must not be treated as one.
 - The masking serializer is the only path text takes to leave the process: this class never builds
-  the user message from anything but ``redact_pan(text).masked``.
+  the user message from anything but the text after ``redact_pan`` and ``redact_document_numbers``.
 - Temperature 0: this is structured extraction, not open-ended writing.
 
 Runtime Contract
@@ -91,7 +91,10 @@ from app.llm.client import (  # The port
     LlmUnavailable,
     ToolSpec,
 )
-from app.llm.masking import redact_pan  # The only egress path for the customer's own text
+from app.llm.masking import (  # The only egress path for the customer's own text
+    redact_document_numbers,
+    redact_pan,
+)
 from app.llm.prompts import PromptTemplate, load_prompt  # Versioned prompt loading and filling
 from contracts.service_v1.envelope import LANGUAGES, Lang  # Closed set of languages
 from contracts.service_v1.nlu import (  # The typed result and its vocabulary
@@ -522,7 +525,7 @@ class LlmNlu:
         if not text.strip():
             return NluResult.unusable(), None
 
-        masked = redact_pan(text).masked
+        masked = redact_document_numbers(redact_pan(text).masked).masked
         user_text = self._prompt.render_task(
             language_hint=language_hint or "unknown", message=masked
         )

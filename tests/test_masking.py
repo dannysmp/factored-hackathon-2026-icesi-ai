@@ -23,8 +23,10 @@ import pytest
 from app.llm.masking import (
     _MAX_PAN_DIGITS,
     _MIN_PAN_DIGITS,
+    DOCUMENT_PLACEHOLDER,
     PLACEHOLDER,
     _longest_digit_run,
+    redact_document_numbers,
     redact_pan,
     safe_hex_suffix,
 )
@@ -370,3 +372,61 @@ def test_request_ids_generated_at_scale_never_self_redact() -> None:
     for _ in range(20_000):
         request_id = f"req_{safe_hex_suffix(nbytes=8)}"
         assert not redact_pan(request_id).found
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "1094921834",
+        "12345678",
+        "1234567",
+        "123.456.789-09",
+        "12.345.678/0001-95",
+        "11987654321",
+    ],
+)
+def test_a_document_number_shape_is_redacted(text: str) -> None:
+    result = redact_document_numbers(f"Mi documento es {text}, gracias")
+
+    assert result.found
+    assert result.masked == f"Mi documento es {DOCUMENT_PLACEHOLDER}, gracias"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "$27.556.276,44",
+        "$4.593.557,41",
+        "1,475,202.64",
+        "$7.548.781,13",
+        "250.000",
+        "1.000.000",
+        "123456",
+        "el 12 de junio de 2026",
+        "tarjeta terminada en 4321",
+        "",
+    ],
+)
+def test_an_amount_with_separators_or_a_short_number_is_left_alone(text: str) -> None:
+    result = redact_document_numbers(text)
+
+    assert not result.found
+    assert result.masked == text
+
+
+def test_two_document_numbers_and_the_text_between_them_are_handled_independently() -> None:
+    result = redact_document_numbers("1094921834 y 123.456.789-09 por 250.000 pesos")
+
+    assert result.masked == f"{DOCUMENT_PLACEHOLDER} y {DOCUMENT_PLACEHOLDER} por 250.000 pesos"
+
+
+def test_a_dotted_identity_number_has_the_shape_of_an_amount_and_is_not_detected() -> None:
+    assert not redact_document_numbers("1.094.921.834").found
+
+
+def test_an_unbroken_amount_of_seven_digits_is_redacted_like_an_identifier() -> None:
+    assert redact_document_numbers("1250000 pesos").masked == f"{DOCUMENT_PLACEHOLDER} pesos"
+
+
+def test_the_card_detector_alone_leaves_a_document_number_for_the_document_rule() -> None:
+    assert not redact_pan("1094921834").found
