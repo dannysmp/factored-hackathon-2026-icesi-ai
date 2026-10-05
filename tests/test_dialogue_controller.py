@@ -420,6 +420,8 @@ def test_matches_hint_ignores_case_in_an_accented_name_typed_with_its_accent() -
         ("SAO PAULO", "são paulo"),
         ("Pão de Açúcar", "pao de acucar"),
         ("Señor Taco", "senor"),
+        ("Café", " Café "),
+        ("Café", "Café "),
     ],
 )
 def test_matches_hint_ignores_accents_whichever_side_carries_them(stored: str, typed: str) -> None:
@@ -2945,6 +2947,21 @@ def _selected_after_naming_then_naming_again(
         first, second, policy=policy, retriever=retriever, port=port
     )
     return selected, reply.reply
+
+
+@pytest.mark.parametrize("typed", ["\u0301", " ", "\u0301 \u0301"])
+def test_a_merchant_that_names_nothing_keeps_the_presented_transaction(
+    typed: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """A blank merchant is no description at all, so the transaction on offer stays selected."""
+    selected, _reply = _selected_after_naming_then_naming_again(
+        TransactionHint(merchant="Amazon"),
+        TransactionHint(merchant=typed),
+        policy=policy,
+        retriever=retriever,
+    )
+
+    assert selected == "TX-1"
 
 
 def test_naming_a_different_merchant_while_one_is_presented_presents_that_one(
