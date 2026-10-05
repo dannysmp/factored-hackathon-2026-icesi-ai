@@ -16,6 +16,7 @@ from pathlib import Path  # Its location, next to the experiment log
 
 # Local modules
 from app.domain.policy import DEFAULT_POLICY_PATH, load_policy
+from models.calibration import _LEAKAGE_REVIEW  # The wording the training code writes into the card
 
 MODEL_CARD_PATH = Path(__file__).resolve().parents[1] / "models" / "model_card.json"
 
@@ -58,3 +59,12 @@ def test_a_card_with_a_threshold_means_the_policy_threshold_equals_it() -> None:
         policy = load_policy(DEFAULT_POLICY_PATH)
         assert policy.routing.risk_score_threshold == threshold["threshold"]
         assert policy.routing.risk_routing_enabled == card["routing_enabled"]
+
+
+def test_the_card_states_the_leakage_review_the_training_code_writes() -> None:
+    """The committed card carries the code's own wording, with the two disclosed exceptions."""
+    review = _shipped_card()["leakage_review"]
+    assert review == _LEAKAGE_REVIEW
+    assert isinstance(review, str)
+    assert "not strictly point-in-time" in review
+    assert "country" in review and "rate" in review
