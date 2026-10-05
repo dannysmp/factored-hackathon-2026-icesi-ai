@@ -6,7 +6,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { DEMO_TICKET_DETAILS } from '../fixtures'
-import { formatDate, formatMoney as money, formatShare as share } from '../format'
+import { formatDate, formatDateTime, formatMoney as money, formatShare as share } from '../format'
 import { REQUEST_SUMMARY_LABELS } from '../labels'
 import { PacketPanel } from './PacketPanel'
 
@@ -267,6 +267,19 @@ describe('PacketPanel', () => {
     )
     expect(screen.queryByText('Solo en español')).not.toBeInTheDocument()
     expect(screen.getByText('—', { selector: 'li' })).toBeInTheDocument()
+  })
+
+  it('shows the moment of the handoff in UTC, and a dash when the moment cannot be read', () => {
+    const { rerender } = render(<PacketPanel packet={FIRST.packet} />)
+
+    expect(FIRST.packet.created_at).toBe('2026-06-18T14:05:00Z')
+    expect(screen.getByText('Registrado').nextElementSibling).toHaveTextContent(
+      formatDateTime(FIRST.packet.created_at).replaceAll(' ', ' '),
+    )
+    expect(screen.getByText('Registrado').nextElementSibling).toHaveTextContent('14:05 UTC')
+
+    rerender(<PacketPanel packet={{ ...FIRST.packet, created_at: 'not a moment' }} />)
+    expect(screen.getByText('Registrado').nextElementSibling).toHaveTextContent('—')
   })
 
   it('names the case already filed for the request, and shows no such row when there is none', () => {
