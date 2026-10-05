@@ -31,7 +31,10 @@ The ordered procedure for a maintainer standing the system up in an empty accoun
 `.github/workflows/deploy.yml`, triggered manually (`workflow_dispatch`) against `main`: builds
 both images, scans each with Trivy (fails the run on a fixable HIGH or CRITICAL finding), pushes
 to ECR, runs `05-deploy.sh` (over SSM, no SSH), then `06-smoke-test.sh`, then
-`12-hardening-check.sh`. The `teardown_after` input (default on) runs `07-teardown.sh` at the end
+`12-hardening-check.sh`. The tag is the commit and the repositories' tags are immutable, so an
+image whose tag is already in its repository, because that commit was deployed before, is not
+built, scanned or pushed again: it passed its scan when it was first pushed and is deployed as it
+is, which is what lets a commit be redeployed. The `teardown_after` input (default on) runs `07-teardown.sh` at the end
 — a run gated only by this input and whether the run was manually cancelled, never by whether an
 earlier step failed, since a failed deploy, smoke test or hardening check is exactly when a host
 must not be left running unattended; turn it off for a deployment meant to persist.
