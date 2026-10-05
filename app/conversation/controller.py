@@ -425,8 +425,67 @@ _GENERIC_MERCHANTS = frozenset(
     }
 )
 
-# Words that may open a generic merchant description ("una tienda en línea", "the store").
-_LEADING_ARTICLES = frozenset({"un", "una", "el", "la", "o", "a", "um", "uma", "the", "an", "my"})
+# Articles, possessives and demonstratives that may open a generic merchant description ("una
+# tienda en línea", "su servicio", "this store").
+_LEADING_DETERMINERS = frozenset(
+    {
+        # Articles
+        "un",
+        "una",
+        "unos",
+        "unas",
+        "el",
+        "la",
+        "los",
+        "las",
+        "o",
+        "a",
+        "os",
+        "as",
+        "um",
+        "uma",
+        "uns",
+        "umas",
+        "the",
+        "an",
+        "some",
+        # Possessives and demonstratives
+        "mi",
+        "mis",
+        "su",
+        "sus",
+        "nuestro",
+        "nuestra",
+        "este",
+        "esta",
+        "estos",
+        "estas",
+        "ese",
+        "esa",
+        "esos",
+        "esas",
+        "meu",
+        "minha",
+        "seu",
+        "sua",
+        "nosso",
+        "nossa",
+        "esse",
+        "essa",
+        "my",
+        "your",
+        "his",
+        "her",
+        "its",
+        "our",
+        "their",
+        "this",
+        "that",
+        "these",
+        "those",
+        "one",
+    }
+)
 
 
 def _names_no_merchant(merchant: str) -> bool:
@@ -435,7 +494,7 @@ def _names_no_merchant(merchant: str) -> bool:
     if not folded.strip():
         return True
     words = "".join(ch if ch.isalnum() else " " for ch in folded).split()
-    while words and words[0] in _LEADING_ARTICLES:
+    while words and words[0] in _LEADING_DETERMINERS:
         words.pop(0)
     return bool(words) and " ".join(words) in _GENERIC_MERCHANTS
 
