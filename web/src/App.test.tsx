@@ -58,6 +58,10 @@ function stubTheWholeFlow(options: { personaLanguage?: string; turnLang?: string
   )
 }
 
+function headerWidthClass(): string {
+  return screen.getByRole('banner').querySelector(':scope > div')?.className ?? ''
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -162,6 +166,8 @@ describe('App', () => {
     )
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(headerWidthClass()).toMatch(/form/)
+    expect(headerWidthClass()).not.toMatch(/narrow|wide/)
   })
 
   it.each([
@@ -204,6 +210,8 @@ describe('App', () => {
     )
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(headerWidthClass()).toMatch(/narrow/)
+    expect(headerWidthClass()).not.toMatch(/form|wide/)
   })
 
   it('has no automatically detectable accessibility violations at the sign-in step', async () => {
