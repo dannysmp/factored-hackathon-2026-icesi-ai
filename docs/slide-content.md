@@ -74,7 +74,7 @@ This document states the content of each slide; it is not the slide file itself.
 - The full run against the complete 135-case golden set has executed, scoring all three
   systems against the live model; its safe/unsafe outcome classification is read directly off each
   run's own recorded outcome. The judge is not validated on any dimension: its agreement with the
-  two raters is 60% and 28% on grounding, 62% and 60% on language quality, and 17% and 100% over
+  two raters is 62% and 30% on grounding, 64% and 62% on language quality, and 17% and 100% over
   six cases on clarification, against an 80% bar. The evaluation report
   (`reports/evaluation.md`) therefore withholds the judge's quality scores and shows the raters'
   means from the validation sample in their place; only the proposed system's run is judge-scored,
