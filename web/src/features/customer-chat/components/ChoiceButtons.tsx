@@ -1,4 +1,5 @@
 import type { JSX } from 'react'
+import { Button } from '../../../components/ui/Button'
 import type { Choice } from '../contracts'
 import styles from './ChoiceButtons.module.css'
 
@@ -23,8 +24,7 @@ export function ChoiceButtons({
     <ul className={styles.list}>
       {choices.map((choice) => (
         <li key={choice.number}>
-          <button
-            type="button"
+          <Button
             className={styles.choice}
             disabled={disabled}
             onClick={() => {
@@ -32,7 +32,7 @@ export function ChoiceButtons({
             }}
           >
             {choice.number}. {choice.label}
-          </button>
+          </Button>
         </li>
       ))}
     </ul>

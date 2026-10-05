@@ -29,6 +29,10 @@
   --color-bg: light-dark(#ffffff, #0f1115);
   --color-bg-subtle: light-dark(#f6f7f9, #171a20);
   --color-border: light-dark(#d7dbe0, #2c313a);
+  /* The boundary of an interactive control (input, select, outlined button). Dividers and card
+     edges use the lighter --color-border; a control's own edge must reach 3:1 against the surface
+     it sits on (WCAG 1.4.11), which the lighter one does not. */
+  --color-border-control: light-dark(#767d88, #6b7280);
   --color-text: light-dark(#14161a, #eef0f3);
   --color-text-subtle: light-dark(#565d68, #a7adb8);
 
@@ -44,6 +48,11 @@
   --color-error-bg: light-dark(#fbebe9, #3a1512);
   --color-info: light-dark(#1c5fd6, #6ea1ff);
   --color-info-bg: light-dark(#e9f1ff, #0f1f3a);
+
+  /* A control that cannot be used right now: a dedicated, still-legible pair rather than the
+     active colors faded with opacity, which washed accent buttons out to near-invisible. */
+  --color-disabled-bg: light-dark(#e6e9ed, #232831);
+  --color-disabled-text: light-dark(#5f6671, #8f95a1);
 
   /* ---------------------------------------------------------------------------------------
    * Typography: one system font stack (matching the previous global default so no font is
@@ -84,6 +93,9 @@
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
 
+  --size-touch-target: 2.75rem; /* 44px: the comfortable minimum for a tap target */
+  --size-icon: 1.25rem; /* 20px */
+
   --border-width-thin: 1px;
   --border-width-emphasis: 2px;
 
@@ -102,6 +114,21 @@
    * --------------------------------------------------------------------------------------- */
   --motion-duration-fast: 120ms;
   --motion-easing: ease;
+}
+
+/**
+ * A person who asks their system to reduce motion gets none: transitions and animations collapse
+ * to an instant state change, which is all they were ever meant to communicate.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /**
