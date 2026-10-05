@@ -50,7 +50,7 @@ export interface Messages {
   'signin.unreachable': string
   'signin.unavailable': string
   'signin.intro': string
-  'signin.productName': string
+  'signin.heading': string
   'signin.productTagline': string
   'signin.agentTagline': string
   'signin.languageSwitcherLabel': string

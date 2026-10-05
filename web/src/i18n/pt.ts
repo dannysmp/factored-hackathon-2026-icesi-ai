@@ -46,7 +46,7 @@ export const pt: Messages = {
   'signin.unreachable': 'Não foi possível carregar o acesso de demonstração.',
   'signin.unavailable': 'A demonstração não está disponível no momento.',
   'signin.intro': 'Esta é uma demonstração. Entre com um dos perfis abaixo.',
-  'signin.productName': 'Contestação de transações',
+  'signin.heading': 'Escolha um perfil para entrar',
   'signin.productTagline': 'Informe um problema com uma transação e receba ajuda no seu idioma.',
   'signin.agentTagline': 'Analise e resolva os casos que o assistente encaminha a uma pessoa.',
   'signin.languageSwitcherLabel': 'Idioma',
