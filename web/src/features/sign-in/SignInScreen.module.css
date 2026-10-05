@@ -156,6 +156,25 @@
   cursor: pointer;
 }
 
+/* Forced colors strip the selected card's tint and shadow, and the native radio that carries the
+   state is invisible, so the selection is drawn with a heavier border in the system highlight
+   colour and a filled avatar. The padding gives back the width the heavier border takes. */
+@media (forced-colors: active) {
+  .personaSelected {
+    --extra-border: calc(var(--border-width-emphasis) * 2 - var(--border-width-thin));
+
+    padding: calc(var(--space-3) - var(--extra-border)) calc(var(--space-4) - var(--extra-border));
+    border-width: calc(var(--border-width-thin) + var(--extra-border));
+    border-color: Highlight;
+  }
+
+  .personaSelected .avatar {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
 .persona:has(.personaRadio:focus-visible) {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
