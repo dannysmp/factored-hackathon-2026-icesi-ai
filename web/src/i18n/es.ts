@@ -56,7 +56,7 @@ export const es: Messages = {
     'Una disputa de monto alto: se deriva a una persona para su revisión.',
   'signin.persona.mariana.case':
     'Reclamos reiterados en su historial: una persona revisa la solicitud.',
-  'signin.persona.agent-beatriz.case': 'Revisa casos derivados, en portugués y en español.',
+  'signin.persona.agent-beatriz.case': 'Atiende los casos derivados, en portugués y en español.',
   'signin.persona.agent-diego.case': 'Especialista en casos de fraude, en español.',
   'signin.accessCodeShow': 'Mostrar',
   'signin.accessCodeHide': 'Ocultar',

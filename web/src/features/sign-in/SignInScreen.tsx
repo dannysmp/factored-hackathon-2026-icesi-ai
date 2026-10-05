@@ -301,7 +301,7 @@ export function SignInScreen({
                 </span>
                 <span className={styles.personaText}>
                   <span className={styles.personaHeader}>
-                    <span className={styles.personaName}>{persona.display_name}</span>
+                    <span className={styles.personaName}>{persona.display_name}</span>{' '}
                     {isShownLanguage(persona.language) && (
                       <span className={styles.personaLanguage}>
                         {t(`signin.personaLanguage.${persona.language}`)}

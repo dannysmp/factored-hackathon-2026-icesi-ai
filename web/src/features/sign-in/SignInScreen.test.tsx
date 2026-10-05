@@ -28,8 +28,8 @@ describe('SignInScreen', () => {
     expect(
       await screen.findByRole('group', { name: es['signin.personaGroupLabel'] }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Ana — Español' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Emma — English' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /^Ana\b/ })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /^Emma\b/ })).toBeInTheDocument()
   })
 
   it('shows a retryable error when the directory cannot be fetched, in the default language', async () => {
@@ -141,7 +141,7 @@ describe('SignInScreen', () => {
     const user = userEvent.setup()
     render(<SignInScreen audience="agent" onSignedIn={onSignedIn} />)
 
-    expect(await screen.findByRole('option', { name: 'Diego — Português' })).toBeInTheDocument()
+    expect(await screen.findByRole('radio', { name: /^Diego\b/ })).toBeInTheDocument()
     expect(fetchCustomerSpy).not.toHaveBeenCalled()
 
     await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')

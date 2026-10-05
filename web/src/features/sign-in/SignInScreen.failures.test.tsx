@@ -173,8 +173,8 @@ describe('SignInScreen form', () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(PERSONAS)
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
-    expect(await screen.findByRole('option', { name: 'Ana — Español' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'João — Português' })).toBeInTheDocument()
+    expect(await screen.findByRole('radio', { name: /^Ana\s+Español\b/ })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /^João\s+Portugués\b/ })).toBeInTheDocument()
   })
 
   it('shows a persona whose language is unknown by name alone', async () => {
@@ -183,7 +183,7 @@ describe('SignInScreen form', () => {
     ])
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
-    expect(await screen.findByRole('option', { name: 'Zora' })).toBeInTheDocument()
+    expect(await screen.findByRole('radio', { name: 'Zora' })).toBeInTheDocument()
   })
 
   it('explains why the button is off until an access code is typed', async () => {
@@ -228,9 +228,9 @@ describe('SignInScreen form', () => {
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
     await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
-    expect(screen.getByRole('region', { name: es['signin.regionLabel'] })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: es['signin.productName'] })).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { level: 2, name: es['signin.regionLabel'] }),
+      screen.getByRole('heading', { level: 2, name: es['signin.productName'] }),
     ).toBeInTheDocument()
   })
 

@@ -26,9 +26,14 @@ describe('SignInScreen demonstration notice', () => {
     render(<SignInScreen onSignedIn={vi.fn()} />)
 
     expect(await screen.findByText(es['signin.intro'])).toBeInTheDocument()
-    // The only control that is a button is the sign-in submit; nothing closes the notice.
-    expect(screen.getAllByRole('button')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: es['signin.submit'] })).toBeInTheDocument()
+    // None of the buttons closes the notice: they switch language, show the code and submit.
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Español',
+      'Português',
+      'English',
+      es['signin.accessCodeShow'],
+      es['signin.submit'],
+    ])
   })
 
   it.each([
@@ -63,13 +68,16 @@ describe('SignInScreen demonstration notice', () => {
     expect(screen.getByText(es['signin.intro'])).toBeInTheDocument()
   })
 
-  it('is shown on the agent console sign-in too, with its submit as the only button', async () => {
+  it('is shown on the agent console sign-in too, with no way to dismiss it', async () => {
     vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue([
       { slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' as const },
     ])
     render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
 
     expect(await screen.findByText(es['signin.intro'])).toBeInTheDocument()
-    expect(screen.getAllByRole('button')).toHaveLength(1)
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      es['signin.accessCodeShow'],
+      es['signin.submit'],
+    ])
   })
 })

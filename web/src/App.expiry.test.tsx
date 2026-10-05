@@ -112,8 +112,7 @@ describe('App when the session ends', () => {
     await waitFor(() => {
       expect(screen.getByText(es['app.sessionExpired']).closest('[role="status"]')).not.toBeNull()
     })
-    const picker = await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
-    expect(picker).toHaveValue('ana')
+    expect(await screen.findByRole('radio', { checked: true })).toHaveAttribute('value', 'ana')
     expect(screen.getByRole('button', { name: es['signin.submit'] })).toBeInTheDocument()
   })
 
