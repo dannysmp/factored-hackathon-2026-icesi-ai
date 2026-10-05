@@ -4,13 +4,13 @@ import type { Messages } from './messages'
 
 export const pt: Messages = {
   'app.title': 'Contestação de transações',
-  'app.signOut': 'Encerrar sessão',
+  'app.signOut': 'Sair',
   'app.sessionExpired': 'Sua sessão expirou. Entre novamente.',
   'common.retry': 'Tentar novamente',
   'common.error.generic': 'Ocorreu um erro.',
   'failure.offline': 'Sem conexão com o serviço. Verifique sua internet e tente novamente.',
   'failure.timeout': 'A resposta demorou demais. Tente novamente.',
-  'failure.rateLimited': 'Foram feitas tentativas demais. Aguarde um minuto e tente novamente.',
+  'failure.rateLimited': 'Muitas tentativas seguidas. Aguarde um minuto e tente novamente.',
   'failure.unavailable':
     'O serviço está indisponível no momento. Tente novamente em alguns minutos.',
   'chat.regionLabel': 'Conversa com o assistente',

@@ -31,6 +31,24 @@ describe('MessageList', () => {
     ).toBeInTheDocument()
   })
 
+  it.each([
+    ['es', 'Hola', 'Yo: Hola'],
+    ['pt', 'Olá', 'Eu: Olá'],
+  ] as const)(
+    'labels the customer\u2019s own message in the first person in %s',
+    (lang, text, label) => {
+      render(
+        <MessageList
+          messages={[{ id: 'a', from: 'customer', text }]}
+          lang={lang}
+          pending={false}
+        />,
+      )
+
+      expect(screen.getByRole('listitem')).toHaveTextContent(label)
+    },
+  )
+
   it('reads its copy from the catalog matching lang, not a hardcoded English string', () => {
     render(<MessageList messages={[]} lang="es" pending={false} />)
     expect(screen.getByText('Aún no hay mensajes.')).toBeInTheDocument()

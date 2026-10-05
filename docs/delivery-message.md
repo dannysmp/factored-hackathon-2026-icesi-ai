@@ -33,14 +33,14 @@ This is the delivery of the transaction-dispute intake system: a customer report
 
 **Signing in to the deployed system**
 
-The system is a demonstration, so it signs in with named personas rather than a bank identity. Each sign-in asks for a persona and an access code.
+The system is a demonstration, so it signs in with named profiles rather than a bank identity. Each sign-in asks for a profile and an access code.
 
 - Customer chat, at `<deployed link>`: the access code is `<customer access code>`.
 - Human-agent console, at `<console link>`: the access code is `<agent access code>`.
 
-The two codes are different and each opens only its own side. Customer personas, with the case each one shows:
+The two codes are different and each opens only its own side. Customer profiles, with the case each one shows:
 
-| Persona | Language | What the conversation demonstrates |
+| Profile | Language | What the conversation demonstrates |
 |---|---|---|
 | Ana | Spanish | A dispute the policy allows: the case is filed and read back |
 | João | Portuguese | A dispute the policy allows, in Portuguese |
@@ -48,12 +48,12 @@ The two codes are different and each opens only its own side. Customer personas,
 | Carlos | Spanish | A dispute the policy sends to a person, with a handoff packet |
 | Mariana | Portuguese | A customer with repeated complaints, which the policy routes to a person |
 
-Agent personas for the console are Beatriz (Portuguese and Spanish) and Diego (Spanish, fraud specialty). A case handed over as Carlos or Mariana appears in the console's queue; open it to see the packet the person receives.
+Agent profiles for the console are Beatriz (Portuguese and Spanish) and Diego (Spanish, fraud specialty). A case handed over as Carlos or Mariana appears in the console's queue; open it to see the packet the person receives.
 
 Things to know:
 
 - A customer session lasts 30 minutes and an agent session 60 minutes, then the sign-in is asked for again.
-- A persona is reserved for the full session length from the moment it signs in, even if the page is reloaded or the tab is closed, because the page keeps no sign-in once it is left. A reserved persona is refused with a generic message until its time runs out, so choose another persona or wait. Each address can hold five live sessions on each side, which is one per customer persona, so readers sharing a network may exhaust it.
+- A profile is reserved for the full session length from the moment it signs in, even if the page is reloaded or the tab is closed, because the page keeps no sign-in once it is left. A reserved profile is refused with a generic message until its time runs out, so choose another profile or wait. Each address can hold five live sessions on each side, which is one per customer profile, so readers sharing a network may exhaust it.
 - Several wrong access codes from the same address are temporarily refused, so copy the code rather than retyping it.
 - The accounts and transactions are synthetic data; nobody's real information is involved.
 - An access code is the only credential for a demonstration session, so please do not forward this message. It gates the demonstration only: the system's authentication and authorization are enforced whether or not a code is known.
@@ -67,6 +67,6 @@ Regards,
 Each of these is a check against the release checklist, and none needs a secret value on screen.
 
 - All four links open from a private browser window.
-- `curl -s -w '\n%{http_code}\n' https://<host>/v1/auth/demo-personas` answers `200` and lists personas of both audiences, as in step 5 of the runbook.
-- Each code has been tried once, with a different persona for each. That try reserves its persona for 30 minutes (customer) or 60 minutes (agent), so send the message after that time has passed, or keep readers off that persona.
+- `curl -s -w '\n%{http_code}\n' https://<host>/v1/auth/demo-personas` answers `200` and lists profiles of both audiences, as in step 5 of the runbook.
+- Each code has been tried once, with a different profile for each. That try reserves its profile for 30 minutes (customer) or 60 minutes (agent), so send the message after that time has passed, or keep readers off that profile.
 - The clipboard is cleared after each paste, and the message is the only place either code is written.

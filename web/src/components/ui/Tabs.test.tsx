@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { describe, expect, it } from 'vitest'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './Tabs'
+import tabsCss from './Tabs.css?raw'
 
 function renderTabs(): ReturnType<typeof render> {
   return render(
@@ -46,6 +47,12 @@ describe('Tabs', () => {
 
     expect(screen.getByRole('tab', { name: 'Fraud' })).toHaveFocus()
     expect(screen.getByText('Fraud tickets only')).toBeVisible()
+  })
+
+  it('marks a disabled tab with a strike-through so it differs from an inactive tab without colour', () => {
+    const rule = /\.tabs-trigger:disabled\s*\{([^}]*)\}/.exec(tabsCss)
+
+    expect(rule?.[1]).toMatch(/text-decoration:\s*line-through/)
   })
 
   it('never lands keyboard focus on a disabled tab', async () => {

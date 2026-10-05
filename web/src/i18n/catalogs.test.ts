@@ -13,6 +13,41 @@ function asRecords(catalogs: typeof CATALOGS): Record<string, Record<string, str
   return catalogs as unknown as Record<string, Record<string, string>>
 }
 
+const INFORMAL_WORDS = /(?<![\p{L}])(?:tú|tu|tus|te|tienes|puedes|quieres|necesitas)(?![\p{L}])/iu
+const INFORMAL_IMPERATIVES = new Set([
+  'escribe',
+  'ingresa',
+  'inicia',
+  'intenta',
+  'inténtalo',
+  'intentá',
+  'revisa',
+  'espera',
+  'selecciona',
+  'elige',
+  'confirma',
+  'vuelve',
+  'reintenta',
+  'usa',
+  'acepta',
+  'verifica',
+  'corrige',
+  'copia',
+])
+
+/** The informal-address findings in one text: second-person words, and sentences that open with a
+ *  tuteo or voseo imperative. A third-person verb inside a sentence is not flagged. */
+function informalSpanishAddress(text: string): string[] {
+  const found: string[] = []
+  const word = INFORMAL_WORDS.exec(text)
+  if (word !== null) found.push(word[0])
+  for (const sentence of text.split(/[.!?¿¡]\s*/u)) {
+    const first = sentence.trim().split(/\s+/u)[0]?.toLowerCase() ?? ''
+    if (INFORMAL_IMPERATIVES.has(first)) found.push(first)
+  }
+  return found
+}
+
 describe('the message catalogs', () => {
   it('define the same keys in all three languages, with no blank values', () => {
     expect(catalogParityProblems(asRecords(CATALOGS))).toEqual([])
@@ -35,16 +70,41 @@ describe('the message catalogs', () => {
     const portuguese = Object.values(CATALOGS.pt).join(' ')
     const english = Object.values(CATALOGS.en).join(' ')
 
-    expect(portuguese).not.toMatch(/login/i)
-    expect(english).not.toMatch(/persona/i)
+    expect(portuguese).not.toMatch(/\blogin\b/i)
+    expect(english).not.toMatch(/\bpersonas?\b/i)
   })
 
   it('keeps Spanish in the formal register, with no informal address', () => {
-    for (const text of Object.values(CATALOGS.es)) {
-      expect(text).not.toMatch(
-        /\b(tu|tus|tú|escribe|ingresa|inicia|intenta|inténtalo|revisa|espera)\b/i,
-      )
+    for (const text of Object.values<string>(CATALOGS.es)) {
+      expect(informalSpanishAddress(text)).toEqual([])
     }
+  })
+
+  it('recognizes informal Spanish address and leaves the formal register alone', () => {
+    const informal = [
+      'Tú puedes volver',
+      'Si tú quieres, escribe',
+      'Tienes que esperar',
+      'Puedes reintentar',
+      'Selecciona un perfil',
+      'Elige un perfil',
+      'Confirma la acción',
+      'Te enviaremos un aviso',
+      'Intentá de nuevo',
+      'Revisa tu código',
+      'Espera un minuto. Vuelve a intentarlo',
+    ]
+    const formal = [
+      'La espera fue larga',
+      'El asistente inicia la conversación',
+      'Un agente revisa su caso',
+      'El sistema intenta de nuevo',
+      'Inicie sesión de nuevo.',
+      'Espere un minuto e inténtelo de nuevo.',
+    ]
+
+    for (const text of informal) expect(informalSpanishAddress(text)).not.toEqual([])
+    for (const text of formal) expect(informalSpanishAddress(text)).toEqual([])
   })
 
   it('flags a catalog missing a key another catalog defines', () => {
