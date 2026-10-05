@@ -554,8 +554,8 @@ _INCORRECT_OR_MISSING_DATA_CASES = (
         description=(
             "No exchange rate was available for this transaction; the disclosed amount is"
             " genuinely unknown and the policy engine's ESCALATE_AMOUNT_UNKNOWN routes it to"
-            " a person. Closes the evaluation plan's own requirement for at least one"
-            " escalate_amount_unknown case, not covered by evals.golden.human_required."
+            " a person. Covers the escalate_amount_unknown reason code, which"
+            " evals.golden.human_required does not."
         ),
     ),
     Case(

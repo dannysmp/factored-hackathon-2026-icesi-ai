@@ -178,7 +178,7 @@ def test_secret_never_appears_in_repr_or_str(monkeypatch: pytest.MonkeyPatch) ->
 def test_blank_key_counts_as_absent_and_require_fails(
     monkeypatch: pytest.MonkeyPatch, blank: str
 ) -> None:
-    """The template's empty key must not satisfy the E5 gate."""
+    """The template's empty key must not satisfy the requirement for a model key."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", blank)
 
     settings = load_settings(env_file=None)
@@ -475,7 +475,7 @@ def test_the_demo_broker_and_the_sandbox_login_are_mutually_exclusive(
 
 
 def test_the_demo_broker_can_be_enabled_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Unlike the sandbox login, the demo broker exists precisely for prod (ADR-18)."""
+    """Unlike the sandbox login, the demo broker exists precisely for prod."""
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
     monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "d" * 16)
@@ -512,7 +512,7 @@ def test_a_signing_key_with_few_different_characters_is_rejected(
 
 
 # -----------------------------------------------------------------------------
-# Agent demonstration sign-in broker (ADR-17, ADR-18)
+# Agent demonstration sign-in broker
 # -----------------------------------------------------------------------------
 
 
@@ -538,8 +538,8 @@ def test_the_agent_demo_broker_and_the_sandbox_login_are_mutually_exclusive(
 def test_the_customer_and_agent_demo_brokers_may_both_be_enabled_together(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ADR-18 runs both together in the deployment; they are not mutually exclusive with each
-    other, only each with the sandbox login."""
+    """The deployment runs both together; they are not mutually exclusive with each other, only
+    each with the sandbox login."""
     monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
     monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "c" * 16)
     monkeypatch.setenv("DEMO_AGENT_SIGNIN_ENABLED", "true")
@@ -605,7 +605,8 @@ def test_a_blank_agent_signing_key_is_treated_as_absent(monkeypatch: pytest.Monk
 
 
 def test_the_two_access_codes_must_not_be_the_same_value(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A copy-paste SSM mistake must not silently defeat the two-broker separation (ADR-18)."""
+    """A copy-paste SSM mistake must not silently defeat the two-broker separation (a leaked
+    customer code would otherwise open the console)."""
     monkeypatch.setenv("DEMO_SIGNIN_ENABLED", "true")
     monkeypatch.setenv("DEMO_SIGNIN_ACCESS_CODE", "shared-code-0123456789")
     monkeypatch.setenv("DEMO_AGENT_SIGNIN_ENABLED", "true")

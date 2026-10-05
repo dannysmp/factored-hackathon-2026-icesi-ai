@@ -68,18 +68,17 @@ This document states the content of each slide; it is not the slide file itself.
 - **The harness runs a case, not only defines and scores one.** Every piece a full report
   needs exists: the scoring formulas, an independent oracle that recomputes the policy decision for
   a stored case, the runner, both baseline systems (B0, B1), the failure injector, and the LLM
-  judge with its agreement-computation code — tested today against a disclosed synthetic
-  placeholder sample, pending the real human-rated sample two raters return (due 2026-10-04). A
-  16-case adversarial subset runs on every change and blocks merge on any case turning unsafe; the
-  full 32-case adversarial set can also run outside CI, against real, loaded data.
+  judge with its agreement-computation code, compared against 50 cases that two human raters
+  scored. A 16-case adversarial subset runs on every change and blocks merge on any case turning
+  unsafe; the full 32-case adversarial set can also run outside CI, against real, loaded data.
 - The full run against the complete 135-case golden set has executed, scoring all three
   systems against the live model; its safe/unsafe outcome classification is read directly off each
-  run's own recorded outcome and is final, independent of the human-rated sample still due. The
-  judge's own quality and correctness scores stay provisional until that sample lands. The
-  evaluation report (`reports/evaluation.md`) records the 135-case workload and the headline
-  metrics for all three systems; its judge-validation section reports no agreement rate until the
-  real sample is scored, and this slide states that plainly rather than showing a synthetic
-  sample's numbers.
+  run's own recorded outcome. The judge is not validated on any dimension: its agreement with the
+  two raters is 60% and 28% on grounding, 62% and 60% on language quality, and 17% and 100% over
+  six cases on clarification, against an 80% bar. The evaluation report
+  (`reports/evaluation.md`) therefore withholds the judge's quality scores and shows the raters'
+  means beside the headline metrics for all three systems. The figures describe the commit the
+  report names, which predates later behaviour fixes.
 - Independent of the harness, the deterministic checks run in the test suite this release ships
   with: authorization tests, the confirmation and verification tests, and the reason-code coverage
   of the policy engine itself.

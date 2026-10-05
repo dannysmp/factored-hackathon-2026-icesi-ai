@@ -94,8 +94,8 @@ def test_the_injected_failure_column_states_retryable() -> None:
 
 
 def test_all_cases_is_ordered_by_category_declaration_not_delivery() -> None:
-    # CaseCategory's own declared order is the mix table's row order; a case's position in
-    # ALL_CASES must follow that, not whichever order category-group pull requests landed in.
+    # CaseCategory's own declared order is the order of the category rows; a case's position in
+    # ALL_CASES must follow that, not the order its category group was added in.
     order = [category for category in CaseCategory if category in CATEGORY_CASES]
     seen_order = []
     for case in ALL_CASES:

@@ -1,6 +1,6 @@
 """
-H4 Case Sheet Export Tests
-============================
+Human Judge-Validation Sample Export Tests
+==========================================
 
 Component: ``evals.golden.h4_export``. Hermetic and pure throughout: no store, no clock, no
 network call, no dependency on the real golden set beyond one test that locks in its real

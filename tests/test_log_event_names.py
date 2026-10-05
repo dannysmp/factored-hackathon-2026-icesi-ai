@@ -5,12 +5,11 @@ Log Event Name Fitness Test
 Component: the codebase under ``app/``. Hermetic: an AST scan of source text, no interpreter
 spawned and no import executed.
 
-Protects "stable event names" (``plan/docs/architecture.md``'s Observability and reliability
-section): ``app.observability.logging``'s JSON formatter takes the first whitespace-delimited
-token of a log message as its stable ``event`` field. This test is what turns that from an
-observed convention into a constructed guarantee — a future call site that starts its message
-with a sentence instead of a snake_case event name fails here, not silently in a log line nobody
-reads.
+Protects the stable event names the logs promise: ``app.observability.logging``'s JSON
+formatter takes the first whitespace-delimited token of a log message as its stable ``event``
+field. This test is what turns that from an observed convention into a constructed guarantee — a
+future call site that starts its message with a sentence instead of a snake_case event name fails
+here, not silently in a log line nobody reads.
 
 A handful of call sites (``app/persistence/reads.py``, ``dialogue_store.py``,
 ``handoff_outbox.py``) go through a shared ``_log_failure(event, ...)`` helper whose own log

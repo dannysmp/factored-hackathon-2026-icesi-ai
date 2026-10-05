@@ -55,7 +55,10 @@ export function QueueScreen({
   // having no tickets at all. `showUpdating`, below, adds a further treatment once a filter
   // refetch is in flight over data already on screen.
   const showLoading = queue.status === 'loading' && queue.referenceDate === null
-  const showEmpty = queue.status === 'ready' && queue.items.length === 0
+  // Only a queue with no language filter applied is truly empty: with a filter on, zero matches
+  // is a narrower result the agent must be able to undo, so the filters stay on screen.
+  const showEmpty =
+    queue.status === 'ready' && queue.items.length === 0 && queue.language === undefined
   // A language-filter change re-issues the fetch without clearing the already-loaded table
   // (`useQueue`'s own `setLanguage` keeps `items`/`referenceDate`, only flips `status`), so the
   // filters and the (still-stale) table stay visible during a refetch — this affordance is the

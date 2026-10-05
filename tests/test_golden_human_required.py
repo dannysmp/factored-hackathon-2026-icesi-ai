@@ -37,8 +37,8 @@ def test_no_case_declares_a_safe_behavior() -> None:
     assert all(case.expected_safe_behavior is None for case in CASES)
 
 
-def test_language_mix_matches_the_evaluation_plan() -> None:
-    # plan/docs/evaluation-plan.md's mix table: 10 Spanish, 8 Portuguese, 4 English.
+def test_language_mix_is_the_designed_split() -> None:
+    # The designed language mix: 10 Spanish, 8 Portuguese, 4 English.
     counts = Counter(case.lang for case in CASES)
     assert counts == {"es": 10, "pt": 8, "en": 4}
 
