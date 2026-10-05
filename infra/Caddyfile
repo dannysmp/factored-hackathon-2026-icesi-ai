@@ -34,12 +34,27 @@
 #   (`12-hardening-check.sh`) confirms this and skips that clause rather than failing it. TLS 1.1
 #   and below are already refused by Caddy's own secure-by-default minimum version — verified
 #   against a real instance, no explicit `tls` directive needed to get that part of the baseline.
+#   `X-Content-Type-Options: nosniff` stops a browser from reading a response as a type other
+#   than the one it was served as; `Referrer-Policy: no-referrer` stops it sending the address of
+#   a page, which can carry a path or a query, to any other site. Both live in the
+#   `content_headers` snippet, not in the header block above, because the dashboard subdomain
+#   (`Caddyfile.dashboard-block`) imports the same snippet: Metabase needs its own content
+#   security policy, so it cannot share that one, but these two apply to any site.
 # Usage:
 #   Copied to the host by the deploy pipeline alongside docker-compose.prod.yml; not run
 #   directly from this repository.
 # =============================================================================
 
+(content_headers) {
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+}
+
 {$HOST_NAME} {
+	import content_headers
+
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"

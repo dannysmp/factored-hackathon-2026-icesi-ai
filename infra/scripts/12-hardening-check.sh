@@ -9,7 +9,8 @@
 #   while a plain HTTPS request succeeds with a valid certificate chain; an
 #   HSTS header with a max-age of at least 15,552,000 seconds; an enforcing
 #   Content-Security-Policy (never report-only alone); no version token on
-#   the Server or X-Powered-By headers; and, wherever a session cookie is
+#   the Server or X-Powered-By headers; `X-Content-Type-Options: nosniff` and a
+#   `Referrer-Policy` on every route; and, wherever a session cookie is
 #   set, Secure, HttpOnly and SameSite=Strict or Lax — skipped, not failed,
 #   when the deployment sets no session cookie at all (this one never does:
 #   sessions are bearer tokens, confirmed by grepping the whole `app/`
@@ -145,6 +146,30 @@ check_no_version_disclosure() {
   fi
 }
 
+check_content_headers() {
+  # Checks both routes Caddy fronts, as the version-disclosure check does: the headers are set
+  # once at the edge, so they must be present whichever upstream answers.
+  log "checking X-Content-Type-Options and Referrer-Policy on every route..."
+  local path nosniff referrer own_fail=0
+  for path in /health/live /; do
+    nosniff="$(response_header "${path}" x-content-type-options)"
+    referrer="$(response_header "${path}" referrer-policy)"
+    if ! grep -qix "nosniff" <<<"${nosniff}"; then
+      log "FAIL: X-Content-Type-Options on ${path} is '${nosniff:-absent}', expected nosniff"
+      fail=1
+      own_fail=1
+    fi
+    if [[ -z "${referrer}" ]]; then
+      log "FAIL: Referrer-Policy is missing on ${path}"
+      fail=1
+      own_fail=1
+    fi
+  done
+  if [[ "${own_fail}" -eq 0 ]]; then
+    log "ok: X-Content-Type-Options is nosniff and Referrer-Policy is set, on every route"
+  fi
+}
+
 check_cookie_flags() {
   # Probes the two routes that could ever set a session cookie -- the customer and agent demo
   # sign-in brokers -- not an unrelated route. A wrong access code still reaches each
@@ -192,6 +217,7 @@ check_valid_https
 check_hsts
 check_csp_enforcing
 check_no_version_disclosure
+check_content_headers
 check_cookie_flags
 
 if [[ "${fail}" -ne 0 ]]; then

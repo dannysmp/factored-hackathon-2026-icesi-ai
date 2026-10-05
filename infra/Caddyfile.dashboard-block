@@ -27,5 +27,7 @@
 # =============================================================================
 
 dashboard.{$HOST_NAME} {
+	import content_headers
+
 	reverse_proxy metabase:3000
 }
