@@ -36,13 +36,15 @@ import styles from './ChatFeature.module.css'
  *
  * Focus stays with the person: sending returns it to the message field, and when a reply
  * arrives while nothing holds focus (a clicked option disappeared, or a retry button went away),
- * it goes back to the field. When a resend fails again and nothing holds focus, it goes to the
- * new Retry button. A message that could not be sent stays in the conversation, marked
+ * it goes back to the field, including the opening reply that follows a Retry. When the reply
+ * ends the conversation and nothing holds focus, it goes to the outcome heading, since the field
+ * has gone. When a resend fails again and nothing holds focus, it goes to the new Retry button. A message that could not be sent stays in the conversation, marked
  * as not sent, with a single Retry that resends it under its original id.
  *
  * A screen reader is told about a new assistant reply through one hidden announcement region,
  * not by making the whole message list live: the list stays quiet, so nothing is read twice and
- * the person's own messages are never read back to them. A filed dispute and the end of the
+ * the person's own messages are never read back to them. Each reply is announced, including one
+ * whose words repeat the previous reply. A filed dispute and the end of the
  * conversation are shown as a result card, and the outcome and its reference are folded into that
  * same announcement on the turn that brings them.
  */
@@ -62,7 +64,9 @@ export function ChatFeature({
   const t = useT(activeLang)
   const inputRef = useRef<HTMLInputElement>(null)
   const retryRef = useRef<HTMLButtonElement>(null)
+  const resultTitleRef = useRef<HTMLHeadingElement>(null)
   const repliesSeen = useRef(0)
+  const openingFailed = useRef(false)
   const replyCount = conversation.messages.filter((m) => m.from === 'assistant').length
 
   useEffect(() => {
@@ -79,19 +83,33 @@ export function ChatFeature({
   useEffect(() => {
     const before = repliesSeen.current
     repliesSeen.current = replyCount
-    // The opening reply never moves focus: the person has not done anything yet.
-    if (before > 0 && replyCount > before && document.activeElement === document.body) {
+    // The opening reply never moves focus, unless it follows a failed start: the person pressed
+    // Retry, and that button is gone.
+    const afterAction = before > 0 || openingFailed.current
+    if (afterAction && replyCount > before && document.activeElement === document.body) {
       inputRef.current?.focus()
     }
   }, [replyCount])
 
+  // The field and the buttons leave with the last turn of a finished conversation, which would drop
+  // focus to the top of the page; it goes to the outcome instead, unless the person put it elsewhere.
+  const conversationEnded = conversation.latest?.end_session === true
+  useEffect(() => {
+    if (conversationEnded && document.activeElement === document.body) {
+      resultTitleRef.current?.focus()
+    }
+  }, [conversationEnded])
+
   // A resend that fails again removes the focused Retry button and puts a new one in its place;
   // focus follows it, so a keyboard or screen-reader user is not sent back to the top of the page.
   useEffect(() => {
+    if (conversation.status === 'error' && conversation.latest === null) {
+      openingFailed.current = true
+    }
     if (conversation.status === 'error' && document.activeElement === document.body) {
       retryRef.current?.focus()
     }
-  }, [conversation.status])
+  }, [conversation.status, conversation.latest])
 
   if (conversation.status === 'error' && conversation.latest === null) {
     return (
@@ -115,8 +133,8 @@ export function ChatFeature({
   const latest = conversation.latest
   const busy = conversation.status === 'loading'
   const ended = latest?.end_session === true
-  const lastAssistantText =
-    conversation.messages.findLast((m) => m.from === 'assistant')?.text ?? ''
+  const lastAssistant = conversation.messages.findLast((m) => m.from === 'assistant')
+  const lastAssistantText = lastAssistant?.text ?? ''
   // A dispute is filed on a turn that does not end the conversation, and the farewell that ends
   // it carries no case number: the card shows the filing from the moment it happens and keeps its
   // number to the end. A hand-off after a filing leads with its own reference and lists the case.
@@ -141,7 +159,7 @@ export function ChatFeature({
 
   return (
     <section aria-label={t('chat.regionLabel')} className={styles.chat}>
-      <LiveAnnouncer message={announcement} />
+      <LiveAnnouncer message={announcement} messageKey={lastAssistant?.id} />
       {latest !== null && (
         <ReferenceBanner
           referenceDateLine={latest.reference_date_line}
@@ -167,7 +185,12 @@ export function ChatFeature({
         </div>
       )}
       {result !== null && (
-        <ResultCard lang={activeLang} caseNumber={caseNumber} handoffTicket={handoffTicket} />
+        <ResultCard
+          lang={activeLang}
+          caseNumber={caseNumber}
+          handoffTicket={handoffTicket}
+          titleRef={resultTitleRef}
+        />
       )}
       {latest !== null && !ended && (
         <>

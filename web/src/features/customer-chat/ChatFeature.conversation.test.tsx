@@ -7,12 +7,13 @@ import type { ChatClient } from './client'
 import { CONFIRMATION_TEXT, TurnResponseSchema } from './contracts'
 import type { TurnResponse } from './contracts'
 import { findMessage } from './findMessage'
+import { en } from '../../i18n/en'
 
 /** Builds a contract-valid English turn; `overrides` sets choices, language or awaited element. */
 function turn(
   version: number,
   reply: string,
-  overrides: Partial<Pick<TurnResponse, 'choices' | 'next_expected' | 'lang'>> = {},
+  overrides: Partial<Pick<TurnResponse, 'choices' | 'next_expected' | 'lang' | 'case_number'>> = {},
 ): TurnResponse {
   return TurnResponseSchema.parse({
     contract_version: '1',
@@ -218,6 +219,154 @@ describe('ChatFeature around a turn', () => {
       release(turn(2, 'I found one transaction.'))
     })
     await findMessage('I found one transaction.')
+    expect(elsewhere).toHaveFocus()
+  })
+
+  it('moves the focus to the outcome when the reply ends the conversation and nothing else holds it', async () => {
+    const user = userEvent.setup()
+    const ending = TurnResponseSchema.parse({
+      ...turn(2, 'I will pass this to a person.'),
+      end_session: true,
+      handoff_ticket: 'H-7730',
+    })
+    const { client } = controlledClient(() => Promise.resolve(ending))
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    await typeAndSend(user, 'someone used my card')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: en['chat.result.escalatedTitle'] })).toHaveFocus()
+    })
+  })
+
+  it('keeps the focus in the message field when a filing arrives and the conversation goes on', async () => {
+    const user = userEvent.setup()
+    const filing = turn(2, 'Done, I filed your dispute.', { case_number: 'D-20481' })
+    const { client } = controlledClient(() => Promise.resolve(filing))
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    await typeAndSend(user, 'yes, please file it')
+
+    await findMessage(filing.reply)
+    await waitFor(() => {
+      expect(screen.getByLabelText('Your message')).toHaveFocus()
+    })
+    expect(screen.getByRole('heading', { name: en['chat.result.filedTitle'] })).not.toHaveFocus()
+  })
+
+  it('moves the focus to the outcome when a hand-off ends a conversation that already filed a case', async () => {
+    const user = userEvent.setup()
+    const filing = turn(2, 'Done, I filed your dispute.', { case_number: 'D-20481' })
+    const ending = TurnResponseSchema.parse({
+      ...turn(3, 'I will pass the rest to a person.'),
+      end_session: true,
+      handoff_ticket: 'H-7730',
+    })
+    const { client } = controlledClient((_sent, count) =>
+      Promise.resolve(count === 1 ? filing : ending),
+    )
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    await typeAndSend(user, 'yes, please file it')
+    await findMessage(filing.reply)
+    await typeAndSend(user, 'my card was also stolen')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: en['chat.result.escalatedTitle'] })).toHaveFocus()
+    })
+  })
+
+  it('returns the keyboard to the message field when the opening reply arrives after a Retry', async () => {
+    const user = userEvent.setup()
+    let starts = 0
+    const client: ChatClient = {
+      start: () =>
+        ++starts === 1 ? Promise.reject(new Error('network is down')) : Promise.resolve(OPENING),
+      sendTurn: () => Promise.reject(new Error('not used')),
+    }
+    render(<ChatFeature client={client} lang="en" />)
+
+    await user.click(await screen.findByRole('button', { name: 'Retry' }))
+
+    await findMessage(OPENING.reply)
+    await waitFor(() => {
+      expect(screen.getByLabelText('Your message')).toHaveFocus()
+    })
+  })
+
+  it('does not take the keyboard when the very first opening reply arrives', async () => {
+    const { client } = controlledClient(() => Promise.reject(new Error('not used')))
+    render(<ChatFeature client={client} lang="en" />)
+
+    await findMessage(OPENING.reply)
+
+    expect(screen.getByLabelText('Your message')).not.toHaveFocus()
+  })
+
+  it('changes the announcement region for every reply, even one that repeats the previous words', async () => {
+    const user = userEvent.setup()
+    const same = 'I could not find that transaction. Which one do you mean?'
+    const { client, sent } = controlledClient((_sent, count) =>
+      Promise.resolve(turn(count + 1, same)),
+    )
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    await typeAndSend(user, 'the blue one')
+    await waitFor(() => {
+      expect(sent).toHaveLength(1)
+    })
+    const region = screen
+      .getAllByRole('status')
+      .find((element) => element.getAttribute('aria-atomic') === 'true')
+    if (region === undefined) throw new Error('announcement region not found')
+    await waitFor(() => {
+      expect(region).toHaveTextContent(same)
+    })
+    const changes: MutationRecord[] = []
+    const observer = new MutationObserver((records) => changes.push(...records))
+    observer.observe(region, { childList: true, characterData: true, subtree: true })
+
+    await typeAndSend(user, 'the red one')
+    await waitFor(() => {
+      expect(sent).toHaveLength(2)
+    })
+    await act(() => Promise.resolve())
+    observer.disconnect()
+
+    expect(region).toHaveTextContent(same)
+    expect(changes.length).toBeGreaterThan(0)
+  })
+
+  it('leaves the focus where the customer put it when the conversation ends', async () => {
+    const user = userEvent.setup()
+    let release: (value: TurnResponse) => void = () => undefined
+    const { client } = controlledClient(
+      () =>
+        new Promise<TurnResponse>((resolve) => {
+          release = resolve
+        }),
+    )
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <ChatFeature client={client} lang="en" />
+      </>,
+    )
+    await findMessage(OPENING.reply)
+    await typeAndSend(user, 'someone used my card')
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' })
+    elsewhere.focus()
+
+    act(() => {
+      release(
+        TurnResponseSchema.parse({
+          ...turn(2, 'I will pass this to a person.'),
+          end_session: true,
+          handoff_ticket: 'H-7730',
+        }),
+      )
+    })
+    await findMessage('I will pass this to a person.')
     expect(elsewhere).toHaveFocus()
   })
 
