@@ -2,6 +2,7 @@
  * The agent console's ticket-detail screen: one case's handoff packet and audit timeline, in
  * separate tabs, with its loading, error and not-found states.
  */
+import { useEffect, useRef } from 'react'
 import type { JSX } from 'react'
 import './TicketDetailScreen.css'
 import { ReferenceBanner } from '../customer-chat/components/ReferenceBanner'
@@ -23,6 +24,10 @@ import { useTicketDetail } from './useTicketDetail'
  * Fixed Spanish copy, not a catalog entry, the same as `QueueScreen`: the console never uses the
  * per-language catalogs. `onBack` returns to the queue; `onSessionExpired` is forwarded to the
  * loader so a 401 sends the agent back to sign-in.
+ *
+ * Opening a case from the queue removes the button that was pressed, so when the case is ready and
+ * nothing holds focus it moves to the case heading, where a keyboard or screen-reader user starts
+ * reading the case. A focus the person already placed elsewhere is never taken.
  */
 export function TicketDetailScreen({
   client,
@@ -36,6 +41,12 @@ export function TicketDetailScreen({
   onSessionExpired?: () => void
 }): JSX.Element {
   const query = useTicketDetail(client, ticketRef, onSessionExpired)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const ready = query.status === 'ready'
+
+  useEffect(() => {
+    if (ready && document.activeElement === document.body) headingRef.current?.focus()
+  }, [ready])
 
   if (query.status === 'error') {
     return (
@@ -88,7 +99,7 @@ export function TicketDetailScreen({
         referenceDateLine={`Fecha de referencia de los datos: ${formatDate(detail.packet.reference_date)}.`}
         demoNotice="Esta es una sesión de demostración."
       />
-      <h2>
+      <h2 ref={headingRef} tabIndex={-1}>
         Caso <span className="ticket-ref">{detail.item.ticket_ref}</span>
       </h2>
       <p className="ticket-trigger">{TRIGGER_LABELS[detail.item.trigger]}</p>

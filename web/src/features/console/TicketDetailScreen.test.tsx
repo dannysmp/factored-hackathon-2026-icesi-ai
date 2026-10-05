@@ -110,4 +110,25 @@ describe('TicketDetailScreen', () => {
     await screen.findByRole('alert')
     expect(await axe(container)).toHaveNoViolations()
   })
+
+  it('moves focus to the case heading once the case is ready', async () => {
+    const client = new FixtureTicketDetailClient(DEMO_TICKET_DETAILS)
+    render(<TicketDetailScreen client={client} ticketRef={TICKET_REF} onBack={vi.fn()} />)
+
+    const heading = await screen.findByRole('heading', { level: 2, name: `Caso ${TICKET_REF}` })
+
+    expect(heading).toHaveFocus()
+  })
+
+  it('does not take focus from a control the person already holds', async () => {
+    render(<input aria-label="otro control" />)
+    screen.getByLabelText('otro control').focus()
+    const client = new FixtureTicketDetailClient(DEMO_TICKET_DETAILS)
+    render(<TicketDetailScreen client={client} ticketRef={TICKET_REF} onBack={vi.fn()} />)
+
+    const heading = await screen.findByRole('heading', { level: 2, name: `Caso ${TICKET_REF}` })
+
+    expect(heading).not.toHaveFocus()
+    expect(screen.getByLabelText('otro control')).toHaveFocus()
+  })
 })

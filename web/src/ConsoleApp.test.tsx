@@ -280,4 +280,25 @@ describe('ConsoleApp', () => {
 
     expect(await axe(container)).toHaveNoViolations()
   })
+
+  it('moves focus into the case when it opens and back to its row when the agent returns', async () => {
+    stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<ConsoleApp />)
+
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    const [firstDetail] = DEMO_TICKET_DETAILS
+    if (firstDetail === undefined) {
+      throw new Error('fixture setup: DEMO_TICKET_DETAILS needs at least one entry for this test')
+    }
+    const ref = firstDetail.item.ticket_ref
+
+    await user.click(await screen.findByRole('button', { name: ref }))
+    expect(await screen.findByRole('heading', { level: 2, name: `Caso ${ref}` })).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: 'Volver a la cola' }))
+    expect(await screen.findByRole('button', { name: ref })).toHaveFocus()
+  })
 })
