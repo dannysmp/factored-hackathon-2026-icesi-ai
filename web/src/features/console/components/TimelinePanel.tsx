@@ -31,7 +31,7 @@ export function TimelinePanel({ entries }: { entries: readonly TimelineEntry[] }
 
   return (
     <ScrollRegion className="queue-table-scroll" label="Cronología de auditoría">
-      <table className="timeline-table">
+      <table className="timeline-table stacked-table">
         <caption className="sr-only">Cronología de auditoría</caption>
         <thead>
           <tr>
@@ -47,13 +47,17 @@ export function TimelinePanel({ entries }: { entries: readonly TimelineEntry[] }
           {sorted.map((entry) => (
             <tr key={entry.turn_id}>
               <th scope="row">{formatDateTime(entry.occurred_at)}</th>
-              <td>{INTENT_LABELS[entry.intent]}</td>
-              <td>
+              <td data-label="Paso">{INTENT_LABELS[entry.intent]}</td>
+              <td data-label="Etapa">
                 {phaseLabel(entry.state_before)} → {phaseLabel(entry.state_after)}
               </td>
-              <td>{entry.reason_code === null ? '—' : REASON_CODE_LABELS[entry.reason_code]}</td>
-              <td>{entry.policy_version ?? '—'}</td>
-              <td className="timeline-trace">{entry.trace_id}</td>
+              <td data-label="Motivo de la decisión">
+                {entry.reason_code === null ? '—' : REASON_CODE_LABELS[entry.reason_code]}
+              </td>
+              <td data-label="Versión de la política">{entry.policy_version ?? '—'}</td>
+              <td className="timeline-trace" data-label="Traza">
+                {entry.trace_id}
+              </td>
             </tr>
           ))}
         </tbody>

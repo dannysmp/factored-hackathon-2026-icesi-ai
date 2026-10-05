@@ -98,7 +98,7 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
         <p>Ninguna transacción verificada.</p>
       ) : (
         <ScrollRegion className="queue-table-scroll" label="Transacciones verificadas">
-          <table>
+          <table className="stacked-table">
             <caption className="sr-only">Transacciones verificadas</caption>
             <thead>
               <tr>
@@ -114,17 +114,17 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
               {packet.verified_facts.map((fact) => (
                 <tr key={fact.ref}>
                   <th scope="row">{fact.ref}</th>
-                  <td>{formatDate(fact.occurred_on)}</td>
-                  <td>{fact.merchant ?? '—'}</td>
-                  <td>
+                  <td data-label="Fecha">{formatDate(fact.occurred_on)}</td>
+                  <td data-label="Comercio">{fact.merchant ?? '—'}</td>
+                  <td data-label="Monto">
                     {fact.amount === null
                       ? '—'
                       : formatMoney(fact.amount.amount, fact.amount.currency)}
                   </td>
-                  <td>
+                  <td data-label="Producto">
                     {fact.product.name} ····{fact.product.last4}
                   </td>
-                  <td>{TRANSACTION_STATUS_LABELS[fact.status]}</td>
+                  <td data-label="Estado">{TRANSACTION_STATUS_LABELS[fact.status]}</td>
                 </tr>
               ))}
             </tbody>
