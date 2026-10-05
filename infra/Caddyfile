@@ -2,7 +2,7 @@
 # Caddyfile — reverse proxy and automatic TLS
 # =============================================================================
 # Purpose:
-#   Terminates TLS for the whole stack on one host (ADR-13) and routes to the
+#   Terminates TLS for the whole stack on one host and routes to the
 #   backend and the web build. Caddy issues and renews the certificate
 #   automatically from the host name alone; no certificate is ever committed.
 # Design:
@@ -19,7 +19,7 @@
 #   stricter, non-matching cutoff — verified against a real Caddy instance
 #   (a body of exactly 65536 bytes passes; 65537 is refused, identical to
 #   the application's own "exceeds the limit" comparison).
-#   The header block below is the post-deploy hardening baseline (ADR-13): HSTS with a max-age
+#   The header block below is the post-deploy hardening baseline: HSTS with a max-age
 #   comfortably over the required 15,552,000 seconds; an enforcing Content-Security-Policy
 #   (never report-only) — `default-src 'self'` alone covers this deployment's real resource
 #   loading, verified against the actual built web app: both `index.html` and `console.html`
@@ -30,7 +30,7 @@
 #   uvicorn's own `Server: uvicorn` carries no version already, stripped anyway for one consistent
 #   policy at the edge rather than a per-upstream exception. No cookie is ever set anywhere in
 #   this stack (sessions are bearer tokens, confirmed by reading every sign-in response), so
-#   ADR-13's cookie-flag requirement has nothing to attach to — the hardening check
+#   the baseline's cookie-flag requirement has nothing to attach to — the hardening check
 #   (`12-hardening-check.sh`) confirms this and skips that clause rather than failing it. TLS 1.1
 #   and below are already refused by Caddy's own secure-by-default minimum version — verified
 #   against a real instance, no explicit `tls` directive needed to get that part of the baseline.

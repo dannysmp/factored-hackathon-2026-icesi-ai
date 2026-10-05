@@ -16,13 +16,12 @@
 #   upserts, and the log group is created first if it does not exist yet —
 #   log shipping itself (the CloudWatch agent) is a separate concern this
 #   script does not assume has already run. No alarm action is attached: no
-#   notification channel (an SNS topic, paging) exists in this project yet,
-#   matching the observability evolution matrix's own sequencing (paging is
-#   a later step). The alarm is visible in the CloudWatch console today and
-#   ready for an action to be attached the moment one exists.
-#   Authored ahead of the log-shipping mechanism landing (3.2/3.12): running
-#   this script against a live account is a decision for whichever slice
-#   stands up log shipping, not this one.
+#   notification channel (an SNS topic, paging) exists in this project, so the
+#   alarm is visible in the CloudWatch console and ready for an action to be
+#   attached the moment one exists. The alarm only means
+#   something once application logs reach the log group, which log shipping
+#   (the CloudWatch agent) provides: running this script against a live
+#   account is a decision for whoever stands up log shipping.
 # Usage:
 #   infra/scripts/09-configure-error-alarm.sh
 # =============================================================================

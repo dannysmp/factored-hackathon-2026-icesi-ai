@@ -1,23 +1,23 @@
 # Infrastructure and deployment
 
-AWS provisioning for the deployed stack (ADR-13: one EC2 host, ECR, docker compose, GitHub OIDC).
+AWS provisioning for the deployed stack: one EC2 host, ECR, docker compose and GitHub OIDC.
 
 ## What these scripts provision
 
 | Script | What it creates |
 |---|---|
-| `scripts/01-create-oidc-role.sh` | The GitHub Actions OIDC provider and the CI deploy role (`dispute-intake-ci-deploy`): trust scoped to this repository's own workflows, permissions scoped to ECR push on the two repositories below and to SSM commands against instances tagged for this project — no static AWS keys anywhere (ADR-13). |
+| `scripts/01-create-oidc-role.sh` | The GitHub Actions OIDC provider and the CI deploy role (`dispute-intake-ci-deploy`): trust scoped to this repository's own workflows, permissions scoped to ECR push on the two repositories below and to SSM commands against instances tagged for this project — no static AWS keys anywhere. |
 | `scripts/02-create-ecr-repos.sh` | `dispute-intake-backend` and `dispute-intake-web`: scan-on-push, immutable tags, untagged images expire after 7 days. Postgres and Metabase use their own official images and need no repository here. |
 | `scripts/03-create-instance-role.sh` | The EC2 instance's own role (`dispute-intake-instance`): reachable by Systems Manager (so a deploy needs no SSH key), read access to this project's own SSM path prefix (`/transaction-disputes/prod/*`, where the model API key already lives) and its decryption, pull access to this project's own two ECR repositories, read access to this project's own seed bucket (`11-create-seed-bucket.sh` — never the data provider's own data lake, which this role still cannot reach), and CloudWatch Logs write. |
 | `scripts/04-launch-instance.sh` | A security group open on 80/443 only, a `t3.large` instance in the default VPC with Docker installed by its user data, and a static Elastic IP. |
-| `scripts/05-deploy.sh` | Brings the compose stack up on the tagged host over SSM (no SSH): embeds the current `docker-compose.yml`, `docker-compose.prod.yml` and `infra/Caddyfile` in the command; the host reads its own secrets from SSM with its own role, including the demo sign-in access codes when they exist (ADR-18) — absent, sign-in just stays disabled, nothing fails. Then syncs the built operational seed from the seed bucket and runs migrations and the seed load as one-off containers (never `exec` into the long-running `backend`, which can still be crash-looping on a fresh database — see the script's own header), and restarts `backend` so it picks up the now-seeded database on this same run. Prints the sslip.io host name on success. |
+| `scripts/05-deploy.sh` | Brings the compose stack up on the tagged host over SSM (no SSH): embeds the current `docker-compose.yml`, `docker-compose.prod.yml` and `infra/Caddyfile` in the command; the host reads its own secrets from SSM with its own role, including the demo sign-in access codes when they exist — absent, sign-in just stays disabled, nothing fails. Then syncs the built operational seed from the seed bucket and runs migrations and the seed load as one-off containers (never `exec` into the long-running `backend`, which can still be crash-looping on a fresh database — see the script's own header), and restarts `backend` so it picks up the now-seeded database on this same run. Prints the sslip.io host name on success. |
 | `scripts/06-smoke-test.sh` | Proves the deployed path answers over HTTPS: the health endpoint and the web static page, retrying while Caddy's certificate issuance and the containers' own start-up catch up. Its `--dashboard` flag additionally proves the `dashboard.` subdomain reaches Metabase. |
 | `scripts/07-teardown.sh` | Reverses `04-launch-instance.sh`: terminates the tagged instance, releases its Elastic IP, deletes its security group. Leaves the OIDC role, the instance role and the ECR repositories in place. |
-| `scripts/08-deploy-metabase.sh` | Creates Metabase's own database and role, sets `analytics_reader`'s password, brings up the `metabase` service, completes its first-run admin setup and connects the `analytics` schema — then swaps in the Caddyfile that routes the `dashboard.` subdomain to it, only once all of that has succeeded (ADR-11). Idempotent: re-running it against an already-provisioned deployment reconciles credentials and the Caddy config without repeating setup. Once Metabase is healthy, it also captures and logs a `docker stats --no-stream` reading of all five services sharing the host (ADR-11's own capacity requirement). |
-| `scripts/09-configure-error-alarm.sh` | A CloudWatch metric filter counting error-level lines in the application's log group (`/dispute-intake/app`, created if absent) and an alarm that trips past a threshold in one evaluation window. No notification action is attached yet — no paging channel exists in this project. Authored ahead of log shipping (the CloudWatch agent), which is what would first make this alarm meaningful in a running account. |
+| `scripts/08-deploy-metabase.sh` | Creates Metabase's own database and role, sets `analytics_reader`'s password, brings up the `metabase` service, completes its first-run admin setup and connects the `analytics` schema — then swaps in the Caddyfile that routes the `dashboard.` subdomain to it, only once all of that has succeeded. Idempotent: re-running it against an already-provisioned deployment reconciles credentials and the Caddy config without repeating setup. Once Metabase is healthy, it also captures and logs a `docker stats --no-stream` reading of all five services sharing the host, the capacity check for a one-host deployment. |
+| `scripts/09-configure-error-alarm.sh` | A CloudWatch metric filter counting error-level lines in the application's log group (`/dispute-intake/app`, created if absent) and an alarm that trips past a threshold in one evaluation window. No notification action is attached — no paging channel exists in this project. The alarm only means something once log shipping (the CloudWatch agent) delivers the application's logs to that log group. |
 | `scripts/10-configure-metabase-dashboard.sh` | Creates or updates the operations dashboard's panels, each pairing a chart card (colored from `web/src/styles/tokens.css`'s design tokens) with a text card naming its business question. Every card and the dashboard itself are found by name and updated in place if they already exist, so a redeploy converges instead of duplicating panels. Needs `08-deploy-metabase.sh` already run (the admin account and the `analytics` datasource connection). Full native theming (logo, app name, instance-wide colors) is a paid Metabase feature this deployment has no license for — see `docs/limitations.md`. |
 | `scripts/11-create-seed-bucket.sh` | A private, versioned, default-encrypted S3 bucket (`dispute-intake-ops-seed-<account>`) holding the built operational seed — a curated, already-masked derivative (`pipelines.ops_seed`), never the data provider's own raw data. Block Public Access on all four settings; the repository is public, this bucket must never be. Prints the bucket name on success. Not torn down by `07-teardown.sh`, the same as the OIDC role, the instance role and the ECR repositories. |
-| `scripts/12-hardening-check.sh` | The post-deploy hardening check (ADR-13): probes the live address over the real network and refuses if TLS 1.1 or below is accepted, `Strict-Transport-Security` is missing or its `max-age` is under 15,552,000, the `Content-Security-Policy` is missing or report-only, `Server`/`X-Powered-By` carry a version token on any route, or a session cookie (if one is ever set — this deployment's sessions are bearer tokens, so none is) is missing `Secure`, `HttpOnly` or `SameSite=Strict`/`Lax`. Reads nothing from `infra/Caddyfile`; every check is a real request against the deployed edge. |
+| `scripts/12-hardening-check.sh` | The post-deploy hardening check: probes the live address over the real network and refuses if TLS 1.1 or below is accepted, `Strict-Transport-Security` is missing or its `max-age` is under 15,552,000, the `Content-Security-Policy` is missing or report-only, `Server`/`X-Powered-By` carry a version token on any route, or a session cookie (if one is ever set — this deployment's sessions are bearer tokens, so none is) is missing `Secure`, `HttpOnly` or `SameSite=Strict`/`Lax`. Reads nothing from `infra/Caddyfile`; every check is a real request against the deployed edge. |
 
 Every script is idempotent (safe to re-run; an existing resource with the right name is left as
 is or reconciled, never duplicated) and refuses to run against any profile or region but
@@ -64,7 +64,7 @@ deployment meant to persist and carry the dashboard.
   so the workflow can compose the CI deploy role's ARN without ever writing the number into this
   repository.
 
-**Optional prerequisites, to turn on real sign-in** (ADR-18) — a deployment without these still
+**Optional prerequisites, to turn on real sign-in** — a deployment without these still
 succeeds; the backend just runs with both sign-in brokers disabled, same as every smoke run so
 far. Written the same way, via `infra/scripts/put-secret.sh`, all read by `05-deploy.sh`:
 - `demo-signin-access-code` — the customer broker's shared secret (at least 16 characters).
@@ -137,7 +137,7 @@ same IP, so this needs no DNS record of its own.
 
 `docker-compose.yml` (the repository root) has the Postgres service local development and CI
 already use. `docker-compose.prod.yml` adds `backend`, `web` and `caddy` on top of it, without
-duplicating Postgres. `docker-compose.metabase.yml` adds the dashboard (ADR-11) on top of that,
+duplicating Postgres. `docker-compose.metabase.yml` adds the dashboard on top of that,
 in its own database and role, never the default embedded H2:
 
 ```bash
@@ -165,18 +165,16 @@ string when their parameter doesn't exist yet, not an error). Metabase's own `MB
 `infra/Caddyfile.dashboard-block` is the dashboard subdomain's own site block; `08-deploy-
 metabase.sh` deploys it appended onto the real `infra/Caddyfile` (never a second, separately
 maintained copy of the app's own site block, which could drift and silently lose hardening) once
-Metabase's first-run setup has succeeded (ADR-11), never before — see that script's own header
+Metabase's first-run setup has succeeded, never before — see that script's own header
 for why.
 
 ## Capacity
 
 Metabase and its heap share the `t3.large` host with the backend, web, Postgres and the reverse
 proxy — no cheaper-instance lever exists, so the memory footprint of all five is measured and
-recorded (ADR-11). `08-deploy-metabase.sh` captures a `docker stats --no-stream` reading once
-Metabase is healthy and logs it as part of its own run; the first real reading is recorded here
-once a deployment with `deploy_metabase` enabled has actually run against the account:
-
-- *(not yet run against the account — record the reading here after the first such deployment)*
+recorded. `08-deploy-metabase.sh` captures a `docker stats --no-stream` reading once
+Metabase is healthy and logs it as part of its own run, so the reading is in the log of any deploy
+run that has `deploy_metabase` enabled.
 
 A base deployment that later disables `deploy_metabase` still carries the dashboard route only if
 `08-deploy-metabase.sh` has run since the last `05-deploy.sh`: that script always writes the plain
@@ -193,5 +191,5 @@ A capped session shows up as a handoff whose action record is `turn_cap` with re
 `Dockerfile` (backend) and `web/Dockerfile` are both multi-stage builds: a builder stage installs
 or builds, and the final stage carries only the runtime dependencies. The backend image installs
 exactly `pyproject.toml`'s `[project.dependencies]` — none of the `dev`, `data` or `ml` groups
-(ADR-6: the `ml` group stays out of the runtime image). Both were built and smoke-tested locally
+(the `ml` group stays out of the runtime image). Both were built and smoke-tested locally
 (`docker build`, then a container run against `/health/live` for the backend and `/` for web).
