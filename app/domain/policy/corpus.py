@@ -667,7 +667,8 @@ def _who_can_dispute(policy: Policy, m: Messages) -> str:
     """The conditions a transaction must meet, and what the policy leaves out.
 
     Products and transaction types the policy accepts are listed; the known ones it does not
-    accept are stated as excluded, so an exclusion appears only when the policy makes it.
+    accept are stated as excluded, so a product or transaction-type exclusion appears only when
+    the policy makes it. The declined, pending and reversed statuses are always stated as excluded.
     """
     accepted_products = _in_reading_order(policy.in_scope_product_types, KNOWN_PRODUCT_TYPES)
     other_products = [p for p in KNOWN_PRODUCT_TYPES if p not in policy.in_scope_product_types]
