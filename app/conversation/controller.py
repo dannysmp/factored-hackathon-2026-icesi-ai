@@ -760,6 +760,11 @@ class DialogueController:
         assert self._principal is not None  # noqa: S101 - set at the top of handle_turn
         return self._principal.session_id
 
+    def _turn_id(self) -> str:
+        """The id of the turn being handled, read from the request set for this turn."""
+        assert self._request is not None  # noqa: S101 - set at the top of handle_turn
+        return self._request.turn_id
+
     # -------------------------------------------------------------------------------------
     # Turn advancement
     # -------------------------------------------------------------------------------------
@@ -970,7 +975,7 @@ class DialogueController:
         """The customer's yes or no to filing the evaluated dispute."""
         answer = result.confirmation
         if answer is ConfirmationAnswer.NO:
-            new_state = state.with_dispute_closed()
+            new_state = state.with_dispute_closed(self._turn_id())
             return new_state, self._envelope(new_state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
         if answer is ConfirmationAnswer.AMBIGUOUS:
             return self._ask(state, Slot.CONFIRMATION)
@@ -1289,7 +1294,7 @@ class DialogueController:
         list of codes, using the fraud wording when the reason is a fraud claim.
         """
         if decision.outcome is Outcome.INELIGIBLE:
-            new_state = state.with_dispute_closed()
+            new_state = state.with_dispute_closed(self._turn_id())
             decisions = (
                 Decision(
                     outcome=Outcome.INELIGIBLE,
@@ -1392,7 +1397,7 @@ class DialogueController:
         the tool gave one.
         """
         if refusal is ToolRefusalCode.DUPLICATE_OPEN_CASE:
-            new_state = state.with_dispute_closed()
+            new_state = state.with_dispute_closed(self._turn_id())
             decisions = (
                 Decision(
                     outcome=Outcome.INELIGIBLE,
@@ -1522,11 +1527,14 @@ class DialogueController:
         necessarily the one the replayed turn id originally produced. A question still open
         comes before a filed case: a filing leaves nothing pending, so an open question was
         asked by a later turn and is what a retry of that turn is owed. A retried turn id that
-        followed the filing and left no question open replays the filing result.
-        ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
+        followed the filing and left no question open replays the filing result, unless the turn
+        is the one that closed a later dispute without filing (``closed_turn_id``), which is
+        answered with that closing, not with the case filed before it.
+        ``ConversationPhase.CLOSED`` is the signal that a filing decision (ineligible,
         cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
-        clears the pending slot and leaves no case or ticket behind, so it can never be confused
-        with a plain conversational ending here. It renders a generic, truthful acknowledgment
+        clears the pending slot and leaves no ticket behind, so it can never be confused with a
+        plain conversational ending here, and the turn that closed it is recorded on the state
+        because a case filed earlier stays there. It renders a generic, truthful acknowledgment
         rather than recomputing, because recomputing would call ``evaluate_dispute`` again — a
         fresh read against the store's *current* facts, not the ones the original decision rested
         on, so a fact that changed since (a filing window that closed, a case opened through
@@ -1543,7 +1551,7 @@ class DialogueController:
         if state.pending_slot is not None:
             return self._replay_pending(state, state.pending_slot)
 
-        if state.last_case_number is not None:
+        if state.last_case_number is not None and state.closed_turn_id != state.last_turn_id:
             case = dispatch(self._tool_port, tool_contracts.Tool.GET_CASE, state.last_case_number)
             if isinstance(case, ToolFailure) or case is None:
                 return self._envelope(
