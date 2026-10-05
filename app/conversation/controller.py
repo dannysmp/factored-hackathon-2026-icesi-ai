@@ -1019,7 +1019,7 @@ class DialogueController:
     ) -> tuple[DialogueState, RenderEnvelope]:
         """List the customer's transactions.
 
-        A tool failure becomes a handoff, which moves the conversation to its handed-off phase. An
+        A tool failure becomes a handoff, which ends the conversation's automated handling. An
         empty list gets a not-found reply and leaves the state unchanged. A non-empty list records
         the references shown, in order, in ``offered_refs``.
         """
@@ -1272,10 +1272,10 @@ class DialogueController:
         """The customer answered the open question with a change rather than a plain yes or no.
 
         When the filing is awaiting confirmation and the message states a different reason, the
-        dispute is evaluated afresh under that reason, and the customer confirms the result.
-        Otherwise the customer is asked which part to change — the transaction or the reason —
-        and the repeat counts against the clarification budget like any other unanswered
-        question.
+        dispute is evaluated afresh under that reason and answered with the policy's decision:
+        the customer is asked to confirm only when the policy requires it. Otherwise the customer
+        is asked which part to change, the transaction or the reason, and the repeat counts
+        against the clarification budget like any other unanswered question.
         """
         assert state.pending_slot is not None  # noqa: S101 - both callers run with a slot open
         if (
