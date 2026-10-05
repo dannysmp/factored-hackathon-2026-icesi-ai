@@ -36,9 +36,9 @@ has nothing to read in them.
   and were not scanned; a search of the current content of both for key-shaped text found nothing.
 - A merge commit carries no patch of its own, so a change made only in resolving a merge conflict
   is not read.
-- It is a scan of this commit, not of the release commit. The scan is run again, and this report
-  replaced, when the release commit is fixed.
-- A person has not read the last diff. That check stays open on the release checklist.
+- It is a scan of the commit named above. A later commit is not covered until the scan is run again
+  and this report replaced.
+- A person has not read the last diff. The scan does not replace that reading.
 
 ## Reproducing it
 

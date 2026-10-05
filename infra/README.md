@@ -105,10 +105,10 @@ There is no separate toggle; deleting the parameter that turns it on is the swit
 
 The trial of this switch, once tried, is recorded here:
 
-| Date | Role | Outcome |
+| Date | Step | Outcome |
 |---|---|---|
-| 2026-10-05 | Maintainer: the access code deleted, then deploy run `37334795346` (`teardown_after: false`) | Passed. The persona list showed only the two agents (`200`) and a customer sign-in with the previous access code returned `401`. |
-| 2026-10-05 | Maintainer: the access code restored with the same value (the saved copy deleted), then deploy run `37335424382` (`teardown_after: false`) on the same commit | Passed, and the redeploy of an already-pushed commit proved the pipeline's existing-tag check. All seven personas returned `200` and a customer sign-in returned `201`. |
+| 2026-10-05 | The access code deleted, then deploy run `37334795346` (`teardown_after: false`) | Passed. The persona list showed only the two agents (`200`) and a customer sign-in with the previous access code returned `401`. |
+| 2026-10-05 | The access code restored with the same value (the saved copy deleted), then deploy run `37335424382` (`teardown_after: false`) on the same commit | Passed, and the redeploy of an already-pushed commit proved the pipeline's existing-tag check. All seven personas returned `200` and a customer sign-in returned `201`. |
 
 **Additional one-time prerequisites, before the first run with `deploy_metabase` enabled** — each
 written the same way, via `infra/scripts/put-secret.sh`:
