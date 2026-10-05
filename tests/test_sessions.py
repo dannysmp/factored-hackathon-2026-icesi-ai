@@ -9,6 +9,7 @@ and moved by hand, and tokens are forged with the same library to prove what is 
 from __future__ import annotations
 
 # Standard libraries
+import logging  # Capture the report of a failing callback
 import threading  # Concurrent attempts against the limiter
 import time  # Widen the race window
 from datetime import UTC, datetime, timedelta  # Controlled time
@@ -371,6 +372,31 @@ def test_a_revoked_session_is_reported_once_to_the_callbacks_of_its_own_kind(
 
     assert customer_seen == [customer.session_id]
     assert agent_seen == [agent.session_id]
+
+
+def test_a_callback_that_raises_is_logged_and_neither_ends_the_revocation_nor_the_others(
+    service: SessionService, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The session is already revoked when a callback fails, so the sign-out still completes and
+    the callbacks after the failing one still run."""
+    seen: list[str] = []
+
+    def failing(_: str) -> None:
+        raise RuntimeError("release failed")
+
+    service.on_revoked("customer", failing)
+    service.on_revoked("customer", seen.append)
+    issued = service.issue("C1", audience="customer")
+
+    with caplog.at_level(logging.ERROR, logger="app.security.sessions"):
+        service.revoke(service.verify_customer(issued.token))
+
+    assert seen == [issued.session_id]
+    assert _code(service, issued.token) is ErrorCode.SESSION_REVOKED
+    assert [r.getMessage() for r in caplog.records] == [
+        "session_revoked_callback_failed kind=customer"
+    ]
+    assert issued.session_id not in caplog.text
 
 
 def test_a_revocation_that_cannot_be_recorded_does_not_run_the_callbacks(clock: Clock) -> None:

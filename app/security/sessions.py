@@ -55,6 +55,7 @@ it when the service runs as more than one process.
 from __future__ import annotations
 
 # Standard libraries
+import logging  # A failing release callback is reported without failing the sign-out
 import re  # Strict customer-identifier pattern
 import secrets  # Random session identifiers
 import threading  # The in-memory store is shared between request threads
@@ -69,6 +70,8 @@ from pydantic import SecretStr  # Signing key that never prints
 
 # Local modules
 from app.security.errors import ErrorCode  # Reasons a session is refused
+
+logger = logging.getLogger(__name__)
 
 Clock = Callable[[], datetime]
 
@@ -336,9 +339,14 @@ class SessionService:
         """Revoke the session of ``principal`` until it would have expired.
 
         A revocation that cannot be recorded raises before any callback runs, so a session that
-        stays valid never has what it holds freed.
+        stays valid never has what it holds freed. Once recorded, the session is ended whatever
+        happens next: a callback that raises is logged and the rest still run, so the sign-out
+        itself never fails after the revocation took effect.
         """
         self._revocations.revoke(principal.session_id, principal.expires_at, self._clock())
         kind = "customer" if isinstance(principal, Principal) else "agent"
         for callback in self._revoked_callbacks.get(kind, ()):
-            callback(principal.session_id)
+            try:
+                callback(principal.session_id)
+            except Exception:
+                logger.exception("session_revoked_callback_failed kind=%s", kind)

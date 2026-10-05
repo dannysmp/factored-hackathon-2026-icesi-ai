@@ -383,6 +383,27 @@ def test_no_session_at_all_is_refused_on_the_claim_route(client: TestClient) -> 
 # -----------------------------------------------------------------------------
 
 
+def test_an_agent_token_reaches_the_agent_logout_route_and_is_then_refused(
+    client: TestClient,
+) -> None:
+    token = _agent_token(client)
+
+    ended = client.post("/v1/agent/auth/logout", headers=_bearer(token))
+
+    assert ended.status_code == 204
+    assert client.get("/v1/agent/queue", headers=_bearer(token)).status_code == 401
+
+
+def test_a_customer_token_is_refused_on_the_agent_logout_route(client: TestClient) -> None:
+    response = client.post("/v1/agent/auth/logout", headers=_bearer(_customer_token(client)))
+
+    assert response.status_code == 401
+
+
+def test_no_session_at_all_is_refused_on_the_agent_logout_route(client: TestClient) -> None:
+    assert client.post("/v1/agent/auth/logout").status_code == 401
+
+
 def test_the_agent_broker_refuses_to_start_without_a_database_or_an_injected_console() -> None:
     """`_default_agent_console` needs `DATABASE_URL` to build the real collaborators; every other
     test in this suite sidesteps it by injecting a fake `agent_console` — this is the one test
