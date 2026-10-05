@@ -78,11 +78,12 @@ Every deploy reloads the database from the seed bucket, so the bucket must hold 
 
 ```sh
 make pipeline && make seed
-aws s3 sync data/gold/ops_seed/ "s3://$(infra/scripts/11-create-seed-bucket.sh)/ops_seed/"
-aws s3 cp "s3://$(infra/scripts/11-create-seed-bucket.sh)/ops_seed/manifest.json" - | diff - data/gold/ops_seed/manifest.json && echo "seed bucket matches the local seed"
+aws s3 sync data/gold/ops_seed/ "s3://$(infra/scripts/11-create-seed-bucket.sh)/ops_seed/" \
+  && aws s3 cp "s3://$(infra/scripts/11-create-seed-bucket.sh)/ops_seed/manifest.json" - | diff - data/gold/ops_seed/manifest.json \
+  && echo "seed bucket matches the local seed"
 ```
 
-A bucket built before a column existed leaves that column at its default in the deployed database, so a rule that depends on it never fires. A seed that lacks the repeat-complainer flag, for example, left repeat complainers unflagged in production. The loader now stops with an error naming the missing column instead of loading such a seed, and the manifest check above is the step that catches a stale bucket before a deploy.
+A bucket built before a column existed leaves that column at its default in the deployed database, so a rule that depends on it never fires: without `customers.is_repeat_complainer`, repeat complainers are not handed to a person. The loader refuses a seed that lacks that column and names it in the error, but it guards only that column. The manifest comparison confirms the publish took effect, so the bucket holds exactly the seed just built.
 
 For a deployment meant to persist, turn the teardown off:
 

@@ -65,9 +65,9 @@ deployment meant to persist and carry the dashboard.
   missing its manifest) rather than silently starting with an empty database. Publish the seed
   again whenever its schema changes, before the next deploy: every deploy reloads the database
   from the bucket, so a bucket built before a column existed leaves that column at its default in
-  production (a seed without `customers.is_repeat_complainer` left every customer unflagged, and
-  repeat complainers filed ordinary cases instead of reaching a person). The loader refuses a seed
-  that lacks such a column, but nothing refreshes the bucket itself: only a publish does.
+  production. For `customers.is_repeat_complainer` that means every customer unflagged and no
+  repeat-complainer handoff. The loader refuses a seed that lacks that column, with an error
+  naming it, but nothing refreshes the bucket itself: only a publish does.
 - A GitHub Actions repository secret named `AWS_ACCOUNT_ID` holds the account's plain numeric ID,
   so the workflow can compose the CI deploy role's ARN without ever writing the number into this
   repository.
@@ -103,8 +103,8 @@ The trial of this switch, once tried, is recorded here:
 
 | Date | Role | Outcome |
 |---|---|---|
-| 2026-10-05 | Maintainer, dispatched by the maintainer: the access code deleted, then deploy run `37334795346` (`teardown_after: false`) | Passed. The persona list showed only the two agents (`200`) and a customer sign-in with the previous access code returned `401`. |
-| 2026-10-05 | Maintainer, dispatched by the maintainer: the access code restored with the same value (the saved copy deleted), then deploy run `37335424382` (`teardown_after: false`) on the same commit | Passed, and the redeploy of an already-pushed commit proved the pipeline's existing-tag check. All seven personas returned `200` and a customer sign-in returned `201`. |
+| 2026-10-05 | Maintainer: the access code deleted, then deploy run `37334795346` (`teardown_after: false`) | Passed. The persona list showed only the two agents (`200`) and a customer sign-in with the previous access code returned `401`. |
+| 2026-10-05 | Maintainer: the access code restored with the same value (the saved copy deleted), then deploy run `37335424382` (`teardown_after: false`) on the same commit | Passed, and the redeploy of an already-pushed commit proved the pipeline's existing-tag check. All seven personas returned `200` and a customer sign-in returned `201`. |
 
 **Additional one-time prerequisites, before the first run with `deploy_metabase` enabled** — each
 written the same way, via `infra/scripts/put-secret.sh`:
