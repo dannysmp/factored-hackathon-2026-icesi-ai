@@ -62,6 +62,7 @@ export function ChatFeature({
   const t = useT(activeLang)
   const inputRef = useRef<HTMLInputElement>(null)
   const retryRef = useRef<HTMLButtonElement>(null)
+  const resultTitleRef = useRef<HTMLHeadingElement>(null)
   const repliesSeen = useRef(0)
   const replyCount = conversation.messages.filter((m) => m.from === 'assistant').length
 
@@ -84,6 +85,15 @@ export function ChatFeature({
       inputRef.current?.focus()
     }
   }, [replyCount])
+
+  // The field and the buttons leave with the last turn of a finished conversation, which would drop
+  // focus to the top of the page; it goes to the outcome instead, unless the person put it elsewhere.
+  const conversationEnded = conversation.latest?.end_session === true
+  useEffect(() => {
+    if (conversationEnded && document.activeElement === document.body) {
+      resultTitleRef.current?.focus()
+    }
+  }, [conversationEnded])
 
   // A resend that fails again removes the focused Retry button and puts a new one in its place;
   // focus follows it, so a keyboard or screen-reader user is not sent back to the top of the page.
@@ -167,7 +177,12 @@ export function ChatFeature({
         </div>
       )}
       {result !== null && (
-        <ResultCard lang={activeLang} caseNumber={caseNumber} handoffTicket={handoffTicket} />
+        <ResultCard
+          lang={activeLang}
+          caseNumber={caseNumber}
+          handoffTicket={handoffTicket}
+          titleRef={resultTitleRef}
+        />
       )}
       {latest !== null && !ended && (
         <>

@@ -1,4 +1,4 @@
-import type { JSX } from 'react'
+import type { JSX, Ref } from 'react'
 import { useId } from 'react'
 import { useT } from '../../../i18n/useT'
 import type { Lang } from '../../../i18n/lang'
@@ -42,17 +42,20 @@ function OutcomeIcon({ variant }: { variant: ResultVariant }): JSX.Element {
  * case number), a request handed to a person (information tone, the reference to quote), and a
  * conversation that simply ended with no case (neutral); each has its own glyph and title. The
  * number sits in its own block, large and in tabular figures, so it can be read aloud or copied
- * without a mistake. A hand-off that follows a filing
+ * without a mistake. `titleRef` lets the screen move focus to the outcome once the conversation
+ * ends. A hand-off that follows a filing
  * leads with its own reference and lists the filed case beneath it.
  */
 export function ResultCard({
   lang,
   caseNumber,
   handoffTicket,
+  titleRef,
 }: {
   lang: Lang
   caseNumber: string | null
   handoffTicket: string | null
+  titleRef?: Ref<HTMLHeadingElement>
 }): JSX.Element {
   const t = useT(lang)
   const titleId = useId()
@@ -63,7 +66,7 @@ export function ResultCard({
     <section className={classNames(styles.card, styles[variant])} aria-labelledby={titleId}>
       <header className={styles.header}>
         <OutcomeIcon variant={variant} />
-        <h2 id={titleId} className={styles.title}>
+        <h2 id={titleId} ref={titleRef} tabIndex={-1} className={styles.title}>
           {title}
         </h2>
       </header>

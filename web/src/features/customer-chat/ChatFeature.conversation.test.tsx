@@ -7,6 +7,7 @@ import type { ChatClient } from './client'
 import { CONFIRMATION_TEXT, TurnResponseSchema } from './contracts'
 import type { TurnResponse } from './contracts'
 import { findMessage } from './findMessage'
+import { en } from '../../i18n/en'
 
 /** Builds a contract-valid English turn; `overrides` sets choices, language or awaited element. */
 function turn(
@@ -218,6 +219,56 @@ describe('ChatFeature around a turn', () => {
       release(turn(2, 'I found one transaction.'))
     })
     await findMessage('I found one transaction.')
+    expect(elsewhere).toHaveFocus()
+  })
+
+  it('moves the focus to the outcome when the reply ends the conversation and nothing else holds it', async () => {
+    const user = userEvent.setup()
+    const ending = TurnResponseSchema.parse({
+      ...turn(2, 'I will pass this to a person.'),
+      end_session: true,
+      handoff_ticket: 'H-7730',
+    })
+    const { client } = controlledClient(() => Promise.resolve(ending))
+    render(<ChatFeature client={client} lang="en" />)
+    await findMessage(OPENING.reply)
+    await typeAndSend(user, 'someone used my card')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: en['chat.result.escalatedTitle'] })).toHaveFocus()
+    })
+  })
+
+  it('leaves the focus where the customer put it when the conversation ends', async () => {
+    const user = userEvent.setup()
+    let release: (value: TurnResponse) => void = () => undefined
+    const { client } = controlledClient(
+      () =>
+        new Promise<TurnResponse>((resolve) => {
+          release = resolve
+        }),
+    )
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <ChatFeature client={client} lang="en" />
+      </>,
+    )
+    await findMessage(OPENING.reply)
+    await typeAndSend(user, 'someone used my card')
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' })
+    elsewhere.focus()
+
+    act(() => {
+      release(
+        TurnResponseSchema.parse({
+          ...turn(2, 'I will pass this to a person.'),
+          end_session: true,
+          handoff_ticket: 'H-7730',
+        }),
+      )
+    })
+    await findMessage('I will pass this to a person.')
     expect(elsewhere).toHaveFocus()
   })
 
