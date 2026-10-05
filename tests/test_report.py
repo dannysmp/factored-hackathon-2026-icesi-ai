@@ -246,6 +246,28 @@ def test_headline_table_lists_only_present_systems() -> None:
     assert "B1" not in text.split("## 3.")[1].split("## 4.")[0]
 
 
+def _repeated_section(text: str) -> str:
+    return text.split("## 5.")[1].split("## 6.", maxsplit=1)[0]
+
+
+def test_a_repeated_system_s_heading_names_the_system_and_the_text_carries_the_run_count() -> None:
+    flip = CaseFlip("C1", (True, False, True), (False, False, False))
+    flipped = SystemResult(
+        system="P",
+        run_count=3,
+        variability=compute_variability([_headline() for _ in range(3)]),
+        case_results=(),
+        flips=(flip,),
+        judge_verdicts=(),
+    )
+    steady = _system("B0", run_count=2)
+    section = _repeated_section(render_markdown(_report(systems=(flipped, steady))))
+
+    assert "### P\n\nVerdicts compared across 3 runs. 1 case(s) flipped:" in section
+    assert "### B0\n\nVerdicts compared across 2 runs. No case flipped" in section
+    assert "runs)" not in section
+
+
 def test_a_repeated_run_shows_a_range_a_single_run_does_not() -> None:
     p = _system("P", run_count=3)
     b0 = _system("B0", run_count=1)

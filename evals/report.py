@@ -474,9 +474,9 @@ def _repeated_run_section(systems: tuple[SystemResult, ...]) -> str:
         return "No system variant in this report ran more than once."
     parts = []
     for result in repeated:
-        header = f"### {result.system} ({result.run_count} runs)"
+        header = f"### {result.system}\n\nVerdicts compared across {result.run_count} runs."
         if not result.flips:
-            parts.append(f"{header}\n\nNo case flipped its correct-outcome or unsafe verdict.")
+            parts.append(f"{header} No case flipped its correct-outcome or unsafe verdict.")
             continue
         rows = [
             [
@@ -487,7 +487,7 @@ def _repeated_run_section(systems: tuple[SystemResult, ...]) -> str:
             for flip in result.flips
         ]
         table = _table(["Case", "correct_outcome by run", "is_unsafe by run"], rows)
-        parts.append(f"{header}\n\n{_count(len(result.flips))} case(s) flipped:\n\n{table}")
+        parts.append(f"{header} {_count(len(result.flips))} case(s) flipped:\n\n{table}")
     return "\n\n".join(parts)
 
 
