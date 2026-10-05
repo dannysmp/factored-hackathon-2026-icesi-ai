@@ -55,6 +55,57 @@ describe('SignInScreen when the persona directory fails', () => {
     expect(await axe(container)).toHaveNoViolations()
   })
 
+  it.each([
+    ['es', es, 58, 'Inténtelo de nuevo en 58 segundos.'],
+    ['pt', pt, 58, 'Tente novamente em 58 segundos.'],
+    ['en', en, 58, 'Please try again in 58 seconds.'],
+    ['es', es, 1, 'Inténtelo de nuevo en 1 segundo.'],
+    ['pt', pt, 1, 'Tente novamente em 1 segundo.'],
+    ['en', en, 1, 'Please try again in 1 second.'],
+  ] as const)(
+    'names when to try again from the wait the service asked for, in %s (%i s)',
+    async (lang, messages, seconds, sentence) => {
+      vi.spyOn(api, 'fetchCustomerPersonas').mockRejectedValue(
+        new SignInError(429, 'Too many', null, seconds),
+      )
+      render(<SignInScreen preferredLang={lang} onSignedIn={vi.fn()} />)
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(messages['signin.unreachable'])
+      expect(alert).toHaveTextContent(sentence)
+      expect(alert).not.toHaveTextContent(messages['failure.rateLimited'])
+      expect(alert).not.toHaveTextContent('{seconds}')
+      expect(screen.getByRole('button', { name: messages['common.retry'] })).toBeInTheDocument()
+    },
+  )
+
+  it('does not retry on its own when the wait ends', async () => {
+    const fetcher = vi
+      .spyOn(api, 'fetchCustomerPersonas')
+      .mockRejectedValue(new SignInError(429, 'Too many', null, 1))
+    render(<SignInScreen onSignedIn={vi.fn()} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('en 1 segundo')
+
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('alert')).toHaveTextContent('en 1 segundo')
+  })
+
+  it('forgets the wait when Retry is pressed and the next answer is a limit without one', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(api, 'fetchCustomerPersonas')
+      .mockRejectedValueOnce(new SignInError(429, 'Too many', null, 58))
+      .mockRejectedValueOnce(new SignInError(429, 'Too many'))
+    render(<SignInScreen onSignedIn={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: es['common.retry'] }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(es['failure.rateLimited'])
+    expect(alert).not.toHaveTextContent('58')
+  })
+
   it('adds no reason when the failure is not one it can name', async () => {
     vi.spyOn(api, 'fetchCustomerPersonas').mockRejectedValue(new Error('odd'))
     render(<SignInScreen onSignedIn={vi.fn()} />)

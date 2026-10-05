@@ -31,6 +31,8 @@ issued directly to each evaluator or tester, and never stored in this repository
 | Beatriz (agent) | Portuguese, Spanish | The console: the handoff queue and the packet a person receives |
 | Diego (agent) | Spanish | The console as a fraud specialist |
 
+Each persona writes in their own language, and the screen follows it: choose Emma to try the system in English, Ana or Carlos for Spanish, and João or Mariana for Portuguese.
+
 Customers use the chat at the address above; agents use the console at `/console.html`. A case
 handed over as Carlos or Mariana appears in the console's queue. A customer session lasts 30
 minutes and an agent session 60, and a profile that someone else is using is refused until that
@@ -64,6 +66,7 @@ production results; the full table is under [Evaluation](#evaluation).
 | A possible fraud goes to a person, with a reference, in Spanish | ![The chat telling the customer that a person will review the request and showing its reference](docs/images/handoff.png) |
 | The agent console lists handed-over cases | ![The agent console queue with priority fraud reports first](docs/images/console-queue.png) |
 | A case opens as a packet with the request, verified transactions, actions, evidence and open questions | ![The agent console showing the packet of a fraud report, with the customer identifier masked](docs/images/console-packet.png) |
+| The operations dashboard shows dispute volume, resolution time, claimed amounts and satisfaction | ![The Operations dashboard with four charts: dispute volume by month, median days to resolution and SLA breaches by status, mean claimed amount by currency, and mean satisfaction score by contact reason](docs/images/operations-dashboard.png) |
 
 The screens are in [web/README.md](web/README.md) on mobile and desktop and in all three languages.
 
@@ -115,6 +118,27 @@ Design rules that follow from this:
   renderer is enabled, it may only use facts and sources that the decision layer put in its input,
   and its wording must agree with the decisions taken.
 - A learned risk score can route a case to human review; it never decides an outcome.
+
+### Risk model and handling cost
+
+**Risk model.** The one learned component was benchmarked on a time split (trained to
+31 March 2025, tuned to 30 September 2025, tested on the period after). On the test period the
+boosted model's PR-AUC is 0.00089 and the logistic baseline's is 0.00085. The difference,
++0.000039, has a 95% interval of -0.000033 to +0.000108, which includes zero, and both sit at about
+the base rate of fraud, one in a thousand (0.00099 in validation). The simpler logistic model was
+kept. No validation threshold reaches the precision floor of 0.0100 within a 5% routed share, so no
+threshold is set and routing is off: the score routes no case. The decision is recorded in
+[`models/model_card.json`](models/model_card.json); the benchmark itself is in
+[`models/experiments.jsonl`](models/experiments.jsonl).
+
+**Handling cost, projected and not measured.** Agent time on a dispute is estimated at USD 0.83
+(USD 0.37 to 2.15 on the low and high assumptions), or USD 275.19 a month at 332 cases. Only the
+handling time, 3.7 minutes, is measured; the agent-hour cost (USD 6, 9 and 14) and the contacts a
+dispute needs (1, 1.5 and 2.5) are stated assumptions, and back-office work is not counted. For
+comparison, the model spend of the system is USD 0.004 per attempted case in the offline
+evaluation, which counts model calls only. The derivation is in section 5 of
+[`reports/workflow-analysis.md`](reports/workflow-analysis.md), and the assumptions are in
+`pipelines/analysis_assumptions.toml`.
 
 ### Models
 

@@ -13,7 +13,9 @@ the light-mode value is the one that applies).
 Scope
 -----
 In: the four panels defined below, each paired with a chart card and a text card, and the
-dashboard that holds them.
+dashboard that holds them; removing the sample content Metabase ships with (its sample database,
+the collections holding the example dashboards, and with them those dashboards), so the instance
+carries only the Operations dashboard; confirming that every panel's question returns rows.
 Out: full native theming (logo, app name, instance-wide brand colors) — a paid Metabase feature
 this deployment doesn't have a license for; see ``docs/limitations.md``. Creating the underlying
 gold marts (``pipelines/gold.py``) or the Metabase admin account and datasource connection
@@ -27,6 +29,12 @@ Design Principles
   found — the same convention ``08-deploy-metabase.sh`` already uses for the role, database and
   datasource connection — so re-running this script (every redeploy) converges to exactly the
   panels defined below, never duplicating them.
+- Removing the sample content is idempotent: it acts on whatever Metabase itself marks as sample
+  (``is_sample``), so an instance without any is left as it is and the step succeeds. Metabase
+  re-adds its sample database each time it restarts, so the removal lasts until the next restart;
+  the example collections and dashboard do not return.
+- A panel whose question returns no rows fails the run, naming the panel, so a dashboard that
+  would render empty is caught where it is built rather than by whoever opens it.
 - Prints a markdown checklist to stdout: one row per panel, naming its business question, the
   mart it reads, its chart type, and the token/hex color actually confirmed on the card by
   reading it back from the API — the same "prove what was actually written" discipline the
@@ -35,7 +43,9 @@ Design Principles
 Runtime Contract
 -----------------
 ``main()``: reads ``MB_BASE_URL``, ``MB_ADMIN_EMAIL``, ``MB_ADMIN_PASSWORD`` from the environment,
-signs in, upserts every panel and the dashboard, and writes the checklist to stdout. Run against
+signs in, removes the sample content, upserts every panel and the dashboard, runs each panel's
+question, and writes the checklist to stdout. ``--list-marts`` prints the table each panel reads,
+one per line, without contacting Metabase. Run against
 Metabase's own HTTP API, on whichever host can reach it (loopback on the deployed host; a
 throwaway local container during development) — never against the database directly.
 
@@ -194,6 +204,42 @@ def _series_settings(series: dict[str, SeriesColor]) -> dict[str, dict[str, str]
     return {column: {"color": color.hex} for column, color in series.items()}
 
 
+def _remove_sample_content(base_url: str, session_id: str) -> list[str]:
+    """Deletes Metabase's sample database and sample collections; returns what was removed.
+
+    Deleting a database removes the questions built on it. A sample collection is archived and
+    then deleted, children included: an archived child stays behind otherwise, as a collection
+    of its own, after its parent is gone.
+    """
+    removed: list[str] = []
+    for database in _as_list(_request(base_url, "/api/database", session_id=session_id)):
+        if database.get("is_sample"):
+            _request(
+                base_url, f"/api/database/{database['id']}", session_id=session_id, method="DELETE"
+            )
+            removed.append(f"database {database['name']}")
+
+    collections = _as_list(
+        _request(base_url, "/api/collection?archived=true", session_id=session_id)
+    ) + _as_list(_request(base_url, "/api/collection", session_id=session_id))
+    sample = list({row["id"]: row for row in collections if row.get("is_sample")}.values())
+    # Children before parents: a child's location is its parent's path, so a longer one is deeper.
+    for collection in sorted(sample, key=lambda row: len(row.get("location") or "/"), reverse=True):
+        if not collection.get("archived"):
+            _request(
+                base_url,
+                f"/api/collection/{collection['id']}",
+                session_id=session_id,
+                method="PUT",
+                body={"archived": True},
+            )
+        _request(
+            base_url, f"/api/collection/{collection['id']}", session_id=session_id, method="DELETE"
+        )
+        removed.append(f"collection {collection['name']}")
+    return removed
+
+
 def _upsert_card(base_url: str, session_id: str, database_id: int, panel: Panel) -> JSON:
     """Creates or updates the panel's chart card; returns it as the API now has it."""
     existing_cards = _as_list(_request(base_url, "/api/card", session_id=session_id))
@@ -284,6 +330,17 @@ def _chart_dashcard(
     }
 
 
+def _panel_row_count(base_url: str, session_id: str, card_id: int) -> int:
+    """How many rows the card's question returns, run through Metabase as a viewer would."""
+    result = _request(
+        base_url, f"/api/card/{card_id}/query", session_id=session_id, method="POST", body={}
+    )
+    if result.get("error"):
+        raise RuntimeError(f"card {card_id} failed to run: {result['error']}")
+    rows: list[Any] = result.get("data", {}).get("rows", [])
+    return len(rows)
+
+
 def _checklist(cards_by_panel: dict[str, JSON]) -> str:
     lines = [
         "# Dashboard theme checklist",
@@ -315,6 +372,8 @@ def main() -> None:
     admin_password = os.environ["MB_ADMIN_PASSWORD"]
 
     session_id = _sign_in(base_url, admin_email, admin_password)
+    for item in _remove_sample_content(base_url, session_id):
+        sys.stderr.write(f"removed sample {item}\n")
     database_id = _find_analytics_database_id(base_url, session_id)
 
     cards_by_panel: dict[str, JSON] = {}
@@ -358,8 +417,19 @@ def main() -> None:
             base_url, f"/api/card/{card_id}", session_id=session_id
         )
 
+    empty = [
+        panel["name"]
+        for panel in PANELS
+        if _panel_row_count(base_url, session_id, cards_by_panel[panel["name"]]["id"]) < 1
+    ]
+    if empty:
+        raise RuntimeError(f"panels whose question returns no rows: {', '.join(empty)}")
+
     sys.stdout.write(_checklist(refreshed_cards))
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["--list-marts"]:
+        sys.stdout.write("".join(f"{panel['mart']}\n" for panel in PANELS))
+    else:
+        main()

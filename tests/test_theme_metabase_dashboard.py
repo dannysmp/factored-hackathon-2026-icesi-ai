@@ -7,6 +7,7 @@ module is loaded by file path."""
 
 import importlib.util
 import io
+import runpy
 import sys
 import urllib.error
 from email.message import Message
@@ -361,9 +362,11 @@ def test_main_runs_the_full_sequence_and_writes_a_matching_checklist(
         assert body is not None
         return {"id": card_ids[body["name"]], **body}
 
-    fixed_responses: dict[tuple[str, str], dict[str, Any]] = {
+    fixed_responses: dict[tuple[str, str], Any] = {
         ("POST", "/api/session"): {"id": "session-token"},
         ("GET", "/api/database"): {"data": [{"name": "analytics", "id": 1}]},
+        ("GET", "/api/collection?archived=true"): [],
+        ("GET", "/api/collection"): [],
         ("GET", "/api/card"): {"data": []},
         ("GET", "/api/dashboard"): {"data": []},
         ("POST", "/api/dashboard"): {"id": 100},
@@ -378,6 +381,8 @@ def test_main_runs_the_full_sequence_and_writes_a_matching_checklist(
             return created_card(body)
         if path.startswith("/api/card/") and method == "GET":
             return refreshed_card(int(path.rsplit("/", 1)[-1]))
+        if path.startswith("/api/card/") and path.endswith("/query") and method == "POST":
+            return {"data": {"rows": [[1, 2]]}}
         if (method, path) in fixed_responses:
             return fixed_responses[(method, path)]
         raise AssertionError(f"unexpected call: {method} {path}")
@@ -390,3 +395,139 @@ def test_main_runs_the_full_sequence_and_writes_a_matching_checklist(
     assert "# Dashboard theme checklist" in output
     assert "MISMATCH" not in output
     assert "MISSING" not in output
+
+
+def _run_main_with_card_rows(monkeypatch: pytest.MonkeyPatch, rows: list[list[Any]]) -> None:
+    """Runs `main` against a faked Metabase whose every panel question returns `rows`."""
+    monkeypatch.setenv("MB_BASE_URL", "http://example.test")
+    monkeypatch.setenv("MB_ADMIN_EMAIL", "admin@example.com")
+    monkeypatch.setenv("MB_ADMIN_PASSWORD", "pw")
+    card_ids = {panel["name"]: index + 1 for index, panel in enumerate(theme.PANELS)}
+
+    fixed: dict[tuple[str, str], Any] = {
+        ("POST", "/api/session"): {"id": "tok"},
+        ("GET", "/api/database"): {"data": [{"name": "analytics", "id": 1}]},
+        ("GET", "/api/card"): {"data": []},
+        ("GET", "/api/dashboard"): {"data": []},
+        ("GET", "/api/collection"): [],
+        ("GET", "/api/collection?archived=true"): [],
+        ("POST", "/api/dashboard"): {"id": 100},
+        ("GET", "/api/dashboard/100"): {"dashcards": []},
+        ("PUT", "/api/dashboard/100"): {},
+    }
+
+    def fake_request(
+        base_url: str, path: str, *, session_id: str | None, method: str = "GET", body: Any = None
+    ) -> Any:
+        if (method, path) in fixed:
+            return fixed[(method, path)]
+        if (method, path) == ("POST", "/api/card"):
+            assert body is not None
+            return {"id": card_ids[body["name"]]}
+        if path.endswith("/query"):
+            return {"data": {"rows": rows}}
+        if path.startswith("/api/card/") and method == "GET":
+            panel = theme.PANELS[int(path.rsplit("/", 1)[-1]) - 1]
+            settings = {col: {"color": c.hex} for col, c in panel["series"].items()}
+            return {"visualization_settings": {"series_settings": settings}}
+        raise AssertionError(f"unexpected call: {method} {path}")
+
+    monkeypatch.setattr(theme, "_request", fake_request)
+    theme.main()
+
+
+def test_main_fails_naming_every_panel_whose_question_returns_no_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(RuntimeError, match="no rows") as error:
+        _run_main_with_card_rows(monkeypatch, [])
+
+    for panel in theme.PANELS:
+        assert panel["name"] in str(error.value)
+
+
+def test_main_succeeds_when_every_panel_question_returns_rows(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _run_main_with_card_rows(monkeypatch, [[1, 2]])
+
+    assert "# Dashboard theme checklist" in capsys.readouterr().out
+
+
+def test_panel_row_count_raises_when_the_question_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        theme, "_request", lambda *a, **k: {"error": 'relation "analytics.x" does not exist'}
+    )
+
+    with pytest.raises(RuntimeError, match="failed to run"):
+        theme._panel_row_count("http://example.test", "tok", 7)
+
+
+def _sample_content_instance(
+    databases: list[dict[str, Any]], collections: list[dict[str, Any]], calls: list[tuple[str, str]]
+) -> Any:
+    def fake_request(
+        base_url: str, path: str, *, session_id: str | None, method: str = "GET", body: Any = None
+    ) -> Any:
+        calls.append((method, path))
+        if (method, path) == ("GET", "/api/database"):
+            return {"data": databases}
+        if (method, path) == ("GET", "/api/collection?archived=true"):
+            return [c for c in collections if c.get("archived")]
+        if (method, path) == ("GET", "/api/collection"):
+            return [c for c in collections if not c.get("archived")]
+        return None
+
+    return fake_request
+
+
+def test_remove_sample_content_deletes_the_sample_database_and_both_collection_levels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+    databases = [
+        {"id": 1, "name": "Sample Database", "is_sample": True},
+        {"id": 2, "name": "analytics", "is_sample": False},
+    ]
+    collections = [
+        {"id": 2, "name": "Examples", "is_sample": True, "location": "/", "archived": False},
+        {"id": 3, "name": "E-commerce", "is_sample": True, "location": "/2/", "archived": True},
+        {"id": 9, "name": "Ours", "is_sample": False, "location": "/", "archived": False},
+    ]
+    monkeypatch.setattr(theme, "_request", _sample_content_instance(databases, collections, calls))
+
+    removed = theme._remove_sample_content("http://example.test", "tok")
+
+    assert removed == ["database Sample Database", "collection E-commerce", "collection Examples"]
+    assert ("DELETE", "/api/database/1") in calls
+    assert ("DELETE", "/api/database/2") not in calls
+    assert ("DELETE", "/api/collection/3") in calls
+    assert ("DELETE", "/api/collection/2") in calls
+    assert ("PUT", "/api/collection/2") in calls
+    assert ("DELETE", "/api/collection/9") not in calls
+    assert calls.index(("DELETE", "/api/collection/3")) < calls.index(
+        ("DELETE", "/api/collection/2")
+    )
+
+
+def test_remove_sample_content_does_nothing_on_an_instance_without_sample_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+    databases = [{"id": 2, "name": "analytics", "is_sample": False}]
+    collections = [{"id": 9, "name": "Ours", "is_sample": False, "location": "/"}]
+    monkeypatch.setattr(theme, "_request", _sample_content_instance(databases, collections, calls))
+
+    assert theme._remove_sample_content("http://example.test", "tok") == []
+    assert all(method == "GET" for method, _ in calls)
+
+
+def test_list_marts_mode_prints_each_panel_table_without_contacting_metabase(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["theme_metabase_dashboard.py", "--list-marts"])
+    monkeypatch.delenv("MB_BASE_URL", raising=False)
+
+    runpy.run_path(str(_MODULE_PATH), run_name="__main__")
+
+    assert capsys.readouterr().out.split() == [panel["mart"] for panel in theme.PANELS]

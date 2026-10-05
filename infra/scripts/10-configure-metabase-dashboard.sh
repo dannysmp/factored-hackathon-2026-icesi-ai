@@ -20,6 +20,10 @@
 #   embedded into the remote command the same way 08 already embeds the
 #   Caddyfile, so the exact code that was tested locally is what runs on the
 #   host, not a re-transcription of it.
+#   It also removes the sample content Metabase ships with (its sample
+#   database and the example collections and dashboards), so the instance
+#   carries only the Operations dashboard, and runs each panel's question,
+#   failing when one returns no rows.
 #   Idempotent: every card and the dashboard are checked by name before being
 #   created, and updated in place if found, so a redeploy converges to
 #   exactly the panels the script defines rather than duplicating them.
@@ -88,6 +92,11 @@ for _ in $(seq 1 60); do
   case "${status}" in
     Success)
       log "dashboard theming succeeded; writing the checklist it printed"
+      notes="$(aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${instance_id}" \
+        --query "StandardErrorContent" --output text)"
+      if [[ -n "${notes}" && "${notes}" != "None" ]]; then
+        printf '%s\n' "${notes}" >&2
+      fi
       aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${instance_id}" \
         --query "StandardOutputContent" --output text >"${REPO_ROOT}/reports/dashboard-theme-checklist.md"
       cat "${REPO_ROOT}/reports/dashboard-theme-checklist.md"

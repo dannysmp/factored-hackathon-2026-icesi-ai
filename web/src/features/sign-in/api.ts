@@ -22,32 +22,50 @@ export const PERSONA_IN_USE_CODE = 'demo_persona_in_use'
 export type SignInAudience = 'customer' | 'agent'
 
 /** Raised when the persona list or the sign-in itself cannot be fetched. `code` is the problem
- * document's stable error code, or `null` when the answer carried none. */
+ * document's stable error code, or `null` when the answer carried none; `retryAfterSeconds` is
+ * how long the service asked the caller to wait, or `null` when it did not say. */
 export class SignInError extends Error {
   readonly status: number
   readonly code: string | null
+  readonly retryAfterSeconds: number | null
 
-  constructor(status: number, title: string, code: string | null = null) {
+  constructor(
+    status: number,
+    title: string,
+    code: string | null = null,
+    retryAfterSeconds: number | null = null,
+  ) {
     super(title)
     this.name = 'SignInError'
     this.status = status
     this.code = code
+    this.retryAfterSeconds = retryAfterSeconds
   }
 }
 
+/** The whole seconds of a `Retry-After` header, or `null` when it is absent, is a date rather
+ * than a number of seconds, or is not a positive whole number. */
+function retryAfterSeconds(response: Response): number | null {
+  const value = response.headers.get('Retry-After')?.trim()
+  if (value === undefined || !/^\d+$/.test(value)) return null
+  const seconds = Number(value)
+  return seconds > 0 ? seconds : null
+}
+
 /** Turns a refused response into a `SignInError` carrying only the problem document's title and
- * error code. */
+ * error code, plus the wait the service asked for. */
 async function toError(response: Response): Promise<SignInError> {
+  const wait = retryAfterSeconds(response)
   try {
     const problem: unknown = await response.json()
     if (typeof problem !== 'object' || problem === null) {
-      return new SignInError(response.status, response.statusText)
+      return new SignInError(response.status, response.statusText, null, wait)
     }
     const title = 'title' in problem ? String(problem.title) : response.statusText
     const code = 'code' in problem && typeof problem.code === 'string' ? problem.code : null
-    return new SignInError(response.status, title, code)
+    return new SignInError(response.status, title, code, wait)
   } catch {
-    return new SignInError(response.status, response.statusText || 'the request failed')
+    return new SignInError(response.status, response.statusText || 'the request failed', null, wait)
   }
 }
 

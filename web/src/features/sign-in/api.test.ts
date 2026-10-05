@@ -54,6 +54,49 @@ describe('fetchCustomerPersonas', () => {
   })
 })
 
+describe('the wait a refusal asks for', () => {
+  /** A refusal whose `Retry-After` header is `value` (or has none). */
+  function refusal(value?: string): Response {
+    return new Response(JSON.stringify({ title: 'Too many attempts' }), {
+      status: 429,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(value === undefined ? {} : { 'Retry-After': value }),
+      },
+    })
+  }
+
+  it.each([
+    ['58', 58],
+    [' 3 ', 3],
+    [undefined, null],
+    ['0', null],
+    ['-4', null],
+    ['1.5', null],
+    ['Wed, 21 Oct 2026 07:28:00 GMT', null],
+  ])('reads Retry-After %j as %j seconds', async (header, seconds) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(refusal(header)))
+
+    await expect(fetchCustomerPersonas()).rejects.toMatchObject({
+      status: 429,
+      retryAfterSeconds: seconds,
+    })
+  })
+
+  it('keeps the wait when the refusal has no readable body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response('not json', { status: 429, headers: { 'Retry-After': '7' } }),
+        ),
+    )
+
+    await expect(fetchCustomerPersonas()).rejects.toMatchObject({ retryAfterSeconds: 7 })
+  })
+})
+
 describe('fetchAgentPersonas', () => {
   it('returns only the agent personas, dropping any customer ones', async () => {
     const fetchMock = vi.fn().mockResolvedValue(

@@ -14,6 +14,8 @@ export const pt: Messages = {
   'failure.offline': 'Sem conexão com o serviço. Verifique sua internet e tente novamente.',
   'failure.timeout': 'A resposta demorou demais. Tente novamente.',
   'failure.rateLimited': 'Muitas tentativas seguidas. Aguarde um minuto e tente novamente.',
+  'failure.rateLimitedIn': 'Muitas tentativas seguidas. Tente novamente em {seconds} segundos.',
+  'failure.rateLimitedInOne': 'Muitas tentativas seguidas. Tente novamente em {seconds} segundo.',
   'failure.unavailable':
     'O serviço está indisponível no momento. Tente novamente em alguns minutos.',
   'chat.regionLabel': 'Conversa com o assistente',
