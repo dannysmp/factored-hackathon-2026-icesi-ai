@@ -11,31 +11,41 @@ import { requestSignal } from '../../lib/failure'
 const DEMO_PERSONAS_PATH = '/v1/auth/demo-personas'
 const DEMO_SESSIONS_PATH = '/v1/auth/demo-sessions'
 const DEMO_AGENT_SESSIONS_PATH = '/v1/auth/demo-agent-sessions'
+const LOGOUT_PATH = '/v1/auth/logout'
+const AGENT_LOGOUT_PATH = '/v1/agent/auth/logout'
+
+/** The problem `code` of a refusal because another session already holds the chosen profile. */
+export const PERSONA_IN_USE_CODE = 'demo_persona_in_use'
 
 /** `SignInAudience` (app/security/signin_audit.py): which broker and access code a sign-in
  * uses. `signIn` defaults to `'customer'`. */
 export type SignInAudience = 'customer' | 'agent'
 
-/** Raised when the persona list or the sign-in itself cannot be fetched. */
+/** Raised when the persona list or the sign-in itself cannot be fetched. `code` is the problem
+ * document's stable error code, or `null` when the answer carried none. */
 export class SignInError extends Error {
   readonly status: number
+  readonly code: string | null
 
-  constructor(status: number, title: string) {
+  constructor(status: number, title: string, code: string | null = null) {
     super(title)
     this.name = 'SignInError'
     this.status = status
+    this.code = code
   }
 }
 
-/** Turns a refused response into a `SignInError` carrying only the problem document's title. */
+/** Turns a refused response into a `SignInError` carrying only the problem document's title and
+ * error code. */
 async function toError(response: Response): Promise<SignInError> {
   try {
     const problem: unknown = await response.json()
-    const title =
-      typeof problem === 'object' && problem !== null && 'title' in problem
-        ? String(problem.title)
-        : response.statusText
-    return new SignInError(response.status, title)
+    if (typeof problem !== 'object' || problem === null) {
+      return new SignInError(response.status, response.statusText)
+    }
+    const title = 'title' in problem ? String(problem.title) : response.statusText
+    const code = 'code' in problem && typeof problem.code === 'string' ? problem.code : null
+    return new SignInError(response.status, title, code)
   } catch {
     return new SignInError(response.status, response.statusText || 'the request failed')
   }
@@ -92,4 +102,20 @@ export async function signIn(
   }
   const session = SessionResponseSchema.parse(await response.json())
   return session.access_token
+}
+
+/** Ends a session at the service so the profile it held is free for the next sign-in. Best
+ * effort: the person is signed out on this page whether or not the service could be reached, and
+ * a session the service keeps simply ends on its own at its time limit. */
+export async function endSession(token: string, audience: SignInAudience): Promise<void> {
+  try {
+    await fetch(audience === 'agent' ? AGENT_LOGOUT_PATH : LOGOUT_PATH, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      keepalive: true,
+      signal: requestSignal(),
+    })
+  } catch {
+    // Nothing to tell the person: the service ends the session at its own time limit.
+  }
 }

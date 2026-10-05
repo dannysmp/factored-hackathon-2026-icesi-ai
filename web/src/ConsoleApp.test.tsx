@@ -35,6 +35,9 @@ function stubTheWholeFlow() {
     if (url === '/v1/auth/demo-agent-sessions') {
       return Promise.resolve(jsonResponse(201, SESSION_BODY))
     }
+    if (url === '/v1/agent/auth/logout') {
+      return Promise.resolve(new Response(null, { status: 204 }))
+    }
     if (url === '/v1/agent/queue') {
       return Promise.resolve(jsonResponse(200, DEMO_QUEUE))
     }
@@ -186,6 +189,26 @@ describe('ConsoleApp', () => {
     expect(
       screen.queryByRole('region', { name: 'Cola de casos escalados' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('ends the agent session at the service when the agent signs out', async () => {
+    const fetchMock = stubTheWholeFlow()
+    const user = userEvent.setup()
+    render(<ConsoleApp />)
+    await screen.findByRole('group', { name: es['signin.personaGroupLabel'] })
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'agent-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    await screen.findByRole('region', { name: 'Cola de casos escalados' })
+
+    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }))
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/v1/agent/auth/logout',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer agent-token' },
+      }),
+    )
   })
 
   it('shows the queue, not the previous ticket, when the agent signs in again after signing out from a ticket', async () => {

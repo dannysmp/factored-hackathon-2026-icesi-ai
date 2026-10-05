@@ -65,6 +65,7 @@ export const es: Messages = {
   'signin.accessCodeHide': 'Ocultar',
   'signin.accessCodeLabel': 'Código de acceso',
   'signin.refused': 'No se aceptó el código de acceso o el perfil. Inténtelo de nuevo.',
+  'signin.personaInUse': 'Este perfil está en uso en este momento. Elija otro perfil.',
   'signin.accessCodeHint': 'Ingrese el código de acceso para continuar.',
   'signin.submit': 'Iniciar sesión',
   'signin.submitting': 'Iniciando sesión…',

@@ -40,7 +40,10 @@ Runtime Contract
 ``SessionService.verify_customer(token) -> Principal`` and
 ``SessionService.verify_agent(token) -> AgentPrincipal`` each raise ``SessionRejected`` with an
 ``ErrorCode`` — including when the token is validly signed but for the other audience.
-``SessionService.revoke(principal)``
+``SessionService.revoke(principal)`` — then calls every callback registered for the principal's
+kind (``"customer"`` or ``"agent"``) with the session identifier, once, so whatever else is tied to
+the session (a demonstration profile held for it) can be freed at the same moment.
+``SessionService.on_revoked(kind, callback)`` registers such a callback at start-up.
 
 Limitations
 -----------
@@ -176,6 +179,7 @@ class SessionService:
         self._default_ttl = timedelta(seconds=ttl_seconds)
         self._clock = clock
         self._revocations: RevocationStore = revocations or InMemoryRevocationStore()
+        self._revoked_callbacks: dict[str, list[Callable[[str], None]]] = {}
 
     def now(self) -> datetime:
         """The current time according to the injected clock."""
@@ -323,6 +327,18 @@ class SessionService:
             raise SessionRejected(ErrorCode.SESSION_REVOKED)
         return subject, session_id, issued_at, expires_at, demo
 
+    def on_revoked(self, kind: str, callback: Callable[[str], None]) -> None:
+        """Call ``callback(session_id)`` after a ``kind`` (``"customer"`` or ``"agent"``) session
+        is revoked. Register at start-up, before requests are served."""
+        self._revoked_callbacks.setdefault(kind, []).append(callback)
+
     def revoke(self, principal: Principal | AgentPrincipal) -> None:
-        """Revoke the session of ``principal`` until it would have expired."""
+        """Revoke the session of ``principal`` until it would have expired.
+
+        A revocation that cannot be recorded raises before any callback runs, so a session that
+        stays valid never has what it holds freed.
+        """
         self._revocations.revoke(principal.session_id, principal.expires_at, self._clock())
+        kind = "customer" if isinstance(principal, Principal) else "agent"
+        for callback in self._revoked_callbacks.get(kind, ()):
+            callback(principal.session_id)

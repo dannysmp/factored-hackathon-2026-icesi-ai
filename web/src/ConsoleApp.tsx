@@ -6,6 +6,7 @@ import { TicketDetailScreen } from './features/console/TicketDetailScreen'
 import { LiveQueueClient } from './features/console/client'
 import { LiveTicketDetailClient } from './features/console/ticketDetailClient'
 import { useConsoleNavigation } from './features/console/useConsoleNavigation'
+import { endSession } from './features/sign-in/api'
 import { SignInScreen } from './features/sign-in/SignInScreen'
 import { Notice } from './components/ui/Notice'
 import { Button } from './components/ui/Button'
@@ -33,7 +34,8 @@ const CONSOLE_TITLE = 'Consola del agente'
  * A 401 from the queue or a ticket's detail means the session ended: it is not refreshed, so the
  * console returns to the sign-in with a notice. Only `session` is cleared; `selectedTicketRef`
  * stays, so the agent who signs in again lands back on the same ticket. Signing out by choice
- * clears both, so the next agent starts at the queue.
+ * clears both, so the next agent starts at the queue, and ends the session at the service so the
+ * agent persona is free for the next sign-in.
  *
  * Going back from a ticket returns focus to that ticket's row in the queue, so the agent resumes
  * where they left off. `returnedFrom` carries that reference to the queue, which reports back once it
@@ -57,6 +59,7 @@ export function ConsoleApp(): JSX.Element {
     setSession(null)
   }
   const signOut = (): void => {
+    if (session !== null) void endSession(session.token, 'agent')
     setExpired(false)
     setReturnedFrom(null)
     setSelectedTicketRef(null)

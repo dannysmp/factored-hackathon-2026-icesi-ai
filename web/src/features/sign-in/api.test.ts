@@ -1,7 +1,7 @@
 /** Unit tests: `fetchCustomerPersonas`, `fetchAgentPersonas` and `signIn` against a mocked
  * `fetch`. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SignInError, fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
+import { SignInError, endSession, fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
 import { REFERENCE_DATE_LINES } from './personaDirectory'
 
 /** A JSON `Response` with the given status and body, like the broker returns. */
@@ -141,5 +141,55 @@ describe('signIn', () => {
     )
 
     await expect(signIn('ana', 'wrong')).rejects.toBeInstanceOf(SignInError)
+  })
+})
+
+describe('signIn when the profile is held by another session', () => {
+  it('carries the problem code, so the screen can tell it from a rate limit', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(409, { title: 'This profile is in use', code: 'demo_persona_in_use' }),
+        ),
+    )
+
+    await expect(signIn('ana', 'code')).rejects.toMatchObject({
+      name: 'SignInError',
+      status: 409,
+      code: 'demo_persona_in_use',
+    })
+  })
+
+  it('has no code when the answer carries none', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('nope', { status: 502 })))
+
+    await expect(signIn('ana', 'code')).rejects.toMatchObject({ status: 502, code: null })
+  })
+})
+
+describe('endSession', () => {
+  it.each([
+    ['customer', '/v1/auth/logout'],
+    ['agent', '/v1/agent/auth/logout'],
+  ] as const)('posts the %s token to %s', async (audience, path) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await endSession('the-token', audience)
+
+    expect(fetchMock).toHaveBeenCalledWith(path, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer the-token' },
+      keepalive: true,
+      signal: expect.any(AbortSignal) as AbortSignal,
+    })
+  })
+
+  it('never throws, whatever the service does', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+
+    await expect(endSession('the-token', 'customer')).resolves.toBeUndefined()
   })
 })

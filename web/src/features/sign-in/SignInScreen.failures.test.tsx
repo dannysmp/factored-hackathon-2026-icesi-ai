@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as api from './api'
 import { SignInError } from './api'
 import { SignInScreen } from './SignInScreen'
+import { en } from '../../i18n/en'
 import { es } from '../../i18n/es'
 import { pt } from '../../i18n/pt'
 import { findPersonaRadio } from './personaRadios'
@@ -15,6 +16,11 @@ import { directoryOf } from './personaDirectory'
 const PERSONAS = [
   { slug: 'ana', display_name: 'Ana', language: 'es', audience: 'customer' as const },
   { slug: 'joao', display_name: 'João', language: 'pt', audience: 'customer' as const },
+]
+/** One persona per language, for the message a held profile gets in each. */
+const ONE_PER_LANGUAGE = [
+  ...PERSONAS,
+  { slug: 'emma', display_name: 'Emma', language: 'en', audience: 'customer' as const },
 ]
 /** The same personas plus a second Portuguese speaker, for preferred-persona selection. */
 const TWO_IN_PORTUGUESE = [
@@ -105,6 +111,64 @@ describe('SignInScreen when the sign-in is refused', () => {
     await submitCode(user, 'a-code')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
+  })
+
+  it.each([
+    ['ana', es, 'Este perfil está en uso en este momento. Elija otro perfil.'],
+    ['joao', pt, 'Este perfil está em uso no momento. Escolha outro perfil.'],
+    ['emma', en, 'This profile is in use right now. Choose another profile.'],
+  ] as const)(
+    'tells the person a profile is in use, in the language of %s, not that they are limited',
+    async (slug, messages, sentence) => {
+      vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(ONE_PER_LANGUAGE))
+      vi.spyOn(api, 'signIn').mockRejectedValue(
+        new SignInError(409, 'This profile is in use', 'demo_persona_in_use'),
+      )
+      const user = userEvent.setup()
+      render(<SignInScreen onSignedIn={vi.fn()} />)
+
+      await user.click(await findPersonaRadio(slug))
+      await user.type(screen.getByLabelText(messages['signin.accessCodeLabel']), 'a-code')
+      await user.click(screen.getByRole('button', { name: messages['signin.submit'] }))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(sentence)
+      expect(alert).not.toHaveTextContent(messages['failure.rateLimited'])
+    },
+  )
+
+  it('tells an agent a profile is in use, in Spanish', async () => {
+    vi.spyOn(api, 'fetchAgentPersonas').mockResolvedValue(
+      directoryOf([
+        { slug: 'agent-diego', display_name: 'Diego', language: 'pt', audience: 'agent' as const },
+      ]),
+    )
+    vi.spyOn(api, 'signIn').mockRejectedValue(
+      new SignInError(409, 'This profile is in use', 'demo_persona_in_use'),
+    )
+    const user = userEvent.setup()
+    render(<SignInScreen audience="agent" onSignedIn={vi.fn()} />)
+
+    await submitCode(user, 'a-code')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Este perfil está en uso en este momento. Elija otro perfil.',
+    )
+  })
+
+  it('keeps the rate-limit message for a limit that is not a held profile', async () => {
+    vi.spyOn(api, 'fetchCustomerPersonas').mockResolvedValue(directoryOf(PERSONAS))
+    vi.spyOn(api, 'signIn').mockRejectedValue(
+      new SignInError(429, 'Too many attempts', 'too_many_attempts'),
+    )
+    const user = userEvent.setup()
+    render(<SignInScreen onSignedIn={vi.fn()} />)
+
+    await submitCode(user, 'a-code')
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(es['failure.rateLimited'])
+    expect(alert).not.toHaveTextContent(es['signin.personaInUse'])
   })
 
   it('speaks the selected persona’s language, not the default one', async () => {

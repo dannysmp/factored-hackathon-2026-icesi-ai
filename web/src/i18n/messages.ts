@@ -66,6 +66,7 @@ export interface Messages {
   'signin.accessCodeHide': string
   'signin.accessCodeLabel': string
   'signin.refused': string
+  'signin.personaInUse': string
   'signin.accessCodeHint': string
   'signin.submit': string
   'signin.submitting': string

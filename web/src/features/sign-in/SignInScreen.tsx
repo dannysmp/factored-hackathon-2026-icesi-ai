@@ -11,7 +11,13 @@ import { Button } from '../../components/ui/Button'
 import { ErrorState } from '../../components/ui/ErrorState'
 import { Notice } from '../../components/ui/Notice'
 import { classNames } from '../../components/ui/classNames'
-import { fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
+import {
+  PERSONA_IN_USE_CODE,
+  SignInError,
+  fetchAgentPersonas,
+  fetchCustomerPersonas,
+  signIn,
+} from './api'
 import { useT } from '../../i18n/useT'
 import { failureReason } from '../../i18n/failureReason'
 import { LANGUAGES, LANGUAGE_NAMES, startingLanguage } from '../../i18n/lang'
@@ -62,8 +68,9 @@ function isShownLanguage(value: string): value is Lang {
  * is not available and offers no form. A directory that fails for any other reason (no
  * connection, a slow answer, a limit reached, a server error) says which, and offers Retry.
  *
- * A refused sign-in says what was refused: a wrong access code or persona, a limit reached, or
- * a connection or server problem, each in its own words. The keyboard returns to the access code
+ * A refused sign-in says what was refused: a wrong access code or persona, a profile another
+ * session is using (asking for another profile, with no promise of when it frees up), a limit
+ * reached, or a connection or server problem, each in its own words. The keyboard returns to the access code
  * field so it can be corrected at once.
  *
  * `focusForm` moves the keyboard to the selected persona card as soon as the form appears, for a person
@@ -201,6 +208,10 @@ export function SignInScreen({
       (error: unknown) => {
         const failure = classifyFailure(error)
         setSubmitting(false)
+        if (error instanceof SignInError && error.code === PERSONA_IN_USE_CODE) {
+          setSignInError(t('signin.personaInUse'))
+          return
+        }
         setSignInError(
           failure === 'unauthorized'
             ? t('signin.refused')

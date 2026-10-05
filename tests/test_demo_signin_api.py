@@ -9,7 +9,7 @@ client, an injected clock, a fake customer lookup and a fake, in-memory sign-in 
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -342,8 +342,11 @@ def test_the_persona_slot_cap_refuses_a_second_concurrent_session(client: TestCl
         DEMO_LOGIN, json={"persona": "ana"}, headers={"X-Demo-Access-Code": ACCESS_CODE}
     )
 
-    _assert_problem(second, 429, "too_many_attempts", reauth=False)
-    assert second.headers["retry-after"]
+    body = _assert_problem(second, 409, "demo_persona_in_use", reauth=False)
+    assert "retry-after" not in second.headers
+    assert not {"persona", "customer_id", "ana", "CUST-1"} & (
+        set(body) | set(map(str, body.values()))
+    )
 
 
 def test_a_different_persona_is_unaffected_by_another_personas_slot_cap(
@@ -356,6 +359,77 @@ def test_a_different_persona_is_unaffected_by_another_personas_slot_cap(
     )
 
     assert other.status_code == 201
+
+
+def _sign_in(client: TestClient, slug: str) -> Any:
+    return client.post(
+        DEMO_LOGIN, json={"persona": slug}, headers={"X-Demo-Access-Code": ACCESS_CODE}
+    )
+
+
+def _sign_in_agent(client: TestClient, slug: str) -> Any:
+    return client.post(
+        AGENT_LOGIN, json={"persona": slug}, headers={"X-Demo-Access-Code": AGENT_ACCESS_CODE}
+    )
+
+
+def _bearer_of(response: Any) -> dict[str, str]:
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def test_signing_out_frees_the_persona_at_once(client: TestClient) -> None:
+    first = _sign_in(client, "ana")
+    assert first.status_code == 201
+    assert _sign_in(client, "ana").status_code == 409
+
+    assert client.post("/v1/auth/logout", headers=_bearer_of(first)).status_code == 204
+
+    assert _sign_in(client, "ana").status_code == 201
+
+
+def test_a_second_logout_does_not_free_a_slot_someone_else_now_holds(client: TestClient) -> None:
+    first = _sign_in(client, "ana")
+    assert client.post("/v1/auth/logout", headers=_bearer_of(first)).status_code == 204
+    second = _sign_in(client, "ana")
+    assert second.status_code == 201
+
+    again = client.post("/v1/auth/logout", headers=_bearer_of(first))
+
+    _assert_problem(again, 401, "session_revoked", reauth=True)
+    _assert_problem(_sign_in(client, "ana"), 409, "demo_persona_in_use", reauth=False)
+    assert client.get("/v1/session", headers=_bearer_of(second)).status_code == 200
+
+
+def test_signing_out_frees_the_address_and_global_capacity_too(client: TestClient) -> None:
+    sessions = {
+        slug: _sign_in(client, slug) for slug in ("ana", "joao", "emma", "carlos", "mariana")
+    }
+    assert all(r.status_code == 201 for r in sessions.values())
+    busy = _sign_in(client, "ana")
+    _assert_problem(busy, 429, "too_many_attempts", reauth=False)
+
+    assert client.post("/v1/auth/logout", headers=_bearer_of(sessions["joao"])).status_code == 204
+
+    assert _sign_in(client, "joao").status_code == 201
+
+
+def test_a_busy_address_stays_a_rate_limit_even_for_a_held_persona(client: TestClient) -> None:
+    for slug in ("ana", "joao", "emma", "carlos", "mariana"):
+        assert _sign_in(client, slug).status_code == 201
+
+    _assert_problem(_sign_in(client, "ana"), 429, "too_many_attempts", reauth=False)
+
+
+def test_a_session_that_is_not_signed_out_keeps_its_slot_until_it_expires(
+    client: TestClient, clock: Clock
+) -> None:
+    assert _sign_in(client, "ana").status_code == 201
+    clock.now = START + timedelta(minutes=29)
+    assert _sign_in(client, "ana").status_code == 409
+
+    clock.now = START + timedelta(minutes=31)
+
+    assert _sign_in(client, "ana").status_code == 201
 
 
 def test_a_visitor_can_sign_into_every_customer_persona_in_one_sitting(
@@ -641,7 +715,61 @@ def test_the_agent_persona_slot_cap_refuses_a_second_concurrent_session(
         headers={"X-Demo-Access-Code": AGENT_ACCESS_CODE},
     )
 
-    _assert_problem(second, 429, "too_many_attempts", reauth=False)
+    _assert_problem(second, 409, "demo_persona_in_use", reauth=False)
+
+
+def test_an_agent_signing_out_frees_the_persona_at_once(agent_client: TestClient) -> None:
+    first = _sign_in_agent(agent_client, "agent-beatriz")
+    assert first.status_code == 201
+    _assert_problem(
+        _sign_in_agent(agent_client, "agent-beatriz"), 409, "demo_persona_in_use", reauth=False
+    )
+
+    ended = agent_client.post("/v1/agent/auth/logout", headers=_bearer_of(first))
+
+    assert ended.status_code == 204
+    assert _sign_in_agent(agent_client, "agent-beatriz").status_code == 201
+
+
+def test_a_second_agent_logout_does_not_free_a_slot_someone_else_now_holds(
+    agent_client: TestClient,
+) -> None:
+    first = _sign_in_agent(agent_client, "agent-beatriz")
+    agent_client.post("/v1/agent/auth/logout", headers=_bearer_of(first))
+    second = _sign_in_agent(agent_client, "agent-beatriz")
+    assert second.status_code == 201
+
+    again = agent_client.post("/v1/agent/auth/logout", headers=_bearer_of(first))
+
+    assert again.status_code == 401
+    _assert_problem(
+        _sign_in_agent(agent_client, "agent-beatriz"), 409, "demo_persona_in_use", reauth=False
+    )
+
+
+def test_an_agent_token_cannot_end_a_session_on_the_customer_logout(
+    agent_client: TestClient,
+) -> None:
+    held = _sign_in_agent(agent_client, "agent-beatriz")
+
+    refused = agent_client.post("/v1/auth/logout", headers=_bearer_of(held))
+
+    assert refused.status_code == 401
+    _assert_problem(
+        _sign_in_agent(agent_client, "agent-beatriz"), 409, "demo_persona_in_use", reauth=False
+    )
+
+
+def test_a_customer_signing_out_does_not_free_an_agent_persona(agent_client: TestClient) -> None:
+    agent = _sign_in_agent(agent_client, "agent-beatriz")
+    customer = _sign_in(agent_client, "ana")
+
+    agent_client.post("/v1/auth/logout", headers=_bearer_of(customer))
+
+    _assert_problem(
+        _sign_in_agent(agent_client, "agent-beatriz"), 409, "demo_persona_in_use", reauth=False
+    )
+    assert agent.status_code == 201
 
 
 def test_a_different_agent_persona_is_unaffected_by_another_personas_slot_cap(

@@ -52,6 +52,7 @@ class ErrorCode(StrEnum):
     TEST_LOGIN_REJECTED = "test_login_rejected"
     DEMO_SIGNIN_REJECTED = "demo_signin_rejected"
     TOO_MANY_ATTEMPTS = "too_many_attempts"
+    DEMO_PERSONA_IN_USE = "demo_persona_in_use"
     VALIDATION_ERROR = "validation_error"
     NOT_FOUND = "not_found"
     METHOD_NOT_ALLOWED = "method_not_allowed"
