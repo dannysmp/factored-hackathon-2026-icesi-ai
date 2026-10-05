@@ -173,8 +173,8 @@ def test_issuing_for_an_unconfigured_audience_is_refused(service: SessionService
 def test_a_demo_flag_round_trips_and_an_agent_token_yields_an_agent_principal(
     service: SessionService,
 ) -> None:
-    """``AgentPrincipal`` is a distinct type from ``Principal``, not a flag on
-    one shared type — a route written against one type cannot silently accept the other."""
+    """``AgentPrincipal`` is a distinct type from ``Principal``, not a flag on one shared type —
+    a route written against one type cannot silently accept the other."""
     issued = service.issue("A1", audience="agent", demo=True)
 
     principal = service.verify_agent(issued.token)
