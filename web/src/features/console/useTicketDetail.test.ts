@@ -1,4 +1,8 @@
-/** Unit tests: the parts of `useTicketDetail`'s race guard a rendered UI can't reach directly. */
+/**
+ * Unit tests: `useTicketDetail`'s load states (not found, error, retry), its guard that commits
+ * only the latest request's response, and its 401 handling, which a rendered UI cannot reach
+ * directly.
+ */
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AgentRequestError } from './client'
@@ -106,7 +110,7 @@ describe('useTicketDetail', () => {
     const expired = (): Promise<TicketDetail | null> =>
       Promise.reject(new AgentRequestError(401, 'Session expired'))
 
-    it('calls onSessionExpired once and does not enter the error state', async () => {
+    it('calls onSessionExpired a single time and does not enter the error state', async () => {
       const onSessionExpired = vi.fn()
       const client: TicketDetailClient = { fetchTicketDetail: expired }
       const { result } = renderHook(() => useTicketDetail(client, 'T-ANY', onSessionExpired))

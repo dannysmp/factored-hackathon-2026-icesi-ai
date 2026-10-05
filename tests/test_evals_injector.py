@@ -12,7 +12,10 @@ here, never a result's shape), so both the stub and its sentinel results are mov
 from __future__ import annotations
 
 # Standard libraries
+from datetime import UTC, datetime
 from typing import cast
+
+from app.security.sessions import Principal
 
 # Local modules
 from contracts.service_v1.tools import (
@@ -23,7 +26,7 @@ from contracts.service_v1.tools import (
     ToolPort,
     TransactionFilters,
 )
-from evals.injector import FailureInjectingToolPort
+from evals.injector import FailureInjectingToolPort, FailureSchedule
 from evals.models import InjectedToolFailure
 
 
@@ -129,3 +132,35 @@ def test_the_injected_failure_carries_its_own_cause_and_retryability() -> None:
     result = port.evaluate_dispute(evaluate_request)
 
     assert result == ToolFailure(tool=Tool.EVALUATE_DISPUTE, cause="circuit_open", retryable=False)
+
+
+_PRINCIPAL = Principal(
+    "c-1",
+    "s-1",
+    datetime(2026, 6, 18, 17, 0, tzinfo=UTC),
+    datetime(2026, 6, 18, 17, 0, tzinfo=UTC),
+    "dispute-intake",
+)
+
+
+def test_a_schedule_with_no_failure_hands_the_port_back_unchanged() -> None:
+    inner = cast(ToolPort, _RecordingPort())
+
+    assert FailureSchedule().decorate(_PRINCIPAL, inner) is inner
+
+
+def test_a_schedule_wraps_the_port_with_the_failure_set_when_the_port_is_built() -> None:
+    inner = _RecordingPort()
+    schedule = FailureSchedule()
+    failure = InjectedToolFailure(tool=Tool.LIST_TRANSACTIONS, cause="timeout")
+
+    schedule.failure = failure
+    failing = schedule.decorate(_PRINCIPAL, cast(ToolPort, inner))
+    schedule.failure = None
+    healthy = schedule.decorate(_PRINCIPAL, cast(ToolPort, inner))
+
+    assert failing.list_transactions(cast(TransactionFilters, "filters")) == ToolFailure(
+        tool=Tool.LIST_TRANSACTIONS, cause="timeout", retryable=True
+    )
+    assert cast(object, healthy.list_transactions(cast(TransactionFilters, "filters"))) == "page"
+    assert inner.calls == ["list_transactions"]

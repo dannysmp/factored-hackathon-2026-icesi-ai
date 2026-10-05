@@ -107,8 +107,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_SILVER = Path("data/silver")
 DEFAULT_CARD = Path("models/model_card.json")
 
-# The decision rule: a precision floor of ten times the validation base rate, with at most one in
-# twenty otherwise-eligible transactions routed.
+# The decision rule: a precision floor of 0.01, about ten times the validation base rate, with at
+# most one in twenty otherwise-eligible transactions routed.
 PRECISION_FLOOR = 0.01
 ROUTED_SHARE_CAP = 0.05
 # A constant, not tuned by this module.

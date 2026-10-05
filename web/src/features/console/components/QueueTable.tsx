@@ -1,3 +1,4 @@
+/** The queue table: one row per escalated case, with an accessible button to open it. */
 import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { JSX } from 'react'
 import type { QueueItem } from '../contracts'
@@ -24,15 +25,16 @@ function PriorityBadge(): JSX.Element {
 }
 
 /**
- * One trigger view's rows (AC-E10-01: reference, trigger, language, category, age against the
- * promised contact time, status). `items` is already in the order its source guarantees
- * (priority cases first, `contracts/service_v1/console.py`'s own `QueueResponse`) — this
- * component does not re-sort, the same "a fixture does not recompute what its source already
- * decided" rule `FixtureChatClient` follows.
+ * One trigger view's rows: reference, trigger, language, category, age against the promised
+ * contact time, status. `items` is already in the order its source guarantees (priority cases
+ * first, `contracts/service_v1/console.py`'s `QueueResponse`) — this component does not re-sort,
+ * the same "a fixture does not recompute what its source already decided" rule `FixtureChatClient`
+ * follows. An empty `items` renders a "no case matches this filter" message instead of a table.
  *
- * A case's own reference is a real button, not a styled link over a `<th>` (frontend standard,
- * section 7: semantic HTML first) — clicking it calls `onSelectTicket`, `ConsoleApp`'s own
- * master-detail navigation into that case's packet and timeline.
+ * A case's own reference is a real button, not a styled link over a `<th>` (semantic HTML first)
+ * — clicking it calls `onSelectTicket`, `ConsoleApp`'s master-detail navigation into that case's
+ * packet and timeline. Priority rows carry a text badge, and an overdue promised contact date is
+ * flagged in words, so neither meaning rests on colour alone.
  */
 export function QueueTable({
   items,
@@ -47,8 +49,8 @@ export function QueueTable({
 
   return (
     // A narrow viewport scrolls this wrapper horizontally rather than wrapping every cell's text
-    // across several lines (AC-E10-20: no truncated or illegible text at the mobile breakpoint) —
-    // the same accepted pattern `Tabs.css`'s own trigger list already uses for the same reason.
+    // across several lines, so no text is truncated or illegible on a narrow screen — the same
+    // pattern `Tabs.css`'s own trigger list uses for the same reason.
     <ScrollRegion className="queue-table-scroll queue-table-openable" label="Casos escalados">
       <table>
         <caption className="sr-only">Casos escalados</caption>
@@ -81,7 +83,12 @@ export function QueueTable({
                   >
                     {item.ticket_ref}
                   </button>
-                  {item.priority && <PriorityBadge />}
+                  {item.priority && (
+                    <>
+                      <span className="sr-only">, </span>
+                      <PriorityBadge />
+                    </>
+                  )}
                 </th>
                 <td>{TRIGGER_LABELS[item.trigger]}</td>
                 <td>{LANGUAGE_LABELS[item.language]}</td>

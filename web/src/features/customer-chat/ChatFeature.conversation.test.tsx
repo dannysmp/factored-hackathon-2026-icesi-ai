@@ -8,6 +8,7 @@ import { CONFIRMATION_TEXT, TurnResponseSchema } from './contracts'
 import type { TurnResponse } from './contracts'
 import { findMessage } from './findMessage'
 
+/** Builds a contract-valid English turn; `overrides` sets choices, language or awaited element. */
 function turn(
   version: number,
   reply: string,
@@ -32,6 +33,7 @@ function turn(
 
 const OPENING = turn(1, 'Hi! Which transaction would you like to dispute?')
 
+/** One recorded send: the text and the turn id the chat attached to it. */
 interface Sent {
   text: string
   turnId: string | undefined
@@ -54,6 +56,7 @@ function controlledClient(
   return { client, sent }
 }
 
+/** Types `text` into the message field and presses Send. */
 async function typeAndSend(user: ReturnType<typeof userEvent.setup>, text: string): Promise<void> {
   await user.type(screen.getByLabelText('Your message'), text)
   await user.click(screen.getByRole('button', { name: 'Send' }))

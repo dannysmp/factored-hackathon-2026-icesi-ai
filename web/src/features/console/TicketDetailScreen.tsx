@@ -1,3 +1,7 @@
+/**
+ * The agent console's ticket-detail screen: one case's handoff packet and audit timeline, in
+ * separate tabs, with its loading, error and not-found states.
+ */
 import type { JSX } from 'react'
 import './TicketDetailScreen.css'
 import { ReferenceBanner } from '../customer-chat/components/ReferenceBanner'
@@ -11,12 +15,14 @@ import { TRIGGER_LABELS } from './labels'
 import { useTicketDetail } from './useTicketDetail'
 
 /**
- * One case's whole detail (AC-E10-02, AC-E10-03): the packet and the timeline, as two genuine
- * `Tabs` panels — two complete, independent views of the same case, the fit ADR-19's tabs
- * primitive was tested for. Every state rendered deliberately (AC-E10-18): loading, error with a
- * retry, a case that no longer resolves, and the ready view.
+ * One case's whole detail: the packet and the timeline, as two genuine `Tabs` panels — two
+ * complete, independent views of the same case. Every state is rendered deliberately: loading,
+ * error with retry and back actions, a case that does not resolve, and the ready view. Never
+ * renders a document number; the packet carries only a first name and a masked id.
  *
- * Fixed Spanish copy, not a catalog entry (D91), the same as `QueueScreen`.
+ * Fixed Spanish copy, not a catalog entry, the same as `QueueScreen`: the console never uses the
+ * per-language catalogs. `onBack` returns to the queue; `onSessionExpired` is forwarded to the
+ * loader so a 401 sends the agent back to sign-in.
  */
 export function TicketDetailScreen({
   client,

@@ -23,7 +23,7 @@ Design Principles
   listed as public, so a route added later is protected without anyone remembering to. The
   decision uses one normalisation of the path (without ``root_path``, slashes collapsed, lower
   case) so no spelling of a protected path escapes it.
-- **A valid token of the wrong audience is refused exactly like no session at all** (ADR-18): a
+- **A valid token of the wrong audience is refused exactly like no session at all**: a
   path-prefix-to-audience map decides which audience a path requires, by longest matching prefix,
   and that audience picks which of ``SessionService``'s two verify methods is even attempted — a
   customer token reaching an agent-only path is refused by ``verify_agent`` itself and learns
@@ -330,7 +330,7 @@ class SessionAuthMiddleware:
     not public.
 
     Which audience a path requires decides which of ``SessionService``'s two audience-specific
-    verify methods is even attempted (ADR-18): a customer token presented on an agent-only path
+    verify methods is even attempted: a customer token presented on an agent-only path
     is refused by ``verify_agent`` itself, exactly like a missing session, without a separate
     after-the-fact audience comparison.
     """

@@ -34,11 +34,12 @@ Design Principles
 
 Runtime Contract
 ----------------
-``run_cases(client, dsn, cases, *, test_login_key, capture_transcripts=False, cost_ledger=None) ->
-tuple[CaseResult, ...]``, one result per case in the given order: a normal verdict, or a named
-error result for a case that could not resolve, run or be scored. ``capture_transcripts`` (off by
-default) additionally fills each result's ``reply_text`` and ``facts_and_sources``
-(``evals.facts.attach_masked_transcript``) for a judge or a human rater to read.
+``run_cases(client, dsn, cases, *, test_login_key, capture_transcripts=False, cost_ledger=None,
+failure_schedule=None) -> tuple[CaseResult, ...]``, one result per case in the given order: a
+normal verdict, or a named error result for a case that could not resolve, run or be scored.
+``capture_transcripts`` (off by default) additionally fills each result's ``reply_text`` and
+``facts_and_sources`` (``evals.facts.attach_masked_transcript``) for a judge or a human rater to
+read. ``failure_schedule`` receives each case's injected failure before the case runs.
 
 Limitations
 -----------
@@ -64,6 +65,7 @@ import httpx
 from app.retrieval.corpus_index import CorpusIndexError  # A declared policy section not resolving
 from evals.cost import TurnCostLedger  # Per-session model cost, read from the turn log
 from evals.facts import attach_masked_transcript  # Fills reply_text/facts_and_sources, opt-in
+from evals.injector import FailureSchedule  # The failure a case declares, read by the system
 from evals.metrics import CaseResult  # The verdict this module produces, one per case
 from evals.models import Case  # The cases this module runs
 from evals.runner.proposed_system import run_case  # Drives one case against the running system
@@ -93,6 +95,7 @@ def run_cases(
     test_login_key: str,
     capture_transcripts: bool = False,
     cost_ledger: TurnCostLedger | None = None,
+    failure_schedule: FailureSchedule | None = None,
 ) -> tuple[CaseResult, ...]:
     """Resolve, run and score every case in ``cases``, in order.
 
@@ -112,6 +115,10 @@ def run_cases(
     cost_ledger : TurnCostLedger | None
         When given, each case's result carries the model cost the ledger recorded for the case's
         session (``None`` where it recorded none); when omitted, no cost is attached.
+    failure_schedule : FailureSchedule | None
+        The schedule the running system's tool ports read. Before each case it is set to the
+        case's own ``injected_failure`` (``None`` for a case that declares none) and cleared when
+        the batch ends; when omitted, no failure is ever injected.
 
     Returns
     -------
@@ -128,24 +135,32 @@ def run_cases(
         failure never propagates (see this module's Limitations).
     """
     results = []
-    for case in cases:
-        try:
-            customer_id = resolve_customer_id(dsn, case.seed_ref)
-            transcript = run_case(
-                client, case, customer_id=customer_id, test_login_key=test_login_key
-            )
-            if cost_ledger is not None:
-                transcript = dataclasses.replace(
-                    transcript, cost_usd=cost_ledger.cost_for(transcript.session_id)
-                )
-            result = score_case(dsn, transcript)
-        except _CASE_FAILURES as exc:
-            results.append(error_result(case, exc))
-            continue
-        if capture_transcripts:
+    try:
+        for case in cases:
+            if failure_schedule is not None:
+                failure_schedule.failure = case.injected_failure
             try:
-                result = attach_masked_transcript(dsn, transcript, result)
-            except _CAPTURE_FAILURES as exc:
-                logger.warning("transcript_capture_failed case_id=%s error=%s", case.case_id, exc)
-        results.append(result)
+                customer_id = resolve_customer_id(dsn, case.seed_ref)
+                transcript = run_case(
+                    client, case, customer_id=customer_id, test_login_key=test_login_key
+                )
+                if cost_ledger is not None:
+                    transcript = dataclasses.replace(
+                        transcript, cost_usd=cost_ledger.cost_for(transcript.session_id)
+                    )
+                result = score_case(dsn, transcript)
+            except _CASE_FAILURES as exc:
+                results.append(error_result(case, exc))
+                continue
+            if capture_transcripts:
+                try:
+                    result = attach_masked_transcript(dsn, transcript, result)
+                except _CAPTURE_FAILURES as exc:
+                    logger.warning(
+                        "transcript_capture_failed case_id=%s error=%s", case.case_id, exc
+                    )
+            results.append(result)
+    finally:
+        if failure_schedule is not None:
+            failure_schedule.failure = None
     return tuple(results)

@@ -1,4 +1,7 @@
-/** Unit tests: the parts of `useQueue`'s race guard a rendered UI can't reach directly. */
+/**
+ * Unit tests: `useQueue`'s error and retry states, its guard that commits only the latest
+ * request's outcome, and its 401 handling, which a rendered UI cannot reach directly.
+ */
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AgentRequestError } from './client'
@@ -128,7 +131,7 @@ describe('useQueue', () => {
     const expired = (): Promise<QueueResponse> =>
       Promise.reject(new AgentRequestError(401, 'Session expired'))
 
-    it('calls onSessionExpired once and does not enter the error state', async () => {
+    it('calls onSessionExpired a single time and does not enter the error state', async () => {
       const onSessionExpired = vi.fn()
       const client: QueueClient = { fetchQueue: expired }
       const { result } = renderHook(() => useQueue(client, onSessionExpired))

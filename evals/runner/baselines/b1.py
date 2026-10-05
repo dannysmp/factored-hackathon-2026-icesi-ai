@@ -60,7 +60,7 @@ minted. Raises ``ConfigError`` when ``settings.app_env`` is ``prod``.
 ``run_cases(client, settings, dsn, cases, *, policy, retriever, calendar, clock)
 -> tuple[CaseResult, ...]``: reuses the caller's ``client`` for every case, and for each case in
 order resolves the customer, builds a fresh dispatcher and session id, drives the turns and scores
-the result.
+the result. A case's ``injected_failure`` fails that tool for that case's dispatcher only.
 
 Limitations
 -----------
@@ -95,8 +95,9 @@ from app.retrieval.lexical import Retriever
 from app.security.sessions import Clock
 from contracts.service_v1.api import TurnResponse
 from contracts.service_v1.envelope import Lang, Slot
+from evals.injector import FailureInjectingToolPort
 from evals.metrics import CaseResult
-from evals.models import Case
+from evals.models import Case, InjectedToolFailure
 from evals.runner.baselines.b1_tools import TOOL_SCHEMAS, B1ToolDispatcher
 from evals.runner.baselines.naive_agent_client import (
     NaiveAgentClient,
@@ -150,6 +151,7 @@ def _build_dispatcher(
     clock: Clock,
     customer_id: str,
     lang: Lang,
+    injected_failure: InjectedToolFailure | None = None,
 ) -> tuple[B1ToolDispatcher, str]:
     """A fresh tool dispatcher and the opaque session id minted for it, scoped to one customer.
 
@@ -171,7 +173,7 @@ def _build_dispatcher(
         case_create_session_cap=settings.case_create_session_cap,
     )
     dispatcher = B1ToolDispatcher(
-        tool_port=tool_port,
+        tool_port=FailureInjectingToolPort(tool_port, injected_failure),
         retriever=retriever,
         outbox=PostgresHandoffOutbox(dsn),
         policy=policy,
@@ -397,6 +399,7 @@ def run_cases(
                 clock=clock,
                 customer_id=customer_id,
                 lang=case.lang,
+                injected_failure=case.injected_failure,
             )
             transcript = run_case(
                 client, dispatcher, case, session_id=session_id, calendar=calendar

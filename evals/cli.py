@@ -112,6 +112,7 @@ from evals.golden.judge_validation_sample import (
 from evals.golden.judge_validation_sample import (
     RATER_2_SCORES as _SYNTHETIC_RATER_2_SCORES,
 )
+from evals.injector import FailureSchedule
 from evals.judge import JudgeVerdict, LlmJudge
 from evals.judge_validation import compute_agreement
 from evals.metrics import NOT_DEFINED, CaseResult, HeadlineMetrics, Metric, compute_headline_metrics
@@ -191,7 +192,8 @@ def _run_p(
     """
     dsn = settings.require_database_url().get_secret_value()
     test_login_key = _require_test_login_key(settings)
-    client = TestClient(create_app(settings))
+    schedule = FailureSchedule()
+    client = TestClient(create_app(settings, tool_port_decorator=schedule.decorate))
     with TurnCostLedger() as ledger:
         return run_http_cases(
             client,
@@ -200,6 +202,7 @@ def _run_p(
             test_login_key=test_login_key,
             capture_transcripts=capture_transcripts,
             cost_ledger=ledger,
+            failure_schedule=schedule,
         )
 
 
@@ -207,9 +210,17 @@ def _run_b0(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]
     """One run of baseline B0 (the deterministic pipeline behind a stubbed LLM) over ``cases``."""
     dsn = settings.require_database_url().get_secret_value()
     test_login_key = _require_test_login_key(settings)
-    client = TestClient(build_b0_app(settings))
+    schedule = FailureSchedule()
+    client = TestClient(build_b0_app(settings, tool_port_decorator=schedule.decorate))
     with TurnCostLedger() as ledger:
-        return run_http_cases(client, dsn, cases, test_login_key=test_login_key, cost_ledger=ledger)
+        return run_http_cases(
+            client,
+            dsn,
+            cases,
+            test_login_key=test_login_key,
+            cost_ledger=ledger,
+            failure_schedule=schedule,
+        )
 
 
 def _run_b1(settings: Settings, cases: Sequence[Case]) -> tuple[CaseResult, ...]:

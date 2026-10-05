@@ -10,6 +10,7 @@ import { es } from '../../i18n/es'
 import { pt } from '../../i18n/pt'
 import { findMessage } from './findMessage'
 
+/** Builds a contract-valid English turn with the given reply and awaited element. */
 function turn(
   version: number,
   reply: string,
@@ -63,6 +64,7 @@ function recordingClient(script: readonly TurnResponse[]): { client: ChatClient;
   return { client, sent }
 }
 
+/** Types `text` into the message field and presses Send. */
 async function sendText(user: ReturnType<typeof userEvent.setup>, text: string): Promise<void> {
   await user.type(screen.getByLabelText('Your message'), text)
   await user.click(screen.getByRole('button', { name: 'Send' }))

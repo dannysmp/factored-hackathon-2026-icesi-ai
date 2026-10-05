@@ -1,4 +1,4 @@
-# Demo sign-in personas (ADR-18): the closed set of slugs the demo broker accepts. A slug is
+# Demo sign-in personas: the closed set of slugs the demo broker accepts. A slug is
 # never a customer identifier or a document number — the customer_id it maps to never appears on
 # the wire.
 #

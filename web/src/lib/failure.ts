@@ -14,6 +14,7 @@
  */
 export const REQUEST_TIMEOUT_MS = 30_000
 
+/** The categories of failure a person can act on differently; `other` is the unclassified rest. */
 export type FailureKind =
   /** The service refused the credentials: a wrong access code, or a session that has ended. */
   | 'unauthorized'
@@ -32,6 +33,7 @@ export function requestSignal(): AbortSignal {
   return AbortSignal.timeout(REQUEST_TIMEOUT_MS)
 }
 
+/** The numeric HTTP `status` an error carries, or `null` when it carries none. */
 function statusOf(error: unknown): number | null {
   if (typeof error === 'object' && error !== null && 'status' in error) {
     const status = error.status
@@ -40,7 +42,11 @@ function statusOf(error: unknown): number | null {
   return null
 }
 
-/** Sorts a failed request into the kind of problem it was. */
+/**
+ * Sorts a failed request into the kind of problem it was. The HTTP status wins over the shape of
+ * the error; an abort that is not the request timeout is `other`, so a deliberate cancel is never
+ * reported as a slow connection.
+ */
 export function classifyFailure(error: unknown): FailureKind {
   const status = statusOf(error)
   if (status === 401) return 'unauthorized'

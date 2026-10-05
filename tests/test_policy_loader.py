@@ -28,6 +28,7 @@ def _shipped() -> dict[str, object]:
 
 
 def _write(tmp_path: Path, document: object) -> Path:
+    """Write ``document`` as a YAML policy file under ``tmp_path`` and return its path."""
     path = tmp_path / "policy.yaml"
     path.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
     return path
@@ -91,10 +92,12 @@ def test_a_file_that_is_not_a_mapping_is_a_policy_error(tmp_path: Path, content:
 
 
 def _without(document: dict[str, object], *keys: str) -> dict[str, object]:
+    """A copy of ``document`` with the given top-level keys removed."""
     return {k: v for k, v in document.items() if k not in keys}
 
 
 def _with_category_window(window: object) -> dict[str, object]:
+    """The shipped policy with the wrong-amount filing window set to ``window``."""
     document = _shipped()
     categories = dict(document["categories"])  # type: ignore[call-overload]
     categories["wrong_amount"] = {"filing_window_days": window, "requires_confirmation": True}
@@ -102,18 +105,21 @@ def _with_category_window(window: object) -> dict[str, object]:
 
 
 def _without_category(name: str) -> dict[str, object]:
+    """The shipped policy with the filing rule of one category removed."""
     document = _shipped()
     categories = {k: v for k, v in document["categories"].items() if k != name}  # type: ignore[attr-defined]
     return {**document, "categories": categories}
 
 
 def _without_first_response(name: str) -> dict[str, object]:
+    """The shipped policy with the first-response count of one category removed."""
     document = _shipped()
     counts = {k: v for k, v in document["first_response_days"].items() if k != name}  # type: ignore[attr-defined]
     return {**document, "first_response_days": counts}
 
 
 def _with_evidence(name: str, items: object) -> dict[str, object]:
+    """The shipped policy with the evidence list of one category replaced by ``items``."""
     document = _shipped()
     evidence = dict(document["evidence_required"])  # type: ignore[call-overload]
     evidence[name] = items

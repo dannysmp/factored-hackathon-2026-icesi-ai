@@ -36,8 +36,9 @@ Design Principles
 
 Runtime Contract
 ----------------
-``build_b0_app(settings) -> FastAPI``. Raises ``ConfigError`` when ``settings.app_env`` is
-``prod``.
+``build_b0_app(settings, *, tool_port_decorator=None) -> FastAPI``. The decorator is handed to
+``create_app`` unchanged, so a harness can fail a tool for B0 exactly as it does for the proposed
+system. Raises ``ConfigError`` when ``settings.app_env`` is ``prod``.
 
 Limitations
 -----------
@@ -53,11 +54,14 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 # Local modules
+from app.api.turns import ToolPortDecorator  # The tool port hook the harness injects failures by
 from app.config import AppEnvironment, ConfigError, LlmProvider, Settings  # Provider and env
 from app.main import create_app  # The one application both P and B0 are built from
 
 
-def build_b0_app(settings: Settings) -> FastAPI:
+def build_b0_app(
+    settings: Settings, *, tool_port_decorator: ToolPortDecorator | None = None
+) -> FastAPI:
     """The B0 baseline application: ``settings``, with ``llm_provider`` forced to the value
     ``app.main._understanding`` already maps to the deterministic, keyword-based classifier.
 
@@ -74,4 +78,4 @@ def build_b0_app(settings: Settings) -> FastAPI:
     if settings.app_env is AppEnvironment.PROD:
         raise ConfigError("the B0 baseline is not allowed when APP_ENV=prod")
     b0_settings = settings.model_copy(update={"llm_provider": LlmProvider.STUB})
-    return create_app(b0_settings)
+    return create_app(b0_settings, tool_port_decorator=tool_port_decorator)

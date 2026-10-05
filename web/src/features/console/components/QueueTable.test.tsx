@@ -1,4 +1,8 @@
-/** Component test: `QueueTable`'s rows, empty state, overdue flag and ticket selection. */
+/**
+ * Component test: `QueueTable` writes one row per case with its reference, trigger, language,
+ * category, status, dates and age; marks priority and overdue cases; and reports the selected
+ * ticket reference. The rows show no document number.
+ */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -84,6 +88,17 @@ describe('QueueTable', () => {
     expect(screen.getByRole('rowheader', { name: /T-20260618-BBBBBBBB/ })).not.toHaveTextContent(
       'Prioritario',
     )
+  })
+
+  it('separates the reference from the priority word, so a screen reader does not run them together', () => {
+    render(
+      <QueueTable
+        items={[item({ ticket_ref: 'T-20260618-AAAAAAAA', priority: true })]}
+        onSelectTicket={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('rowheader')).toHaveTextContent('T-20260618-AAAAAAAA, Prioritario')
   })
 
   it('puts the priority bar on a priority row and on no other, and gives the mark an icon', () => {
