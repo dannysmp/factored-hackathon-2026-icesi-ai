@@ -6,6 +6,12 @@ results still to come say so and name the command that completes them.
 
 ## Data limitations
 
+- **The handling-cost figure is a projection, not a measurement.** The USD 0.83 per dispute
+  (USD 0.37 to 2.15) in `reports/workflow-analysis.md` combines one measured input, a 3.7-minute
+  mean handling time, with assumptions: the agent-hour cost and the contacts a dispute needs. The
+  source cannot tie contacts to the cases they produced, and it records no back-office work such as
+  investigation or contacting the merchant, so the human cost is understated by an unknown amount.
+  The comparison with the system's USD 0.004 of model spend per case counts model calls only.
 - **The source data is Spanish-only.** No Portuguese or English customer text exists anywhere in
   the provided dataset, and the call transcripts carry no dispute-related language at all. Every
   Portuguese and English scripted case and policy-corpus document in this project is therefore
@@ -39,6 +45,12 @@ results still to come say so and name the command that completes them.
   found none: the model card records this as a negative result and keeps routing switched off. A
   fraud claim still always reaches a person regardless of this signal, since that rule does not
   depend on the risk score.
+- **The risk model shows no lift over its baseline or the base rate.** On the test period the
+  boosted model's PR-AUC is 0.00089 and the logistic baseline's is 0.00085; the difference of
+  +0.000039 has a 95% interval of -0.000033 to +0.000108, which includes zero, so the logistic
+  model was kept. Both sit at about the base rate of one in a thousand (0.00099 in validation).
+  With no usable signal at the precision floor there is no threshold, and the card reports no
+  recall figure because none was fixed. The labels are synthetic, generated for this project.
 - **There is no labeled intent set and no intent-set comparison.** Building a labeled set of
   utterances, scoring the language model's intent understanding against it per language, and
   comparing it with a keyword baseline or a zero-shot multilingual classifier are all out of
