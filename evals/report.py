@@ -5,15 +5,13 @@ Evaluation Report Generator
 Overview
 --------
 Turns one full harness run's already-computed results — P's three repeated runs, B0's and B1's
-single runs, the live judge's own verdicts over P's last run, and the H4 judge-validation sample's
-agreement — into ``reports/evaluation.md``, the single generated artifact
-``plan/docs/evaluation-plan.md``'s Report section names. The full ``make evaluate`` run this
-module renders is exactly that: every piece it reads was already built elsewhere (the runner, the
-metrics engine, the judge, the judge-validation agreement computation); this module only
-assembles and renders what they already produced. The judge-scored-quality section (a
-system's own live-judge verdicts) and the judge-validation section (the judge's agreement with
-human raters) answer two different questions from two different data sources and are never
-conflated.
+single runs, the live judge's own verdicts over P's last run, and the human judge-validation
+sample's agreement — into ``reports/evaluation.md``, the single generated evaluation artifact. Every
+piece it reads is produced elsewhere (the runner, the metrics engine, the judge, the
+judge-validation agreement computation); this module only assembles and renders what they produced.
+The judge-scored-quality section (a system's own live-judge verdicts) and the judge-validation
+section (the judge's agreement with human raters) answer two different questions from two different
+data sources and are never conflated.
 
 Scope
 -----
@@ -26,18 +24,17 @@ finished results, exactly the boundary ``pipelines.profile_report`` already draw
 Design Principles
 -----------------
 - **Pure function of the report, like ``pipelines.profile_report``.** No clock, no filesystem, no
-  randomness; the same input always renders byte-identical text. The CLI (a later piece of this
-  same slice) is the only place that touches the filesystem, the same split ``pipelines.profile``
-  already draws with its own renderer.
+  randomness; the same input always renders byte-identical text. The CLI is the only place that
+  touches the filesystem, the same split ``pipelines.profile`` already draws with its own renderer.
 - **A synthetic judge-validation sample never reaches the report as real.** ``EvaluationReport``
   carries the agreement sample's own ``provenance``; the judge-validation section renders the real
-  agreement numbers only when it reads ``"human"``, and a "pending H4" placeholder — never a
-  fabricated agreement rate — for anything else, including this slice's own synthetic placeholder
-  fixture (``evals.golden.judge_validation_sample``). A test proves the two paths render
+  agreement numbers only when it reads ``"human"``, and a placeholder stating the human sample is
+  pending — never a fabricated agreement rate — for anything else, including the synthetic
+  placeholder fixture (``evals.golden.judge_validation_sample``). A test proves the two paths render
   different, not just non-empty, text.
 - **Every metric states its basis.** ``evals.metrics.Metric.basis`` already carries "measured" or
-  "projected"; this renderer surfaces it on every row rather than repeating the plan's own
-  OFFLINE caveat once and letting a reader forget it applies to every number in the table.
+  "projected"; this renderer surfaces it on every row rather than repeating the OFFLINE
+  caveat once and letting a reader forget it applies to every number in the table.
 - **A gap this codebase already discloses elsewhere is repeated, not silently duplicated or
   invented.** The learned-component metrics (PR-AUC, calibration, NLU accuracy) are explicitly out
   of ``evals.metrics``'s own scope ("those score a model, not a conversation, and live beside the
@@ -49,25 +46,30 @@ Runtime Contract
 -----------------
 ``Versions``, ``SystemResult``, ``EvaluationReport``.
 ``render_markdown(report) -> str``.
-``judge_validation_section(agreement, provenance) -> str``: the exact text ``render_markdown``
-puts under its Judge validation heading — exported so a later, cheaper regeneration of just that
-section (once the real H4 sample lands) renders identically to a full report, never a
-hand-maintained second copy of the same wording (``evals.h4_judge_validation``).
+``judge_validation_section(agreement, provenance, detail=None, facts_coverage=None) -> str``: the
+exact text ``render_markdown`` puts under its Judge validation heading — exported so a cheaper
+regeneration of just that section (once the real human sample is available) renders identically to a
+full report, never a hand-maintained second copy of the same wording
+(``evals.h4_judge_validation``).
+``withhold_demoted_judge_means(section_body, agreement, human_means) -> str``: the body of the
+Judge-scored quality section with each demoted dimension's judge mean replaced by "not reportable
+by the judge" in every system row, and a note beneath the table giving the raters' means; raises
+``ValueError`` for a demoted dimension with no column or no rater mean.
 
 Limitations
 -----------
 The failure gallery reports which deterministic check failed (``correct_outcome``,
-``is_unsafe``, an escalation mismatch) or, for a case ``evals.scoring.error_result`` recorded,
-its own error message — not a deeper root-cause classification beyond that. ``CaseResult`` itself
-carries only those flags, and building a richer taxonomy is not this slice's own scope. The
-failure gallery draws from ``case_results`` alone, the last run only; the Unsafe outcomes section
-is the one that reports every unsafe result from every repeated run, each tagged with which of
-the harness's own checks fired (``unsafe_reasons``) and its run's number. That section also
-states that zero observed unsafe outcomes does not establish zero risk and sizes the set per
-golden-set category; a category's case-runs are its last-run case count times the run count.
-Repeated-run variability and the flip list are rendered only for a ``SystemResult`` whose
-``run_count`` is greater than one (P, by the plan's own execution protocol); B0 and B1 report a
-single run and show no range, by construction, not because their own results are omitted.
+``is_unsafe``, an escalation mismatch) or, for a case ``evals.scoring.error_result`` recorded, its
+own error message — not a deeper root-cause classification beyond that. ``CaseResult`` itself
+carries only those flags, and building a richer taxonomy is outside this module's scope. The failure
+gallery draws from ``case_results`` alone, the last run only; the Unsafe outcomes section is the one
+that reports every unsafe result from every repeated run, each tagged with which of the harness's
+own checks fired (``unsafe_reasons``) and its run's number. That section also states that zero
+observed unsafe outcomes does not establish zero risk and sizes the set per golden-set category; a
+category's case-runs are its last-run case count times the run count. Repeated-run variability and
+the flip list are rendered only for a ``SystemResult`` whose ``run_count`` is greater than one (P
+runs three times); B0 and B1 report a single run and show no range, by construction, not because
+their own results are omitted.
 """
 
 from __future__ import annotations
@@ -88,7 +90,13 @@ from evals.fairness import (
     slice_results,
 )
 from evals.judge import JudgeVerdict
-from evals.judge_validation import DimensionAgreement
+from evals.judge_validation import (
+    DEMOTION_THRESHOLD,
+    DimensionAgreement,
+    DimensionDetail,
+    HumanMean,
+    PairDetail,
+)
 from evals.metrics import NOT_DEFINED, CaseResult, Metric
 from evals.models import Case, CaseCategory
 from evals.repeated_runs import (
@@ -98,9 +106,9 @@ from evals.repeated_runs import (
     VariabilityValue,
 )
 
-# One (label, accessor) pair per headline metric, in the order the plan's own Metric definitions
-# section lists them; shared by the headline table and the repeated-run variability table so the
-# two never drift out of sync with each other.
+# One (label, accessor) pair per headline metric, in the order the metric definitions list them;
+# shared by the headline table and the repeated-run variability table so the two never drift out of
+# sync with each other.
 _HEADLINE_METRICS: tuple[tuple[str, str], ...] = (
     ("Safe automated resolution", "safe_automated_resolution"),
     ("Attempted share", "attempted_share"),
@@ -119,7 +127,7 @@ _HEADLINE_METRICS: tuple[tuple[str, str], ...] = (
 
 @dataclass(frozen=True, slots=True)
 class Versions:
-    """Every version the plan's Report section asks for, gathered once per report."""
+    """Every version the report states, gathered once per report."""
 
     nlu_model: str
     render_model: str
@@ -171,9 +179,9 @@ class EvaluationReport:
     bank_timezone: str
     scope_note: str = ""
     """Set by the caller when ``golden_cases`` is a subset of the full golden set (for example the
-    16-case CI-smoke subset, run before the full adversarial set's loader lands) — empty for a
-    full-golden-set run. Rendered as a prominent callout, never silently inferred from a case
-    count this module has no independent way to call "full" or "partial"."""
+    16-case CI-smoke subset) — empty for a full-golden-set run. Rendered as a prominent callout,
+    never silently inferred from a case count this module has no independent way to call "full" or
+    "partial"."""
     judge_call_count: int = 0
     """Calls the live judge made while producing this report; zero when it was not run."""
     judge_cost_usd: float | None = None
@@ -355,11 +363,87 @@ def _judge_scored_quality_section(report: EvaluationReport) -> str:
     note = (
         f"\n\n{', '.join(not_judged)} carried no judge verdicts in this report: a system's own "
         "run is judge-scored only when it is in scope for judge-sourced report metrics (today, "
-        "the proposed system alone — the same scope H4's own human validation uses)."
+        "the proposed system alone — the same scope the human judge validation uses)."
         if not_judged
         else ""
     )
     return f"{table}{note}\n\n{_judge_cost_line(report)}"
+
+
+_WITHHELD_JUDGE_MEAN = "not reportable by the judge"
+
+_JUDGE_MEAN_COLUMNS = {
+    "Grounding (mean, 0-2)": "grounding",
+    "Language quality (mean, 0-2)": "language_quality",
+    "Clarification (mean, 0-2)": "clarification",
+}
+
+
+def _human_mean_text(mean: HumanMean) -> str:
+    def one(label: str, value: float | None, scored: int) -> str:
+        return f"{label} {NOT_DEFINED}" if value is None else f"{label} {value:.2f} (n={scored})"
+
+    return (
+        f"{mean.dimension}: {one('Rater 1', mean.rater1_mean, mean.rater1_scored)}, "
+        f"{one('Rater 2', mean.rater2_mean, mean.rater2_scored)}"
+    )
+
+
+def withhold_demoted_judge_means(
+    section_body: str,
+    agreement: tuple[DimensionAgreement, ...],
+    human_means: tuple[HumanMean, ...],
+) -> str:
+    """The judge-scored quality section's body with each demoted dimension's judge mean replaced.
+
+    A dimension the judge-validation decision demoted shows "not reportable by the judge" in
+    every system's row, and a line beneath the table gives the two raters' means for it instead,
+    from the validation sample (not the cases the judged run covers). A body with no table (no
+    system was judged) is returned unchanged.
+
+    Raises
+    ------
+    ValueError
+        A demoted dimension has no column in the table, or no rater mean was given for it.
+    """
+    demoted = [entry.dimension for entry in agreement if entry.demoted]
+    lines = section_body.split("\n")
+    header_at = next(
+        (i for i, line in enumerate(lines) if line.startswith("| System |")),
+        None,
+    )
+    if header_at is None or not demoted:
+        return section_body
+    headers = [cell.strip() for cell in lines[header_at].strip("|").split("|")]
+    columns = {
+        _JUDGE_MEAN_COLUMNS[header]: index
+        for index, header in enumerate(headers)
+        if header in _JUDGE_MEAN_COLUMNS
+    }
+    means = {mean.dimension: mean for mean in human_means}
+    missing = [d for d in demoted if d not in columns or d not in means]
+    if missing:
+        raise ValueError(
+            f"the judge-scored quality table has no column or human mean for {missing}"
+        )
+    end = header_at
+    while end < len(lines) and lines[end].startswith("|"):
+        end += 1
+    for row in range(header_at + 2, end):
+        cells = [cell.strip() for cell in lines[row].strip("|").split("|")]
+        for dimension in demoted:
+            cells[columns[dimension]] = _WITHHELD_JUDGE_MEAN
+        lines[row] = "| " + " | ".join(cells) + " |"
+    note = (
+        "**Withheld judge means.** The judge-validation decision demoted "
+        + ", ".join(demoted)
+        + " to human-only, so the judge's mean for it is not stated. The raters' own means over "
+        "the judge-validation sample, a different set of cases from the judged run, are "
+        + "; ".join(_human_mean_text(means[d]) for d in demoted)
+        + "."
+    )
+    lines[end:end] = ["", note]
+    return "\n".join(lines)
 
 
 def _repeated_run_section(systems: tuple[SystemResult, ...]) -> str:
@@ -637,33 +721,178 @@ def _fairness_section(report: EvaluationReport) -> str:
     return f"{intro}{unavailable}\n\n{table}\n\n{verdict}"
 
 
+def _agreement_cell(value: VariabilityValue, detail: PairDetail | None) -> str:
+    if detail is None:
+        return _fmt_variability_value(value)
+    kappa = detail.weighted_kappa
+    kappa_text = kappa if kappa == NOT_DEFINED else f"{kappa:.2f}"
+    return f"{_fmt_variability_value(value)} (n={detail.compared}, kappa {kappa_text})"
+
+
+def _direction_table(detail: tuple[DimensionDetail, ...]) -> str:
+    rows = [
+        [
+            entry.dimension,
+            f"{entry.rater_to_rater.first_higher} / {entry.rater_to_rater.second_higher}",
+            f"{entry.rater1_to_judge.second_higher} / {entry.rater1_to_judge.first_higher}",
+            f"{entry.rater2_to_judge.second_higher} / {entry.rater2_to_judge.first_higher}",
+        ]
+        for entry in detail
+    ]
+    return _table(
+        [
+            "Dimension",
+            "Rater 1 higher / Rater 2 higher",
+            "Judge higher / lower than Rater 1",
+            "Judge higher / lower than Rater 2",
+        ],
+        rows,
+    )
+
+
+#: A judge-versus-rater gap is called one-sided from this many differences, when at least this
+#: share of them run the same way.
+_LEAN_MIN_DIFFERENCES = 5
+_LEAN_SHARE = 0.8
+
+
+def _judge_lean(dimension: str, label: str, pair: PairDetail) -> str | None:
+    """A sentence when the judge differs from a rater almost always in the same direction."""
+    differences = pair.first_higher + pair.second_higher
+    if differences < _LEAN_MIN_DIFFERENCES:
+        return None
+    if pair.second_higher / differences >= _LEAN_SHARE:
+        direction, count = "higher", pair.second_higher
+    elif pair.first_higher / differences >= _LEAN_SHARE:
+        direction, count = "lower", pair.first_higher
+    else:
+        return None
+    return (
+        f"  On {dimension} the judge scores {direction} than {label} in {count} of the "
+        f"{differences} cases where they differ, a systematic offset rather than scattered "
+        "disagreement."
+    )
+
+
+def _demotion_reason(entry: DimensionAgreement, threshold: str) -> str:
+    """Why a dimension was demoted: a rate below the bar, or no pair to compute one from."""
+    undefined = [
+        label
+        for label, value in (
+            ("Rater 1", entry.rater1_to_judge),
+            ("Rater 2", entry.rater2_to_judge),
+        )
+        if value == NOT_DEFINED
+    ]
+    if undefined:
+        return (
+            f"No case was scored by both {' and '.join(undefined)} and the judge, so the "
+            "judge's agreement is not defined, and an agreement that cannot be measured does "
+            "not validate the judge."
+        )
+    return f"The judge's agreement with at least one rater is below {threshold}."
+
+
+def _validation_decision(
+    agreement: tuple[DimensionAgreement, ...],
+    detail: tuple[DimensionDetail, ...] | None,
+) -> str:
+    threshold = f"{DEMOTION_THRESHOLD:.0%}"
+    lines = []
+    by_dimension = {entry.dimension: entry for entry in detail or ()}
+    for entry in agreement:
+        if entry.demoted:
+            lines.append(
+                f"- **{entry.dimension}: not validated.** {_demotion_reason(entry, threshold)} "
+                "The judge-scored quality section withholds the judge's mean for it and shows "
+                "the raters' mean instead; the raters' per-case scores are in the cases file "
+                "the judge-validation command writes, a local working file."
+            )
+        else:
+            lines.append(
+                f"- **{entry.dimension}: judge-scored.** The judge agrees with both raters at "
+                f"{threshold} or more."
+            )
+        pairs = by_dimension.get(entry.dimension)
+        for label, pair in (
+            ("Rater 1", pairs.rater1_to_judge if pairs else None),
+            ("Rater 2", pairs.rater2_to_judge if pairs else None),
+        ):
+            lean = _judge_lean(entry.dimension, label, pair) if pair else None
+            if lean:
+                lines.append(lean)
+        if entry.rater_to_rater != NOT_DEFINED and entry.rater_to_rater < DEMOTION_THRESHOLD:
+            lines.append(
+                f"  The two raters agree with each other on {entry.dimension} in "
+                f"{entry.rater_to_rater:.0%} of cases, below the same bar, so the raters' "
+                "scores are themselves not settled and a single rater's score is not a reference."
+            )
+    reading = (
+        "Agreement is the share of cases scored identically. The weighted kappa is the "
+        "quadratic-weighted Cohen's kappa over the 0 to 2 scale: it is near zero whenever one "
+        "side gives almost the same score to every case, however often the two sides match, so "
+        "it is read with the pair count and the direction table, not alone. "
+        "Clarification is scored only for the cases the rubric asks the question about, so its "
+        "pair count is the number of those cases, shown in its row."
+    )
+    return "**Decision per dimension**\n\n" + "\n".join(lines) + "\n\n" + reading
+
+
+def _facts_coverage_note(facts_coverage: tuple[int, int]) -> str:
+    without, total = facts_coverage
+    return (
+        f"**Limitation: the facts column.** {without} of the {total} sheet rows carried the "
+        "statement that no case-specific facts are on record: a sheet shows the transaction "
+        "of a case the conversation filed, and the policy section a policy question declares, "
+        "and nothing else. Raters and judge scored grounding against that statement for those "
+        "rows, which is a weaker test of grounding than a reply set beside the facts it should "
+        "cite; low agreement on grounding is read with that in mind."
+    )
+
+
 def judge_validation_section(
     agreement: tuple[DimensionAgreement, ...],
     provenance: Literal["team_generated_synthetic", "human"],
+    detail: tuple[DimensionDetail, ...] | None = None,
+    facts_coverage: tuple[int, int] | None = None,
 ) -> str:
-    """The text of the report's judge-validation section for the given sample provenance."""
+    """The text of the report's judge-validation section for the given sample provenance.
+
+    ``detail`` adds each agreement's pair count and kappa, the direction table and the decision
+    per dimension; ``facts_coverage`` is ``(rows with no case facts, rows)`` and adds the matching
+    limitation. Neither is rendered for a sample that is not ``human``.
+    """
     if provenance != "human":
         return (
             "**Pending H4.** The judge-validation sample used to produce this section is "
             f"labeled `{provenance}`, not `human` — the real double-scored sample "
-            "(plan/product/human-tasks/H4-judge-rubric.md) has not landed yet. No agreement rate "
+            "(see the judge rubric) has not landed yet. No agreement rate "
             "is reported here; presenting a synthetic sample's numbers as the real validation "
             "would misstate how well the judge actually agrees with human raters."
         )
-    rows = [
-        [
-            entry.dimension,
-            _fmt_variability_value(entry.rater_to_rater),
-            _fmt_variability_value(entry.rater1_to_judge),
-            _fmt_variability_value(entry.rater2_to_judge),
-            "yes (human-only in this report)" if entry.demoted else "no",
-        ]
-        for entry in agreement
-    ]
+    by_dimension = {entry.dimension: entry for entry in detail or ()}
+    rows = []
+    for entry in agreement:
+        pairs = by_dimension.get(entry.dimension)
+        rows.append(
+            [
+                entry.dimension,
+                _agreement_cell(entry.rater_to_rater, pairs.rater_to_rater if pairs else None),
+                _agreement_cell(entry.rater1_to_judge, pairs.rater1_to_judge if pairs else None),
+                _agreement_cell(entry.rater2_to_judge, pairs.rater2_to_judge if pairs else None),
+                "yes (judge mean withheld)" if entry.demoted else "no",
+            ]
+        )
     table = _table(
         ["Dimension", "Rater-to-rater", "Rater 1-to-judge", "Rater 2-to-judge", "Demoted"], rows
     )
-    return f"Judge-validation sample provenance: `human`.\n\n{table}"
+    parts = [f"Judge-validation sample provenance: `human`.\n\n{table}"]
+    if detail is not None:
+        parts.append(_direction_table(detail))
+        parts.append(_validation_decision(agreement, detail))
+    if facts_coverage is not None and facts_coverage[0] > 0:
+        parts.append(_facts_coverage_note(facts_coverage))
+    return "\n\n".join(parts)
 
 
 _LEARNED_COMPONENT_SECTION = (
@@ -677,7 +906,7 @@ _LEARNED_COMPONENT_SECTION = (
 def _limitations_section(report: EvaluationReport) -> str:
     lines = [
         "- All measurements in this report are labeled **measured**; no projected metric (for "
-        "example a business-savings projection from cost inputs) is computed by this slice.",
+        "example a business-savings projection from cost inputs) is computed here.",
         "- The failure gallery reports which deterministic check failed, not a deeper root-cause "
         "classification.",
         "- A case's cost is the model spend measured for its run: for the proposed system, the "

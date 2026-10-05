@@ -5,8 +5,9 @@ Language Understanding Port
 Overview
 --------
 The port the dialogue controller reads a customer's message through, and a deterministic fake
-that implements it without a model call. The Anthropic-backed adapter is a later change behind
-the same port; nothing that consumes ``NluResult`` needs to know which implementation is in use.
+that implements it without a model call. The model-backed adapter
+(``app.conversation.llm_understanding``) sits behind the same port; nothing that consumes
+``NluResult`` needs to know which implementation is in use.
 
 Scope
 -----
@@ -37,8 +38,8 @@ Runtime Contract
 ``Understanding`` (protocol): ``understand(text, *, language_hint, reference_date) ->
 tuple[NluResult, TurnAccounting | None]``, or raises ``UnderstandingUnavailable`` instead of
 returning at all. ``reference_date`` is the domain calendar's own reference date (never the wall
-clock), read by an implementation that resolves a customer-stated transaction date against it
-(AC-E5-16); ``FakeNlu`` accepts it for the same signature every ``Understanding`` shares, but does
+clock), read by an implementation that resolves a customer-stated transaction date against it;
+``FakeNlu`` accepts it for the same signature every ``Understanding`` shares, but does
 not itself resolve any date.
 ``TurnAccounting(model, prompt_version, input_tokens, output_tokens, latency_ms)``.
 ``UnderstandingUnavailable``: raised instead of returning a result when the port could not reach
@@ -106,8 +107,8 @@ class Understanding(Protocol):
         """The understanding of ``text`` and, when a real model call produced it, its accounting.
 
         ``language_hint`` is a tie-breaker; ``reference_date`` is the domain calendar's own
-        reference date, used to resolve a transaction date the customer expressed relative to it
-        (AC-E5-16) — never the wall clock. The accounting half is ``None`` whenever no real,
+        reference date, used to resolve a transaction date the customer expressed relative to it,
+        never the wall clock. The accounting half is ``None`` whenever no real,
         priced model call happened (``FakeNlu``, always; a real call the port could not complete).
 
         Raises
@@ -205,12 +206,14 @@ def _detect_language(text: str, hint: Lang | None) -> Lang | None:
 
 
 def _requested_language(text: str) -> Lang | None:
+    """The language the message names ("Spanish", "portugués", ...), or ``None`` if none."""
     for pattern, lang in _SWITCH_LANGUAGE_TARGETS:
         if pattern.search(text):
             return lang
     return None
 
 
+# Verbs that turn a mention of a language into a request to switch to it.
 _SWITCH_REQUEST = re.compile(
     r"\b(cambiar|mudar|switch|hablar en|falar em|talk in)\b", re.IGNORECASE
 )
@@ -223,7 +226,10 @@ _Rule = tuple[Callable[[str], "re.Match[str] | None"], Callable[[str, Lang | Non
 def _confirmation(
     answer: ConfirmationAnswer, confidence: float
 ) -> Callable[[str, Lang | None], NluResult]:
+    """A result builder for a yes, no or ambiguous answer with fixed ``confidence``."""
+
     def build(_text: str, language: Lang | None) -> NluResult:
+        """The confirmation result carrying the answer and confidence bound by the closure."""
         return NluResult(
             intent=NluIntent.CONFIRMATION,
             confidence=confidence,
@@ -235,13 +241,17 @@ def _confirmation(
 
 
 def _plain(intent: NluIntent, confidence: float) -> Callable[[str, Lang | None], NluResult]:
+    """A result builder for ``intent`` at fixed ``confidence`` that carries no slots."""
+
     def build(_text: str, language: Lang | None) -> NluResult:
+        """The result for the intent and confidence bound by the closure, with no slots."""
         return NluResult(intent=intent, confidence=confidence, language=language)
 
     return build
 
 
 def _policy_question(_text: str, language: Lang | None) -> NluResult:
+    """A policy question; its query is the message itself, cut to 200 characters."""
     return NluResult(
         intent=NluIntent.POLICY_QUESTION,
         confidence=0.85,
@@ -251,6 +261,7 @@ def _policy_question(_text: str, language: Lang | None) -> NluResult:
 
 
 def _file_dispute(_text: str, language: Lang | None) -> NluResult:
+    """A request to file a dispute, with an empty transaction hint (this fake extracts none)."""
     return NluResult(
         intent=NluIntent.FILE_DISPUTE,
         confidence=0.8,
