@@ -205,6 +205,7 @@ def _detect_language(text: str, hint: Lang | None) -> Lang | None:
 
 
 def _requested_language(text: str) -> Lang | None:
+    """The language the message asks to switch to, or ``None`` when it names none."""
     for pattern, lang in _SWITCH_LANGUAGE_TARGETS:
         if pattern.search(text):
             return lang
@@ -223,7 +224,10 @@ _Rule = tuple[Callable[[str], "re.Match[str] | None"], Callable[[str, Lang | Non
 def _confirmation(
     answer: ConfirmationAnswer, confidence: float
 ) -> Callable[[str, Lang | None], NluResult]:
+    """A builder of results that read a message as the given answer to a pending confirmation."""
+
     def build(_text: str, language: Lang | None) -> NluResult:
+        """Build the confirmation result, carrying the language the message was written in."""
         return NluResult(
             intent=NluIntent.CONFIRMATION,
             confidence=confidence,
@@ -235,13 +239,17 @@ def _confirmation(
 
 
 def _plain(intent: NluIntent, confidence: float) -> Callable[[str, Lang | None], NluResult]:
+    """A builder of results for an intent that needs no further detail."""
+
     def build(_text: str, language: Lang | None) -> NluResult:
+        """Build the result for the intent, carrying the language the message was written in."""
         return NluResult(intent=intent, confidence=confidence, language=language)
 
     return build
 
 
 def _policy_question(_text: str, language: Lang | None) -> NluResult:
+    """A policy question, keeping the first 200 characters of the message as the text to look up."""
     return NluResult(
         intent=NluIntent.POLICY_QUESTION,
         confidence=0.85,
@@ -251,6 +259,7 @@ def _policy_question(_text: str, language: Lang | None) -> NluResult:
 
 
 def _file_dispute(_text: str, language: Lang | None) -> NluResult:
+    """A request to file a dispute, with no transaction described yet."""
     return NluResult(
         intent=NluIntent.FILE_DISPUTE,
         confidence=0.8,

@@ -58,15 +58,18 @@ class PolicyAnswer:
 
 
 def _filing_window(category: DisputeCategory, policy: Policy) -> PolicyValue:
+    """The number of days within which a dispute of the category can be filed."""
     days = policy.categories[category].filing_window_days
     return PolicyValue(name="filing_window_days", value=str(days))
 
 
 def _response_time(category: DisputeCategory, policy: Policy) -> PolicyValue:
+    """The number of days within which a first response is due for the category."""
     return PolicyValue(name="first_response_days", value=str(policy.first_response_days[category]))
 
 
 def _evidence(category: DisputeCategory, policy: Policy) -> PolicyValue:
+    """The evidence the category requires, as a comma-separated list."""
     evidence = ", ".join(policy.evidence_required[category])
     return PolicyValue(name="evidence_required", value=evidence)
 

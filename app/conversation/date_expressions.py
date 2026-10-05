@@ -153,6 +153,9 @@ _MONTHS: dict[Lang, dict[str, int]] = {
 
 
 def _month_alternation(language: Lang) -> str:
+    """A regular-expression alternation of the month names of the language, longest first so that a
+    longer name is never cut short by a shorter prefix.
+    """
     return "|".join(sorted(_MONTHS[language], key=len, reverse=True))
 
 

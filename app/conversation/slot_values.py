@@ -97,6 +97,7 @@ _NO_CASE_FOUND_OUTCOME_STATEMENT: dict[str, str] = {
 
 
 def _present_transactions(e: RenderEnvelope) -> tuple[SlotValue, ...]:
+    """The amount, date and merchant of each transaction on offer, as the reply may state them."""
     entries: list[SlotValue] = []
     for transaction in e.facts.transactions:
         entries.append(
@@ -113,6 +114,7 @@ def _present_transactions(e: RenderEnvelope) -> tuple[SlotValue, ...]:
 
 
 def _confirm_filing(e: RenderEnvelope) -> tuple[SlotValue, ...]:
+    """The amount and date of the chosen transaction and the category the reply may state."""
     facts = e.facts
     transaction = next(t for t in facts.transactions if t.ref == facts.selected_ref)
     entries = [
@@ -129,6 +131,7 @@ def _confirm_filing(e: RenderEnvelope) -> tuple[SlotValue, ...]:
 
 
 def _filing_result(e: RenderEnvelope) -> tuple[SlotValue, ...]:
+    """The case number, and the date a first response is expected when there is one."""
     case = e.facts.cases[0]
     entries = [SlotValue(field=GroundedField.CASE_NUMBER, value=case.case_number)]
     if case.expected_response_on is not None:
@@ -142,12 +145,16 @@ def _filing_result(e: RenderEnvelope) -> tuple[SlotValue, ...]:
 
 
 def _ineligible(e: RenderEnvelope) -> tuple[SlotValue, ...]:
+    """The customer-facing statement of why the dispute cannot be filed."""
     decision = next(d for d in e.decisions if d.outcome is Outcome.INELIGIBLE)
     statement = INELIGIBLE_TEXT[e.lang][decision.customer_reason]
     return (SlotValue(field=GroundedField.OUTCOME_STATEMENT, value=statement),)
 
 
 def _dispute_status(e: RenderEnvelope) -> tuple[SlotValue, ...]:
+    """The number, status and filing date of each case, followed by a generic statement that
+    also covers the case where none exists.
+    """
     entries: list[SlotValue] = []
     for case in e.facts.cases:
         entries.append(SlotValue(field=GroundedField.CASE_NUMBER, value=case.case_number))
@@ -165,6 +172,7 @@ def _dispute_status(e: RenderEnvelope) -> tuple[SlotValue, ...]:
 
 
 def _policy_answer(e: RenderEnvelope) -> tuple[SlotValue, ...]:
+    """The title of the policy section cited, and every figure the policy engine supplied."""
     entries = [SlotValue(field=GroundedField.SOURCE_TITLE, value=e.sources[0].title_for(e.lang))]
     entries.extend(
         SlotValue(field=GroundedField.POLICY_VALUE, value=value.value)
@@ -174,6 +182,9 @@ def _policy_answer(e: RenderEnvelope) -> tuple[SlotValue, ...]:
 
 
 def _handoff(e: RenderEnvelope) -> tuple[SlotValue, ...]:
+    """The generic statement that a person must review, the ticket reference and the contact window
+    when they are known.
+    """
     entries = [
         SlotValue(field=GroundedField.OUTCOME_STATEMENT, value=_HANDOFF_OUTCOME_STATEMENT[e.lang])
     ]
@@ -189,6 +200,7 @@ def _handoff(e: RenderEnvelope) -> tuple[SlotValue, ...]:
 
 
 def _none(_e: RenderEnvelope) -> tuple[SlotValue, ...]:
+    """No grounded values: an intent that states no facts has nothing to ground."""
     return ()
 
 
