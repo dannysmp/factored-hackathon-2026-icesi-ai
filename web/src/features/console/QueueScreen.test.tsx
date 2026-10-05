@@ -50,6 +50,8 @@ describe('QueueScreen', () => {
     render(<QueueScreen client={new FixtureQueueClient(EMPTY_QUEUE)} onSelectTicket={vi.fn()} />)
 
     expect(await screen.findByText('No hay casos abiertos en este momento.')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Idioma')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
   })
 
   it('keeps the filters when a language has no cases, so the filter can be undone', async () => {
@@ -65,6 +67,8 @@ describe('QueueScreen', () => {
 
     expect(await screen.findByText('Ningún caso coincide con este filtro.')).toBeInTheDocument()
     expect(screen.queryByText('No hay casos abiertos en este momento.')).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Todos (0)' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Otros (0)' })).toBeInTheDocument()
 
     await user.selectOptions(screen.getByLabelText('Idioma'), 'all')
 
