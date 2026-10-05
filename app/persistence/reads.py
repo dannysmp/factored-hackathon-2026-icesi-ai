@@ -118,6 +118,7 @@ from app.domain.policy.models import (
     TransactionStatus as PolicyTransactionStatus,
 )
 from app.domain.text_matching import (  # The accent- and case-insensitive merchant comparison
+    SQL_BLANKS,
     SQL_FOLD_FROM,
     SQL_FOLD_TO,
     fold_text,
@@ -396,8 +397,9 @@ class PostgresToolPort:
                       AND (
                         %(merchant)s::text IS NULL
                         OR strpos(
-                          lower(translate(left(btrim(t.merchant_name), %(merchant_max)s),
-                                          %(fold_from)s, %(fold_to)s)),
+                          lower(translate(
+                            left(btrim(t.merchant_name, %(blanks)s), %(merchant_max)s),
+                            %(fold_from)s, %(fold_to)s)),
                           %(merchant)s
                         ) > 0
                       )
@@ -411,6 +413,7 @@ class PostgresToolPort:
                         "merchant": (
                             fold_text(filters.merchant.strip()) if filters.merchant else None
                         ),
+                        "blanks": SQL_BLANKS,
                         "merchant_max": MERCHANT_MAX_LENGTH,
                         "fold_from": SQL_FOLD_FROM,
                         "fold_to": SQL_FOLD_TO,
