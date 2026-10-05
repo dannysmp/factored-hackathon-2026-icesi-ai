@@ -90,12 +90,16 @@ clarification budget. The question stays pending across a reply to an unrelated
 message (small talk, a policy question, a list request), as the reason and confirmation questions
 do, so the customer's yes after such a reply still selects the presented transaction. The
 unrelated reply itself files nothing; a case is filed only once the policy's confirmation
-requirement for the category is met. Two or more matches ask for more detail rather than
-presenting a numbered list — the same v1 scope decision already made for slot collection, since
-``DialogueState`` has no pending-candidate field and no multi-candidate list. A
-session identifies and evaluates at most one transaction/category pair: nothing here resets
-``selected_ref``/``category`` once set, so a second, different dispute needs a new session. The
-handoff packet's ``first_name`` is a placeholder: no tool exposes the customer's first name.
+requirement for the category is met. Two or more matches ask for more detail rather than presenting
+a numbered list, since ``DialogueState`` has no pending-candidate field and no multi-candidate list.
+A session works on one transaction and reason at a time: the selected pair is kept from selection
+until the dispute ends (a case filed, or the filing cancelled, ineligible or refused as a
+duplicate), which clears it so the customer's next dispute starts from its own transaction and
+reason; a no to the transaction presented, or a different transaction named while one awaits a yes,
+replaces the transaction instead. A dispute that ends in a handoff keeps its pair. A policy question
+asked after a dispute has ended without a handoff is answered without a reason, so a figure that
+depends on one is declined with an offer of an advisor. The handoff packet's ``first_name`` is a
+placeholder: no tool exposes the customer's first name.
 While the transaction is the pending question, a message that describes one is taken as the
 answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a category
 carried by such a message does not replace one already set, the same rule as above. A description
@@ -793,7 +797,7 @@ class DialogueController:
         """The customer's yes or no to filing the evaluated dispute."""
         answer = result.confirmation
         if answer is ConfirmationAnswer.NO:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             return new_state, self._envelope(new_state, Intent.CLARIFY, TemplateId.FILING_CANCELLED)
         if answer is not ConfirmationAnswer.YES:
             return self._ask(state, Slot.CONFIRMATION)
@@ -1066,7 +1070,7 @@ class DialogueController:
         list of codes, using the fraud wording when the reason is a fraud claim.
         """
         if decision.outcome is Outcome.INELIGIBLE:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             decisions = (
                 Decision(
                     outcome=Outcome.INELIGIBLE,
@@ -1169,7 +1173,7 @@ class DialogueController:
         the tool gave one.
         """
         if refusal is ToolRefusalCode.DUPLICATE_OPEN_CASE:
-            new_state = state.with_slot_filled().with_phase(ConversationPhase.CLOSED)
+            new_state = state.with_dispute_closed()
             decisions = (
                 Decision(
                     outcome=Outcome.INELIGIBLE,
@@ -1296,7 +1300,9 @@ class DialogueController:
         rendered directly from its stored ticket; a pending clarification is a pure re-render.
         The ticket takes precedence over a case when the session is handed off or filed no case,
         so a session holding both replays its handoff, which is the latest outcome but not
-        necessarily the one the replayed turn id originally produced.
+        necessarily the one the replayed turn id originally produced. The same holds for a
+        session with a filed case: a retried turn id that followed the filing, and answered
+        something other than the filing, replays the filing result.
         ``ConversationPhase.CLOSED`` is the exclusive signal that a filing decision (ineligible,
         cancelled, duplicate) was reached with nothing to show for it: every caller that sets it
         clears the pending slot and leaves no case or ticket behind, so it can never be confused
