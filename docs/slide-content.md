@@ -47,7 +47,7 @@ is not the slide file itself.
 - Filing is shown in English, the handoff in Portuguese and the agent console in Spanish. The same
   journey runs in all three languages.
 
-## Slide 4 — How the system is built
+## Slide 4 — The AI listens, the rules decide
 
 - A deterministic core around the language model, running on a single AWS host, with an offline
   pipeline that prepares the data and evaluates the system.
@@ -85,7 +85,7 @@ is not the slide file itself.
   cloud-hosted model service; DuckDB over partitioned Parquet instead of a data warehouse; and one
   host instead of a cluster.
 
-## Slide 5 — The highest safe resolution of the three systems tested
+## Slide 5 — Twice the baselines' safe resolution, zero unsafe outcomes
 
 Offline evaluation on 135 scripted, team-generated cases: 103 in scope and 32 adversarial. Both
 baselines keep the policy engine and tools; one swaps the model for keyword matching, the other
@@ -109,8 +109,9 @@ has no deterministic controller. The safe-resolution target is 40% or more.
   baseline and $0.006 for the model-only agent. The resolution-time and breach-rate targets are not
   measured offline.
 - On missed transfers the proposed system (6.1%, range 4.5% to 9.1%) does not beat the model-only
-  agent (4.5%, one run); the two cannot be told apart on this evidence. The earlier 15.2% came from
-  a seed without the repeat-complainer flags, so that rule could not fire.
+  agent (4.5%, one run); the two cannot be told apart on this evidence. The earlier 15.2% was
+  measured on a seed that lacked the repeat-complainer flags; at least six of its ten missed
+  case-runs are explained by that seed.
 - **Is the automated judge reliable?** Two human raters scored the same replies as an automated
   judge, and the judge was required to match each rater on at least 80% of replies.
 
