@@ -31,6 +31,8 @@ interface ConversationState {
   status: ConversationStatus
   messages: Message[]
   latest: TurnResponse | null
+  /** The case number of the dispute filed in this conversation, kept after the turn that carried it; `null` until one is filed. */
+  filedCase: string | null
   /** What went wrong while the status is `error`; `null` otherwise. */
   failure: FailureKind | null
 }
@@ -63,6 +65,7 @@ const INITIAL_STATE: ConversationState = {
   status: 'loading',
   messages: [],
   latest: null,
+  filedCase: null,
   failure: null,
 }
 
@@ -96,13 +99,20 @@ export function useConversation(client: ChatClient): Conversation {
   const begin = useCallback((): void => {
     client.start().then(
       (turn) => {
-        commit({ status: 'ready', messages: [assistantMessage(turn)], latest: turn, failure: null })
+        commit({
+          status: 'ready',
+          messages: [assistantMessage(turn)],
+          latest: turn,
+          filedCase: turn.case_number,
+          failure: null,
+        })
       },
       (error: unknown) => {
         commit({
           status: 'error',
           messages: [],
           latest: null,
+          filedCase: null,
           failure: classifyFailure(error),
         })
       },
@@ -133,6 +143,7 @@ export function useConversation(client: ChatClient): Conversation {
             status: 'ready',
             messages: [...before.messages, assistantMessage(turn)],
             latest: turn,
+            filedCase: turn.case_number ?? before.filedCase,
             failure: null,
           })
         },

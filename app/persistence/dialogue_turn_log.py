@@ -31,7 +31,8 @@ Design Principles
 Runtime Contract
 ----------------
 ``PostgresDialogueTurnLog(dsn)`` with ``record(entry, *, session_id) -> None`` and
-``timeline_for(trace_id) -> tuple[TimelineEntry, ...]``, ordered by ``occurred_at``.
+``timeline_for(trace_id) -> tuple[TimelineEntry, ...]``, ordered by ``occurred_at`` and, for turns
+recorded at the same instant, by the order they were written.
 """
 
 from __future__ import annotations
@@ -54,11 +55,12 @@ _COLUMNS = (
     "policy_version"
 )
 
-# A conversation's turns are read by trace identifier and ordered by when they occurred. The
-# column list is a module constant, not request data.
+# A conversation's turns are read by trace identifier and ordered by when they occurred, then by
+# the order they were written when two share an instant. The column list is a module constant,
+# not request data.
 _SELECT = (
     f"SELECT turn_id, {_COLUMNS} FROM dialogue_turn_log "  # noqa: S608
-    "WHERE trace_id = %s ORDER BY occurred_at_utc"
+    "WHERE trace_id = %s ORDER BY occurred_at_utc, id"
 )
 
 
