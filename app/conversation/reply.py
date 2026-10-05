@@ -74,8 +74,8 @@ logger = logging.getLogger(__name__)
 # contract's own _wording_matches_the_mode forbids a refusal from ever rendering in model mode);
 # ABSTAIN_POLICY (Intent.ABSTAIN has no required grounded field at all — the verifier only rejects
 # a digit, a malformed placeholder or a missing *required* field, so nothing would force a
-# model-rendered reply to actually state the mandated abstention sentence rather than any
-# other digit-free text); and every purely procedural template (a greeting, a clarification, a
+# model-rendered reply to actually state the abstention sentence rather than any other
+# digit-free text); and every purely procedural template (a greeting, a clarification, a
 # farewell, a cancellation) with no grounded content to gain from model wording.
 MODEL_ELIGIBLE_TEMPLATES = frozenset(
     {
