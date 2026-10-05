@@ -100,9 +100,10 @@ This document states the content of each slide; it is not the slide file itself.
     count near a deadline.
   - A document number a customer types unprompted into free text is redacted by shape before the
     model sees it: an unbroken run of seven or more digits and the two punctuated Brazilian
-    tax-number formats. Two gaps are disclosed: a national identity number typed with thousands-style
-    dots has the shape of an amount and reaches the model unmasked, and an amount typed as seven or
-    more unbroken digits is redacted like an identifier, which costs the customer one more question.
+    tax-number formats. Three limits are disclosed: a national identity number typed with
+    thousands-style dots has the shape of an amount and reaches the model unmasked; a number split
+    by other characters or written in words is not detected; and an amount typed as seven or more
+    unbroken digits is redacted like an identifier, which costs the customer one more question.
     Every other field the system reads is a closed enum or a narrowly patterned value that cannot
     carry one.
   - The human-agent console is a viewer; its narrow audited writes exist in the API and have no
