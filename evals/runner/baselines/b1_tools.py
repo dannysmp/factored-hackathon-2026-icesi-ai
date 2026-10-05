@@ -295,7 +295,7 @@ class B1ToolDispatcher:
             transaction_ref=_str_arg(call, "transaction_ref"), category=category
         )
         result = dispatch_tool_port(self.tool_port, Tool.EVALUATE_DISPUTE, request)
-        if isinstance(result, ToolFailure):
+        if result is None or isinstance(result, ToolFailure):
             return _to_json(result)
         self._decisions[(result.transaction_ref, category)] = result
         self._decisions_this_turn.append(result)
@@ -371,7 +371,14 @@ class B1ToolDispatcher:
 
 
 def _to_json(value: object) -> str:
-    """A tool result as text the model can read: a pydantic model's own JSON, or a plain dict."""
+    """A tool result as text the model can read.
+
+    A pydantic model becomes its own JSON, a tuple or list of results becomes a JSON array of
+    each element's text (``list_dispute_cases`` returns a tuple of case records), and anything
+    else is serialized as plain JSON.
+    """
     if hasattr(value, "model_dump_json"):
         return str(value.model_dump_json())
+    if isinstance(value, tuple | list):
+        return "[" + ",".join(_to_json(item) for item in value) + "]"
     return json.dumps(value)

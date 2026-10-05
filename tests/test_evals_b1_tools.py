@@ -9,8 +9,10 @@ when ``DATABASE_URL`` is not set, matching this project's own convention.
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import psycopg
 import pytest
@@ -18,12 +20,14 @@ import pytest
 from app.conversation.controller import HandoffOutbox
 from app.domain.calendar import DateOrigin, DomainCalendar
 from app.domain.policy.loader import load_policy
-from app.domain.policy.models import DisputeCategory
+from app.domain.policy.models import DisputeCategory, ReasonCode
 from app.persistence.audit import PostgresAuditSink
 from app.persistence.handoff_outbox import PostgresHandoffOutbox
 from app.persistence.migrate import apply_migrations
 from app.persistence.reads import PostgresToolPort
 from app.retrieval.lexical import LexicalRetriever
+from contracts.service_v1.cases import AmountProvenance, CaseRecord, CaseStatus, DisclosedAmount
+from contracts.service_v1.cases import Money as CaseMoney
 from contracts.service_v1.tools import EvaluateDisputeRequest, Tool, ToolFailure
 from evals.runner.baselines.b1_tools import (
     _REQUEST_SUMMARY_OF,
@@ -152,6 +156,77 @@ def test_evaluate_dispute_passes_a_tool_failure_through_without_tracking_a_decis
     assert dispatcher._decisions == {}
 
 
+class _UnmatchedToolPort:
+    """Stands in for a `ToolPort` that finds no transaction the session's customer owns."""
+
+    def evaluate_dispute(self, request: EvaluateDisputeRequest) -> None:
+        return None
+
+
+class _CaseListToolPort:
+    """Stands in for a `ToolPort` whose case list is a fixed tuple."""
+
+    def __init__(self, cases: tuple[CaseRecord, ...]) -> None:
+        self._cases = cases
+
+    def list_dispute_cases(self) -> tuple[CaseRecord, ...]:
+        return self._cases
+
+
+def _dispatcher_over(tool_port: object, retriever: LexicalRetriever) -> B1ToolDispatcher:
+    return B1ToolDispatcher(
+        tool_port=tool_port,  # type: ignore[arg-type]
+        retriever=retriever,
+        outbox=object(),  # type: ignore[arg-type]
+        policy=load_policy(),
+        calendar=DomainCalendar(reference_date=_TODAY, origin=DateOrigin.SETTING),
+        clock=lambda: _NOW,
+        customer_id="CLI-UNUSED",
+        lang="es",
+    )
+
+
+def test_evaluate_dispute_passes_an_unmatched_reference_through_without_tracking_a_decision(
+    retriever: LexicalRetriever,
+) -> None:
+    """A reference the customer does not own comes back as no result; the model must read that
+    as-is and the harness must not treat it as a decision."""
+    dispatcher = _dispatcher_over(_UnmatchedToolPort(), retriever)
+    call = ToolCall(
+        id="t1",
+        name="evaluate_dispute",
+        input={"transaction_ref": "TRX-UNKNOWN", "category": "unrecognized_charge"},
+    )
+
+    result = dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
+
+    assert result == "null"
+    assert dispatcher._decisions == {}
+    assert dispatcher.last_confirmable_decision is None
+
+
+def test_list_dispute_cases_dispatches_a_tuple_of_cases_as_a_json_array(
+    retriever: LexicalRetriever,
+) -> None:
+    dispatcher = _dispatcher_over(_CaseListToolPort((_case_record("CASE-1"),)), retriever)
+    call = ToolCall(id="t1", name="list_dispute_cases", input={})
+
+    result = dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
+
+    assert [item["case_number"] for item in json.loads(result)] == ["CASE-1"]
+
+
+def test_list_dispute_cases_dispatches_an_empty_case_list_as_an_empty_array(
+    retriever: LexicalRetriever,
+) -> None:
+    dispatcher = _dispatcher_over(_CaseListToolPort(()), retriever)
+    call = ToolCall(id="t1", name="list_dispute_cases", input={})
+
+    result = dispatcher.dispatch(call, session_id="s", turn_id="turn-00000001", trace_id="s")
+
+    assert result == "[]"
+
+
 def test_to_json_uses_model_dump_json_for_a_pydantic_value() -> None:
     value = ToolFailure(tool=Tool.EVALUATE_DISPUTE, cause="error")
     assert _to_json(value) == value.model_dump_json()
@@ -160,6 +235,38 @@ def test_to_json_uses_model_dump_json_for_a_pydantic_value() -> None:
 def test_to_json_falls_back_to_plain_json_dumps_for_a_non_pydantic_value() -> None:
     assert _to_json({"a": 1}) == '{"a": 1}'
     assert _to_json(None) == "null"
+
+
+def _case_record(case_number: str) -> CaseRecord:
+    return CaseRecord(
+        case_number=case_number,
+        status=CaseStatus.OPEN,
+        transaction_ref="TX-1",
+        category=DisputeCategory.UNRECOGNIZED_CHARGE,
+        amount=DisclosedAmount(
+            money=CaseMoney(amount=Decimal("100.00"), currency="USD"),
+            provenance=AmountProvenance.REPORTED,
+        ),
+        domain_date=_TODAY,
+        expected_first_response_date=date(2026, 7, 18),
+        created_at_utc=_NOW,
+        policy_version="2",
+        reason_code=ReasonCode.ELIGIBLE,
+        language="es",
+    )
+
+
+def test_to_json_renders_a_tuple_of_pydantic_values_as_a_json_array() -> None:
+    """``list_dispute_cases`` returns a tuple of case records; the model must be able to read it."""
+    records = (_case_record("D-1"), _case_record("D-2"))
+
+    rendered = json.loads(_to_json(records))
+
+    assert [row["case_number"] for row in rendered] == ["D-1", "D-2"]
+
+
+def test_to_json_renders_an_empty_tuple_as_an_empty_array() -> None:
+    assert _to_json(()) == "[]"
 
 
 def test_dispatch_raises_for_an_unknown_tool(retriever: LexicalRetriever) -> None:
