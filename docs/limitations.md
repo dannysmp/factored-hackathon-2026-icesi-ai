@@ -109,6 +109,11 @@ results still to come say so and name the command that completes them.
   writes (claim, release, note and status change under `/v1/agent/tickets/{ticket_ref}`), each
   scoped to the signed-in agent and audited. The console's interface never calls them, matching
   its design as a viewer, so those actions are reachable only through the API.
+- **Text enlarged beyond 200% on a phone narrower than about 480 px may need horizontal
+  scrolling.** Every control stays reachable. At 200% text size and at the 375 px default width the
+  layout fits without scrolling. The surfaces that can overflow are the header title, the sign-in
+  card, the Yes and No quick replies, the persona language tag and the console queue's language
+  select. This concerns text-only enlargement, not browser page zoom.
 - **Structured logging runs across the service and every CLI entrypoint, including a configuration
   failure at start-up.** Every line carries a stable event name, the request's trace id and, once
   authenticated, its session id, with any card-shaped digit run redacted before the line is
