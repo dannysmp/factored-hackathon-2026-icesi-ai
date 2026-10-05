@@ -288,12 +288,12 @@ class FakeDialogueTurnLog:
     """Records every entry it's given; ``fail`` proves a store failure never reaches the reply."""
 
     fail: bool = False
-    entries: list[tuple[TimelineEntry, str, str]] = field(default_factory=list)
+    entries: list[tuple[TimelineEntry, str]] = field(default_factory=list)
 
-    def record(self, entry: TimelineEntry, *, session_id: str, turn_id: str) -> None:
+    def record(self, entry: TimelineEntry, *, session_id: str) -> None:
         if self.fail:
             raise psycopg.OperationalError("turn log unreachable")
-        self.entries.append((entry, session_id, turn_id))
+        self.entries.append((entry, session_id))
 
 
 @pytest.fixture
@@ -1380,9 +1380,9 @@ def test_a_fresh_turn_advance_records_its_own_history(
     controller.handle_turn(_turn("turn-0001"), principal=_principal())
 
     assert len(turn_log.entries) == 1
-    entry, session_id, turn_id = turn_log.entries[0]
+    entry, session_id = turn_log.entries[0]
     assert session_id == _SESSION_ID
-    assert turn_id == "turn-0001"
+    assert entry.turn_id == "turn-0001"
     assert entry.trace_id == _SESSION_ID
     assert entry.intent is Intent.CLARIFY
     assert entry.state_before == "started"
@@ -1442,6 +1442,30 @@ def test_replaying_a_turn_never_records_a_second_history_entry(
     controller.handle_turn(_turn("turn-0001"), principal=_principal())
 
     assert len(turn_log.entries) == 1
+
+
+def test_two_turns_of_one_conversation_record_their_own_turn_ids(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """Every entry shares the session as its trace, so the turn id is what tells them apart."""
+    store = InMemoryDialogueStore()
+    turn_log = FakeDialogueTurnLog()
+    result = NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, language="es")
+
+    for turn_id in ("turn-0001", "turn-0002"):
+        controller, _ = _controller(
+            result,
+            store=store,
+            tool_port=FakeToolPort(),
+            policy=policy,
+            outbox=FakeHandoffOutbox(),
+            retriever=retriever,
+            turn_log=turn_log,
+        )
+        controller.handle_turn(_turn(turn_id), principal=_principal())
+
+    assert [entry.trace_id for entry, _ in turn_log.entries] == [_SESSION_ID, _SESSION_ID]
+    assert [entry.turn_id for entry, _ in turn_log.entries] == ["turn-0001", "turn-0002"]
 
 
 def test_a_turn_log_failure_never_changes_the_reply(
@@ -2549,9 +2573,9 @@ def test_an_unreachable_understanding_dependency_still_records_turn_history(
     controller.handle_turn(_turn("turn-0001"), principal=_principal())
 
     assert len(turn_log.entries) == 1
-    entry, session_id, turn_id = turn_log.entries[0]
+    entry, session_id = turn_log.entries[0]
     assert session_id == _SESSION_ID
-    assert turn_id == "turn-0001"
+    assert entry.turn_id == "turn-0001"
     assert entry.intent is Intent.HANDOFF
     assert entry.state_before == "started"
     assert entry.state_after == "handed_off"

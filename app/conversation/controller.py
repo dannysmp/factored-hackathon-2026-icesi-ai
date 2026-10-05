@@ -243,7 +243,7 @@ class HandoffOutbox(Protocol):
 class DialogueTurnLog(Protocol):
     """Where a turn's own history is written; the port ``PostgresDialogueTurnLog`` implements."""
 
-    def record(self, entry: TimelineEntry, *, session_id: str, turn_id: str) -> None:
+    def record(self, entry: TimelineEntry, *, session_id: str) -> None:
         """Write one turn's history row.
 
         Raises
@@ -1440,6 +1440,7 @@ class DialogueController:
         entry = TimelineEntry(
             occurred_at=self._now(),
             trace_id=state.session_id,
+            turn_id=request.turn_id,
             intent=envelope.intent,
             state_before=state_before.value,
             state_after=state.phase.value,
@@ -1448,7 +1449,7 @@ class DialogueController:
             policy_version=envelope.decisions[0].policy_version if envelope.decisions else None,
         )
         try:
-            self._turn_log.record(entry, session_id=state.session_id, turn_id=request.turn_id)
+            self._turn_log.record(entry, session_id=state.session_id)
         except psycopg.Error:
             logger.warning(
                 "dialogue_turn_not_logged session_id=%s request_id=%s",
