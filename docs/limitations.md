@@ -27,6 +27,10 @@ results still to come say so and name the command that completes them.
   sampled from real customer behavior, and its target automation rate is offline and not
   representative of real customers. Every case states its own provenance (observed, team-generated
   or injected) so a reader never has to guess it.
+- **The golden set has no case that expects a denial of an ineligible filing.** An independent
+  rater reviewed all 135 cases and changed none of their labels, but none of them declares an
+  ineligible outcome: the evaluation does not exercise the eight ineligibility reason codes,
+  which only the policy engine's own tests cover. See "Golden-set adjudication" in `evals/README.md`.
 
 ## Machine learning
 
@@ -49,18 +53,23 @@ results still to come say so and name the command that completes them.
   a stored case row, the runner, both baselines (B0, B1), the failure injector, the language-model
   judge and the report generator all exist, and `reports/evaluation.md` records the full run
   against the live model. Its safe/unsafe classification is read directly off each run's recorded
-  outcome. A 16-case adversarial slice (prompt injection, poisoned retrieval, cross-customer
+  outcome. A 16-case adversarial subset (prompt injection, poisoned retrieval, cross-customer
   access) runs on every change against the proposed system and B0 over synthetic seed data, and
   blocks merge on any case turning unsafe; the full adversarial set runs outside CI against the
   operational seed combined with the evaluation scenario bank (`app.persistence.load_eval_bank`).
 - **The judge's agreement with human raters is not yet measured on a real sample.** The agreement
   code is tested against a disclosed synthetic placeholder
   (`evals/golden/judge_validation_sample.py`, `PROVENANCE = "team_generated_synthetic"`), and
-  section 7 of `reports/evaluation.md` states that no agreement rate is reported. The judge's
-  quality and correctness scores stay provisional until two raters return the 50-case sheets.
+  the Judge validation section of `reports/evaluation.md` states that no agreement rate is
+  reported. The judge's quality and correctness scores stay provisional until two raters return the
+  50-case sheets.
   Running `make judge-validation RATER1=<sheet> RATER2=<sheet>` scores the same cases with the real
-  judge and patches that section and the matching limitations line of that report with rater-to-rater and
-  rater-to-judge agreement per dimension; this bullet is to be rewritten with those figures,
+  judge and patches that section and the matching limitations line of that report with rater-to-rater
+  and rater-to-judge agreement per dimension, each with its pair count and weighted kappa, the
+  direction of the differences and the decision per dimension, withholds the judge's mean in the judge-scored quality table for
+  each dimension it demotes (showing the raters' means beneath it), and writes every case's scores to
+  `reports/judge-validation-cases.csv`, a local working file that is not tracked in the repository;
+  this bullet is to be rewritten with those figures,
   and with any dimension the judge is demoted on, at the same time. The written analysis of where
   the raters and the judge disagree is a person's job and is not generated.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
@@ -79,14 +88,14 @@ results still to come say so and name the command that completes them.
   run it turned unsafe against the proposed system, in the handoff-ticket path the case exercises.
   Twenty further live repeats of the same case produced no unsafe outcome and found no structural
   defect anywhere in that path, so no cause was identified and nothing in the code changed for it.
-  It is disclosed as a finding that did not reproduce, not as a fixed defect. The committed
+  It is disclosed as an observation that did not reproduce, not as a fixed defect. The committed
   `reports/evaluation.md` records no unsafe outcome in its own three runs, so that report does
   not show it.
 - **The human-agent console is a viewer; its write actions have no screen.** The queue and
   ticket-detail screens draw from real backend data. The backend also exposes four narrow agent
   writes (claim, release, note and status change under `/v1/agent/tickets/{ticket_ref}`), each
   scoped to the signed-in agent and audited. The console's interface never calls them, matching
-  its own design (ADR-17), so those actions are reachable only through the API.
+  its design as a viewer, so those actions are reachable only through the API.
 - **Structured logging runs across the service and every CLI entrypoint, including a configuration
   failure at start-up.** Every line carries a stable event name, the request's trace id and, once
   authenticated, its session id, with any card-shaped digit run redacted before the line is

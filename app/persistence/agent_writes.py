@@ -1,13 +1,14 @@
 """
 Postgres Agent Writes
-======================
+=====================
 
 Overview
 --------
-The console's narrow agent writes (ADR-17): claim or release a handoff ticket, add a note, and
-set a case's status among Open, In Review, Resolved and Rejected. Each write is audited with the
+The console's narrow agent writes: claim or release a handoff ticket, add a note, and set a
+case's status among Open, In Review, Resolved and Rejected. Each write is audited with the
 agent's own identity, the same requirement the console's reads already carry
-(``app.persistence.console_audit``).
+(``app.persistence.console_audit``), and each result is read back from the store before it is
+returned.
 
 Scope
 -----
@@ -20,35 +21,33 @@ module enforces what it actually allows).
 Design Principles
 -----------------
 - **The mutation and its audit write are two separate store connections, not one atomic
-  transaction** (matching ``app.persistence.reads``'s own ``_insert_case`` and
+  transaction** (matching ``app.persistence.reads``'s ``_insert_case`` and
   ``app.persistence.audit``'s one-connection-per-call design): the audit sink's ``record`` call
   opens and commits on its own connection before the mutation's own connection commits, so a
   process crash in the narrow window between the two could leave an audit record for a write that
-  never actually took effect. The same disclosed limitation ``_insert_case`` already carries for
-  case creation applies here too, for the same reason.
-- **A case status write only ever ``UPDATE``s, never ``INSERT``s** (``plan/docs/architecture.md``):
-  this module has no statement that could create a case row.
+  never actually took effect. The same limitation applies to case creation, for the same reason.
+- **A case status write only ever ``UPDATE``s, never ``INSERT``s:** this module has no statement
+  that could create a case row.
 - **Resolved and Rejected are terminal.** Once a case reaches either one, a further status-set is
   refused (``CaseStatusTerminal``): the case lifecycle only ever moves Open/In Review toward a
   resolution, never backward through it and never sideways between the two terminal states,
-  matching ``CaseStatus``'s own documented direction. Setting a status to its own current value is
-  a harmless, audited no-op, not a special case.
+  matching ``CaseStatus``'s own documented direction. Setting a status to its own current value
+  (while not terminal) is a harmless, audited no-op, not a special case.
 - **A note is never edited or removed once added** (``contracts.service_v1.console.Note``); this
   module only ever appends one, in the same ``(ticket_ref, ord)`` shape every other bounded
-  repeating part of a handoff already uses.
+  repeating part of a handoff uses.
 - **One connection per call**, matching every other module in ``app.persistence``.
-- **Fails closed**: a write that cannot complete raises; nothing here swallows a ``psycopg.Error``
-  into a silently skipped write. A missing ticket or case is a different thing: a deliberate
-  ``None`` return, matching ``app.persistence.ticket_detail.PostgresTicketDetail`` own
-  not-found contract for the same reason (``app.api.agent``'s ``TicketDetailPort``) — never an
-  exception, since the caller has one thing to do with it either way (answer 404) and no recovery
-  path a raised exception would suit better.
-- **A terminal case status is refused with an exception, not a sentinel**: unlike a missing
-  ticket or case, it is not "nothing to report" — the case was found, and the request is refused
-  because of the state it is already in, the same distinction ``app.conversation.store``'s own
-  ``Conflict`` draws for a conversation that moved on. ``CaseStatusTerminal`` is the one exception
-  this module expects its caller to import and translate, the same one layer ``Conflict`` crosses
-  into ``app.conversation.controller``.
+- **Fails closed:** a write that cannot complete raises; nothing here swallows a
+  ``psycopg.Error`` into a silently skipped write. A missing ticket or case is a different
+  thing: a deliberate ``None`` return, matching the not-found contract of
+  ``app.persistence.ticket_detail.PostgresTicketDetail`` (``app.api.agent``'s
+  ``TicketDetailPort``), never an exception, since the caller has one thing to do with it either
+  way (answer 404) and no recovery path a raised exception would suit better.
+- **A terminal case status is refused with an exception, not a sentinel:** unlike a missing
+  ticket or case, it is not "nothing to report". The case was found, and the request is refused
+  because of the state it is already in, the same distinction ``app.conversation.store``'s
+  ``Conflict`` draws for a conversation that moved on. ``CaseStatusTerminal`` is the one
+  exception this module expects its caller to import and translate.
 
 Runtime Contract
 ----------------
@@ -81,19 +80,25 @@ _TERMINAL_STATUSES = frozenset({CaseStatus.RESOLVED, CaseStatus.REJECTED})
 
 
 class CaseStatusTerminal(Exception):
-    """The case is already Resolved or Rejected; a further status-set is refused."""
+    """The case is already Resolved or Rejected; a further status-set is refused.
+
+    The exception argument is the case number.
+    """
 
 
 def _hash(payload: object) -> str:
-    """SHA-256 of ``payload``'s canonical JSON form, the same idiom every other audited write in
-    this codebase already hashes its own result under (an independent copy: private to this
-    module, matching ``app.persistence.console_audit``'s own note about its identical helper)."""
+    """SHA-256 of ``payload``'s canonical JSON form, the digest every audited write records as
+    its result hash (an independent copy of the helper in ``app.persistence.console_audit``,
+    since each module's helper is private)."""
     text = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
 class _TicketIdentity:
+    """The columns of a ``handoff_outbox`` row an agent write needs: whose ticket it is, the
+    conversation trace it belongs to, and the filed case it points at, if any."""
+
     customer_id: str
     trace_id: str
     existing_case_number: str | None
@@ -111,6 +116,12 @@ class PostgresAgentWrites:
         calendar: DomainCalendar,
         clock: Clock,
     ) -> None:
+        """Keep the collaborators.
+
+        ``sink`` receives every audit record; ``queue`` re-reads a ticket after a claim change;
+        ``calendar`` supplies the domain date stamped on each audit record and ``clock`` the
+        instant of the write.
+        """
         self._dsn = dsn
         self._sink = sink
         self._queue = queue
@@ -118,6 +129,7 @@ class PostgresAgentWrites:
         self._clock = clock
 
     def _ticket_identity(self, cur: psycopg.Cursor, ticket_ref: str) -> _TicketIdentity | None:
+        """The ticket's identity columns read on ``cur``, or ``None`` when no row exists."""
         cur.execute(
             "SELECT customer_id, trace_id, existing_case_number FROM handoff_outbox "
             "WHERE ticket_ref = %s",
@@ -140,6 +152,11 @@ class PostgresAgentWrites:
         action: AuditAction,
         result: object,
     ) -> None:
+        """Record one audit entry for ``action``, hashing ``result`` as what the agent changed.
+
+        The sink opens, writes and commits on its own connection, so this runs before the
+        caller's mutation commits; a sink failure propagates and aborts that mutation.
+        """
         self._sink.record(
             AuditRecord(
                 trace_id=identity.trace_id,
@@ -162,6 +179,11 @@ class PostgresAgentWrites:
         claimed_by: str | None,
         action: AuditAction,
     ) -> QueueItem | None:
+        """Set (or clear, when ``claimed_by`` is ``None``) the ticket's claim and audit it.
+
+        Returns the ticket re-read from the queue after the update, or ``None`` when no
+        ``handoff_outbox`` row exists for ``ticket_ref``.
+        """
         claimed_at = None if claimed_by is None else self._clock()
         with (
             psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
@@ -186,9 +208,10 @@ class PostgresAgentWrites:
         return item
 
     def claim_ticket(self, *, agent_id: str, session_id: str, ticket_ref: str) -> QueueItem | None:
-        """Claim ``ticket_ref`` for ``agent_id``, overwriting any prior claim.
+        """Claim ``ticket_ref`` for ``agent_id``, overwriting any prior claim, and audit it.
 
-        Returns ``None`` if no ``handoff_outbox`` row exists for ``ticket_ref``.
+        Returns the updated queue item, or ``None`` if no ``handoff_outbox`` row exists for
+        ``ticket_ref``.
         """
         return self._set_claim(
             agent_id=agent_id,
@@ -201,9 +224,10 @@ class PostgresAgentWrites:
     def release_ticket(
         self, *, agent_id: str, session_id: str, ticket_ref: str
     ) -> QueueItem | None:
-        """Release ``ticket_ref``'s claim, whoever held it.
+        """Release ``ticket_ref``'s claim, whoever held it, and audit it.
 
-        Returns ``None`` if no ``handoff_outbox`` row exists for ``ticket_ref``.
+        Returns the updated queue item, or ``None`` if no ``handoff_outbox`` row exists for
+        ``ticket_ref``.
         """
         return self._set_claim(
             agent_id=agent_id,
@@ -215,7 +239,7 @@ class PostgresAgentWrites:
 
     def _read_note(self, ticket_ref: str, ord_: int) -> Note:
         """Read a just-written note back, verified against the store rather than echoed from the
-        call that wrote it (CLAUDE.md's "verify before report")."""
+        call that wrote it."""
         with (
             psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
             conn.cursor() as cur,
@@ -233,7 +257,10 @@ class PostgresAgentWrites:
     def add_note(
         self, *, agent_id: str, session_id: str, ticket_ref: str, note_text: str
     ) -> Note | None:
-        """Append a note to ``ticket_ref``, authored by ``agent_id``.
+        """Append a note to ``ticket_ref``, authored by ``agent_id``, and audit it.
+
+        The note takes the next free ordinal for the ticket. The audit record is written before
+        the insert commits; the returned note is then read back from the store.
 
         Returns ``None`` if no ``handoff_outbox`` row exists for ``ticket_ref``.
         """
@@ -266,7 +293,7 @@ class PostgresAgentWrites:
 
     def _read_case_status(self, case_number: str) -> CaseStatusResult:
         """Read a just-written case status back, verified against the store rather than echoed
-        from the call that wrote it (CLAUDE.md's "verify before report")."""
+        from the call that wrote it."""
         with (
             psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
             conn.cursor() as cur,
@@ -281,8 +308,11 @@ class PostgresAgentWrites:
     ) -> CaseStatusResult | None:
         """Set ``ticket_ref``'s filed case to ``status``. Updates the case row; never creates one.
 
+        The case is found through the ticket's ``existing_case_number``. The audit record is
+        written before the update commits; the stored status is then read back and returned.
+
         Returns ``None`` if no ``handoff_outbox`` row exists for ``ticket_ref``, or it names no
-        filed case.
+        filed case (or the named case row does not exist).
 
         Raises
         ------

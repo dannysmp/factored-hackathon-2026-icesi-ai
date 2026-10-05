@@ -126,10 +126,10 @@ train: ## Run the risk signal probe, the boosted-model comparison and calibratio
 evaluate: ## Run the evaluation harness: make evaluate SYSTEM={P|B0|B1} [SMOKE=1], or make evaluate FULL=1 [SMOKE=1]
 	$(RUN) python -m evals.cli $(if $(FULL),--full,--system $(SYSTEM)) $(if $(SMOKE),--smoke,)
 
-judge-validation: ## Score the returned judge-validation sheets with the real judge and patch reports/evaluation.md: make judge-validation RATER1=<csv> RATER2=<csv> [REPORT=<md>] (needs ANTHROPIC_API_KEY)
+judge-validation: ## Score the returned judge-validation sheets with the real judge and patch reports/evaluation.md: make judge-validation RATER1=<csv> RATER2=<csv> [REPORT=<md>] [CASES=<csv>] (needs ANTHROPIC_API_KEY)
 	$(if $(and $(RATER1),$(RATER2)),,$(error RATER1 and RATER2 are required))
 	$(RUN) python -m evals.h4_judge_validation --rater1 "$(RATER1)" --rater2 "$(RATER2)" \
-		$(if $(REPORT),--report "$(REPORT)",)
+		$(if $(REPORT),--report "$(REPORT)",) $(if $(CASES),--cases "$(CASES)",)
 
 seed-ci-smoke: ## Seed the CI-only synthetic data the smoke slice needs (needs DATABASE_URL, migrated)
 	$(RUN) python -m tests.fixtures.ci_smoke_seed

@@ -2,9 +2,9 @@
 
 **This seed is curated, not a random sample.** It is built by a written, deterministic rule (`pipelines.ops_seed`) so that every situation the policy distinguishes is present, even though most of those situations are rare in the source. A rate measured on this seed describes the seed, never the population; every rate below is shown beside the same rate measured on the full cleaned layer.
 
-Reference date `2026-06-18` (the newest transaction instant in the seed, read by the running service as `ops_meta.data_as_of`, ADR-15).
+Reference date `2026-06-18` (the newest transaction instant in the seed, read by the running service as `ops_meta.data_as_of`).
 
-500 customers selected, all `Active` (AC-E4-48). 1,368 products, 15,230 transactions.
+500 customers selected, all `Active`. 1,368 products, 15,230 transactions.
 
 ## 1. Coverage of the selection rule
 
@@ -62,7 +62,7 @@ How many selected customers carry each stratum; the rule guarantees at least 5 w
 
 ## 3. What the seed does not contain
 
-No document number, birth date, address, full email or full phone (AC-E4-46): the seed never reads those source columns, and the two contact fields it keeps are masked before they reach a Parquet file. `cases` starts empty; see the module's Limitations.
+No document number, birth date, address, full email or full phone: the seed never reads those source columns, and the two contact fields it keeps are masked before they reach a Parquet file. `cases` starts empty; see the module's Limitations.
 
 ## 4. Lineage
 
