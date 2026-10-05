@@ -241,6 +241,22 @@ describe('SignInScreen access code control', () => {
   })
 })
 
+describe('SignInScreen while the sign-in request is out', () => {
+  it('locks the language switcher and the show and hide control', async () => {
+    vi.spyOn(api, 'signIn').mockReturnValue(new Promise(() => undefined))
+    const user = await renderCustomerScreen()
+    await user.type(screen.getByLabelText(es['signin.accessCodeLabel']), 'a-code')
+    await user.click(screen.getByRole('button', { name: es['signin.submit'] }))
+    await screen.findByRole('button', { name: es['signin.submitting'] })
+
+    const switcher = screen.getByRole('group', { name: es['signin.languageSwitcherLabel'] })
+    for (const button of within(switcher).getAllByRole('button')) {
+      expect(button).toBeDisabled()
+    }
+    expect(screen.getByRole('button', { name: /^Mostrar código de acceso$/i })).toBeDisabled()
+  })
+})
+
 describe('SignInScreen accessibility', () => {
   it.each([
     ['ana', es],
