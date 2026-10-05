@@ -83,8 +83,8 @@ results still to come say so and name the command that completes them.
   repeat-complainer flag, so the rule could not fire; the loader now refuses such a seed. Four
   adversarial bad-data cases expect an immediate single-turn handoff where the system asks a
   clarifying question first, and one amount case is read as unclear by the language-understanding
-  step. The decline path is measured by no golden case, and the per-segment fairness slice could
-  not be computed for the latest run.
+  step. The decline path is measured by no golden case, and the per-segment fairness slice is
+  not part of the three-run measurement; the evaluation report states where that slice stands.
 - **A transaction described by a kind of transaction or place is found by its other details, from a
   fixed word list.** When a customer names a transfer, a charge or an online store where a
   merchant would go, the lookup ignores that word and searches by the amount, date or card; a

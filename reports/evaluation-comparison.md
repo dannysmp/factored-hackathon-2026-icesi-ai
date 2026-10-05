@@ -160,7 +160,7 @@ Three golden cases are worded so that they measure something other than the beha
 
 ## 4. Fairness
 
-The previous run also reported outcomes by customer segment. The interim run could not: the customer table the segments come from was not available to it. The current run could not either: the working tree it was launched from held no pipeline output to read each customer's segment from, and the per-case outcomes were not stored, so the slice could not be derived afterwards. Its language, country and accent-phrasing slices are computed. Slice sizes are small. No slice differs from its dimension by more than sampling noise, and a slice with few cases is rarely flagged, so the absence of a flag is not evidence of equal treatment.
+The previous run also reported outcomes by customer segment. The interim run could not: the customer table the segments come from was not available to it. The current three-run measurement did not compute it: the working tree it was launched from held no pipeline output to read each customer's segment from, and the per-case outcomes were not stored, so the slice could not be derived afterwards. The evaluation report states where the segment slice stands. Its language, country and accent-phrasing slices are computed. Slice sizes are small. No slice differs from its dimension by more than sampling noise, and a slice with few cases is rarely flagged, so the absence of a flag is not evidence of equal treatment.
 
 ## 5. Quality scoring
 
