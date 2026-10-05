@@ -13,9 +13,9 @@ function byMoment(a: TimelineEntry, b: TimelineEntry): number {
 }
 
 /**
- * The timeline (AC-E10-03): decisions and reasons, in the order they happened, never message
- * text — `TimelineEntry` (contracts/service_v1/console.py) has no message-text field at all, so
- * nothing here can expose one (AC-E10-05).
+ * The timeline: decisions and reasons, in the order they happened, never message text.
+ * `TimelineEntry` (contracts/service_v1/console.py) has no message-text field at all, so nothing
+ * here can expose one.
  *
  * The backend's own order is not specified, so this orders by the moment each entry occurred. A
  * trace identifier is shared by every entry of one request and is not a position, so it is shown
