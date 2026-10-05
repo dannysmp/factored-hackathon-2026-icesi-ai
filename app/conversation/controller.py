@@ -1166,8 +1166,11 @@ class DialogueController:
         tool-failure handoff. The case the tool reports is then read through ``get_case``: when that
         read fails or its transaction or category differs from what was filed, the outcome is a
         handoff for an unverified filing that names the case number, and the customer is not told it
-        succeeded.
+        succeeded. A conversation already handed to a person files nothing: it is answered with its
+        existing ticket, so a late confirmation can neither file again nor open a second handoff.
         """
+        if state.phase is ConversationPhase.HANDED_OFF and state.last_ticket_ref is not None:
+            return state, self._ticket_envelope(state)
         request = self._request
         assert request is not None  # noqa: S101 - set at the top of handle_turn
         idempotency_key = _idempotency_key(request.turn_id)

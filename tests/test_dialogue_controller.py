@@ -2415,6 +2415,44 @@ def test_unverified_filing_hands_off(policy: Policy, retriever: LexicalRetriever
     assert outbox.packets[0].trigger.value == "filing_unverified"
 
 
+def test_a_further_yes_after_an_unverified_filing_files_nothing(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    port = FakeToolPort(
+        transactions=(_transaction(),),
+        evaluate_result=_decision(
+            Outcome.ELIGIBLE, ReasonCode.ELIGIBLE, requires_confirmation=True
+        ),
+        create_result=CreateDisputeCaseResult(created=True, case_number="D-1"),
+        get_case_result=None,
+    )
+
+    def turn(understanding: NluResult, turn_id: str) -> TurnResponse:
+        controller, _ = _controller(
+            understanding,
+            store=store,
+            tool_port=port,
+            policy=policy,
+            outbox=outbox,
+            retriever=retriever,
+        )
+        return controller.handle_turn(_turn(turn_id), principal=_principal())
+
+    turn(_file_dispute(transaction=TransactionHint(merchant="Amazon")), "turn-0001")
+    turn(_file_dispute(category=DisputeCategory.UNRECOGNIZED_CHARGE), "turn-0002")
+    handed_off = turn(_confirmation(ConfirmationAnswer.YES), "turn-0003")
+    assert port.create_calls == 1
+
+    again = turn(_confirmation(ConfirmationAnswer.YES), "turn-0004")
+
+    assert port.create_calls == 1
+    assert len(outbox.packets) == 1
+    assert again.handoff_ticket == handed_off.handoff_ticket
+    assert again.end_session
+
+
 def test_no_confirmation_required_files_immediately(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
