@@ -130,8 +130,10 @@ _CASE_FAILURES: tuple[type[Exception], ...] = (
     NaiveAgentRequestTooLarge,
 )
 
-# B1's only instruction: a plain task description, with no policy, flow or safety rules, because
-# B1 measures what an unsupervised model does with the tools alone.
+# B1's only instruction: a plain task description. It names the task, the tools and, in one
+# sentence each, the confirm-before-filing rule and when to hand off, but gives no policy
+# thresholds, flow or safety rules, because B1 measures what an unsupervised model does with the
+# tools alone.
 _SYSTEM_PROMPT = (
     "You are a bank customer service assistant. A customer will describe a problem with a "
     "transaction on their account. Use the tools available to look up their transactions, "

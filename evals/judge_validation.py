@@ -50,15 +50,15 @@ agreement rests on, the quadratic-weighted kappa, and which side scored higher w
 
 Limitations
 -----------
-The demotion decision uses the plain share of exact score matches; the
-weighted kappa is reported beside it and never changes the decision. The kappa is "not defined" when
-both sides of a pair give one and the same score throughout, and it is close to zero whenever one
-side's scores barely vary, however often the two sides match — it is read together with the pair
-count and the direction counts, not alone. The written analysis of why individual cases differ (a
-person naming a cause per disagreement) is not reproduced here. A case_id present in one input but
-missing from another is silently excluded from every dimension's comparable set, on the assumption
-the three inputs are the same stratified sample; the per-dimension pair counts
-(``PairDetail.compared``) show how many cases each agreement rests on.
+The demotion decision uses the plain share of exact score matches; the weighted kappa is reported
+beside it and never changes the decision. The kappa is "not defined" when both sides of a pair give
+one and the same score throughout, and it is close to zero whenever one side's scores barely vary,
+however often the two sides match — it is read together with the pair count and the direction
+counts, not alone. The written analysis of why individual cases differ (a person naming a cause per
+disagreement) is not reproduced here. A case_id present in one input but missing from another is
+silently excluded from every dimension's comparable set, on the assumption the three inputs are the
+same stratified sample; the per-dimension pair counts (``PairDetail.compared``) show how many cases
+each agreement rests on.
 """
 
 from __future__ import annotations

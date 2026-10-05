@@ -45,10 +45,12 @@ Limitations
 -----------
 A capture failure (``CorpusIndexError`` or ``KeyError``, for example a declared policy section that
 does not resolve) never demotes an otherwise valid ``CaseResult`` to an error result: the case's
-verdict stands, its two extra fields stay unset, and the failure is logged. Capture failures are
-deliberately narrower than ``_CASE_FAILURES``: raised anywhere outside the capture step, those
-exceptions are not caught and stop the run. A case without captured fields is therefore absent
-from anything that needs a transcript, such as the live judge's scores.
+verdict stands, its two extra fields stay unset, and the failure is logged. The two exception
+sets are separate: ``_CASE_FAILURES`` (``ValueError``, ``NotImplementedError`` and
+``httpx.HTTPStatusError``) turns a case into a named error result, while the capture step handles
+only ``CorpusIndexError`` and ``KeyError``. Anything else raised there propagates and stops the
+run. A case without captured fields is therefore absent from anything that needs a transcript,
+such as the live judge's scores.
 """
 
 from __future__ import annotations
@@ -132,7 +134,8 @@ def run_cases(
         Any exception other than ``ValueError``, ``NotImplementedError`` or
         ``httpx.HTTPStatusError`` propagates unchanged and stops the batch, leaving the remaining
         cases unrun; those three are recorded as a named ``CaseResult.error`` instead. A capture
-        failure never propagates (see this module's Limitations).
+        failure of type ``CorpusIndexError`` or ``KeyError`` does not propagate (see this module's
+        Limitations).
     """
     results = []
     try:

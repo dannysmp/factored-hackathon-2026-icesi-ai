@@ -17,7 +17,7 @@ The evaluation package measures a dispute-intake system against a fixed, held-ou
 
 ## Running
 
-`make evaluate SYSTEM={P|B0|B1} [SMOKE=1]` runs one variant and logs its headline metrics. `make evaluate FULL=1 [SMOKE=1]` runs every variant and writes `reports/evaluation.md`. `SMOKE=1` narrows the case set to the 16-case injection and authorization subset that CI runs. The store must already hold the operational seed (`make load-seed`) and, for the cases that need it, the evaluation bank (`make load-eval-bank`). `make judge-validation` scores the returned rater sheets and patches the report.
+`make evaluate SYSTEM={P|B0|B1} [SMOKE=1]` runs one variant and logs its headline metrics. `make evaluate FULL=1 [SMOKE=1]` runs every variant and writes `reports/evaluation.md`. `SMOKE=1` narrows the case set to the 16-case injection and authorization subset that CI runs. The store must already hold the operational seed (`make load-seed`) and, for the cases that need it, the evaluation bank (`make load-eval-bank`). `make judge-validation RATER1=<csv> RATER2=<csv> [REPORT=<md>] [CASES=<csv>]` scores the returned rater sheets with the real judge, so it needs `ANTHROPIC_API_KEY`, and patches the report.
 
 The case-sheet CSV files are generated from the case modules: `python -m evals.golden.case_sheet` rewrites them and `--check` fails when they are stale.
 

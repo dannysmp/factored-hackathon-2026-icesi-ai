@@ -239,9 +239,11 @@ class B1ToolDispatcher:
     """Executes one model tool call at a time against the real store, retriever and outbox.
 
     One instance serves one case: it is scoped to a customer and language, and tracks the
-    ``evaluate_dispute`` decisions it has produced so a filing can be matched to one. The two
-    non-``init`` fields are the harness's read-outs: the turn's handoff ticket and its last
-    confirmable decision.
+    ``evaluate_dispute`` decisions it has produced so a filing can be matched to one. The
+    harness reads two of the non-``init`` fields: ``handoff_ticket``, the ticket reference of the
+    handoff the model requested, and ``last_confirmable_decision``, the decision a filing would
+    rest on. A later ``evaluate_dispute`` that is not eligible resets the latter to ``None``. The
+    other two, ``_decisions`` and ``_decisions_this_turn``, are internal bookkeeping.
     """
 
     tool_port: ToolPort

@@ -122,21 +122,20 @@ which system variant it happened against.
 
 Limitations
 -----------
-Raises ``NotImplementedError`` for any ``expected_intent`` other than the
-six the golden set actually declares (``CONFIRM_FILING``, ``POLICY_ANSWER``, ``REFUSE``,
-``HANDOFF``, ``CLARIFY``, ``ABSTAIN``) — every case in the golden set is scoreable; the guard makes
-a case authored with any other value fail loudly rather than be silently missed.
-``useful_handoff_packet`` checks only that the packet's expected reason code is present (see Design
-Principles) — a packet whose ``verified_facts``, ``actions`` or ``open_questions`` are empty when a
-human reader would expect them non-empty for that specific conversation is not caught by this
-module; that finer-grained judgment stays the LLM judge's job. ``cost_usd`` is copied from the
-transcript, which the runner fills from the spend it measured for that case (``None`` when none was
-measured, never zero). ``latency_seconds`` is the case's total wall time (the sum of every turn's
-own latency), since ``CaseResult`` carries one figure per case, not one per turn.
-``_dialogue_state_matches`` grounds a ``CONFIRM_FILING`` case's transaction and category, but not
-its reason code: every such case declares ``expected_reason_code=ReasonCode.ELIGIBLE``, and
-``dialogue_state`` carries no reason-code column to verify it against before a case is actually
-filed, so that part is not checked here.
+Raises ``NotImplementedError`` for any ``expected_intent`` other than the six the golden set
+actually declares (``CONFIRM_FILING``, ``POLICY_ANSWER``, ``REFUSE``, ``HANDOFF``, ``CLARIFY``,
+``ABSTAIN``) — every case in the golden set is scoreable; the guard makes a case authored with any
+other value fail loudly rather than be silently missed. ``useful_handoff_packet`` checks only that
+the packet's expected reason code is present (see Design Principles) — a packet whose
+``verified_facts``, ``actions`` or ``open_questions`` are empty when a human reader would expect
+them non-empty for that specific conversation is not caught by this module; that finer-grained
+judgment stays the LLM judge's job. ``cost_usd`` is copied from the transcript, which the runner
+fills from the spend it measured for that case (``None`` when none was measured, never zero).
+``latency_seconds`` is the case's total wall time (the sum of every turn's own latency), since
+``CaseResult`` carries one figure per case, not one per turn. ``_dialogue_state_matches`` grounds a
+``CONFIRM_FILING`` case's transaction and category, but not its reason code: every such case
+declares ``expected_reason_code=ReasonCode.ELIGIBLE``, and ``dialogue_state`` carries no reason-code
+column to verify it against before a case is actually filed, so that part is not checked here.
 """
 
 from __future__ import annotations
