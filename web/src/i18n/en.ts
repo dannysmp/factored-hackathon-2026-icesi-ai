@@ -7,7 +7,7 @@ import type { Messages } from './messages'
 export const en: Messages = {
   'app.title': 'Transaction disputes',
   'app.signOut': 'Sign out',
-  'app.sessionExpired': 'Your session has ended. Please sign in again.',
+  'app.sessionExpired': 'Your session has expired. Please sign in again.',
   'common.retry': 'Retry',
   'common.error.generic': 'Something went wrong.',
   'failure.offline':

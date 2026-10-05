@@ -36,9 +36,12 @@
   border-bottom-color: var(--color-accent);
 }
 
+/* A tab has no background to change, and its disabled colour sits close to an inactive tab's, so
+   the strike-through is what tells them apart without relying on colour. */
 .tabs-trigger:disabled {
   color: var(--color-disabled-text);
   cursor: not-allowed;
+  text-decoration: line-through;
 }
 
 /* The list scrolls sideways, which would clip a ring drawn outside the trigger: draw it inside. */
