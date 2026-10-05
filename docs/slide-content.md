@@ -98,10 +98,13 @@ This document states the content of each slide; it is not the slide file itself.
   - Filing windows are counted on the bank's single operating time zone (America/Bogota), not each
     customer's own local calendar date — a customer elsewhere could see a slightly different day
     count near a deadline.
-  - A document number a customer types unprompted into free text is not detected or redacted, and
-    still reaches the outbound model request unmasked — a deliberate by-design choice, since a
-    document number carries no check digit a detector could key on, not an oversight; every other
-    field the system reads is a closed enum or a narrowly patterned value that cannot carry one.
+  - A document number a customer types unprompted into free text is redacted by shape before the
+    model sees it: an unbroken run of seven or more digits and the two punctuated Brazilian
+    tax-number formats. Two gaps are disclosed: a national identity number typed with thousands-style
+    dots has the shape of an amount and reaches the model unmasked, and an amount typed as seven or
+    more unbroken digits is redacted like an identifier, which costs the customer one more question.
+    Every other field the system reads is a closed enum or a narrowly patterned value that cannot
+    carry one.
   - The human-agent console is a viewer; its narrow audited writes exist in the API and have no
     screen yet.
 - The route to operation is a set of named next steps: every right-sized choice on slide 2 has a
