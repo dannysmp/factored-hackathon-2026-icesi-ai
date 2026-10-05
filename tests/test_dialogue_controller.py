@@ -1868,6 +1868,21 @@ def test_a_replayed_out_of_range_number_shows_the_list_again_without_calling_the
     assert dialogue.store.get(_SESSION_ID) == stored
 
 
+def test_a_replayed_digit_the_model_read_as_a_list_request_is_read_by_the_model_again(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """With no list on offer, a digit the model read as a list request still lists on a retry."""
+    dialogue = _Dialogue(policy, retriever, FakeToolPort(transactions=_three_transactions()))
+    first = dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS), turn_id="turn-0001", text="1")
+    assert [choice.number for choice in first.choices] == [1, 2, 3]
+
+    replay = dialogue.say(_plain(NluIntent.LIST_TRANSACTIONS), turn_id="turn-0001", text="1")
+
+    assert [choice.number for choice in replay.choices] == [1, 2, 3]
+    assert replay.reply == first.reply
+    assert replay.next_expected is None
+
+
 def test_a_replayed_out_of_range_number_is_answered_while_the_model_is_unreachable(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
