@@ -1,25 +1,35 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { JSX } from 'react'
 import { ChatFeature } from './features/customer-chat/ChatFeature'
 import { LiveChatClient } from './features/customer-chat/client'
 import type { Lang } from './features/customer-chat/contracts'
 import { SignInScreen } from './features/sign-in/SignInScreen'
 import { Button } from './components/ui/Button'
+import { Notice } from './components/ui/Notice'
 import { PageHeader } from './components/ui/PageHeader'
 import { useDocumentLanguage } from './i18n/useDocumentLanguage'
 import { useT } from './i18n/useT'
+import styles from './App.module.css'
 
 /**
  * The app shell: the demonstration sign-in, then the customer chat against the real, live turn
  * endpoint (ADR-18, `LiveChatClient`). The session token lives only in this component's own
  * state, never storage — the same "held in memory only" rule the sign-in screen itself follows.
+ *
+ * When the service reports the session has ended, the person is returned to the sign-in with a
+ * note saying so, in the language the conversation was last in, and the keyboard lands on the form.
  */
 export function App(): JSX.Element {
-  const [session, setSession] = useState<{ token: string; lang: Lang } | null>(null)
+  const [session, setSession] = useState<{ token: string; lang: Lang; slug: string } | null>(null)
   // The page's own language: the sign-in screen reports the selected persona's, then the chat
   // reports the conversation's. Spanish, the product's first language, until either has spoken.
   const [lang, setLang] = useState<Lang>('es')
+  // The language the ended session was in, while its note is on screen above the sign-in.
+  const [expiredIn, setExpiredIn] = useState<Lang | null>(null)
+  // The persona whose session ended, so the sign-in offers the same person again.
+  const [expiredSlug, setExpiredSlug] = useState<string | undefined>(undefined)
   const t = useT(lang)
+  const tExpired = useT(expiredIn ?? lang)
   useDocumentLanguage(lang, t('app.title'))
 
   // Built once per signed-in session, not on every render (frontend standard, section 3): a
@@ -27,14 +37,32 @@ export function App(): JSX.Element {
   // client for it is correct, not wasteful.
   const client = useMemo(() => (session === null ? null : new LiveChatClient(session)), [session])
 
+  const handleExpired = useCallback(() => {
+    setExpiredIn(lang)
+    setExpiredSlug(session?.slug)
+    setSession(null)
+  }, [lang, session])
+
   if (session === null || client === null) {
     return (
       <>
         <PageHeader title={t('app.title')} />
         <main>
+          {expiredIn !== null && (
+            <div className={styles.notice} lang={expiredIn}>
+              <Notice tone="warning" role="status">
+                {tExpired('app.sessionExpired')}
+              </Notice>
+            </div>
+          )}
           <SignInScreen
-            onSignedIn={(token, signedInLang) => {
-              setSession({ token, lang: signedInLang })
+            focusForm={expiredIn !== null}
+            preferredLang={expiredIn ?? undefined}
+            preferredSlug={expiredSlug}
+            onSignedIn={(token, signedInLang, slug) => {
+              setExpiredIn(null)
+              setExpiredSlug(undefined)
+              setSession({ token, lang: signedInLang, slug })
             }}
             onLanguageChange={setLang}
           />
@@ -56,7 +84,12 @@ export function App(): JSX.Element {
         </Button>
       </PageHeader>
       <main>
-        <ChatFeature client={client} lang={session.lang} onLanguageChange={setLang} />
+        <ChatFeature
+          client={client}
+          lang={session.lang}
+          onLanguageChange={setLang}
+          onSessionExpired={handleExpired}
+        />
       </main>
     </>
   )

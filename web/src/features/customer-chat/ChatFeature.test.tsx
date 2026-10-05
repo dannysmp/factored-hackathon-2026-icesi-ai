@@ -1,5 +1,5 @@
 /** Component test: the whole scripted conversation, its four async states, and accessibility. */
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { describe, expect, it, vi } from 'vitest'
@@ -159,8 +159,10 @@ describe('ChatFeature', () => {
     )
     await screen.findByRole('button', { name: 'Enviar' })
 
+    await waitFor(() => {
+      expect(onLanguageChange).toHaveBeenLastCalledWith('es')
+    })
     expect(onLanguageChange).toHaveBeenCalledWith('en')
-    expect(onLanguageChange).toHaveBeenLastCalledWith('es')
   })
 
   it('shows a retryable error, not a stack trace, when the client rejects', async () => {
@@ -169,9 +171,7 @@ describe('ChatFeature', () => {
       sendTurn: () => Promise.reject(new Error('unused')),
     }
     render(<ChatFeature client={failing} lang="en" />)
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'The conversation could not start. Please try again.',
-    )
+    expect(await screen.findByRole('alert')).toHaveTextContent('The conversation could not start.')
     expect(screen.queryByText('network is down')).not.toBeInTheDocument()
   })
 
@@ -187,7 +187,7 @@ describe('ChatFeature', () => {
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Your last message could not be sent. Please try again.',
+      'Your last message could not be sent.',
     )
     expect(
       await findMessage('Hi! Which transaction would you like to dispute?'),

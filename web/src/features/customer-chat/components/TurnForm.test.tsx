@@ -91,12 +91,14 @@ describe('TurnForm', () => {
     expect(input).toHaveAttribute('aria-describedby', hint.id)
 
     fireEvent.change(input, { target: { value: 'x'.repeat(1800) } })
-    expect(screen.getAllByText('Characters left: 200')).toHaveLength(2)
+    expect(
+      screen.getByText('Characters left: 200', { selector: 'span:not([role])' }),
+    ).toBeInTheDocument()
     fireEvent.change(input, { target: { value: 'x'.repeat(1799) } })
     expect(screen.queryByText(/Characters left/)).not.toBeInTheDocument()
   })
 
-  it('tells a screen reader at 200, 100 and 0 characters left, and not in between', () => {
+  it('tells a screen reader the real count when 200, 100 and 0 characters left are reached, and not in between', () => {
     render(<TurnForm onSubmit={vi.fn()} busy={false} lang="en" />)
     const input = screen.getByLabelText('Your message')
     const announcer = screen.getByRole('status')
@@ -114,6 +116,30 @@ describe('TurnForm', () => {
     expect(announcer).toHaveTextContent('Characters left: 0')
     fireEvent.change(input, { target: { value: 'x'.repeat(10) } })
     expect(announcer).toBeEmptyDOMElement()
+  })
+
+  it('announces the count the field actually has when a paste jumps past a step', () => {
+    render(<TurnForm onSubmit={vi.fn()} busy={false} lang="en" />)
+    const input = screen.getByLabelText('Your message')
+    const announcer = screen.getByRole('status')
+
+    fireEvent.change(input, { target: { value: 'x'.repeat(1850) } })
+    expect(announcer).toHaveTextContent(/^Characters left: 150$/)
+    fireEvent.change(input, { target: { value: 'x'.repeat(1950) } })
+    expect(announcer).toHaveTextContent(/^Characters left: 50$/)
+    fireEvent.change(input, { target: { value: 'x'.repeat(1999) } })
+    expect(announcer).toHaveTextContent(/^Characters left: 50$/)
+  })
+
+  it('stops announcing once the message is sent', async () => {
+    const user = userEvent.setup()
+    render(<TurnForm onSubmit={vi.fn()} busy={false} lang="en" />)
+    fireEvent.change(screen.getByLabelText('Your message'), { target: { value: 'x'.repeat(1900) } })
+    expect(screen.getByRole('status')).toHaveTextContent('Characters left: 100')
+
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
   })
 
   it('speaks the announcement in the conversation’s language', () => {

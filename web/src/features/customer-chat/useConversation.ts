@@ -8,6 +8,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatClient } from './client'
 import type { TurnResponse } from './contracts'
+import { classifyFailure } from '../../lib/failure'
+import type { FailureKind } from '../../lib/failure'
 
 export interface Message {
   id: string
@@ -27,7 +29,8 @@ interface ConversationState {
   status: ConversationStatus
   messages: Message[]
   latest: TurnResponse | null
-  error: string | null
+  /** What went wrong while the status is `error`; `null` otherwise. */
+  failure: FailureKind | null
 }
 
 export interface Conversation extends ConversationState {
@@ -40,7 +43,10 @@ export interface Conversation extends ConversationState {
    * something else, and it may not have reached the assistant.
    */
   send: (text: string, shown?: string) => void
-  /** Send the message that failed again under its original id; a no-op when none failed. */
+  /**
+   * Try again after a failure: resends the message that failed under its original id, or, when
+   * the conversation never started, asks for the opening message again. A no-op otherwise.
+   */
   retry: () => void
 }
 
@@ -52,7 +58,7 @@ const INITIAL_STATE: ConversationState = {
   status: 'loading',
   messages: [],
   latest: null,
-  error: null,
+  failure: null,
 }
 
 export function useConversation(client: ChatClient): Conversation {
@@ -77,30 +83,33 @@ export function useConversation(client: ChatClient): Conversation {
     setState(next)
   }, [])
 
-  // If a caller ever swaps `client` for a genuinely different one (the fixture client today;
-  // the live client is the next slice's), this effect re-runs and starts a new conversation, but
-  // the previous one's messages linger until the new `start()` resolves. A caller that needs an
-  // immediate reset should remount by changing this component's `key`, React's own tool for
-  // that, rather than this hook resetting state itself from inside an effect.
-  useEffect(() => {
-    mounted.current = true
+  const begin = useCallback((): void => {
     client.start().then(
       (turn) => {
-        commit({ status: 'ready', messages: [assistantMessage(turn)], latest: turn, error: null })
+        commit({ status: 'ready', messages: [assistantMessage(turn)], latest: turn, failure: null })
       },
       (error: unknown) => {
         commit({
           status: 'error',
           messages: [],
           latest: null,
-          error: error instanceof Error ? error.message : 'the conversation could not start',
+          failure: classifyFailure(error),
         })
       },
     )
+  }, [client, commit])
+
+  // If a caller ever swaps `client` for a genuinely different one, this effect re-runs and starts
+  // a new conversation, but the previous one's messages linger until the new `start()` resolves.
+  // A caller that needs an immediate reset should remount by changing this component's `key`,
+  // React's own tool for that, rather than this hook resetting state itself from inside an effect.
+  useEffect(() => {
+    mounted.current = true
+    begin()
     return () => {
       mounted.current = false
     }
-  }, [client, commit])
+  }, [begin])
 
   const dispatch = useCallback(
     (text: string, turnId: string, history: Message[]): void => {
@@ -114,7 +123,7 @@ export function useConversation(client: ChatClient): Conversation {
             status: 'ready',
             messages: [...before.messages, assistantMessage(turn)],
             latest: turn,
-            error: null,
+            failure: null,
           })
         },
         (error: unknown) => {
@@ -125,7 +134,7 @@ export function useConversation(client: ChatClient): Conversation {
             messages: before.messages.map((message) =>
               message.turnId === turnId ? { ...message, failed: true } : message,
             ),
-            error: error instanceof Error ? error.message : 'the message could not be sent',
+            failure: classifyFailure(error),
           })
         },
       )
@@ -157,6 +166,11 @@ export function useConversation(client: ChatClient): Conversation {
 
   const retry = useCallback(() => {
     const current = latestState.current
+    if (current.status === 'error' && current.latest === null) {
+      commit({ ...INITIAL_STATE })
+      begin()
+      return
+    }
     const failed = current.messages.find((message) => message.failed === true)
     if (failed?.turnId === undefined) {
       return
@@ -168,7 +182,7 @@ export function useConversation(client: ChatClient): Conversation {
         message === failed ? { ...message, failed: false } : message,
       ),
     )
-  }, [dispatch])
+  }, [begin, commit, dispatch])
 
   return { ...state, send, retry }
 }

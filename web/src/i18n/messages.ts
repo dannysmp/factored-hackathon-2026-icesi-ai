@@ -7,9 +7,14 @@
 export interface Messages {
   'app.title': string
   'app.signOut': string
+  'app.sessionExpired': string
   'common.loading': string
   'common.retry': string
   'common.error.generic': string
+  'failure.offline': string
+  'failure.timeout': string
+  'failure.rateLimited': string
+  'failure.unavailable': string
   'chat.regionLabel': string
   'chat.messagesLabel': string
   'chat.placeholder': string
@@ -37,5 +42,7 @@ export interface Messages {
   'signin.personaLabel': string
   'signin.accessCodeLabel': string
   'signin.refused': string
+  'signin.accessCodeHint': string
   'signin.submit': string
+  'signin.submitting': string
 }

@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConsoleApp } from './ConsoleApp'
 import { es } from './i18n/es'
 import { DEMO_QUEUE, DEMO_TICKET_DETAILS } from './features/console/fixtures'
+import { REQUEST_SUMMARY_LABELS } from './features/console/labels'
 
 const PERSONAS_BODY = {
   personas: [{ slug: 'diego', display_name: 'Diego', language: 'es', audience: 'agent' }],
@@ -101,8 +102,10 @@ describe('ConsoleApp', () => {
     if (firstDetail === undefined) {
       throw new Error('fixture setup: DEMO_TICKET_DETAILS needs at least one entry for this test')
     }
-    expect(await screen.findByRole('region', { name: 'Detalle del ticket' })).toBeInTheDocument()
-    expect(await screen.findByText(firstDetail.packet.request_summary)).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Detalle del caso' })).toBeInTheDocument()
+    expect(
+      await screen.findByText(REQUEST_SUMMARY_LABELS[firstDetail.packet.trigger]),
+    ).toBeInTheDocument()
     expect(
       screen.queryByRole('region', { name: 'Cola de casos escalados' }),
     ).not.toBeInTheDocument()
@@ -141,7 +144,7 @@ describe('ConsoleApp', () => {
 
     await user.click(firstTicketRefButton)
 
-    expect(await screen.findByRole('region', { name: 'Detalle del ticket' })).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Detalle del caso' })).toBeInTheDocument()
     expect(
       screen.queryByRole('region', { name: 'Cola de casos escalados' }),
     ).not.toBeInTheDocument()
@@ -192,7 +195,7 @@ describe('ConsoleApp', () => {
       throw new Error('fixture setup: DEMO_TICKET_DETAILS needs at least one entry for this test')
     }
     await user.click(screen.getByRole('button', { name: firstDetail.item.ticket_ref }))
-    await screen.findByRole('region', { name: 'Detalle del ticket' })
+    await screen.findByRole('region', { name: 'Detalle del caso' })
 
     await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }))
     await signIn()
@@ -200,7 +203,7 @@ describe('ConsoleApp', () => {
     expect(
       await screen.findByRole('region', { name: 'Cola de casos escalados' }),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Detalle del ticket' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Detalle del caso' })).not.toBeInTheDocument()
   })
 
   it('frames the sign-in step with a banner holding the console title and one main landmark', async () => {
@@ -241,7 +244,7 @@ describe('ConsoleApp', () => {
       throw new Error('fixture setup: DEMO_TICKET_DETAILS needs at least one entry for this test')
     }
     await user.click(screen.getByRole('button', { name: firstDetail.item.ticket_ref }))
-    await screen.findByRole('region', { name: 'Detalle del ticket' })
+    await screen.findByRole('region', { name: 'Detalle del caso' })
     expectFramed()
   })
 
