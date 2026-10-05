@@ -31,6 +31,7 @@ const DATE_TIME = new Intl.DateTimeFormat(LOCALE, {
 /** What stands in for a value the console cannot read, so one malformed field never blanks the screen. */
 const UNREADABLE = '—'
 
+/** Whether `moment` is a real point in time rather than the invalid date a malformed value parses to. */
 function isReadable(moment: Date): boolean {
   return !Number.isNaN(moment.getTime())
 }
@@ -47,6 +48,7 @@ export function formatDateTime(isoDateTime: string): string {
   return isReadable(moment) ? DATE_TIME.format(moment) : UNREADABLE
 }
 
+/** The currency formatters already built, keyed by code and decimals, so a long queue does not build one per row. */
 const CURRENCY_FORMATS = new Map<string, Intl.NumberFormat>()
 
 /** The shared formatter for one currency code, or `null` when the code is not one `Intl` accepts. */
@@ -98,6 +100,7 @@ export function formatMoney(amount: string, currency: string): string {
   return format.format(value === 0 ? 0 : value)
 }
 
+/** A percent formatter that always writes exactly `digits` decimals. */
 function shareFormat(digits: number): Intl.NumberFormat {
   return new Intl.NumberFormat(LOCALE, {
     style: 'percent',
