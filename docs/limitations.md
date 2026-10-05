@@ -110,6 +110,14 @@ results still to come say so and name the command that completes them.
   amount is matched against the transaction's dollar figure or its amount in its own currency,
   and the amount and currency must come from the same figure. The behavior was verified with
   scripted understanding results, not across live model output.
+- **A transaction described only by its amount or only by its card's last four digits is looked
+  for among the five most recent.** A date or a merchant name narrows the search in the
+  transaction store, so an older purchase is found. An amount or a card's last four digits is
+  checked only against the five most recent transactions the store returns, so a customer who
+  gives nothing else about an older purchase is told it was not found. The baseline that gives the
+  language model the tools directly (B1) passes only a start and an end date to the transaction
+  listing, so it cannot narrow by merchant, amount or card. Whether to narrow by amount and card
+  in the store as well is a product decision.
 - **A message that only states a transaction is read as a request to list transactions.** A
   customer who writes "Fiz uma transferência de $1.277,60 dólares no dia 13 de junho." without
   asking for anything sees the recent-transactions menu and gives the detail again before the
