@@ -68,10 +68,9 @@ This document states the content of each slide; it is not the slide file itself.
 - **The harness runs a case, not only defines and scores one.** Every piece a full report
   needs exists: the scoring formulas, an independent oracle that recomputes the policy decision for
   a stored case, the runner, both baseline systems (B0, B1), the failure injector, and the LLM
-  judge with its agreement-computation code, validated against 50 cases that two human raters
-  scored. A
-  16-case adversarial subset runs on every change and blocks merge on any case turning unsafe; the
-  full 32-case adversarial set can also run outside CI, against real, loaded data.
+  judge with its agreement-computation code, compared against 50 cases that two human raters
+  scored. A 16-case adversarial subset runs on every change and blocks merge on any case turning
+  unsafe; the full 32-case adversarial set can also run outside CI, against real, loaded data.
 - The full run against the complete 135-case golden set has executed, scoring all three
   systems against the live model; its safe/unsafe outcome classification is read directly off each
   run's own recorded outcome. The judge is not validated on any dimension: its agreement with the
