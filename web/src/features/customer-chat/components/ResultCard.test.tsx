@@ -69,6 +69,47 @@ describe('ResultCard', () => {
     ).toBeInTheDocument()
   })
 
+  it('tells a customer handed to a person what happens next, in each language', () => {
+    for (const [lang, text] of [
+      ['en', 'A person will pick up your request and follow up.'],
+      ['es', 'Un asesor tomará su solicitud y le dará seguimiento.'],
+      ['pt', 'Um atendente vai assumir sua solicitação e dar andamento.'],
+    ] as const) {
+      const { unmount } = render(<ResultCard lang={lang} caseNumber={null} handoffTicket="H-1" />)
+      expect(screen.getByText(text)).toBeInTheDocument()
+      // A hand-off can follow a card-loss instruction, so the card never says nothing is left to do.
+      expect(
+        screen.queryByText(/no further action|no necesita hacer nada|não precisa fazer nada/i),
+      ).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('gives the filed and closed outcomes no next-step line', () => {
+    const { rerender } = render(<ResultCard lang="en" caseNumber="D-2001" handoffTicket={null} />)
+    expect(screen.queryByText(/pick up your request/)).not.toBeInTheDocument()
+    rerender(<ResultCard lang="en" caseNumber={null} handoffTicket={null} />)
+    expect(screen.queryByText(/pick up your request/)).not.toBeInTheDocument()
+  })
+
+  it('marks each outcome with a glyph that assistive technology skips', () => {
+    const glyphs: string[] = []
+    for (const [caseNumber, handoffTicket] of [
+      ['D-2001', null],
+      [null, 'H-1'],
+      [null, null],
+    ] as const) {
+      const { container, unmount } = render(
+        <ResultCard lang="en" caseNumber={caseNumber} handoffTicket={handoffTicket} />,
+      )
+      const icon = container.querySelector('svg')
+      expect(icon).toHaveAttribute('aria-hidden', 'true')
+      glyphs.push(icon?.innerHTML ?? '')
+      unmount()
+    }
+    expect(new Set(glyphs).size).toBe(3)
+  })
+
   it('has no accessibility violations in any outcome', async () => {
     for (const [caseNumber, handoffTicket] of [
       ['D-2001', null],

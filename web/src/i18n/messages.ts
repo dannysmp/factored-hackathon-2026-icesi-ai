@@ -43,6 +43,7 @@ export interface Messages {
   'chat.result.closedTitle': string
   'chat.result.caseNumberLabel': string
   'chat.result.keepNumber': string
+  'chat.result.escalatedNext': string
   'chat.result.filedEarlierLabel': string
   'signin.regionLabel': string
   'signin.loading': string

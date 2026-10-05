@@ -572,15 +572,15 @@ def test_the_status_route_refuses_a_customer_session() -> None:
 
 
 # -----------------------------------------------------------------------------
-# The not-yet-implemented audit stub every composition root injects until it's real
+# The fail-closed audit sink for a composition with no real one
 # -----------------------------------------------------------------------------
 
 
-def test_the_unimplemented_audit_stub_always_raises_for_both_events() -> None:
-    stub = AuditNotYetImplemented()
+def test_the_fail_closed_audit_sink_always_raises_for_both_events() -> None:
+    sink = AuditNotYetImplemented()
 
     with pytest.raises(NotImplementedError, match="not wired"):
-        stub.packet_viewed(agent_id="AGT-1", session_id="sess-1", ticket_ref="T-1", packet=_PACKET)
+        sink.packet_viewed(agent_id="AGT-1", session_id="sess-1", ticket_ref="T-1", packet=_PACKET)
 
     with pytest.raises(NotImplementedError, match="not wired"):
-        stub.timeline_viewed(agent_id="AGT-1", session_id="sess-1", ticket_ref="T-1", timeline=())
+        sink.timeline_viewed(agent_id="AGT-1", session_id="sess-1", ticket_ref="T-1", timeline=())

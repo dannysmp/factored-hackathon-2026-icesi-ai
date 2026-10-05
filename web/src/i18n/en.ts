@@ -38,6 +38,7 @@ export const en: Messages = {
   'chat.result.closedTitle': 'Conversation ended',
   'chat.result.caseNumberLabel': 'Case reference',
   'chat.result.keepNumber': 'Keep this number for any question about your request.',
+  'chat.result.escalatedNext': 'A person will pick up your request and follow up.',
   'chat.result.filedEarlierLabel': 'Dispute filed earlier, case reference',
   'signin.regionLabel': 'Demonstration sign-in',
   'signin.loading': 'Loading the demonstration sign-in…',

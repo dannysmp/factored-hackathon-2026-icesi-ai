@@ -17,7 +17,7 @@ Se pueden disputar transacciones de estos productos: Cuenta de ahorros, Cuenta c
 
 Los demás productos (Préstamo personal, Crédito hipotecario, Inversiones y Seguros) tienen sus propios canales de atención y no se gestionan con esta política.
 
-Para presentar una disputa, la transacción debe ser un cargo al cliente (una compra, un retiro, una transferencia o un pago), estar aprobada, no estar fechada en el futuro, estar dentro del plazo de su categoría (ver más abajo) y no tener otra disputa abierta.
+Para presentar una disputa, la transacción debe ser un cargo al cliente (una compra, un retiro, una transferencia o un pago), estar aprobada, no estar fechada en el futuro, encontrarse dentro del plazo correspondiente (ver más abajo) y no tener otra disputa abierta.
 
 No se pueden disputar depósitos ni ajustes.
 
@@ -55,23 +55,23 @@ Para cada tipo de disputa, tenga listo lo siguiente:
 
 ## Confirmación antes de presentar {#confirmation}
 
-Antes de presentar una disputa, el cliente confirma exactamente lo que se va a presentar: la transacción, el motivo y los datos de la solicitud.
+Antes de presentar una disputa, el cliente confirma la transacción, el motivo y los datos de la solicitud.
 
 ## Cuándo lo revisa un asesor {#human-review}
 
 Aunque la solicitud cumpla las reglas, pasa a revisión de un asesor en estos casos:
 
 - Es un reporte de fraude.
-- El sistema no entendió la solicitud con suficiente certeza.
+- El sistema no puede determinar con suficiente claridad qué solicita el cliente.
 - Se aplican otros criterios de revisión del banco.
 
 ## Reportes de fraude {#fraud-claims}
 
-Un asesor revisa siempre los reportes de fraude. Nunca se descartan automáticamente, aunque la transacción haya sido rechazada, esté fuera de plazo o corresponda a un producto fuera del alcance de esta política; en esos casos, el asesor recibe además el motivo por el que la solicitud no habría sido elegible.
+Un asesor revisa siempre los reportes de fraude. Nunca se descartan automáticamente, aunque la transacción haya sido rechazada, esté fuera de plazo o corresponda a un producto fuera del alcance de esta política; en esos casos, el asesor recibe además el motivo por el que la solicitud no cumple las reglas.
 
 ## Motivos de cada decisión {#decision-codes}
 
-Cada decisión lleva uno de estos motivos.
+Cada decisión lleva uno de estos motivos. En esta tabla, cada motivo que requiere revisión de un asesor se describe con la frase: “Un asesor revisa esta solicitud.”
 
 | Motivo | Significado |
 |---|---|
@@ -84,9 +84,9 @@ Cada decisión lleva uno de estos motivos.
 | `transaction_date_in_future` | La fecha de la transacción es futura. |
 | `filing_window_expired` | Venció el plazo para presentar esta disputa. |
 | `duplicate_open_case` | Ya hay una disputa abierta para esta transacción. |
-| `escalate_fraud_claim` | Un asesor revisa la solicitud. |
-| `escalate_low_nlu_confidence` | Un asesor revisa la solicitud. |
-| `escalate_repeat_complainer` | Un asesor revisa la solicitud. |
-| `escalate_amount_above_threshold` | Un asesor revisa la solicitud. |
-| `escalate_amount_unknown` | Un asesor revisa la solicitud. |
-| `escalate_risk_score` | Un asesor revisa la solicitud. |
+| `escalate_fraud_claim` | Un asesor revisa esta solicitud. |
+| `escalate_low_nlu_confidence` | Un asesor revisa esta solicitud. |
+| `escalate_repeat_complainer` | Un asesor revisa esta solicitud. |
+| `escalate_amount_above_threshold` | Un asesor revisa esta solicitud. |
+| `escalate_amount_unknown` | Un asesor revisa esta solicitud. |
+| `escalate_risk_score` | Un asesor revisa esta solicitud. |

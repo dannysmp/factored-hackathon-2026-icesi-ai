@@ -1,5 +1,5 @@
-/** Component test: `TimelinePanel` orders entries by the moment they occurred (AC-E10-03) and shows
- * no message text (AC-E10-05, structurally guaranteed by `TimelineEntry`'s own shape). */
+/** Component test: `TimelinePanel` orders entries by the moment they occurred and shows no
+ * message text, which `TimelineEntry`'s own shape guarantees structurally. */
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { TimelineEntry } from '../contracts'

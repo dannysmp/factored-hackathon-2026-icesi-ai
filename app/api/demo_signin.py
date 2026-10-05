@@ -4,7 +4,7 @@ Demonstration Sign-In Broker
 
 Overview
 --------
-A public, persona-based sign-in for the deployed demonstration (ADR-18): the sandbox login's
+A public, persona-based sign-in for the deployed demonstration: the sandbox login's
 shared key must never reach a browser, and the deployment runs as production, where the sandbox
 login is refused — so a public demonstration has no working sign-in without a server-side path.
 This route is that path, deliberately narrower than the sandbox login it stands in for: it accepts
@@ -15,25 +15,27 @@ Scope
 -----
 In: the three routes (customer sign-in, agent sign-in, and the read-only persona directory both
 pickers use), their request and response shapes, and wiring the access-code check, the persona
-lookup, the issuance limits and the sign-in audit together in the order ADR-18 requires. The two
-sign-in brokers share every helper below but are never the same route or the same access code,
-matching ADR-18's "a leaked customer code leaves the console protected". The persona directory
-carries no access code of its own — it mints no session and reveals nothing beyond a slug, a
-display name, a language and which audience it belongs to (never a customer or agent id) — but is
-gated by the same two settings, so the kill switch hides it exactly like the two sign-in routes.
+lookup, the issuance limits and the sign-in audit together: the access code is compared first,
+then the persona is looked up, the issuance reservations are taken, and the attempt is audited
+before a token is returned. The two sign-in brokers share every helper below but are never the
+same route or the same access code, so a leaked customer code leaves the console protected. The
+persona directory carries no access code of its own — it mints no session and reveals nothing
+beyond a slug, a display name, a language and which audience it belongs to (never a customer or
+agent id) — but is gated by the same two settings, so the kill switch hides it exactly like the two
+sign-in routes.
 Out: validating the persona file or checking it against the seed (``app.security.demo_personas``,
 done once at start-up — the agent list has no seed to check against), issuing or verifying the
 token itself (``SessionService``), the two limiter implementations (``app.security.limits``,
-``app.security.issuance_limits``), the console's own read routes (queue, packet, audit timeline —
-ADR-17, a later slice; this module only gets an agent a token).
+``app.security.issuance_limits``), the console's own routes (queue, packet, audit timeline —
+``app.api.agent``; this module only gets an agent a token).
 
 Design Principles
 ------------------
 - **The access code is compared before anything is counted**, exactly like the sandbox login's own
-  fix in this same slice (issues #30/#31): a correct code always proceeds regardless of this
+  check: a correct code always proceeds regardless of this
   address's recorded failures, and only a wrong code counts against `AttemptLimiter` — a
   failure-only counter never reused for the issuance caps below.
-- **Every attempt is audited before a token is returned, refusals included** (ADR-18): a write
+- **Every attempt is audited before a token is returned, refusals included**: a write
   that cannot complete fails the whole sign-in closed, as a service failure, never a silent
   refusal or a token issued without a record of it.
 - **One uniform refusal** for a wrong access code, an unknown persona and a rate limit: the same
@@ -55,10 +57,9 @@ matching which switch is on).
 
 Limitations
 -----------
-An issued agent session has nowhere to go yet: the console's own routes (ADR-17) are a later
-slice that also registers the ``/v1/agent`` audience prefix with the authentication middleware.
-Until then an agent token verifies correctly (proven at the token and audit level) but is not
-accepted by any protected route — including ``/v1/session``, still customer-only.
+An issued agent session is accepted only under the ``/v1/agent`` audience prefix, where the
+console's own routes (``app.api.agent``) live. Every other protected route, including
+``/v1/session``, stays customer-only and refuses an agent token.
 """
 
 from __future__ import annotations
@@ -101,9 +102,9 @@ CUSTOMER_TTL = timedelta(minutes=30)
 AGENT_TTL = timedelta(minutes=60)
 
 # Bound how many live demo sessions one address, the whole broker, and one persona slot may hold
-# at once (ADR-18: "limits that count successes"). A persona is one demo identity; more than one
-# live session under it risks the duplicate-open-case contamination Arch C8 names for customers,
-# and a confusing shared queue view for agents. The same defaults serve both brokers; each gets
+# at once; the limits count successes, not attempts. A persona is one demo identity; more than
+# one live session under it risks duplicate open cases for customers and a confusing shared queue
+# view for agents. The same defaults serve both brokers; each gets
 # its own ``IssuanceLimiter`` instance, so the caps never share counters across audiences.
 # The address cap covers the customer persona roster (5, personas/demo_personas_v1.yaml) with no
 # headroom to spare against the smaller agent roster (2): one real visitor stepping through every
@@ -122,7 +123,7 @@ _UNIFORM_REFUSAL_TITLE = "Sign-in was refused"
 class DemoSignInRequest(BaseModel):
     """Body of the demo sign-in: a persona slug, and nothing else.
 
-    Never a customer identifier or a document number (ADR-18) — the customer_id a slug maps to
+    Never a customer identifier or a document number — the customer_id a slug maps to
     never appears on the wire in either direction.
     """
 
@@ -133,7 +134,7 @@ class DemoSignInRequest(BaseModel):
 
 class DemoPersonaSummary(BaseModel):
     """One persona as the directory shows it: enough to pick it, nothing that identifies who it
-    maps to (ADR-18) — no ``customer_id``/``agent_id``, no ``scenario``/``specialty``."""
+    maps to — no ``customer_id``/``agent_id``, no ``scenario``/``specialty``."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -237,7 +238,7 @@ def build_demo_signin_router(
     router = APIRouter()
 
     def _audit_or_fail_closed(entry: SignInAuditRecord) -> None:
-        """Write the audit record or fail the whole attempt closed (ADR-18)."""
+        """Write the audit record or fail the whole attempt closed."""
         try:
             audit.record(entry)
         except Exception as error:
@@ -258,7 +259,7 @@ def build_demo_signin_router(
 
         Runs before the body is validated, so an unauthenticated caller learns nothing about the
         body's shape. The supplied code is compared, in constant time, before anything is
-        counted, matching the sandbox login's own fix in this slice: a correct code always
+        counted, matching the sandbox login's own check: a correct code always
         proceeds regardless of this address's recorded failures, and only a wrong code counts
         against the limiter.
         """
@@ -287,7 +288,7 @@ def build_demo_signin_router(
 
     @router.post(DEMO_SESSIONS_PATH, status_code=201, dependencies=[Depends(authorize_demo_client)])
     def create_demo_session(body: DemoSignInRequest, request: Request) -> SessionResponse:
-        """Issue a demo session for a known persona, or refuse (ADR-18)."""
+        """Issue a demo session for a known persona, or refuse."""
         address = client_address(request)
         address_hash = _address_hash(address)
         persona = personas.customer_by_slug(body.persona)
@@ -348,7 +349,7 @@ def build_demo_signin_router(
                 )
             )
         except ProblemError:
-            # No token reaches the caller on this path (ADR-18: fail closed on the audit write),
+            # No token reaches the caller on this path (it fails closed on the audit write),
             # so the three reservations above must not either — otherwise one audit-store hiccup
             # would burn a persona's only slot for up to its full TTL despite no session ever
             # being delivered, the same self-inflicted lockout the caps exist to prevent.
@@ -379,11 +380,11 @@ def build_demo_agent_signin_router(
     global_cap: int = DEFAULT_GLOBAL_CAP,
     persona_cap: int = DEFAULT_PERSONA_CAP,
 ) -> APIRouter:
-    """Build the agent demonstration sign-in route (ADR-17, ADR-18).
+    """Build the agent demonstration sign-in route.
 
     Mirrors ``build_demo_signin_router`` exactly, audience by audience: its own access code (never
     the customer one — a leaked customer code must not expose the console), its own persona list
-    (``personas.agents``), its own TTL (60 minutes, ADR-18's agent bound) and its own resolved-id
+    (``personas.agents``), its own TTL (60 minutes, the agent bound) and its own resolved-id
     audit field (``resolved_agent_id``, never ``resolved_customer_id``). The two brokers never
     share an ``AttemptLimiter`` or ``IssuanceLimiter`` instance, so a run on one never counts
     against the other.
@@ -409,7 +410,7 @@ def build_demo_agent_signin_router(
     router = APIRouter()
 
     def _audit_or_fail_closed(entry: SignInAuditRecord) -> None:
-        """Write the audit record or fail the whole attempt closed (ADR-18)."""
+        """Write the audit record or fail the whole attempt closed."""
         try:
             audit.record(entry)
         except Exception as error:
@@ -454,7 +455,7 @@ def build_demo_agent_signin_router(
         AGENT_SESSIONS_PATH, status_code=201, dependencies=[Depends(authorize_demo_agent_client)]
     )
     def create_demo_agent_session(body: DemoSignInRequest, request: Request) -> SessionResponse:
-        """Issue an agent demo session for a known persona, or refuse (ADR-17, ADR-18)."""
+        """Issue an agent demo session for a known persona, or refuse."""
         address = client_address(request)
         address_hash = _address_hash(address)
         persona = personas.agent_by_slug(body.persona)
@@ -537,9 +538,9 @@ def build_demo_persona_directory_router(
     include_agents: bool,
     attempt_limiter: AttemptLimiter,
 ) -> APIRouter:
-    """Build the read-only persona directory a sign-in picker renders (ADR-18).
+    """Build the read-only persona directory a sign-in picker renders.
 
-    Unauthenticated by design: ADR-18's access codes bound *issuance* (spend and session risk),
+    Unauthenticated by design: the access codes bound *issuance* (spend and session risk),
     not read access to a non-sensitive persona list, and this route mints no session and reveals
     no customer or agent identifier. Rate-limited all the same, against the same abuse surface
     every other public route on this host faces, using ``attempt_limiter`` as a plain per-address

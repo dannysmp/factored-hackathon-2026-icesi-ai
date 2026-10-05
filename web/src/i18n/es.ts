@@ -40,6 +40,7 @@ export const es: Messages = {
   'chat.result.closedTitle': 'Conversación finalizada',
   'chat.result.caseNumberLabel': 'Número de caso',
   'chat.result.keepNumber': 'Conserve este número para cualquier consulta sobre su solicitud.',
+  'chat.result.escalatedNext': 'Un asesor tomará su solicitud y le dará seguimiento.',
   'chat.result.filedEarlierLabel': 'Disputa registrada antes, número de caso',
   'signin.regionLabel': 'Inicio de sesión de demostración',
   'signin.loading': 'Cargando el inicio de sesión de demostración…',
