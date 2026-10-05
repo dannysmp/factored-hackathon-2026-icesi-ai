@@ -31,6 +31,8 @@ not in this repository; they come separately with the delivery.
 | Beatriz (agent) | Portuguese, Spanish | The console: the handoff queue and the packet a person receives |
 | Diego (agent) | Spanish | The console as a fraud specialist |
 
+Each persona writes in their own language, and the screen follows it: choose Emma to try the system in English, Ana or Carlos for Spanish, and João or Mariana for Portuguese.
+
 Customers use the chat at the address above; agents use the console at `/console.html`. A case
 handed over as Carlos or Mariana appears in the console's queue. A customer session lasts 30
 minutes and an agent session 60, and a profile that someone else is using is refused until that
