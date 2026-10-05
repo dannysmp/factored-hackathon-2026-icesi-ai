@@ -5718,6 +5718,35 @@ def test_a_word_for_a_kind_of_transaction_keeps_the_presented_transaction(
 
 
 @pytest.mark.parametrize(
+    "merchant", ["Servicios Tigo", "Tigo servicios", "Serviço Nuvem", "Service Fee Co"]
+)
+def test_a_merchant_name_containing_a_word_for_a_kind_of_transaction_is_searched_for(
+    merchant: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The amount would identify the transfer, so a hint that were wrongly dropped would select
+    it; a name that only contains the word is a merchant's, searched for and not matched."""
+    store = InMemoryDialogueStore()
+    controller = _transfer_controller(
+        [
+            _file_dispute(
+                transaction=TransactionHint(
+                    merchant=merchant, amount=Decimal("2763.79"), currency="USD"
+                )
+            )
+        ],
+        store=store,
+        policy=policy,
+        retriever=retriever,
+    )
+
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref is None
+
+
+@pytest.mark.parametrize(
     "article", ["un", "una", "el", "la", "o", "a", "um", "uma", "the", "an", "my"]
 )
 def test_every_leading_article_is_ignored_before_a_generic_word(
