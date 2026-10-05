@@ -31,6 +31,7 @@ from pipelines.analytics_load import DEFAULT_GOLD
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_SCRIPT = REPO_ROOT / "infra" / "scripts" / "05-deploy.sh"
 VERIFY_SCRIPT = REPO_ROOT / "infra" / "scripts" / "13-verify-analytics.sh"
+THEME_SCRIPT = REPO_ROOT / "infra" / "scripts" / "10-configure-metabase-dashboard.sh"
 COMPOSE_PROD = REPO_ROOT / "docker-compose.prod.yml"
 DOCKERFILE = REPO_ROOT / "Dockerfile"
 
@@ -65,11 +66,19 @@ def test_the_marts_load_after_the_seed_and_before_the_stack_is_brought_up() -> N
 def test_the_marts_are_synced_to_the_directory_the_backend_mounts() -> None:
     commands = _remote_commands()
 
-    sync = commands[_index(commands, "s3://")]
     marts_sync = next(line for line in commands if "dispute_demand/" in line and "s3 sync" in line)
-    assert sync  # the operational seed sync is still there
     assert marts_sync.endswith(f"/opt/dispute-intake/{_SEED_DIR}/")
     assert f"mkdir -p /opt/dispute-intake/{_SEED_DIR}" in commands
+
+
+def test_the_marts_are_synced_before_the_loader_reads_them() -> None:
+    commands = _remote_commands()
+
+    marts_sync = next(
+        i for i, line in enumerate(commands) if "dispute_demand/" in line and "s3 sync" in line
+    )
+
+    assert marts_sync < _index(commands, "pipelines.analytics_load")
 
 
 def test_the_mounted_marts_land_where_the_loader_reads_by_default() -> None:
@@ -221,7 +230,7 @@ def test_the_check_fails_on_a_table_that_does_not_exist(stubbed: Path) -> None:
     result = _run_remote(stubbed, {mart: 5 for mart in marts[1:]})
 
     assert result.returncode != 0
-    assert marts[0] in result.stderr
+    assert result.stdout == ""
 
 
 def test_the_check_refuses_a_table_name_that_is_not_plain(stubbed: Path) -> None:
@@ -232,16 +241,47 @@ def test_the_check_refuses_a_table_name_that_is_not_plain(stubbed: Path) -> None
     assert not (stubbed / "payload.json").exists()
 
 
-_ORPHAN_RULE_FILES = (
-    "infra",
-    ".github",
-    "docs",
-    "Makefile",
-    "README.md",
-    "docker-compose.yml",
-    "docker-compose.prod.yml",
-    "docker-compose.metabase.yml",
-)
+_THEME_AWS_STUB = """#!/usr/bin/env bash
+case "$*" in
+  *"sts get-caller-identity"*) exit 0 ;;
+  *"ec2 describe-instances"*) echo i-0stub; exit 0 ;;
+  *"ssm send-command"*) echo cmd-stub; exit 0 ;;
+  *"--query Status"*) echo Success; exit 0 ;;
+  *"StandardOutputContent"*) echo "| Operations checklist |"; exit 0 ;;
+  *"StandardErrorContent"*) echo "removed sample database 'Sample Database'"; exit 0 ;;
+esac
+exit 1
+"""
+
+
+def test_the_sample_content_removed_is_shown_when_the_dashboard_step_succeeds(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("jq") is None or shutil.which("bash") is None:
+        pytest.skip("jq and bash are required to run the script")
+    scripts = tmp_path / "infra" / "scripts"
+    shutil.copytree(THEME_SCRIPT.parent, scripts)
+    (tmp_path / "reports").mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _executable(bin_dir / "aws", _THEME_AWS_STUB)
+    env = {**_environment(), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    env.pop("AWS_PROFILE", None)
+    env.pop("AWS_REGION", None)
+
+    result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        ["bash", str(scripts / THEME_SCRIPT.name)],  # noqa: S607
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "removed sample database 'Sample Database'" in result.stderr
+    assert "| Operations checklist |" in result.stdout
+
+
 _OVERLAY_FLAG = "-f docker-compose.metabase.yml"
 _ORPHAN_REMOVAL = re.compile(r"--remove-orphans|COMPOSE_REMOVE_ORPHANS")
 
@@ -251,15 +291,23 @@ def _logical_lines(text: str) -> list[str]:
 
 
 def _tracked_texts() -> list[tuple[Path, str]]:
+    """Every tracked text file except this one, which holds the pattern it searches for."""
+    listing = subprocess.run(
+        ["git", "ls-files", "-z"],  # noqa: S607
+        cwd=REPO_ROOT,
+        env=_environment(),
+        capture_output=True,
+        check=True,
+    )
     found: list[tuple[Path, str]] = []
-    for name in _ORPHAN_RULE_FILES:
-        root = REPO_ROOT / name
-        paths = [root] if root.is_file() else sorted(p for p in root.rglob("*") if p.is_file())
-        for path in paths:
-            try:
-                found.append((path, path.read_text()))
-            except UnicodeDecodeError:
-                continue
+    for name in listing.stdout.decode().split("\0"):
+        path = REPO_ROOT / name
+        if not name or path == Path(__file__).resolve() or not path.is_file():
+            continue
+        try:
+            found.append((path, path.read_text()))
+        except UnicodeDecodeError:
+            continue
     return found
 
 

@@ -92,6 +92,11 @@ for _ in $(seq 1 60); do
   case "${status}" in
     Success)
       log "dashboard theming succeeded; writing the checklist it printed"
+      notes="$(aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${instance_id}" \
+        --query "StandardErrorContent" --output text)"
+      if [[ -n "${notes}" && "${notes}" != "None" ]]; then
+        printf '%s\n' "${notes}" >&2
+      fi
       aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${instance_id}" \
         --query "StandardOutputContent" --output text >"${REPO_ROOT}/reports/dashboard-theme-checklist.md"
       cat "${REPO_ROOT}/reports/dashboard-theme-checklist.md"
