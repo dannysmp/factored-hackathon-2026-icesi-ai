@@ -45,6 +45,11 @@ describe('backend payloads', () => {
     expect(TurnResponseSchema.parse(payloads.TurnResponse).next_expected).toBe('transaction_choice')
   })
 
+  it('TurnResponse carries the case number only on the reply that reports the filing', () => {
+    expect(TurnResponseSchema.parse(payloads.TurnResponse).case_number ?? null).toBeNull()
+    expect(TurnResponseSchema.parse(payloads.TurnResponseFiled).case_number).toBe('D-2001')
+  })
+
   it('DemoPersonaDirectory parses', () => {
     expect(DemoPersonaDirectorySchema.parse(payloads.DemoPersonaDirectory).personas).toHaveLength(2)
   })

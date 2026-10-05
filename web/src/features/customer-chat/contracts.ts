@@ -93,6 +93,7 @@ export const TurnResponseSchema = z
     next_expected: SlotSchema.nullable().default(null),
     end_session: z.boolean().default(false),
     handoff_ticket: z.string().regex(TicketPattern).nullable().default(null),
+    case_number: z.string().regex(TicketPattern).nullable().default(null),
   })
   .strict()
   // `_choices_are_numbered_from_one` (api.py): choices are numbered 1, 2, ... in order, so a
