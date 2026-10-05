@@ -319,13 +319,15 @@ This report replaces the previous full evaluation, which measured commit 6cea3b4
 
 ### The earlier missed-transfer rate was measured on a stale seed
 
-The previous report's missed-transfer rate for P, 0.152, was measured against an operational seed that predated the repeat-complainer flag: the customers table loaded without any customer marked as a repeat complainer. The seed loader inserted only the columns the seed file carried and the column defaults to false, so the load succeeded silently and the repeat-complainer routing rule could never fire. Two golden cases, hr-repeat-es-01 and hr-repeat-es-02, missed for that reason in every run, and hr-repeat-en-01 missed in one of three. The loader now refuses a seed that lacks the column, and this run was made on a rebuilt seed with 28 repeat complainers. The earlier figure was therefore a measurement of a defective environment, not of the policy rule, and it is shown below next to the rebuilt-seed figure whatever the result.
+The previous report's missed-transfer rate for P, 0.152, was measured against an operational seed that predated the repeat-complainer flag: the customers table loaded without any customer marked as a repeat complainer. The seed loader inserted only the columns the seed file carried and the column defaults to false, so the load succeeded silently and no customer could be routed to a person as a repeat complainer. Two golden cases, hr-repeat-es-01 and hr-repeat-es-02, missed in every run on that seed. Of the four repeat-complainer goldens, hr-repeat-pt-01 handed off in all three runs and hr-repeat-en-01 in two of three on the old seed; the scorer counts a hand-off case as correct on any backed escalation without checking which rule produced it, so those hand-offs need not have come from the repeat-complainer rule, and this report does not establish which rule produced them. The loader now refuses a seed that lacks the column, and this run was made on a rebuilt seed with 28 repeat complainers. The earlier figure was therefore a measurement of a defective environment, not of the repeat-complainer rule, and it is shown below next to the rebuilt-seed figure whatever the result.
 
 ### Headline metrics
 
 | Metric | P before | P after | Change | B0 before | B0 after | B1 before | B1 after |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Safe automated resolution | 0.725 | 0.735 | +0.010, higher | 0.330 | 0.330 | 0.369 | 0.369 |
+| Attempted share | 1.000 | 1.000 | none | 1.000 | 1.000 | 1.000 | 1.000 |
+| Conditional automated resolution | 0.725 | 0.735 | +0.010, higher | 0.330 | 0.330 | 0.369 | 0.369 |
 | Containment | 0.809 | 0.790 | -0.019, lower | 0.845 | 0.845 | 0.757 | 0.738 |
 | Escalation quality | 0.727 | 0.833 | +0.106, higher | 0.455 | 0.455 | 0.273 | 0.364 |
 | Missed transfers | 0.152 | 0.061 | -0.091, lower is better | 0.545 | 0.545 | 0.091 | 0.045 |
@@ -334,39 +336,41 @@ The previous report's missed-transfer rate for P, 0.152, was measured against an
 | Latency p50 (s) | 2.558 | 2.912 | +0.354, slower | 0.027 | 0.073 | 5.105 | 6.045 |
 | Latency p95 (s) | 4.402 | 4.549 | +0.147, slower | 0.046 | 0.114 | 12.217 | 12.898 |
 | Cost per attempted case (USD) | 0.005 | 0.004 | -0.001, lower | 0.000 | 0.000 | 0.008 | 0.009 |
+| Cost per successful automated resolution (USD) | 0.004 | 0.004 | none | 0.000 | 0.000 | 0.006 | 0.006 |
 
 What the table shows, including what did not improve:
 
 - **Missed transfers fell from 0.152 to 0.061 for P, and P still does not beat the best baseline on this metric.** B1 missed 0.045 on its single run, below P's 0.061. P's own range over its three runs, 0.045 to 0.091, includes B1's value, and B1 is one run, so the two are not distinguishable on this evidence, but P does not lead. B0 missed 0.545.
 - **Containment fell from 0.809 to 0.790.** This is the expected effect of the repeat-complainer rule working: cases that should reach a person now do, so fewer are contained. The cases that changed are cases whose expected outcome is a hand-off.
-- **Escalation quality rose from 0.727 to 0.833** for the same reason: more of the hand-offs that should happen did.
+- **Escalation quality rose from 0.727 to 0.833.** More of the hand-offs that should happen did. The headline metrics do not check which rule produced a hand-off, so this rise is not by itself evidence that each additional hand-off came from the repeat-complainer rule, and some hand-offs counted may not carry the expected reason code in their packet.
 - **Safe automated resolution rose from 0.725 to 0.735.** The per-run ranges, 0.718 to 0.728 before and 0.728 to 0.738 after, only touch, so this is a small difference and is not claimed as an improvement beyond the run-to-run spread.
-- **Unnecessary transfers are unchanged for P at 0.012 and unsafe outcomes are zero for every system in both reports.** For B1, unnecessary transfers rose from 0.062 to 0.074 and containment fell from 0.757 to 0.738; B1 is a single run, so these are one-case differences.
-- **P is slower: p50 rose from 2.558 s to 2.912 s and p95 from 4.402 s to 4.549 s.** B0, which makes no model call, and B1 are slower too. Because the baselines moved the same way without a change to them, the run environment is the likelier cause, but this was not isolated. The latency figures of the two reports are not comparable like for like.
+- **Unnecessary transfers are unchanged for P at 0.012 and unsafe outcomes are zero for every system in both reports.** For B1, unnecessary transfers rose from 0.062 to 0.074 (one case) and containment fell from 0.757 to 0.738 (two cases); B1 is a single run, so these are small differences.
+- **P is slower: p50 rose from 2.558 s to 2.912 s and p95 from 4.402 s to 4.549 s.** B0 and B1 are slower too, but both ran the application code of their own commit, which changed between the two (the controller, renderer, sessions and persistence modules among them), so the baselines' movement does not isolate the run environment from the code. The cause was not isolated, and the latency figures of the two reports are not comparable like for like.
 - **Cost per attempted case moved from 0.005 to 0.004 USD,** at the precision shown; the per-run range after, 0.004 to 0.005, overlaps the before value.
 
 ### The cases that were missed
 
 | Case | Before | After | Reason |
 | --- | --- | --- | --- |
-| hr-repeat-es-01 | missed in all 3 runs | handed off in all 3 runs | The rebuilt seed carries the repeat-complainer flag, so the policy rule fires. |
-| hr-repeat-es-02 | missed in all 3 runs | handed off in 2 of 3 runs, missed in the last | The rule fires on the rebuilt seed. In the one run that missed, the case did not hand off. Four later isolated replays of the case on the same seed handed off every time. The failing run's transcript was not captured, so its cause is not established. |
-| hr-repeat-en-01 | missed in 1 of 3 runs | handed off in all 3 runs | Same rule, now reachable. |
+| hr-repeat-es-01 | missed in all 3 runs | handed off in all 3 runs | The rebuilt seed carries the repeat-complainer flag, so the rule can fire. |
+| hr-repeat-es-02 | missed in all 3 runs | handed off in 2 of 3 runs, missed in the last | The rebuilt seed carries the flag, so the repeat-complainer rule can fire. In the one run that missed, the case did not hand off. Four isolated replays of the case made after the run, on the same seed, handed off every time. The failing run's transcript was not captured, so its cause is not established. |
+| hr-repeat-pt-01 | handed off in all 3 runs | handed off in all 3 runs | Not established which rule produced the hand-off on the old seed. |
+| hr-repeat-en-01 | missed in 1 of 3 runs | handed off in all 3 runs | The rebuilt seed lets the repeat-complainer rule apply; not established which rule produced the old-seed hand-offs. |
 | hr-amt-es-01 | missed | missed | A limitation of the language reading, described below. |
 | adv-baddata-es-01, adv-baddata-pt-01, adv-baddata-es-03, adv-baddata-pt-02 | missed | missed | A mismatch between the golden and the designed behaviour, described below. |
 
-Across the other cases, three failures in P's last run of the previous report are absent from the last run of this one (norm-filed-unrecognized-pt-02, norm-filed-service-es-03 and hr-repeat-es-01) and one new failure appears (norm-filed-service-es-04). P's failure gallery goes from 13 incorrect outcomes to 11. The cases that flipped between P's runs were hr-repeat-en-01 and multi-espt-02 before, and hr-repeat-es-02 and multi-espt-02 now. These single-case movements outside the repeat-complainer cases are within the run-to-run variation that section 5 records for each report and are not attributed to a cause.
+Across the other cases, two failures in P's last run of the previous report are absent from the last run of this one (norm-filed-unrecognized-pt-02 and norm-filed-service-es-03) and one new failure appears (norm-filed-service-es-04); together with hr-repeat-es-01 leaving the gallery this takes P's failure gallery from 13 incorrect outcomes to 11. The cases that flipped between P's runs were hr-repeat-en-01 and multi-espt-02 before, and hr-repeat-es-02 and multi-espt-02 now. These single-case movements outside the repeat-complainer cases are within the run-to-run variation that section 5 records for each report and are not attributed to a cause.
 
 ### Four statements that bear on reading the figures
 
 1. **The earlier 15.2% was measured on a stale seed missing the repeat-complainer flags.** See the first subsection above; the before and after figures are both shown.
-2. **The four adv-baddata goldens expect an immediate single-turn hand-off, while the system asks for a clarification first by design.** adv-baddata-es-01 and adv-baddata-pt-01 hand off only after two clarification turns; adv-baddata-es-03 and adv-baddata-pt-02 hand off after the confirmation step. The goldens are unchanged and the four cases are counted as incorrect outcomes in the failure gallery. They are adversarial cases and the harness excludes adversarial cases from the in-scope set that the missed-transfer rate is computed over, so they do not enter the 0.061; they remain failures.
-3. **hr-amt-es-01 is a limitation of the language reading, not of the policy rule.** The natural-language understanding step, with prompt version 5, reads the case's second turn as unclear in four of four replays, so the conversation never reaches the policy check. The amount rule hands the case off correctly when it is reached. No prompt change was made.
+2. **The four adv-baddata goldens expect an immediate single-turn hand-off, while the system asks for a clarification first by design.** In replays made after the run, adv-baddata-es-01 and adv-baddata-pt-01 hand off only after two clarification turns; adv-baddata-es-03 and adv-baddata-pt-02 hand off after the confirmation step. The goldens are unchanged and the four cases are counted as incorrect outcomes in the failure gallery. They are adversarial cases and the harness excludes adversarial cases from the in-scope set that the missed-transfer rate is computed over, so they do not enter the 0.061; they remain failures.
+3. **hr-amt-es-01 is a limitation of the language reading, not of the policy rule.** The natural-language understanding step, with prompt version 5, read the case's second turn as unclear in four of four replays made after the run, so the conversation never reaches the policy check. The amount rule hands the case off correctly when it is reached. No prompt change was made.
 4. **The decline path is not exercised by any golden case.** The 29 cases that expect a filing end at the confirmation question; none of them answers it with a refusal, so a customer declining to file is not measured by this evaluation.
 
 ### Judge-scored quality and judge validation
 
-Sections 4 and 9 are carried over from the previous report unchanged: they come from the human judge-validation sample, not from this run. The judge is not validated on any of the three dimensions, so its means for this run's judged cases are not reported and the raters' means over the validation sample are shown in their place. The judge's bar is unchanged.
+Sections 4 and 9 are carried over from the previous report unchanged, apart from the judge cost line: they come from the human judge-validation sample, not from this run. The judge is not validated on any of the three dimensions, so its means for this run's judged cases are not reported and the raters' means over the validation sample are shown in their place. The judge's bar is unchanged.
 
 ### Conditions of this run
 
