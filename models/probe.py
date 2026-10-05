@@ -49,7 +49,8 @@ Limitations
 No feature ablation runs here (the with/without comparison for ``customer_country`` and
 ``country_mismatch`` described in ``models/README.md``); `models.boosted` runs it. A validation
 PR-AUC clearly above the base rate is a necessary, not sufficient, condition for a usable score:
-the threshold and its precision floor are decided later, on the test period, once.
+the threshold is chosen later, on the validation period, and its precision is confirmed once on
+the test period.
 """
 
 from __future__ import annotations
@@ -389,7 +390,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     success and `1` when the split file is invalid, the mart or manifest is missing, or DuckDB
     cannot read the mart; the failure is logged by exception type only.
     """
-    parser = argparse.ArgumentParser(description="Run the pre-registered risk signal probe.")
+    parser = argparse.ArgumentParser(description="Run the risk signal probe.")
     parser.add_argument("--mart", type=Path, default=DEFAULT_MART)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--split", type=Path, default=DEFAULT_SPLIT)

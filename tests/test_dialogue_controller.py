@@ -288,12 +288,12 @@ class FakeDialogueTurnLog:
     """Records every entry it's given; ``fail`` proves a store failure never reaches the reply."""
 
     fail: bool = False
-    entries: list[tuple[TimelineEntry, str, str]] = field(default_factory=list)
+    entries: list[tuple[TimelineEntry, str]] = field(default_factory=list)
 
-    def record(self, entry: TimelineEntry, *, session_id: str, turn_id: str) -> None:
+    def record(self, entry: TimelineEntry, *, session_id: str) -> None:
         if self.fail:
             raise psycopg.OperationalError("turn log unreachable")
-        self.entries.append((entry, session_id, turn_id))
+        self.entries.append((entry, session_id))
 
 
 @pytest.fixture
@@ -650,7 +650,7 @@ def test_a_message_that_says_nothing_reliable_about_the_language_does_not_switch
 
 
 def test_the_controller_passes_its_own_domain_date_as_the_understanding_reference_date() -> None:
-    """AC-E5-16: a customer-stated transaction date is resolved against the domain calendar's own
+    """A customer-stated transaction date is resolved against the domain calendar's own
     reference date, never the wall clock — proven by reading back exactly what the controller
     itself passed into ``understand``, not by trusting it silently matches."""
     store = InMemoryDialogueStore()
@@ -1359,7 +1359,7 @@ def test_replaying_an_ineligible_turn_never_re_evaluates_or_files(
 
 
 # -----------------------------------------------------------------------------
-# The console's own turn history (ADR-17)
+# The console's own turn history
 # -----------------------------------------------------------------------------
 
 
@@ -1382,9 +1382,9 @@ def test_a_fresh_turn_advance_records_its_own_history(
     controller.handle_turn(_turn("turn-0001"), principal=_principal())
 
     assert len(turn_log.entries) == 1
-    entry, session_id, turn_id = turn_log.entries[0]
+    entry, session_id = turn_log.entries[0]
     assert session_id == _SESSION_ID
-    assert turn_id == "turn-0001"
+    assert entry.turn_id == "turn-0001"
     assert entry.trace_id == _SESSION_ID
     assert entry.intent is Intent.CLARIFY
     assert entry.state_before == "started"
@@ -1444,6 +1444,30 @@ def test_replaying_a_turn_never_records_a_second_history_entry(
     controller.handle_turn(_turn("turn-0001"), principal=_principal())
 
     assert len(turn_log.entries) == 1
+
+
+def test_two_turns_of_one_conversation_record_their_own_turn_ids(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """Every entry shares the session as its trace, so the turn id is what tells them apart."""
+    store = InMemoryDialogueStore()
+    turn_log = FakeDialogueTurnLog()
+    result = NluResult(intent=NluIntent.SMALL_TALK, confidence=0.9, language="es")
+
+    for turn_id in ("turn-0001", "turn-0002"):
+        controller, _ = _controller(
+            result,
+            store=store,
+            tool_port=FakeToolPort(),
+            policy=policy,
+            outbox=FakeHandoffOutbox(),
+            retriever=retriever,
+            turn_log=turn_log,
+        )
+        controller.handle_turn(_turn(turn_id), principal=_principal())
+
+    assert [entry.trace_id for entry, _ in turn_log.entries] == [_SESSION_ID, _SESSION_ID]
+    assert [entry.turn_id for entry, _ in turn_log.entries] == ["turn-0001", "turn-0002"]
 
 
 def test_a_turn_log_failure_never_changes_the_reply(
@@ -1735,6 +1759,26 @@ def test_policy_question_answers_or_abstains(policy: Policy, retriever: LexicalR
     )
     abstained = controller.handle_turn(_turn("turn-0001"), principal=_principal())
     assert abstained.reply
+
+
+def test_a_policy_question_answered_by_a_section_without_a_figure_cites_the_section(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    controller, _ = _controller(
+        _plain(NluIntent.POLICY_QUESTION, policy_query="que transacciones se pueden disputar"),
+        store=InMemoryDialogueStore(),
+        tool_port=FakeToolPort(),
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+
+    response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.reply == (
+        "Puede consultarlo en la sección “Qué transacciones se pueden disputar” de nuestra "
+        "política de disputas."
+    )
 
 
 @pytest.mark.parametrize(
@@ -2205,7 +2249,7 @@ def test_get_transaction_failure_while_presenting_confirmation_hands_off(
 def test_a_matchless_evaluate_dispute_result_hands_off_on_first_evaluation(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
-    """None (AC-E4-06: the reference stopped resolving, or stopped being this customer's own,
+    """None (the reference stopped resolving, or stopped being this customer's own,
     between an earlier read and this evaluation) is routed through the same fail-closed handoff
     as a genuine ToolFailure, never re-interpreted as an ineligible or eligible decision."""
     store = InMemoryDialogueStore()
@@ -2531,9 +2575,9 @@ def test_an_unreachable_understanding_dependency_still_records_turn_history(
     controller.handle_turn(_turn("turn-0001"), principal=_principal())
 
     assert len(turn_log.entries) == 1
-    entry, session_id, turn_id = turn_log.entries[0]
+    entry, session_id = turn_log.entries[0]
     assert session_id == _SESSION_ID
-    assert turn_id == "turn-0001"
+    assert entry.turn_id == "turn-0001"
     assert entry.intent is Intent.HANDOFF
     assert entry.state_before == "started"
     assert entry.state_after == "handed_off"
