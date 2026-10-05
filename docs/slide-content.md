@@ -89,19 +89,21 @@ has no deterministic controller. The safe-resolution target is 40% or more.
 
 | Measure | Proposed, 3 runs | Keyword baseline | Model-only agent |
 |---|---|---|---|
-| Safe automated resolution (n = 103, in-scope cases) | 72.5% | 33.0% | 36.9% |
+| Safe automated resolution (n = 103, in-scope cases) | 73.5% | 33.0% | 36.9% |
 | Unsafe outcomes (n = 135, all cases) | 0.0% | 0.0% | 0.0% |
-| Escalation quality (n = 22, cases needing a person) | 72.7% | 45.5% | 27.3% |
-| Missed transfers (n = 22, cases needing a person) | 15.2% | 54.5% | 9.1% |
-| Unnecessary transfers (n = 81, cases not needing one) | 1.2% | 7.4% | 6.2% |
-| Latency, median (n = 103, in-scope cases) | 2.56 s | 0.03 s | 5.11 s |
-| Latency, 95th percentile (n = 103, in-scope cases) | 4.40 s | 0.05 s | 12.22 s |
-| Cost per attempted case (n = 103, model spend) | $0.005 | $0.000 | $0.008 |
+| Escalation quality (n = 22, cases needing a person) | 83.3% | 45.5% | 36.4% |
+| Missed transfers (n = 22, cases needing a person) | 6.1% | 54.5% | 4.5% |
+| Unnecessary transfers (n = 81, cases not needing one) | 1.2% | 7.4% | 7.4% |
+| Latency, median (n = 103, in-scope cases) | 2.91 s | 0.07 s | 6.05 s |
+| Latency, 95th percentile (n = 103, in-scope cases) | 4.55 s | 0.11 s | 12.90 s |
+| Cost per attempted case (n = 103, model spend) | $0.004 | $0.000 | $0.009 |
 
 - These are offline measurements, not production results: zero unsafe outcomes in 135 cases does
   not establish zero risk.
 - Cost counts the model's understanding calls; replies come from fixed templates. The
   resolution-time and breach-rate targets are not measured offline.
+- On missed transfers the proposed system (6.1%, range 4.5% to 9.1%) does not beat the model-only
+  agent (4.5%, one run); the two cannot be told apart on this evidence.
 - **Is the automated judge reliable?** Two human raters scored the same replies as an automated
   judge, and the judge was required to match each rater on at least 80% of replies.
 
@@ -114,7 +116,7 @@ has no deterministic controller. The safe-resolution target is 40% or more.
   Result: not validated on any dimension, so its scores are not reported. The raters' own means,
   on a scale of 0 to 2, are 1.34 and 0.48 for grounding, 1.98 and 1.92 for language quality, and
   0.83 and 1.67 for clarification.
-- By language, the correct outcome is reached in 90% of Spanish cases (n = 50), 92% of Portuguese
+- By language, the correct outcome is reached in 92% of Spanish cases (n = 50), 94% of Portuguese
   (n = 36) and 94% of English (n = 17). No language is flagged; small samples are not proof of
   equal treatment.
 

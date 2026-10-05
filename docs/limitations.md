@@ -74,8 +74,17 @@ results still to come say so and name the command that completes them.
   real judge, patches that section and the matching limitations line of the report, and writes
   every case's scores to `reports/judge-validation-cases.csv`, a local working file that is not
   tracked in the repository.
-  The report's figures describe the commit it names, not the current head, which carries later
-  behaviour and scoring fixes.
+  The report's figures describe the commit it names (`a73f4bc`); changes merged after it are not
+  measured.
+- **The proposed system does not lead on missed transfers.** Of the 22 cases that need a person,
+  it misses 6.1% (range 4.5% to 9.1% over three runs) against 4.5% for the model-only agent, which
+  ran once; the two cannot be told apart on this evidence, but the proposed system does not come
+  out ahead. The previous full run reported 15.2% because its operational seed lacked the
+  repeat-complainer flag, so the rule could not fire; the loader now refuses such a seed. Four
+  adversarial bad-data cases expect an immediate single-turn handoff where the system asks a
+  clarifying question first, and one amount case is read as unclear by the language-understanding
+  step. The decline path is measured by no golden case, and the per-segment fairness slice could
+  not be computed for the latest run.
 - **A transaction described by a kind of transaction or place is found by its other details, from a
   fixed word list.** When a customer names a transfer, a charge or an online store where a
   merchant would go, the lookup ignores that word and searches by the amount, date or card; a
