@@ -93,16 +93,18 @@ unrelated reply itself files nothing; a case is filed only once the policy's con
 requirement for the category is met. A list request shows the customer's most recent
 transactions as numbered options and keeps their references, in order, in ``offered_refs``; a
 later number selects the transaction shown at that position, and its question about the reason or
-the filing follows. Two or more matches for a described transaction ask for more detail rather
-than presenting a numbered list. A session identifies and evaluates at most one transaction/category
-pair at a time: while a case is still unfiled, a number from a list just shown replaces the
-selection, whereas a transaction described in words is searched for only while none is selected
-(before the first, or after a no) and describing another while one is selected does not change it. A
-session that has filed a case, been handed to a person or been closed never selects another, so a
-second, different dispute needs a new session. The handoff packet's ``first_name`` is a
-placeholder: no tool exposes the customer's first name. A duplicate turn's handoff replay
-always uses the generic reviewing wording, which may differ from the original trigger-specific
-wording (fraud, card loss, a person requested) though it states the
+the filing follows. A message that is only a number of one or two digits, sent while the list is on
+offer, is read directly as that choice, without the model; a number past the end of the list shows
+the list again, as does a choice the model reads past its end. Two or more matches for a described
+transaction ask for more detail rather than presenting a numbered list. A session identifies and
+evaluates at most one transaction/category pair at a time: while a case is still unfiled, a number
+from a list just shown replaces the selection, whereas a transaction described in words is searched
+for only while none is selected (before the first, or after a no) and describing another while one
+is selected does not change it. A session that has filed a case, been handed to a person or been
+closed never selects another, so a second, different dispute needs a new session. The handoff
+packet's ``first_name`` is a placeholder: no tool exposes the customer's first name. A
+duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
+the original trigger-specific wording (fraud, card loss, a person requested) though it states the
 same outcome and ticket. Contact-within-hours and structured risk evidence are not populated in a
 handoff packet: neither is available from the tools this module calls. A genuine concurrent
 duplicate (two requests racing on the same turn id, whether the session is brand new or already
@@ -190,6 +192,34 @@ _EMPTY_FACTS = DisputeFacts()
 # Intents whose language says nothing reliable about the conversation's language: an unclear
 # message, or one that already names the language it wants.
 _LANGUAGE_NEUTRAL_INTENTS = frozenset({NluIntent.UNCLEAR, NluIntent.SWITCH_LANGUAGE})
+
+# The most digits a message can have and still be read as a position in the list. A longer number
+# is an amount, a card ending or a reference, which only the understanding step can place.
+_MAX_LIST_NUMBER_DIGITS = 2
+
+
+def _number_from_list(state: DialogueState, text: str) -> NluResult | None:
+    """The understanding of a message that is only a number, sent while a list is on offer.
+
+    A number that is a position on the list is a choice; any other number is a request to see the
+    list again, since it names nothing on it. A message that is not only a number, a number sent
+    when no list is on offer, and any message once the conversation has ended are left to the
+    understanding step.
+    """
+    stripped = text.strip()
+    if (
+        not state.offered_refs
+        or state.phase in FINAL_PHASES
+        or not stripped.isascii()
+        or not stripped.isdigit()
+        or len(stripped) > _MAX_LIST_NUMBER_DIGITS
+    ):
+        return None
+    number = int(stripped)
+    if 1 <= number <= len(state.offered_refs):
+        return NluResult(intent=NluIntent.CHOICE, confidence=1.0, choice=number)
+    return NluResult(intent=NluIntent.LIST_TRANSACTIONS, confidence=1.0)
+
 
 # The question template that asks for each slot, except the transaction choice, which is
 # rendered by presenting the selected transaction again (``_transaction_choice_envelope``).
@@ -550,6 +580,9 @@ class DialogueController:
         """The state to advance from, the version it was read at, this message's understanding,
         and what understanding it cost (``None`` for ``FakeNlu`` or a call that did not complete).
 
+        A message that is only a number, sent while a list of transactions is on offer, is read by
+        ``_number_from_list`` without a model call: it needs no interpretation and costs nothing.
+
         A brand-new session starts at expected version 0 (a fresh insert, unconditional on it —
         ``DialogueStore.save``'s own documented behavior); its language is the first message's own,
         or Spanish when the message is too ambiguous to tell.
@@ -561,6 +594,9 @@ class DialogueController:
         already names it.
         """
         if current is not None:
+            listed = _number_from_list(current, request.text)
+            if listed is not None:
+                return current, current.version, listed, None
             result, accounting = self._understanding.understand(
                 request.text, language_hint=current.lang, reference_date=self._domain_date
             )
@@ -739,11 +775,11 @@ class DialogueController:
     ) -> tuple[DialogueState, RenderEnvelope]:
         """The customer picked a number from the list just shown: that transaction is selected."""
         number = result.choice
-        if (
-            state.phase in FINAL_PHASES
-            or number is None
-            or not 1 <= number <= len(state.offered_refs)
-        ):
+        if state.phase in FINAL_PHASES or number is None:
+            return self._fallback(state, result)
+        if not 1 <= number <= len(state.offered_refs):
+            if state.offered_refs:
+                return self._handle_list_transactions(state, result)
             return self._fallback(state, result)
         selected = state.model_copy(
             update={
@@ -1366,10 +1402,12 @@ class DialogueController:
         assert request is not None  # noqa: S101 - set at the top of handle_turn
         # A replay's own re-understanding is not a new turn (per-turn accounting is scoped to
         # handle_turn's own call in _start_turn); its accounting, if any, is not logged again here.
+        result = _number_from_list(state, request.text)
         try:
-            result, _replay_accounting = self._understanding.understand(
-                request.text, language_hint=state.lang, reference_date=self._domain_date
-            )
+            if result is None:
+                result, _replay_accounting = self._understanding.understand(
+                    request.text, language_hint=state.lang, reference_date=self._domain_date
+                )
         except UnderstandingUnavailable:
             logger.warning(
                 "llm_understanding_unavailable_replay session_id=%s request_id=%s",
