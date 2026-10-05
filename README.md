@@ -188,11 +188,13 @@ data/raw/
     (and the same layout for the other daily fact tables)
 ```
 
-The data commands rewrite reports that are committed. Without the raw files, `make profile` and
-`make pipeline` still exit with code 0, list every table as missing and overwrite
-`reports/data-profile.md` and `reports/data-quality.md` with empty results, and `make analyze` then
-fails and removes `reports/workflow-analysis.md`. Run them only with the data in place, or restore
-the committed reports afterwards with `git checkout -- reports`.
+The data commands rewrite reports that are committed, so they refuse to run when their input
+directory is absent: `make profile` and `make pipeline` stop with a message when `data/raw` (or
+`DATA_DIR`) does not exist, and `make analyze` and `make features` stop when `data/silver` (or
+`SILVER_DIR`) does not exist. Nothing is changed in that case. An existing but empty directory is
+treated as data. `make profile` and `make pipeline` then run and write reports that list every
+table as missing, and `make analyze` removes `reports/workflow-analysis.md` before failing;
+`git checkout -- reports` restores them.
 
 `make profile` measures the files against the data dictionary and writes
 [`reports/data-profile.md`](reports/data-profile.md): row counts, schema conformance, duplicate
@@ -385,7 +387,9 @@ security requirements, and which controls exist today, are in [SECURITY.md](SECU
 | `make pipeline` exits with code 1 and `reports/data-quality.md` exists | A table could not be cleaned; the report names it and the reason (for example a file without a header row) |
 | `make pipeline` exits non-zero and `reports/data-quality.md` is missing | The build crashed before finishing; a report from an earlier run is removed rather than left stale, so its absence is the crash's own signal. Check the traceback |
 | `make analyze` exits non-zero | Run `make pipeline` first: the analysis reads the cleaned layer. Any earlier `reports/workflow-analysis.md` is removed rather than left stale, so its absence is expected; `analysis_failed` in the log names a handled reason, otherwise check the traceback |
-| `make features` exits with `risk_features_failed reason=FileNotFoundError` | The cleaned layer is missing. Run `make pipeline` with the raw data in place first |
+| `make profile` or `make pipeline` stops with `no raw data at …` | Place the CSV files under `data/raw`, or set `DATA_DIR` to where they are. No report was changed |
+| `make analyze` or `make features` stops with `no cleaned layer at …` | Run `make pipeline` with the raw data in place first, or set `SILVER_DIR`. No report was changed |
+| `make features` exits non-zero and logs `risk_features_failed reason=FileNotFoundError` | The cleaned layer exists but lacks a table the features read. Run `make pipeline` with the complete raw data |
 | The service exits with `No domain date resolves` | Set `DATA_AS_OF_DATE` (for example `2026-06-18`) in `.env`, or load the operational seed (`make load-seed`) so the service can read it |
 | `DATABASE_URL is required for this operation but is not set` | Start the store (`make db-up`) and set `DATABASE_URL` in `.env` to its address |
 | The service exits with `SESSION_SIGNING_KEY is required` | Set `SESSION_SIGNING_KEY` in `.env` (32 or more characters); only `APP_ENV=local` may start without it |

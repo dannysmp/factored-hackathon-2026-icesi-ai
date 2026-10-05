@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import psycopg
 import pytest
@@ -149,6 +150,43 @@ def test_list_transactions_returns_only_the_session_customers_own_rows(dsn: str)
     assert [item.ref for item in page.items] == ["TRX-A2", "TRX-A1"]
     assert page.total_count == 2
     assert sink.records[-1].action.value == "transactions_listed"
+
+
+@pytest.mark.integration
+def test_a_transaction_carries_its_amount_in_the_currency_it_was_made_in(dsn: str) -> None:
+    """The dollar amount is absent when the source gave none and no rate exists; the figure the
+    customer sees on their statement is the original one, and is always present."""
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO transactions (transaction_id, customer_id, product_id, "
+            "transaction_date, transaction_type, merchant_name, amount, currency, amount_usd, "
+            "amount_usd_provenance, transaction_status) VALUES "
+            "('TRX-A3', 'CLI-A', 'PRD-A', '2026-06-10 09:00:00', 'Transfer', NULL, "
+            "1914215.00, 'COP', NULL, 'unknown', 'Approved')"
+        )
+    port = _port(dsn, _RecordingSink(dsn), customer_id="CLI-A")
+
+    page = port.list_transactions(TransactionFilters())
+    single = port.get_transaction("TRX-A3")
+
+    assert not isinstance(page, ToolFailure)
+    assert not isinstance(single, ToolFailure)
+    assert single is not None
+    by_ref = {item.ref: item for item in page.items}
+    for fact in (by_ref["TRX-A3"], single):
+        assert fact.amount.money is None
+        assert fact.original_amount is not None
+        assert (fact.original_amount.amount, fact.original_amount.currency) == (
+            Decimal("1914215.00"),
+            "COP",
+        )
+    dollars = by_ref["TRX-A2"]
+    assert dollars.amount.money is not None
+    assert dollars.original_amount is not None
+    assert (dollars.original_amount.amount, dollars.original_amount.currency) == (
+        Decimal("100.00"),
+        "USD",
+    )
 
 
 @pytest.mark.integration
