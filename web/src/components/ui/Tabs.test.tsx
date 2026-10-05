@@ -50,7 +50,9 @@ describe('Tabs', () => {
   })
 
   it('marks a disabled tab with a strike-through so it differs from an inactive tab without colour', () => {
-    const rule = /\.tabs-trigger:disabled\s*\{([^}]*)\}/.exec(tabsCss)
+    const rule = /\.tabs-trigger:disabled\s*\{([^}]*)\}/.exec(
+      tabsCss.replace(/\/\*[\s\S]*?\*\//g, ''),
+    )
 
     expect(rule?.[1]).toMatch(/text-decoration:\s*line-through/)
   })
