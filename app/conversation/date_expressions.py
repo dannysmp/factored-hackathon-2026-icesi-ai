@@ -6,8 +6,8 @@ Overview
 --------
 Resolves the customer's own words for when a transaction happened ("ayer", "el lunes", "dia 3",
 "3 de junio", "03/04") into an absolute date and the ``DateSource`` that names how it was
-expressed (AC-E5-16). Purely deterministic: no model call, no wall clock — the reference date is
-always the caller's own input, the domain calendar's reference date, never ``date.today()``.
+expressed. Purely deterministic: no model call, no wall clock — the reference date is always the
+caller's own input, the domain calendar's reference date, never ``date.today()``.
 
 Scope
 -----
@@ -15,21 +15,28 @@ In: matching a closed, curated vocabulary of relative day terms, weekday names a
 phrases and month-and-day phrases ("June 3rd", "3 de junio", "21 de abril") per language, and a
 numeric day-first date pattern; resolving each against the reference date the caller supplies.
 Out: recognizing that a message mentions a date at all (the model's own job, recorded as
-``date_expression``); confirming a resolved date in words before it is used (a later, separate
-controller-slice concern per AC-E5-16 and issue #106's own stated scope).
+``date_expression``); showing a resolved date back to the customer in words before it is used,
+which this module does not do.
 
 Design Principles
 ------------------
 - A transaction date is never resolved into the future relative to the reference date: a weekday
   name or a day-of-month resolves to the most recent occurrence on or before it, matching the
   domain fact that a dispute is always about a transaction already in the past.
-- An expression this table does not recognize resolves to ``None``, exactly the same "nothing
-  stated" outcome as before this module existed — an unrecognized phrase is never guessed at.
+- An expression this table does not recognize resolves to ``None``, the same "nothing stated"
+  outcome as a message with no date at all — an unrecognized phrase is never guessed at.
 - A curated per-language table, the same shape ``app.retrieval.lexical``'s own stopword lists use:
   additive, reversible, and deliberately narrow rather than a general-purpose date parser. Vague
   ranges ("semana pasada", "last week") are deliberately left unresolved: picking one specific day
   out of a stated week would be inventing a fact the customer did not give, the same principle
   ``prompts/nlu_v1.yaml`` already states for the model itself.
+
+Runtime Contract
+----------------
+``resolve(expression, *, language, reference_date) -> tuple[date, DateSource] | None``. A numeric
+date (``dd/mm`` or ``dd/mm/yyyy``) resolves with any ``language``, including ``None``; every other
+form needs the language to pick its vocabulary. ``DateSource.RELATIVE`` is a relative day term or a
+weekday, ``DateSource.PARTIAL`` a day of the month, ``DateSource.NUMERIC`` a numeric date.
 """
 
 from __future__ import annotations
@@ -184,8 +191,8 @@ _MONTH_DAY: dict[Lang, tuple[re.Pattern[str], ...]] = {
     ),
 }
 
-# Day first, in every language, per AC-E5-16 — never the customer's own language's usual
-# convention. An optional two- or four-digit year; without one, the reference date's own year.
+# Day first, in every language — never the customer's own language's usual convention (English
+# included). An optional two- or four-digit year; without one, the reference date's own year.
 _NUMERIC = re.compile(r"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?$")
 
 _MAX_MONTHS_BACK = 4  # Bounded search for a day-of-month that doesn't exist in every month.
@@ -291,6 +298,22 @@ def resolve(
 ) -> tuple[date, DateSource] | None:
     """The date ``expression`` names, resolved against ``reference_date``, and how it was
     expressed — or ``None`` when it names no date this table recognizes.
+
+    Parameters
+    ----------
+    expression : str
+        The customer's own words for the date, as the understanding step reported them.
+    language : Lang | None
+        The conversation's language, which selects the vocabulary; ``None`` leaves only the numeric
+        form resolvable.
+    reference_date : date
+        The domain calendar's reference date; every result is on or before it.
+
+    Returns
+    -------
+    tuple[date, DateSource] | None
+        The resolved date with how it was expressed, or ``None`` for an unrecognized phrase, a date
+        that does not exist, or a numeric date with an explicit year after ``reference_date``.
     """
     numeric = _NUMERIC.match(expression.strip())
     if numeric is not None:
