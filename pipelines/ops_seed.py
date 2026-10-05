@@ -360,9 +360,11 @@ _PRODUCTS_QUERY = """
 def _transactions_query() -> str:
     """SQL that returns every chosen customer's transactions with a resolved dollar amount.
 
-    The source's reported dollar figure is kept as ``reported_usd``; the resolved figure is
-    computed from the day's exchange rate where the source left it out, and its provenance is
-    recorded so a converted amount can be told from a reported one.
+    ``amount_usd`` is the source's own dollar figure when it states one; otherwise the amount
+    itself when its currency is USD; otherwise the amount converted at the day's USD rate;
+    otherwise ``NULL``. ``amount_usd_provenance`` records which of those produced it
+    (``reported``, ``converted`` or ``unknown``), so a converted amount can be told from a
+    reported one.
     """
     usd_expr = usd_amount_expr(
         amount="t.amount",
