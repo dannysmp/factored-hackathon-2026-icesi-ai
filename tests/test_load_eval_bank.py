@@ -319,10 +319,12 @@ def _write_seed_output(gold_dir: Path) -> None:
     con = duckdb.connect()
     con.execute(
         "CREATE TABLE customers (customer_id VARCHAR, first_name VARCHAR, last_name VARCHAR, "
-        "masked_email VARCHAR, masked_phone VARCHAR, country VARCHAR, customer_status VARCHAR)"
+        "masked_email VARCHAR, masked_phone VARCHAR, country VARCHAR, customer_status VARCHAR, "
+        "is_repeat_complainer BOOLEAN)"
     )
     con.execute(
-        "INSERT INTO customers VALUES ('CLI-SEED-1', 'A', 'B', NULL, NULL, 'México', 'Active')"
+        "INSERT INTO customers VALUES "
+        "('CLI-SEED-1', 'A', 'B', NULL, NULL, 'México', 'Active', false)"
     )
     con.execute(
         "CREATE TABLE products (product_id VARCHAR, customer_id VARCHAR, product_type VARCHAR, "

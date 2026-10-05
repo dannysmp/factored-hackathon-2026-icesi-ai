@@ -32,6 +32,10 @@ Design Principles
 - Verifies every output's SHA-256 against its manifest entry before loading anything: a gold
   directory whose Parquet files changed since the manifest was written (a partial rebuild, a hand
   edit, a stale copy) is refused rather than silently loaded as if it still matched.
+- Refuses a seed that lacks a column the serving store defaults when it is absent. The policy
+  engine reads ``customers.is_repeat_complainer`` to route repeat complainers to a person; a seed
+  built before that column existed would otherwise load cleanly with every customer reading as
+  not a repeat complainer, and nothing would say so.
 
 Runtime Contract
 ----------------
@@ -74,6 +78,10 @@ from pipelines.raw import quote_literal  # Safe SQL string literals
 logger = logging.getLogger(__name__)
 
 _TABLES_IN_LOAD_ORDER = (CUSTOMERS_NAME, PRODUCTS_NAME, TRANSACTIONS_NAME)
+
+# Columns the serving store fills with a default when an insert omits them, and that a routing
+# decision depends on: a seed without one would load but silently turn the rule off.
+_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {CUSTOMERS_NAME: ("is_repeat_complainer",)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +185,23 @@ def _verify_output_digests(gold_dir: Path) -> None:
             )
 
 
+def _require_policy_columns(name: str, columns: Sequence[str]) -> None:
+    """Refuse an output that omits a column the store would silently default.
+
+    Raises
+    ------
+    ValueError
+        When the output lacks a column the policy depends on: the seed was built before the
+        column existed and has to be rebuilt.
+    """
+    missing = [column for column in _REQUIRED_COLUMNS.get(name, ()) if column not in columns]
+    if missing:
+        raise ValueError(
+            f"{name} lacks the column(s) {', '.join(missing)}; "
+            "the seed predates the current schema, rebuild it"
+        )
+
+
 def load_seed(dsn: str, gold_dir: Path) -> LoadResult:
     """Truncate the serving store and load the seed, in one transaction.
 
@@ -195,12 +220,15 @@ def load_seed(dsn: str, gold_dir: Path) -> LoadResult:
     FileNotFoundError
         When the seed's Parquet output or manifest is missing.
     ValueError
-        When the manifest is malformed, or an output no longer matches its manifest digest.
+        When the manifest is malformed, an output no longer matches its manifest digest, or an
+        output lacks a column the policy depends on.
     psycopg.Error
         When the load itself fails; nothing already written commits.
     """
     _verify_output_digests(gold_dir)
     tables = [(name, *_read_table(gold_dir, name)) for name in _TABLES_IN_LOAD_ORDER]
+    for name, columns, _ in tables:
+        _require_policy_columns(name, columns)
     reference_date = _read_reference_date(gold_dir)
 
     rows: dict[str, int] = {}
