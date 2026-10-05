@@ -19,6 +19,7 @@ const BASE_RESPONSE = {
   next_expected: null,
   end_session: false,
   handoff_ticket: null,
+  case_number: null,
 }
 
 describe('ChoiceSchema', () => {
@@ -123,5 +124,23 @@ describe('TurnResponseSchema reply length', () => {
     expect(
       TurnResponseSchema.safeParse({ ...BASE_RESPONSE, reply: 'x'.repeat(2001) }).success,
     ).toBe(false)
+  })
+})
+
+describe('TurnResponseSchema case number', () => {
+  it('reads a response without one as having none, so an older service still parses', () => {
+    const withoutCaseNumber: Record<string, unknown> = { ...BASE_RESPONSE }
+    delete withoutCaseNumber.case_number
+    expect(TurnResponseSchema.parse(withoutCaseNumber).case_number).toBeNull()
+  })
+
+  it('keeps a well-formed case number', () => {
+    expect(TurnResponseSchema.parse({ ...BASE_RESPONSE, case_number: 'D-2001' }).case_number).toBe(
+      'D-2001',
+    )
+  })
+
+  it('refuses a case number holding characters outside the ticket format', () => {
+    expect(() => TurnResponseSchema.parse({ ...BASE_RESPONSE, case_number: 'D 2001<' })).toThrow()
   })
 })

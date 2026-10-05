@@ -35,6 +35,7 @@ const TEXT_PAIRS: readonly (readonly [string, string])[] = [
   ['color-text-subtle', 'color-bg'],
   ['color-text-subtle', 'color-bg-subtle'],
   ['color-text-subtle', 'color-info-bg'],
+  ['color-text-subtle', 'color-success-bg'],
   ['color-accent', 'color-bg'],
   ['color-accent-contrast', 'color-accent'],
   ['color-accent-contrast', 'color-accent-hover'],

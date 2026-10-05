@@ -1,16 +1,18 @@
+/* One compact strip: the two lines sit side by side when there is room and stack tightly when
+   there is not, so the conversation starts as high on the screen as it can. */
 .banner {
-  margin: 0 0 var(--space-4);
-  padding: var(--space-2) var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
   background: var(--color-info-bg);
   color: var(--color-text);
   font-size: var(--font-size-sm);
+  line-height: 1.4;
 }
 
 .banner p {
   margin: 0;
-}
-
-.banner p + p {
-  margin-top: var(--space-1);
 }
