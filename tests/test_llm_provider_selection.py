@@ -4,7 +4,7 @@ LLM Provider Selection Tests
 
 Component: ``app.main._understanding`` and ``app.main._model_renderer``. Hermetic: no network,
 no database, no ``.env``. Both take the shared ``llm_client`` ``_controller_factory`` builds
-once (E9); every case here either never touches it (the stub branch) or raises before it would
+once; every case here either never touches it (the stub branch) or raises before it would
 be touched, so a placeholder stands in for it without needing a real or fake ``LlmClient``.
 """
 

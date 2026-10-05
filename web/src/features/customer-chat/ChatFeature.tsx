@@ -4,8 +4,10 @@ import { ChoiceButtons } from './components/ChoiceButtons'
 import { ConfirmationPrompt } from './components/ConfirmationPrompt'
 import { MessageList } from './components/MessageList'
 import { ReferenceBanner } from './components/ReferenceBanner'
+import { ResultCard } from './components/ResultCard'
 import { TurnForm } from './components/TurnForm'
 import type { ChatClient } from './client'
+import { resultOf } from './result'
 import { useConversation } from './useConversation'
 import { Button } from '../../components/ui/Button'
 import { ErrorState } from '../../components/ui/ErrorState'
@@ -35,8 +37,9 @@ import styles from './ChatFeature.module.css'
  *
  * A screen reader is told about a new assistant reply through one hidden announcement region,
  * not by making the whole message list live: the list stays quiet, so nothing is read twice and
- * the person's own messages are never read back to them. When the conversation ends, the closing
- * line and the case reference are folded into that same announcement.
+ * the person's own messages are never read back to them. A filed dispute and the end of the
+ * conversation are shown as a result card, and the outcome and its reference are folded into that
+ * same announcement on the turn that brings them.
  */
 export function ChatFeature({
   client,
@@ -107,12 +110,22 @@ export function ChatFeature({
   const ended = latest?.end_session === true
   const lastAssistantText =
     conversation.messages.findLast((m) => m.from === 'assistant')?.text ?? ''
+  // A dispute is filed on a turn that does not end the conversation, and the farewell that ends
+  // it carries no case number: the card shows the filing from the moment it happens and keeps its
+  // number to the end, unless the conversation ends in a hand-off, whose own reference then leads.
+  const caseNumber = latest?.handoff_ticket === null ? conversation.filedCase : null
+  const handoffTicket = latest?.handoff_ticket ?? null
+  const showResult = latest !== null && (ended || caseNumber !== null)
+  const result = showResult ? resultOf(caseNumber, handoffTicket) : null
+  // The outcome is announced on the turn that brings it and again at the end, not after every
+  // reply in between.
+  const announceResult = ended || (latest !== null && latest.case_number !== null)
   const closing =
-    ended && latest.handoff_ticket !== null
-      ? `${t('chat.ended')} ${t('chat.caseReference').replace('{ticket}', latest.handoff_ticket)}`
-      : ended
-        ? t('chat.ended')
-        : ''
+    result === null || !announceResult
+      ? ''
+      : result.reference === null
+        ? t(`chat.result.${result.variant}Title`)
+        : `${t(`chat.result.${result.variant}Title`)}. ${t('chat.result.caseNumberLabel')}: ${result.reference}.`
   const announcement = [lastAssistantText, closing].filter((part) => part !== '').join(' ')
 
   return (
@@ -142,6 +155,9 @@ export function ChatFeature({
           </ErrorState>
         </div>
       )}
+      {result !== null && (
+        <ResultCard lang={activeLang} caseNumber={caseNumber} handoffTicket={handoffTicket} />
+      )}
       {latest !== null && !ended && (
         <>
           <ChoiceButtons choices={latest.choices} onChoose={conversation.send} disabled={busy} />
@@ -155,14 +171,6 @@ export function ChatFeature({
             inputRef={inputRef}
           />
         </>
-      )}
-      {ended && (
-        <p className={styles.ended}>
-          {t('chat.ended')}
-          {latest.handoff_ticket !== null && (
-            <> {t('chat.caseReference').replace('{ticket}', latest.handoff_ticket)}</>
-          )}
-        </p>
       )}
     </section>
   )

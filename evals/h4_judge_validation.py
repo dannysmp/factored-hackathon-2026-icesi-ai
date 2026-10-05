@@ -114,7 +114,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_REPORT = Path("reports/evaluation.md")
 
 _PENDING_LIMITATIONS_BULLET = re.compile(
-    r"^- The judge-validation section is pending the real H4 human sample; see that "
+    r"^- The judge-validation section is pending the human judge-validation sample; see that "
     r"section for detail\.\n?",
     re.MULTILINE,
 )
