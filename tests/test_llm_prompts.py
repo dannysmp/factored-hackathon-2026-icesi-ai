@@ -19,7 +19,7 @@ def test_the_shipped_nlu_prompt_loads_and_validates() -> None:
     """``prompts/nlu_v1.yaml`` is a real, valid prompt file, not just a fixture."""
     prompt = load_prompt("nlu_v1")
 
-    assert prompt.version == "5"
+    assert prompt.version == "6"
     assert prompt.system.strip()
     assert prompt.placeholders() == {"language_hint", "message"}
 
@@ -108,6 +108,9 @@ def test_the_shipped_nlu_prompt_teaches_the_choice_intent_and_its_limits(phrase:
         "£, or a currency word such as dollars, euros or reais",
         'The word "pesos" alone names no country',
         "unless the message says which pesos",
+        "only states a transaction the customer made",
+        "is the start of a dispute: use file_dispute",
+        "list_transactions is only for a customer who asks to see or review",
     ],
 )
 def test_the_shipped_nlu_prompt_keeps_a_transfer_already_made_disputable_and_states_currencies(
