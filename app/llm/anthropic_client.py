@@ -46,7 +46,7 @@ import time  # Per-call latency
 
 # Third-party libraries
 import anthropic  # The provider SDK, used only behind this adapter
-from pydantic import SecretStr  # The API key, handed in already resolved
+from pydantic import SecretStr  # The API key, passed in already resolved
 
 # Local modules
 from app.llm.client import (  # The port this adapter implements
