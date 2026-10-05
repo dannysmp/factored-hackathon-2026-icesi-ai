@@ -493,7 +493,6 @@ _LEADING_DETERMINERS = frozenset(
         "nossa",
         "nossas",
         "estes",
-        "estas",
         "esses",
         "essas",
         "aquele",
