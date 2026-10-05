@@ -66,6 +66,7 @@ production results; the full table is under [Evaluation](#evaluation).
 | A possible fraud goes to a person, with a reference, in Spanish | ![The chat telling the customer that a person will review the request and showing its reference](docs/images/handoff.png) |
 | The agent console lists handed-over cases | ![The agent console queue with priority fraud reports first](docs/images/console-queue.png) |
 | A case opens as a packet with the request, verified transactions, actions, evidence and open questions | ![The agent console showing the packet of a fraud report, with the customer identifier masked](docs/images/console-packet.png) |
+| The operations dashboard shows dispute volume, resolution time, claimed amounts and satisfaction | ![The Operations dashboard with four charts: dispute volume by month, median days to resolution and SLA breaches by status, mean claimed amount by currency, and mean satisfaction score by contact reason](docs/images/operations-dashboard.png) |
 
 The screens are in [web/README.md](web/README.md) on mobile and desktop and in all three languages.
 
