@@ -148,8 +148,7 @@ filing decision was made by the system here.
 
 ## Review status
 
-Required before these scripts are used in the video recording: a native Spanish reading of every
-Spanish line (the Spanish scripts here are the ones to review); the Portuguese lines go through the
-model-reviewer wording check instead of a native reader, since no native Portuguese speaker
-reviews this project's wording (see `docs/limitations.md`). Neither review has been run against
-this document yet.
+The Spanish wording review was performed on every Spanish line, and its corrections are applied in
+these scripts. The Portuguese lines went through the wording check by a reviewer agent instead of a
+native reader, since no native Portuguese speaker reviews this project's wording (see
+`docs/limitations.md`), and its corrections are applied too.
