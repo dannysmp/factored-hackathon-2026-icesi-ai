@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 import app.main as main_module
+from app.api.demo_signin import DIRECTORY_REQUEST_CAP, DIRECTORY_REQUEST_WINDOW_SECONDS
 from app.config import Settings, load_settings
 from app.domain.calendar import DomainCalendar
 from app.main import AgentConsolePorts, create_app
@@ -1055,7 +1056,7 @@ def test_the_persona_directory_needs_no_access_code(client: TestClient) -> None:
 
 
 def test_the_persona_directory_is_rate_limited_per_address(client: TestClient) -> None:
-    for _ in range(5):
+    for _ in range(DIRECTORY_REQUEST_CAP):
         response = client.get(DEMO_PERSONAS)
         assert response.status_code == 200
 
@@ -1063,3 +1064,36 @@ def test_the_persona_directory_is_rate_limited_per_address(client: TestClient) -
 
     assert limited.status_code == 429
     assert limited.headers["retry-after"]
+
+
+def test_a_visitor_can_open_the_sign_in_many_times_within_a_minute(client: TestClient) -> None:
+    for _ in range(20):
+        assert client.get(DEMO_PERSONAS).status_code == 200
+
+
+def test_the_directory_cap_is_a_window_that_passes(client: TestClient, clock: Clock) -> None:
+    for _ in range(DIRECTORY_REQUEST_CAP):
+        client.get(DEMO_PERSONAS)
+    assert client.get(DEMO_PERSONAS).status_code == 429
+
+    clock.now += timedelta(seconds=DIRECTORY_REQUEST_WINDOW_SECONDS)
+
+    assert client.get(DEMO_PERSONAS).status_code == 200
+
+
+def test_reading_the_directory_never_uses_up_the_sign_in_attempts(client: TestClient) -> None:
+    for _ in range(DIRECTORY_REQUEST_CAP + 1):
+        client.get(DEMO_PERSONAS)
+
+    assert _sign_in(client, "ana").status_code == 201
+
+
+def test_wrong_access_codes_still_stop_after_five_attempts(client: TestClient) -> None:
+    wrong = {"X-Demo-Access-Code": "wrong"}
+    for _ in range(5):
+        attempt = client.post(DEMO_LOGIN, json={"persona": "ana"}, headers=wrong)
+        assert attempt.status_code == 401
+
+    refused = client.post(DEMO_LOGIN, json={"persona": "ana"}, headers=wrong)
+
+    assert refused.status_code == 429
