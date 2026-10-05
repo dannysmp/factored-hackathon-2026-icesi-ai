@@ -1,6 +1,6 @@
 # Deployment runbook
 
-The maintainer's procedure for standing the system up in an empty AWS account, setting the two demonstration access codes, verifying the result and reading the codes back for the release message. It complements [`README.md`](README.md), which describes what each script creates; this document orders the steps and states what to check after each.
+The maintainer's procedure for standing the system up in an empty AWS account, setting the two demonstration access codes, verifying the result and reading the codes back to issue them to evaluators and testers. It complements [`README.md`](README.md), which describes what each script creates; this document orders the steps and states what to check after each.
 
 ## Handling secrets
 
@@ -57,7 +57,7 @@ Check: `aws ssm describe-parameters --parameter-filters "Key=Path,Values=/transa
 
 ## 3. Generate the two demonstration access codes and the agent signing key
 
-Each value is generated and stored in one pipeline, so it is never displayed. Rerunning the same command regenerates the value: `put-secret.sh` overwrites. Once the codes have gone out in the release message they stay fixed for the evaluation period; regenerate one only if it has leaked.
+Each value is generated and stored in one pipeline, so it is never displayed. Rerunning the same command regenerates the value: `put-secret.sh` overwrites. Once the codes have been issued they stay fixed for the evaluation period; regenerate one only if it has leaked.
 
 ```sh
 openssl rand -base64 24 | tr -d '/+=' | infra/scripts/put-secret.sh demo-signin-access-code
@@ -141,9 +141,9 @@ Which checks apply depends on the mode. With `teardown_after` left on, the host 
 4. **The web page** at `https://<host>/` loads over a valid certificate in a browser, and a customer sign-in reaches the chat. Copy the code with the command in step 6, paste it into the sign-in form, then clear the clipboard; use a persona not already used in check 3.
 5. Record the run in the table at the end of this document.
 
-## 6. Read the codes for the release message
+## 6. Read the codes to issue them
 
-This is the only way to get a code in a form that can be pasted (check 4 uses it too); check 3 reads the codes into a shell variable that is never displayed. Copy it straight to the clipboard so it is never printed, paste it into the message, then clear the clipboard. The subshell fails loudly if the read fails, instead of leaving an empty clipboard. On macOS:
+This is the only way to get a code in a form that can be pasted (check 4 uses it too); check 3 reads the codes into a shell variable that is never displayed. Copy it straight to the clipboard so it is never printed, paste it into the message to the evaluator or tester, then clear the clipboard. The subshell fails loudly if the read fails, instead of leaving an empty clipboard. On macOS:
 
 ```sh
 ( set -o pipefail; aws ssm get-parameter --name /transaction-disputes/prod/demo-signin-access-code --with-decryption --query Parameter.Value --output text | tr -d '\n' | pbcopy ) || echo "read failed: nothing was copied"
@@ -153,7 +153,7 @@ pbcopy </dev/null
 
 The clipboard is not private: a clipboard manager may keep its history, and Universal Clipboard can copy the value to other devices signed in to the same account. Quit any clipboard manager and turn Handoff off for the duration, or clear the clipboard immediately after pasting.
 
-Repeat for `demo-agent-access-code`. Send each code only in the release message itself; do not store it in a document, an issue or the repository.
+Repeat for `demo-agent-access-code`. Send each code only in the direct message to its recipient; do not store it in a document, an issue or the repository.
 
 ## 7. After the release window
 

@@ -14,6 +14,8 @@ export const en: Messages = {
     'There is no connection to the service. Check your internet connection and try again.',
   'failure.timeout': 'The response took too long. Please try again.',
   'failure.rateLimited': 'Too many attempts. Please wait a minute and try again.',
+  'failure.rateLimitedIn': 'Too many attempts. Please try again in {seconds} seconds.',
+  'failure.rateLimitedInOne': 'Too many attempts. Please try again in {seconds} second.',
   'failure.unavailable': 'The service is unavailable right now. Please try again in a few minutes.',
   'chat.regionLabel': 'Conversation with the assistant',
   'chat.messagesLabel': 'Messages',

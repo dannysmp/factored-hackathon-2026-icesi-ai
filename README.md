@@ -9,7 +9,7 @@ summary, whenever a person is required.
 The guiding principle is that **AI is not autonomous just because it can be**: the language model
 only understands the request, while deterministic code decides and acts. Replies are fixed
 templates filled with verified facts; in the shipped configuration the model writes nothing the
-customer reads.
+customer reads. In short: the AI listens, the rules decide.
 
 ![The customer chat with a filed dispute and its case reference, beside the agent console showing the handoff packet for a different case](docs/images/hero.png)
 
@@ -18,8 +18,8 @@ customer reads.
 ## Try it
 
 The system is deployed at **https://184-195-142-149.sslip.io**. It is a demonstration with
-simulated data: pick a profile on the sign-in page and enter its access code. The access codes are
-not in this repository; they come separately with the delivery.
+simulated data: pick a profile on the sign-in page and enter its access code. Access codes are
+issued directly to each evaluator or tester, and never stored in this repository.
 
 | Profile | Language | What it shows |
 |---|---|---|
@@ -40,17 +40,21 @@ session ends. **Sign out when you finish:** it frees the profile at once. Closin
 reloading does not, so the profile stays in use until its session expires, 30 minutes for a
 customer and 60 for an agent, and the next reader is refused in the meantime.
 
+The operations dashboard shown under [See it in action](#see-it-in-action) is available on request.
+
 ## At a glance
 
 The system takes a customer's dispute from the first message to a verified, filed case, or to the
 right person. The model understands the request; a deterministic policy engine decides, tools
 scoped to the signed-in customer act, and every write is read back before the customer is told.
 
-On 135 scripted cases, run on the golden set against the live model, **safe automated resolution is 73.5%** for this system,
-against 33.0% for a keyword baseline and 36.9% for a model-only agent, with **zero unsafe
-outcomes** for all three. It misses slightly more of the cases that need a person than the model-only agent does
-(missed transfers 6.1% against 4.5%, a difference the run-to-run spread does not separate). These are measurements on scripted cases, not
-production results; the full table is under [Evaluation](#evaluation).
+The system safely resolves about twice as many in-scope disputes on its own as either baseline:
+**safe automated resolution is 73.5%**, against 33.0% for a keyword baseline and 36.9% for a
+model-only agent, and none of the three produced an unsafe outcome. These figures come from 135
+scripted test cases, 32 of them adversarial, run against the live model. The system misses
+slightly more of the cases that need a person than the model-only agent does (missed transfers
+6.1% against 4.5%, a difference the run-to-run spread does not separate). These are measurements
+on scripted cases, not production results; the full table is under [Evaluation](#evaluation).
 
 - [Evaluation report](reports/evaluation.md): workload, metrics, variability, failures and judge validation
 - [Limitations report](docs/limitations.md): what is built, deferred and still open
@@ -119,6 +123,27 @@ Design rules that follow from this:
   and its wording must agree with the decisions taken.
 - A learned risk score can route a case to human review; it never decides an outcome.
 
+### Risk model and handling cost
+
+**Risk model.** The one learned component was benchmarked on a time split (trained to
+31 March 2025, tuned to 30 September 2025, tested on the period after). On the test period the
+boosted model's PR-AUC is 0.00089 and the logistic baseline's is 0.00085. The difference,
++0.000039, has a 95% interval of -0.000033 to +0.000108, which includes zero, and both sit at about
+the base rate of fraud, one in a thousand (0.00099 in validation). The simpler logistic model was
+kept. No validation threshold reaches the precision floor of 0.0100 within a 5% routed share, so no
+threshold is set and routing is off: the score routes no case. The decision is recorded in
+[`models/model_card.json`](models/model_card.json); the benchmark itself is in
+[`models/experiments.jsonl`](models/experiments.jsonl).
+
+**Handling cost, projected and not measured.** Agent time on a dispute is estimated at USD 0.83
+(USD 0.37 to 2.15 on the low and high assumptions), or USD 275.19 a month at 332 cases. Only the
+handling time, 3.7 minutes, is measured; the agent-hour cost (USD 6, 9 and 14) and the contacts a
+dispute needs (1, 1.5 and 2.5) are stated assumptions, and back-office work is not counted. For
+comparison, the model spend of the system is USD 0.004 per attempted case in the offline
+evaluation, which counts model calls only. The derivation is in section 5 of
+[`reports/workflow-analysis.md`](reports/workflow-analysis.md), and the assumptions are in
+`pipelines/analysis_assumptions.toml`.
+
 ### Models
 
 The system calls the Claude API in two places, and the evaluation uses it in a third:
@@ -146,7 +171,7 @@ allowed list in `app/config.py`. Card-shaped digit runs and document-number shap
 | `evals/` | Golden set, adversarial cases, evaluation harness and judge rubric |
 | `web/` | React customer chat and human-agent console (a read-only viewer of the handoff queue) |
 | `infra/` | AWS provisioning and deployment scripts, the reverse-proxy configuration and the deployment runbook; the pipeline itself is `.github/workflows/deploy.yml` |
-| `docs/` | Limitations, the security checklist, the release checklist, the demonstration scripts, the video script, the slide content and the delivery message |
+| `docs/` | Limitations, the security checklist, the release checklist, the demonstration scripts, the video script and the slide content |
 | `reports/` | Generated reports (data profile, analyses, operational seed, evaluation results) |
 | `Dockerfile`, `docker-compose*.yml` | The backend image, the local Postgres serving store, and the deployed stack composed on top of it |
 | `scripts/` | Repository tooling, such as the secret-scan self-test |
@@ -457,7 +482,7 @@ Every secret, including the model key and the demonstration access codes, lives 
 Manager Parameter Store under `/transaction-disputes/prod/` and is read by the host with its own
 role. The data provider's credentials exist only in a developer's local AWS profile. What each
 script creates, and the one-time prerequisites, are in [`infra/README.md`](infra/README.md); the
-order of the steps, the checks after each and how to read the codes back for a release message are
+order of the steps, the checks after each and how to read the codes back to issue them to evaluators and testers are
 in [`infra/deployment-runbook.md`](infra/deployment-runbook.md).
 
 ## Quality and security

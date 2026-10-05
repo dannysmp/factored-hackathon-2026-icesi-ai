@@ -4,14 +4,14 @@ B1 Tool Schemas and Dispatch
 
 Overview
 --------
-The seven tools B1 (the naive agent baseline) may call, as Anthropic tool schemas: the six real
+The eight tools B1 (the naive agent baseline) may call, as Anthropic tool schemas: the six real
 ``ToolPort`` methods plus ``get_policy`` and ``handoff``. ``B1ToolDispatcher`` turns one model tool
 call into a real effect against the store, retriever and handoff outbox that P and B0 use. B1 gets
 the same tools as P and no wider surface, which the comparison depends on.
 
 Scope
 -----
-In: the seven tool schemas; ``B1ToolDispatcher.dispatch``, executing one call and returning the
+In: the eight tool schemas; ``B1ToolDispatcher.dispatch``, executing one call and returning the
 tool-result text the model reads next.
 Out: the conversation loop that decides when to call the model again and when a customer turn is
 done (``evals.runner.baselines.b1``); scoring a run (``evals.scoring``).
@@ -43,7 +43,7 @@ Design Principles
 
 Runtime Contract
 ----------------
-``TOOL_SCHEMAS``: the seven Anthropic tool schemas, in a fixed order.
+``TOOL_SCHEMAS``: the eight Anthropic tool schemas, in a fixed order.
 ``B1ToolDispatcher(tool_port, retriever, outbox, policy, calendar, clock, *, customer_id, lang)``.
 ``dispatch(call, *, session_id, turn_id, trace_id) -> str``, the tool-result text for the model.
 ``start_turn()``: clears the list of this turn's decisions that ``handoff``'s reason-code lookup

@@ -26,12 +26,16 @@ is not the slide file itself.
   contacts from June 2023 to June 2026. A dispute is a complaint classified as an unrecognised
   charge; the source carries no dispute flag. Adding undue charges and transaction complaints with
   no subcategory raises the share to **38.4%**.
+- **Projected, not measured:** agent handling costs an estimated **USD 0.83** per dispute (USD 0.37
+  to 2.15 on stated assumptions), against **USD 0.004** of model spend per case. Only the 3.7
+  minutes of handling time is measured; the hourly agent cost and the contacts a dispute needs are
+  assumptions, and back-office work is not counted, so the human figure is understated.
 
 ## Slide 3 — From a customer's first message to a filed case, or to the right person
 
 - Five steps: **understand** (language and intent, in a strict schema), **decide** (the policy
   engine: eligibility and routing), **act** (tools scoped to the signed-in customer), **verify**
-  (every write is read back first) and **hand over** (when needed, a person gets a structured
+  (every write is read back first) and **escalate** (when needed, a person gets a structured
   packet).
 - Four screens captured from the deployed build, on synthetic data:
   1. The customer confirms. Nothing is filed until the customer approves a plain-language summary.
@@ -43,7 +47,7 @@ is not the slide file itself.
 - Filing is shown in English, the handoff in Portuguese and the agent console in Spanish. The same
   journey runs in all three languages.
 
-## Slide 4 — How the system is built
+## Slide 4 — The AI listens, the rules decide
 
 - A deterministic core around the language model, running on a single AWS host, with an offline
   pipeline that prepares the data and evaluates the system.
@@ -81,7 +85,7 @@ is not the slide file itself.
   cloud-hosted model service; DuckDB over partitioned Parquet instead of a data warehouse; and one
   host instead of a cluster.
 
-## Slide 5 — The highest safe resolution of the three systems tested
+## Slide 5 — Twice the baselines' safe resolution, zero unsafe outcomes
 
 Offline evaluation on 135 scripted, team-generated cases: 103 in scope and 32 adversarial. Both
 baselines keep the policy engine and tools; one swaps the model for keyword matching, the other
@@ -100,11 +104,14 @@ has no deterministic controller. The safe-resolution target is 40% or more.
 
 - These are offline measurements, not production results: zero unsafe outcomes in 135 cases does
   not establish zero risk.
-- Cost counts the model's understanding calls; replies come from fixed templates. The
-  resolution-time and breach-rate targets are not measured offline.
+- Cost counts the model's understanding calls; replies come from fixed templates. Cost per
+  successful automated resolution is $0.004 for the proposed system, $0.000 for the keyword
+  baseline and $0.006 for the model-only agent. The resolution-time and breach-rate targets are not
+  measured offline.
 - On missed transfers the proposed system (6.1%, range 4.5% to 9.1%) does not beat the model-only
-  agent (4.5%, one run); the two cannot be told apart on this evidence. The earlier 15.2% came from
-  a seed without the repeat-complainer flags, so that rule could not fire.
+  agent (4.5%, one run); the two cannot be told apart on this evidence. The earlier 15.2% was
+  measured on a seed that lacked the repeat-complainer flags; at least six of its ten missed
+  case-runs are explained by that seed.
 - **Is the automated judge reliable?** Two human raters scored the same replies as an automated
   judge, and the judge was required to match each rater on at least 80% of replies.
 
@@ -132,7 +139,7 @@ Stated in full in `docs/limitations.md`. Each item is paired with the step that 
 | Today | Next step |
 |---|---|
 | The source data is Spanish only; Portuguese and English cases are team-written. | Native-speaker review and real conversations in each language. |
-| The risk model found no threshold precise enough, so it routes no case. | Retrain on confirmed outcomes, then re-calibrate before routing. |
+| Benchmarked on a time split, the risk model shows no lift; it routes no case. | Retrain on confirmed outcomes, then re-calibrate before routing. |
 | The automated judge is not validated against human raters. | A larger, rater-agreed sample and a tightened rubric. |
 | The evaluation set is scripted and small: 135 cases, 32 adversarial. | Replay anonymised real conversations and widen adversarial coverage. |
 | The agent console is a viewer; claim, note and status actions have no screen. | Add those audited actions to the console. |
@@ -140,3 +147,9 @@ Stated in full in `docs/limitations.md`. Each item is paired with the step that 
 | Filing windows use one operating time zone. | Store and apply each customer's time zone. |
 | Document numbers are redacted by shape; a dotted identity number still passes. | Cover the dotted form once its cost against amounts is measured. |
 | Only sign-in is rate limited; capacity and record retention are undefined. | Rate limits, a measured capacity plan and a retention period. |
+
+The risk model, on the time split (trained to 31 March 2025, tuned to 30 September 2025, tested on
+the period after): the boosted model's test PR-AUC is 0.00089 and the logistic baseline's is
+0.00085. The difference, +0.000039, has a 95% interval of -0.000033 to +0.000108, which includes
+zero, and both sit at about the base rate of one in a thousand (0.00099 in validation). The
+simpler logistic model was kept, no threshold was fixed, and the score routes no case.

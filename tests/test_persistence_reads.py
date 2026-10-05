@@ -22,6 +22,7 @@ import psycopg
 import pytest
 
 from app.domain.policy.loader import load_policy
+from app.domain.text_matching import SQL_FOLD_FROM, SQL_FOLD_TO, fold_text
 from app.persistence.audit import PostgresAuditSink
 from app.persistence.migrate import apply_migrations
 from app.persistence.reads import PostgresToolPort
@@ -479,3 +480,136 @@ def test_a_poisoned_merchant_name_is_truncated_through_list_transactions_too(dsn
     assert injected.merchant is not None
     assert len(injected.merchant) == 80
     assert injected.merchant == overlong[:80]
+
+
+# -----------------------------------------------------------------------------
+# A merchant filter narrows the listing itself, before the five-row cut
+# -----------------------------------------------------------------------------
+
+
+def _insert_older_transactions(dsn: str, merchants: list[str]) -> None:
+    """One transaction per merchant name for CLI-A, all older than the two fixture rows."""
+    for index, name in enumerate(merchants):
+        with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO transactions (transaction_id, customer_id, product_id, "
+                "transaction_date, transaction_type, merchant_name, amount, currency, "
+                "amount_usd, amount_usd_provenance, transaction_status) VALUES "
+                "(%s, 'CLI-A', 'PRD-A', %s, 'Purchase', %s, 10.00, 'USD', 10.00, "
+                "'reported', 'Approved')",
+                (f"TRX-OLD-{index}", f"2026-05-{index + 1:02d} 09:00:00", name),
+            )
+
+
+def _merchant_refs(dsn: str, merchant: str, *, customer_id: str = "CLI-A") -> list[str]:
+    port = _port(dsn, _RecordingSink(dsn), customer_id=customer_id)
+    page = port.list_transactions(TransactionFilters(merchant=merchant))
+    assert not isinstance(page, ToolFailure)
+    return [item.ref for item in page.items]
+
+
+@pytest.mark.integration
+def test_a_merchant_filter_finds_a_row_older_than_the_five_most_recent(dsn: str) -> None:
+    """The wanted merchant is the oldest of eight rows; without narrowing in the query it would
+    fall outside the five most recent and never be returned."""
+    _insert_older_transactions(dsn, ["Super Ahorro", *[f"Other {n}" for n in range(5)]])
+
+    assert _merchant_refs(dsn, "super ahorro") == ["TRX-OLD-0"]
+    unfiltered = _port(dsn, _RecordingSink(dsn), customer_id="CLI-A").list_transactions(
+        TransactionFilters()
+    )
+    assert not isinstance(unfiltered, ToolFailure)
+    assert "TRX-OLD-0" not in [item.ref for item in unfiltered.items]
+
+
+@pytest.mark.integration
+def test_a_merchant_filter_reports_the_count_of_matching_rows(dsn: str) -> None:
+    _insert_older_transactions(dsn, ["Super Ahorro", "Super Ahorro Norte", "Cafe Sol"])
+    port = _port(dsn, _RecordingSink(dsn), customer_id="CLI-A")
+
+    page = port.list_transactions(TransactionFilters(merchant="super"))
+
+    assert not isinstance(page, ToolFailure)
+    assert page.total_count == 2
+    assert sorted(item.ref for item in page.items) == ["TRX-OLD-0", "TRX-OLD-1"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("stored", "typed"),
+    [
+        ("Café Sol", "cafe"),
+        ("Cafe Sol", "CAFÉ"),
+        ("Pão de Açúcar", "pao de acucar"),
+        ("PÃO DE AÇÚCAR", "pão"),
+        ("Nuñez Hnos", "NUNEZ"),
+    ],
+)
+def test_a_merchant_filter_ignores_case_and_accents(dsn: str, stored: str, typed: str) -> None:
+    _insert_older_transactions(dsn, [stored])
+
+    assert _merchant_refs(dsn, typed) == ["TRX-OLD-0"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("typed", ["%", "_", "S_per", "Su%"])
+def test_a_merchant_filter_treats_percent_and_underscore_as_plain_text(
+    dsn: str, typed: str
+) -> None:
+    _insert_older_transactions(dsn, ["Super Ahorro"])
+
+    assert _merchant_refs(dsn, typed) == []
+
+
+@pytest.mark.integration
+def test_a_merchant_filter_matches_within_the_clamped_name_the_caller_sees(dsn: str) -> None:
+    """A stored name wider than the contract's bound is read back clamped to 80 characters, so
+    the filter looks at the same 80 characters: text past them never matches."""
+    _insert_older_transactions(dsn, ["A" * 80 + "TAILMARK"])
+
+    assert _merchant_refs(dsn, "A" * 80) == ["TRX-OLD-0"]
+    assert _merchant_refs(dsn, "TAILMARK") == []
+
+
+@pytest.mark.integration
+def test_a_merchant_filter_never_returns_another_customers_rows(dsn: str) -> None:
+    assert _merchant_refs(dsn, "a merchant", customer_id="CLI-B") == ["TRX-B1"]
+    assert _merchant_refs(dsn, "a merchant", customer_id="CLI-A") == ["TRX-A2", "TRX-A1"]
+
+
+@pytest.mark.integration
+def test_a_merchant_filter_combines_with_the_date_window(dsn: str) -> None:
+    _insert_older_transactions(dsn, ["Super Ahorro", "Super Ahorro"])
+    port = _port(dsn, _RecordingSink(dsn), customer_id="CLI-A")
+
+    page = port.list_transactions(
+        TransactionFilters(merchant="super", since=date(2026, 5, 2), until=date(2026, 5, 2))
+    )
+
+    assert not isinstance(page, ToolFailure)
+    assert [item.ref for item in page.items] == ["TRX-OLD-1"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("lead", ["\t", "\n", "\u00a0", "  \t "])
+def test_a_merchant_filter_looks_past_the_blanks_the_name_starts_with(dsn: str, lead: str) -> None:
+    """The caller sees the name without its leading blanks, clamped to 80 characters; the filter
+    reads the same window, so blanks at the start never push the name's end out of it."""
+    _insert_older_transactions(dsn, [lead + "A" * 80 + "TAILMARK"])
+
+    assert _merchant_refs(dsn, "A" * 80) == ["TRX-OLD-0"]
+    assert _merchant_refs(dsn, "TAILMARK") == []
+
+
+@pytest.mark.integration
+def test_the_stores_character_map_folds_every_covered_letter_as_the_rule_does(dsn: str) -> None:
+    """The query's own fold, run in the store, gives what ``fold_text`` gives for each letter the
+    character map covers."""
+    letters = list(SQL_FOLD_FROM)
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT lower(translate(%s, %s, %s))", ("".join(letters), SQL_FOLD_FROM, SQL_FOLD_TO)
+        )
+        row = cur.fetchone()
+    assert row is not None
+    assert row[0] == "".join(fold_text(char) for char in letters)

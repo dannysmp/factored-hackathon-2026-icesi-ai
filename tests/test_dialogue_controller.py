@@ -47,6 +47,7 @@ from app.domain.policy.models import (
     TransactionStatus,
 )
 from app.domain.policy.models import Fact as PolicyFact
+from app.domain.text_matching import fold_text
 from app.llm.client import FakeLlm
 from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError
@@ -233,6 +234,10 @@ class FakeToolPort:
             for t in self.transactions
             if (filters.since is None or t.occurred_on >= filters.since)
             and (filters.until is None or t.occurred_on <= filters.until)
+            and (
+                filters.merchant is None
+                or fold_text(filters.merchant) in fold_text(t.merchant or "")
+            )
         ]
         return TransactionPage(items=tuple(items[:5]), total_count=len(items))
 
@@ -1225,6 +1230,90 @@ def test_a_month_name_date_finds_a_transaction_older_than_the_five_most_recent(
     state = store.get(_SESSION_ID)
     assert state is not None
     assert state.selected_ref == "TX-WANTED"
+
+
+def test_a_merchant_alone_finds_a_transaction_older_than_the_five_most_recent(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The listing returns only the five newest transactions, so a merchant named with no date must
+    narrow the listing itself or an older purchase there is reported as not found. The customer
+    opens with the merchant alone; the one purchase there is presented."""
+    recent = tuple(
+        _transaction(
+            f"TX-{index}",
+            merchant=None,
+            occurred_on=date(2026, 6, 17 - index),
+            amount=Decimal("10.00") + index,
+        )
+        for index in range(1, 9)
+    )
+    wanted = _transaction(
+        "TX-WANTED",
+        merchant="Super Ahorro",
+        occurred_on=date(2026, 3, 21),
+        amount=Decimal("427.46"),
+    )
+    store = InMemoryDialogueStore()
+    outbox = FakeHandoffOutbox()
+    port = FakeToolPort(transactions=(*recent, wanted))
+    llm = FakeLlm(
+        responses=[
+            {
+                "intent": "file_dispute",
+                "confidence": 0.9,
+                "language": "pt",
+                "mentions_second_dispute": False,
+                "merchant": "Super Ahorro",
+            }
+        ]
+    )
+    controller = DialogueController(
+        LlmNlu(llm, model="claude-haiku-4-5-20251001"),
+        store=store,
+        tool_port=port,
+        retriever=retriever,
+        policy=policy,
+        outbox=outbox,
+        domain_date=_DOMAIN_DATE,
+        now=_now,
+        max_turns=30,
+    )
+
+    presented = controller.handle_turn(
+        _turn("turn-0001", "uma cobrança do Super Ahorro"), principal=_principal()
+    )
+
+    assert not presented.end_session
+    assert outbox.packets == []
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert state.selected_ref == "TX-WANTED"
+
+
+@pytest.mark.parametrize(
+    "typed",
+    ["Amazon\u200b", "\u200eAmazon", "Amazon\u00ad", "\ufeffAmazon", "\u200b"],
+    ids=["zero-width-space", "left-to-right-mark", "soft-hyphen", "byte-order-mark", "only-format"],
+)
+def test_a_merchant_with_invisible_formatting_characters_is_looked_up_without_error(
+    typed: str, policy: Policy, retriever: LexicalRetriever
+) -> None:
+    """The hint allows invisible formatting characters that the listing's filter refuses, so a
+    turn carrying one must still get a reply instead of an unhandled validation error."""
+    port = FakeToolPort(transactions=(_transaction(merchant="Amazon"),))
+    controller, _ = _controller(
+        _file_dispute(transaction=TransactionHint(merchant=typed)),
+        store=InMemoryDialogueStore(),
+        tool_port=port,
+        policy=policy,
+        outbox=FakeHandoffOutbox(),
+        retriever=retriever,
+    )
+
+    response = controller.handle_turn(_turn("turn-0001"), principal=_principal())
+
+    assert response.reply
+    assert not response.end_session
 
 
 def test_eligible_decision_requiring_confirmation_then_yes_files_and_verifies(

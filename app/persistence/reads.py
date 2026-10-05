@@ -117,6 +117,12 @@ from app.domain.policy.models import (  # Vocabulary shared with the policy engi
 from app.domain.policy.models import (
     TransactionStatus as PolicyTransactionStatus,
 )
+from app.domain.text_matching import (  # The accent- and case-insensitive merchant comparison
+    SQL_BLANKS,
+    SQL_FOLD_FROM,
+    SQL_FOLD_TO,
+    fold_text,
+)
 from app.llm.masking import safe_hex_suffix  # A suffix that can't look card-shaped once joined
 from app.security.middleware import current_request_id  # Correlates a failure log to its request
 from contracts.service_v1.audit import AuditAction, AuditRecord, AuditSink  # Where every call goes
@@ -368,7 +374,8 @@ class PostgresToolPort:
         """The session customer's own transactions matching ``filters``, most recent first.
 
         At most five items are returned; ``total_count`` carries the number of matches before that
-        cut. The query is scoped to the session customer in SQL. A store failure is logged and
+        cut. A merchant filter narrows the listing before that cut, ignoring accents and case. The
+        query is scoped to the session customer in SQL. A store failure is logged and
         answered as ``ToolFailure`` without an audit record; otherwise the page is audited
         (``transactions_listed``) before it is returned.
         """
@@ -387,6 +394,15 @@ class PostgresToolPort:
                     WHERE t.customer_id = %(customer_id)s
                       AND (%(since)s::date IS NULL OR t.transaction_date::date >= %(since)s)
                       AND (%(until)s::date IS NULL OR t.transaction_date::date <= %(until)s)
+                      AND (
+                        %(merchant)s::text IS NULL
+                        OR strpos(
+                          lower(translate(
+                            left(btrim(t.merchant_name, %(blanks)s), %(merchant_max)s),
+                            %(fold_from)s, %(fold_to)s)),
+                          %(merchant)s
+                        ) > 0
+                      )
                     ORDER BY t.transaction_date DESC
                     LIMIT 5
                     """,
@@ -394,6 +410,13 @@ class PostgresToolPort:
                         "customer_id": self._customer_id,
                         "since": filters.since,
                         "until": filters.until,
+                        "merchant": (
+                            fold_text(filters.merchant.strip()) if filters.merchant else None
+                        ),
+                        "blanks": SQL_BLANKS,
+                        "merchant_max": MERCHANT_MAX_LENGTH,
+                        "fold_from": SQL_FOLD_FROM,
+                        "fold_to": SQL_FOLD_TO,
                     },
                 )
                 rows = cur.fetchall()

@@ -149,7 +149,7 @@ from __future__ import annotations
 # Standard libraries
 import hashlib  # Deterministic idempotency key derived from the turn id
 import logging  # Progress events, never print
-import unicodedata  # Accent-insensitive merchant comparison
+import unicodedata  # Character categories of the merchant text
 from collections.abc import Callable  # Type of one route's handler
 from datetime import date  # Domain date the controller was built with
 from decimal import Decimal  # Money is never a float
@@ -171,6 +171,7 @@ from app.conversation.state import ConversationPhase, DialogueState
 from app.conversation.store import Conflict, DialogueStore, DuplicateTurn
 from app.conversation.understanding import TurnAccounting, Understanding, UnderstandingUnavailable
 from app.domain.policy.models import DisputeCategory, Outcome, Policy, PolicyDecision, ReasonCode
+from app.domain.text_matching import fold_text
 from app.llm.pricing import cost_usd  # Per-turn cost accounting
 from app.retrieval.lexical import LexicalRetriever
 from app.security.errors import ErrorCode, ProblemError
@@ -355,12 +356,6 @@ def _idempotency_key(turn_id: str) -> str:
     return hashlib.sha256(turn_id.encode("utf-8")).hexdigest()[:32]
 
 
-def _fold(text: str) -> str:
-    """``text`` without accents and case, so "cafe" and "Café" compare equal."""
-    decomposed = unicodedata.normalize("NFKD", text)
-    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
-
-
 # What a customer calls a kind of transaction or of place rather than a merchant, folded: a
 # merchant hint made only of one of these names nothing a transaction could be searched by. A
 # transfer, for one, has no merchant at all, so the word describing it would rule it out.
@@ -536,7 +531,7 @@ _LEADING_DETERMINERS = frozenset(
 
 def _names_no_merchant(merchant: str) -> bool:
     """Whether ``merchant`` is empty or only a generic word for a kind of transaction or place."""
-    folded = _fold(merchant)
+    folded = fold_text(merchant)
     if not folded.strip():
         return True
     words = "".join(ch if ch.isalnum() else " " for ch in folded).split()
@@ -569,6 +564,17 @@ def _agrees_with_amount_hint(money: Money, hint: TransactionHint) -> bool:
     )
 
 
+def _merchant_filter(hint: TransactionHint) -> str | None:
+    """The merchant text to narrow the listing by: none when the hint names no merchant, or only
+    blanks. The listing returns only the five most recent matches, so a merchant left to the
+    controller's own comparison would be looked for among five unrelated transactions. Invisible
+    formatting characters are dropped because the filter refuses them while the hint allows them."""
+    if hint.merchant is None:
+        return None
+    visible = "".join(char for char in hint.merchant if unicodedata.category(char) != "Cf")
+    return visible.strip() or None
+
+
 def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -> bool:
     """Whether ``fact`` could be what the customer described in ``hint``.
 
@@ -583,8 +589,8 @@ def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -
     """
     if hint.merchant is not None:
         label = fact.merchant or fact.description
-        wanted = _fold(hint.merchant).strip()
-        if label is None or not wanted or wanted not in _fold(label):
+        wanted = fold_text(hint.merchant).strip()
+        if label is None or not wanted or wanted not in fold_text(label):
             return False
     if hint.amount is not None or hint.currency is not None:
         figures = (fact.amount.money, fact.original_amount)
@@ -1466,10 +1472,8 @@ class DialogueController:
         self, state: DialogueState, hint: TransactionHint
     ) -> tuple[DialogueState, RenderEnvelope]:
         """Search for the transaction ``hint`` describes; its outcome is this turn's whole reply."""
-        filters = (
-            TransactionFilters(since=hint.date_on, until=hint.date_on)
-            if hint.date_on is not None
-            else TransactionFilters()
+        filters = TransactionFilters(
+            since=hint.date_on, until=hint.date_on, merchant=_merchant_filter(hint)
         )
         page = dispatch(self._tool_port, tool_contracts.Tool.LIST_TRANSACTIONS, filters)
         if isinstance(page, ToolFailure):

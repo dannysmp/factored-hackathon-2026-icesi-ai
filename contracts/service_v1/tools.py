@@ -58,7 +58,7 @@ from enum import StrEnum  # Closed sets of the contract
 from typing import Annotated, Literal, Protocol  # Bounded fields and the port interface
 
 # Third-party libraries
-from pydantic import Field, model_validator  # Field bounds and cross-field rules
+from pydantic import Field, field_validator, model_validator  # Field bounds and rules
 
 # Local modules
 from app.domain.policy.models import (
@@ -191,6 +191,17 @@ class TransactionFilters(ContractModel):
     # Bounds on the transaction date; both inclusive, each optional.
     since: date | None = None
     until: date | None = None
+    # Text the merchant name must contain, ignoring case and accents. It narrows the listing
+    # itself, since only the five most recent matches are returned.
+    merchant: Annotated[SafeText, Field(min_length=1, max_length=80)] | None = None
+
+    @field_validator("merchant")
+    @classmethod
+    def _merchant_names_something(cls, value: str | None) -> str | None:
+        """Blanks alone name nothing and would drop every transaction that has no merchant."""
+        if value is not None and not value.strip():
+            raise ValueError("merchant must hold more than blanks")
+        return value
 
     @model_validator(mode="after")
     def _since_is_not_after_until(self) -> TransactionFilters:

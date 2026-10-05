@@ -60,7 +60,7 @@ from typing import Any, cast  # Bridging to the SDK's own precisely-typed call s
 
 # Third-party libraries
 import anthropic  # The provider SDK, used only behind this adapter
-from pydantic import SecretStr  # The API key, handed in already resolved
+from pydantic import SecretStr  # The API key, passed in already resolved
 
 # Local modules
 from app.config import ALLOWED_MODELS  # The model-id allow-list, shared with P and B0
