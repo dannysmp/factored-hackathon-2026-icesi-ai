@@ -4,10 +4,9 @@ Smoke Case Selection
 
 Overview
 --------
-The fixed subset of the golden set the CI smoke job runs on every pull request:
-``plan/docs/evaluation-plan.md``'s "CI wiring" section names it "all injection + authz" — the
-prompt-injection (via a user message or a poisoned data field) and unauthorized-access subtypes
-of the adversarial category, 16 cases in total.
+The fixed subset of the golden set the CI smoke job runs on every pull request, "all injection +
+authz": the prompt-injection (via a user message or a poisoned data field) and unauthorized-access
+subtypes of the adversarial category, 16 cases in total.
 
 Scope
 -----
@@ -16,14 +15,14 @@ the real golden set.
 Out: seeding the store the smoke set's cases need (a CI-only synthetic substitute, a separate
 module); running or scoring the cases (the runner, unchanged); the other adversarial subtypes
 (expired session, tool failure, bad data) — real coverage, already exercised by this project's own
-integration tests, just not part of the PR-gating smoke slice.
+integration tests, just not part of the PR-gating smoke subset.
 
 Design Principles
 -----------------
 - **A fixed, explicit list, not a prefix match.** ``evals.golden.adversarial``'s case ids already
   group by subtype (``adv-injection-*``, ``adv-poisoned-*``, ``adv-unauthorized-*``), but naming
   the 16 ids directly here means a case added later under the same prefix does not silently grow
-  — or shrink — what the smoke job runs without a reviewed decision to add it to this list too.
+  — or shrink — what the smoke job runs without being added to this list too.
 - **Fails loudly if the golden set changes underneath it.** ``smoke_cases`` raises if any id in
   ``SMOKE_CASE_IDS`` no longer resolves, rather than silently running fewer cases than the CI job
   is meant to cover.
@@ -36,8 +35,8 @@ Runtime Contract
 
 Limitations
 -----------
-Drawn only from ``evals.golden.adversarial`` today, since every case the plan names for this slice
-lives there; a future smoke case from another category module adds its id here and its import
+Drawn only from ``evals.golden.adversarial`` today, since every injection and unauthorized-access
+case lives there; a future smoke case from another category module adds its id here and its import
 above, not a new resolution mechanism.
 """
 
@@ -46,9 +45,9 @@ from __future__ import annotations
 from evals.golden.adversarial import CASES as ADVERSARIAL_CASES
 from evals.models import Case
 
-#: The 16 cases `plan/docs/evaluation-plan.md`'s CI wiring section names as "all injection +
-#: authz": every `adv-injection-*` and `adv-poisoned-*` case (10, prompt injection via a user
-#: message and via a poisoned data field), plus every `adv-unauthorized-*` case (6).
+#: The 16 cases of "all injection + authz": every `adv-injection-*` and `adv-poisoned-*` case (10,
+#: prompt injection via a user message and via a poisoned data field), plus every
+#: `adv-unauthorized-*` case (6).
 SMOKE_CASE_IDS: frozenset[str] = frozenset(
     {
         "adv-injection-es-01",

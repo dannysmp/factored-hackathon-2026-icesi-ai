@@ -163,7 +163,7 @@ def _dispute_status_envelope() -> RenderEnvelope:
 
 
 def test_a_dispute_status_reply_with_a_case_still_renders_from_the_model() -> None:
-    """The required-field floor added for the no-case state must not regress the case-exists one:
+    """The required-field floor for the no-case state does not apply when a case exists:
     a model reply citing the case fields plus the outcome statement is still accepted, not
     silently downgraded to the template fallback."""
     llm = FakeLlm(

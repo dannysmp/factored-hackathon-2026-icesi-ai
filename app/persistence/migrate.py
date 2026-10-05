@@ -1,26 +1,27 @@
 """
 Serving-Store Migrations
-=========================
+========================
 
 Overview
 --------
 Applies the numbered SQL files in ``migrations/`` to a Postgres database, in filename order,
-each exactly once. There is one runner and it owns every migration (ADR-9): a table cannot be
-created by hand against the running database and expected to match what a fresh one gets.
+each exactly once. There is one runner and it owns every migration: a table cannot be created by
+hand against the running database and expected to match what a fresh one gets.
 
 Scope
 -----
 In: discovering, ordering, applying and recording migrations.
-Out: writing the SQL itself (each file is reviewed on its own), the connection pool the running
-service uses for ordinary queries (a migration run is a short-lived, one-off connection).
+Out: writing the SQL itself, the connection pool the running service uses for ordinary queries
+(a migration run is a short-lived, one-off connection).
 
 Design Principles
 -----------------
-- Vanilla SQL, no ORM and no migration framework (ADR-9): a migration is a plain ``.sql`` file,
-  and applying one is one transaction, committed only when the whole file and its record succeed.
+- Vanilla SQL, no ORM and no migration framework: a migration is a plain ``.sql`` file, and
+  applying one is one transaction, committed only when the whole file and its record succeed.
 - Up only. A migration already applied is never edited; a change is a new, later-numbered file.
   A previously applied file whose content has since changed is refused, not silently re-applied
-  or silently ignored: a migration is immutable once shipped.
+  or silently ignored: a migration is immutable once shipped. This is why even a comment edit in
+  an applied ``.sql`` file is refused: the check is over the whole file's bytes.
 - The tracking table is created by the runner itself on first use, so a fresh database needs
   nothing prepared by hand beyond the DSN.
 
@@ -31,12 +32,11 @@ order. ``main(argv) -> int`` is the command-line entry point (``DATABASE_URL`` o
 
 Limitations
 -----------
-No down migrations: reverting a mistake ships as a new forward migration, matching the project's
-seed and evaluation data, which are also append-only by convention.
+No down migrations: reverting a mistake ships as a new forward migration.
 A migration that creates a Postgres role (cluster-global, unlike every table or schema these
 migrations otherwise create) assumes one database per cluster, true of every environment this
-project runs today; restoring this database into an already-running cluster without first
-dropping that role is outside this runner's scope.
+project runs in; restoring this database into an already-running cluster without first dropping
+that role is outside this runner's scope.
 """
 
 from __future__ import annotations
@@ -75,6 +75,10 @@ def _checksum(sql: str) -> str:
 
 def apply_migrations(dsn: str, *, directory: Path = MIGRATIONS_DIR) -> tuple[str, ...]:
     """Apply every migration in ``directory`` not yet recorded, in filename order.
+
+    The tracking table is created first. Each unrecorded file is executed together with the
+    insert of its version and checksum and committed as one unit; a file already recorded is
+    skipped after its checksum is compared with the file's current content.
 
     Returns
     -------
@@ -120,6 +124,9 @@ def apply_migrations(dsn: str, *, directory: Path = MIGRATIONS_DIR) -> tuple[str
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Apply pending migrations from the command line.
+
+    The DSN comes from ``--dsn`` when given, otherwise from ``DATABASE_URL`` through the validated
+    settings; a missing DSN is reported through the argument parser's error exit.
 
     Returns
     -------

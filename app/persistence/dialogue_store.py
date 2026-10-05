@@ -6,38 +6,42 @@ Overview
 --------
 The ``DialogueStore`` (``app.conversation.store``) backed by Postgres, replacing
 ``InMemoryDialogueStore`` once a deployment has a database. Reproduces that reference
-implementation's behavior bit for bit — including that a session's very first ``save`` always
-succeeds, whatever ``expected_version`` the caller passes — rather than defining its own semantics.
+implementation's behavior bit for bit, including that a session's very first ``save`` always
+succeeds whatever ``expected_version`` the caller passes, rather than defining its own semantics.
 
 Scope
 -----
-In: ``get`` and ``save`` against the ``dialogue_state`` table (migration 0006).
+In: ``get`` and ``save`` against the ``dialogue_state`` table.
 Out: the state model and its transitions (``app.conversation.state``), the store's own port
-(``app.conversation.store``), the handoff outbox (a separate table and module — a handoff is
+(``app.conversation.store``), the handoff outbox (a separate table and module: a handoff is
 recorded independently of where a conversation's state currently stands).
 
 Design Principles
 -----------------
 - **Proactive check for the ordinary sequential replay, the unique constraint for the true race**
-  (the same doctrine ``app.persistence.reads`` already uses for case-creation idempotency): a plain
+  (the same approach ``app.persistence.reads`` uses for case-creation idempotency): a plain
   ``SELECT`` classifies a repeated turn id or a stale version cheaply, in the common case; the
   ``INSERT ... ON CONFLICT ... WHERE version = expected_version`` statement is the single
-  DB-enforced source of truth a genuine race resolves against. When its ``RETURNING`` comes back
-  empty, a fresh read is reclassified the same way — and this second classification can only ever
-  raise: the row now definitely exists (a conflict-free insert never reaches ``ON CONFLICT``), and
-  its version can never again equal the failed call's ``expected_version``, since a version only
-  ever increases.
+  database-enforced source of truth a genuine race resolves against. When its ``RETURNING`` comes
+  back empty, a fresh read is reclassified the same way, and this second classification can only
+  ever raise: the row now definitely exists (a conflict-free insert never reaches ``ON CONFLICT``),
+  and its version can never again equal the failed call's ``expected_version``, since a version
+  only ever increases.
 - **A fresh insert always succeeds.** ``ON CONFLICT``'s ``WHERE`` clause only ever gates the
   *update* branch; a session with no existing row is a plain insert, unconditional on
-  ``expected_version`` — the same behavior ``InMemoryDialogueStore.save`` has today (it does not
+  ``expected_version``, the same behavior ``InMemoryDialogueStore.save`` has (it does not
   special-case ``current is None`` either). The caller disciplines itself to pass a consistent
   ``expected_version`` for a fresh session; the store does not need to.
-- **One connection per call**, matching every other module in ``app.persistence`` (no pooling yet,
-  an accepted limitation there already).
+- **One connection per call**, matching every other module in ``app.persistence`` (there is no
+  pooling).
 
 Runtime Contract
 ----------------
-``PostgresDialogueStore(dsn)`` implementing ``app.conversation.store.DialogueStore``.
+``PostgresDialogueStore(dsn)`` implementing ``app.conversation.store.DialogueStore``:
+``get(session_id) -> DialogueState | None`` and
+``save(state, *, expected_version, turn_id, now) -> DialogueState``. ``save`` raises
+``DuplicateTurn`` (carrying the state that turn produced) for a repeated turn id and ``Conflict``
+for a stale ``expected_version``; a driver failure is logged and re-raised as ``psycopg.Error``.
 """
 
 from __future__ import annotations
@@ -116,7 +120,14 @@ def _current(cur: Cursor, session_id: str) -> DialogueState | None:
 
 
 def raise_if_settled(current: DialogueState, expected_version: int, turn_id: str) -> None:
-    """Raise when ``current`` already answers this save; otherwise return, proceed to write.
+    """Raise when ``current`` already answers this save; otherwise return so the write proceeds.
+
+    Raises
+    ------
+    DuplicateTurn
+        ``current`` was produced by this same ``turn_id``; carries ``current`` to replay.
+    Conflict
+        ``current.version`` is not ``expected_version``: the caller read a stale state.
 
     Both outcomes are legitimate here: a proactive check reads the row before any write is
     attempted, so a version that still matches ``expected_version`` is the ordinary case that
@@ -135,8 +146,15 @@ def reclassify_lost_race(current: DialogueState, expected_version: int, turn_id:
 
     Unlike ``raise_if_settled``, this never returns normally: ``current`` was read *after* the
     failed write, so its version cannot equal ``expected_version`` (a version only ever
-    increases) — the only question is whether the write that beat this one was this same turn
+    increases): the only question is whether the write that beat this one was this same turn
     id (replay it) or a different one (conflict, retry).
+
+    Raises
+    ------
+    DuplicateTurn
+        The winning write carried this ``turn_id``.
+    Conflict
+        The winning write was a different turn.
     """
     if current.last_turn_id == turn_id:
         raise DuplicateTurn(current)
@@ -149,6 +167,7 @@ class PostgresDialogueStore:
     """A ``DialogueStore`` backed by the ``dialogue_state`` table."""
 
     def __init__(self, dsn: str) -> None:
+        """Keep the DSN; a connection is opened per ``get`` or ``save`` call."""
         self._dsn = dsn
 
     def _log_failure(self, event: str, session_id: str) -> None:
@@ -157,7 +176,7 @@ class PostgresDialogueStore:
         logger.warning("%s session_id=%s request_id=%s", event, session_id, current_request_id())
 
     def _log_replay(self, session_id: str, turn_id: str) -> None:
-        """A repeated turn id, replayed rather than re-advanced."""
+        """Log that a repeated turn id was replayed rather than re-advanced."""
         logger.info(
             "dialogue_turn_replayed session_id=%s turn_id=%s request_id=%s",
             session_id,
@@ -166,7 +185,7 @@ class PostgresDialogueStore:
         )
 
     def _log_conflict(self, session_id: str, expected_version: int) -> None:
-        """A genuinely stale write, told to retry rather than silently overwriting."""
+        """Log a genuinely stale write, refused rather than silently overwritten."""
         logger.warning(
             "dialogue_state_conflict session_id=%s expected_version=%s request_id=%s",
             session_id,
@@ -175,7 +194,13 @@ class PostgresDialogueStore:
         )
 
     def get(self, session_id: str) -> DialogueState | None:
-        """The current state of ``session_id``, or ``None`` for a fresh conversation."""
+        """The current state of ``session_id``, or ``None`` for a fresh conversation.
+
+        Raises
+        ------
+        psycopg.Error
+            The store could not be read; logged with the request id, then re-raised.
+        """
         try:
             with (
                 psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
@@ -189,7 +214,22 @@ class PostgresDialogueStore:
     def save(
         self, state: DialogueState, *, expected_version: int, turn_id: str, now: datetime
     ) -> DialogueState:
-        """Persist ``state``, failing on a stale read or handing back a repeated turn's result."""
+        """Persist ``state`` as the next version of its session and return the stored state.
+
+        The stored copy carries ``version = expected_version + 1``, ``last_turn_id = turn_id`` and
+        ``updated_at = now``. The read and the write happen on one connection, committed when the
+        block exits without an error; the ``INSERT ... ON CONFLICT`` updates the row only while
+        its version still equals ``expected_version``.
+
+        Raises
+        ------
+        DuplicateTurn
+            ``turn_id`` was already applied; carries the state that turn produced.
+        Conflict
+            The stored version is no longer ``expected_version``.
+        psycopg.Error
+            The store could not be reached or the statement failed; logged, then re-raised.
+        """
         to_save = state.model_copy(
             update={"version": expected_version + 1, "last_turn_id": turn_id, "updated_at": now}
         )

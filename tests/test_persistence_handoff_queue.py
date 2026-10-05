@@ -77,9 +77,9 @@ def _record(outbox: PostgresHandoffOutbox, content: HandoffContent, *, turn_id: 
 
 
 def _set_status(dsn: str, ticket_ref: str, status: str) -> None:
-    """Set a ticket's status directly at the store — no write path exists yet (ADR-17: the seed
-    is the interim source of truth for the ticket lifecycle), so a test reaching for a non-default
-    status has no other way to produce one."""
+    """Set a ticket's status directly at the store. Nothing in the application writes a ticket's
+    status, which starts as open, so a test needing any other status has no other way to produce
+    one."""
     with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(
             "UPDATE handoff_outbox SET status = %s WHERE ticket_ref = %s", (status, ticket_ref)
@@ -314,7 +314,7 @@ def test_get_ticket_answers_none_for_an_unknown_reference(queue: PostgresHandoff
 def test_get_ticket_still_answers_a_closed_ticket_unlike_list_tickets(
     outbox: PostgresHandoffOutbox, queue: PostgresHandoffQueue, dsn: str, status: str
 ) -> None:
-    """AC-E10-08: an agent's already-selected ticket must still resolve even after it leaves the
+    """An agent's already-selected ticket must still resolve even after it leaves the
     open queue — the one place this reader intentionally does not mirror ``list_tickets``'
     exclusion."""
     ticket_ref = _record(outbox, _content(), turn_id="t-1")

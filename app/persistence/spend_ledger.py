@@ -4,7 +4,7 @@ Postgres Spend Ledger
 
 Overview
 --------
-The day's model spend, kept in ``llm_spend_daily`` (migration 0016) so it survives a restart and is
+The day's model spend, kept in the ``llm_spend_daily`` table so it survives a restart and is
 shared by every process that talks to the model.
 
 Scope
@@ -44,12 +44,14 @@ _CHARGE_SQL = (
 
 
 class PostgresSpendLedger:
-    """A ``SpendLedger`` over ``llm_spend_daily``."""
+    """A ``SpendLedger`` over ``llm_spend_daily``, one row per operating day."""
 
     def __init__(self, dsn: str) -> None:
+        """Remember the connection string; no connection is opened until a method is called."""
         self._dsn = dsn
 
     def spent(self, day: date) -> Decimal:
+        """Return the total charged for ``day``, or zero when nothing was charged that day."""
         with (
             psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
             conn.cursor() as cur,
@@ -59,6 +61,11 @@ class PostgresSpendLedger:
         return Decimal(0) if row is None else Decimal(row[0])
 
     def add(self, day: date, usd: Decimal) -> None:
+        """Add ``usd`` to the total for ``day`` in one atomic statement and commit it.
+
+        The first charge of a day creates its row; later charges increase it in the database, so
+        concurrent callers never overwrite each other's amounts.
+        """
         with (
             psycopg.connect(self._dsn, connect_timeout=_CONNECT_TIMEOUT_SECONDS) as conn,
             conn.cursor() as cur,
