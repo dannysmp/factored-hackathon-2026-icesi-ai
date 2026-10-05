@@ -38,7 +38,7 @@ The system takes a customer's dispute from the first message to a verified, file
 right person. The model understands the request; a deterministic policy engine decides, tools
 scoped to the signed-in customer act, and every write is read back before the customer is told.
 
-On 135 scripted cases, run offline against the live model, **safe automated resolution is 72.5%** for this system,
+On 135 scripted cases, run on the golden set against the live model, **safe automated resolution is 72.5%** for this system,
 against 33.0% for a keyword baseline and 36.9% for a model-only agent, with **zero unsafe
 outcomes** for all three. It misses more of the cases that need a person than the model-only agent does
 (missed transfers 15.2% against 9.1%). These are measurements on scripted cases, not
@@ -103,9 +103,9 @@ The system calls the Claude API in two places, and the evaluation uses it in a t
 
 | Use | Model | Role |
 |---|---|---|
-| Understanding | `claude-haiku-4-5-20251001` | Reads each customer message and returns language, intent and details in a strict schema. Skipped when the message is only a position in a list the system just showed, once a session reaches `DIALOGUE_MAX_TURNS`, once the day's `LLM_DAILY_SPEND_LIMIT_USD` is reached, and with `LLM_PROVIDER=stub`. |
+| Understanding | `claude-haiku-4-5-20251001` | Reads each customer message and returns language, intent and details in a strict schema. Not called, for example, when the message is only a position in a list the system just showed, when the conversation is already handed to a person or abandoned, once a session reaches `DIALOGUE_MAX_TURNS`, once the day's `LLM_DAILY_SPEND_LIMIT_USD` is reached, and with `LLM_PROVIDER=stub`. |
 | Rendering | `claude-sonnet-5` | Drafts an eligible reply when `MODEL_RENDERER_ENABLED=true`. Off by default: replies are fixed templates filled with verified facts. |
-| Evaluation judge | `claude-sonnet-5` | Scores replies in the evaluation harness only. Compared with two human raters, it agreed with each on fewer than 80% of replies on every dimension, so its scores are not reported. |
+| Evaluation judge | `claude-sonnet-5` | Scores replies in the evaluation harness only. Compared with two human raters, its agreement with at least one rater was below 80% on every dimension, so its scores are not reported. |
 
 The ids are the defaults of `NLU_MODEL`, `RENDER_MODEL` and `JUDGE_MODEL`; each must be in the
 allowed list in `app/config.py`. Card-shaped digit runs and document-number shapes in the customer's message are masked before any request to the model; numbers split across messages or written in words are not detected (see [`docs/limitations.md`](docs/limitations.md)).
