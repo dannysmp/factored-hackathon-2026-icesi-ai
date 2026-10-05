@@ -100,7 +100,15 @@ results still to come say so and name the command that completes them.
   hands off, as the policy prescribes for a fraud report. Nothing but the verb "report" separates a
   fraud report from a request to file here, so which reading is right is a product decision, and
   the case is ambiguous as worded. Where the reason is stated in the same sentence, the same verb
-  files.
+  files, as in the Portuguese duplicate-charge case `norm-filed-duplicate-pt-03`.
+- **Two Portuguese replies at the dispute-reason step are not read as the customer means them.**
+  While the assistant is asking why the customer disputes a transaction, a reply that corrects
+  which transaction is meant by giving a date, such as "na verdade é outra, a de 12/07", makes it
+  ask for the reason again and the date is not used to change the transaction. A reply that agrees
+  and gives the reason in the same breath, such as "sim, mas era valor incorreto", goes to a
+  person instead of being read as the reason. Neither files a case wrongly: the first costs the
+  customer another turn and the second a handoff that was not needed. The wording was not added
+  to the golden set and the behavior is not covered by an automated test.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in
