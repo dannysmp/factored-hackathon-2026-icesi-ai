@@ -95,6 +95,9 @@ class TransactionHint(ContractModel):
 
     # Each field is None when the customer did not say it.
     merchant: Annotated[SafeText, Field(min_length=1, max_length=80)] | None = None
+    # The same bound as ``Money``: 12 digits before the point and 2 after, inside the store's
+    # ``NUMERIC(15, 2)``. A wider figure fails this field; the extraction repair then drops the
+    # amount and keeps the rest of the hint.
     amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)] | None = None
     # Three-letter currency code, when the customer named one.
     currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")] | None = None
