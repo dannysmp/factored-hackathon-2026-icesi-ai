@@ -204,7 +204,7 @@ Two failures on the deployed host, each with what caused it, how it was correcte
 **What prevents it now.**
 
 - The loader (`app/persistence/load_seed.py`) refuses a seed whose customers output lacks `is_repeat_complainer`, names the column in the error and says to rebuild. The check runs before any database connection, so a refused seed never truncates the store. It guards only that column; other defaulted columns need adding to the same table as policy comes to depend on them.
-- Step 4 publishes the seed before each deploy and compares the bucket's `manifest.json` with the local one, so a stale bucket is caught before the dispatch rather than after it. Only a publish refreshes the bucket; nothing else does.
+- Step 4 publishes the seed before each deploy and compares the bucket's `manifest.json` with the local one, so a publish that did not take effect is caught before the dispatch. The comparison cannot tell whether the local seed is current, so rebuild it with `make pipeline && make seed` whenever its schema or inputs change. Only a publish refreshes the bucket; nothing else does.
 
 ### An empty Operations dashboard
 
@@ -217,7 +217,7 @@ Two failures on the deployed host, each with what caused it, how it was correcte
 - A deploy stops at the load step when `dispute_demand/` or its manifest is missing from the bucket. Step 4 publishes both directories and compares each manifest.
 - `infra/scripts/13-verify-analytics.sh` runs after the hardening check on every deploy and fails the run, naming the table, when any table a dashboard question reads holds no rows. The tables come from the dashboard definition (`lib/theme_metabase_dashboard.py --list-marts`), so the check cannot drift from the panels. It prints row counts only.
 - With `deploy_metabase=true`, the dashboard step runs every panel's question and fails, naming the panels, when one returns no rows or errors.
-- **Never remove orphans in a deploy command.** The Metabase container belongs to `docker-compose.metabase.yml`, so a command that names only `docker-compose.yml` and `docker-compose.prod.yml` sees it as an orphan: `up -d`, `run` and `exec` merely warn about it, but `--remove-orphans` (or `COMPOSE_REMOVE_ORPHANS`) would delete the dashboard container. Every compose command that must manage Metabase names all three files, and no command may pass the flag without `-f docker-compose.metabase.yml`. A test (`tests/test_deploy_analytics_load.py`) fails when a file under `infra/`, `.github/` or `docs/`, the `Makefile`, the `README.md` or a compose file breaks the rule.
+- **Never remove orphans in a deploy command.** The Metabase container belongs to `docker-compose.metabase.yml`, so a command that names only `docker-compose.yml` and `docker-compose.prod.yml` sees it as an orphan, and `--remove-orphans` (or `COMPOSE_REMOVE_ORPHANS`) would delete the dashboard container. Every compose command that must manage Metabase names all three files, and no command may pass the flag without `-f docker-compose.metabase.yml`. A test (`tests/test_deploy_analytics_load.py`) fails when a file under `infra/`, `.github/` or `docs/`, the `Makefile`, the `README.md` or a compose file breaks the rule.
 - Metabase adds its sample database back each time it restarts. The example collections and the "E-commerce Insights" dashboard stay removed; the database entry returns until the next deploy with `deploy_metabase=true`.
 
 ## Run record
