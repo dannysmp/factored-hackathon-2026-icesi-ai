@@ -13,7 +13,7 @@
   padding: var(--space-3) var(--space-4);
 }
 
-/* The widths match the page content below, so header and content share their edges. */
+/* The widths match the main content column's, so the header and that column share their edges. */
 .narrow {
   max-width: 40rem;
 }

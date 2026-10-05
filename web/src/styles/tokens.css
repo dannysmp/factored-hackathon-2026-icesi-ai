@@ -1,9 +1,9 @@
 /**
  * Design tokens: the one source for every color, type size, spacing value, radius, shadow,
  * focus ring and motion setting across the chat, the console and the sign-in screen. Components
- * read these custom properties rather than writing literals: nothing outside this file declares
- * a raw hex color, pixel spacing value or font size, so a palette or scale change is a one-file
- * edit.
+ * read these custom properties rather than writing their own colors, type sizes and spacing, so a
+ * palette or scale change is a one-file edit. The only literals elsewhere are layout measurements
+ * and the constants of the visually-hidden technique.
  *
  * The categories are color, typography, spacing and sizing, radius, shadow, focus ring and
  * motion. Each property is named by its category (`--color-*`, `--space-*`, `--font-size-*`, ...)
@@ -20,7 +20,7 @@
   /* ---------------------------------------------------------------------------------------
    * Color: a restrained neutral ramp carries the interface; one accent hue for primary actions
    * and links; a small semantic set for status only, each with a tinted background for banners.
-   * No gradients, no decorative color.
+   * No decorative gradients or color.
    *
    * Dark mode uses a near-black page and near-white text rather than pure black and white,
    * which is easier to read for long stretches.

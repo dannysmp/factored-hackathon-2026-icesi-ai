@@ -11,7 +11,8 @@ import './Tabs.css'
  *
  * The four parts below pass every prop through to Radix, so its ARIA roles, `aria-selected`
  * state and keyboard behavior (arrow keys move between tabs and skip disabled ones) are
- * unchanged. Each part only adds a fixed class name, merged with any `className` the caller gives.
+ * unchanged. The list, trigger and content parts add a fixed class name, merged with any
+ * `className` the caller gives; the root adds nothing.
  */
 
 /** The tab group root; owns which tab is selected (controlled or via `defaultValue`). */

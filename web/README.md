@@ -1,6 +1,6 @@
 # Web frontend
 
-React chat UI and human-agent console (ADR-10). After sign-in, the customer chat runs against the
+React chat UI and human-agent console. After sign-in, the customer chat runs against the
 real, live turn endpoint (`LiveChatClient`); a scripted fixture conversation (`FixtureChatClient`)
 remains for component tests only, never the running app.
 
@@ -15,7 +15,8 @@ remains for component tests only, never the running app.
 | ESLint (`typescript-eslint`, `react-hooks`, `react-refresh`, `jsx-a11y`) + Prettier | Lint and format                                                             |
 
 [Zod](https://zod.dev) validates every turn against the same shape as `contracts/service_v1/api.py`'s
-`TurnRequest`/`TurnResponse`. No design system yet.
+`TurnRequest`/`TurnResponse`. Colors, type, spacing and the other visual values are design tokens
+in `src/styles/tokens.css`, and the shared components are in `src/components/ui/`.
 
 **Known gaps:**
 
@@ -27,7 +28,7 @@ remains for component tests only, never the running app.
 
 ## Customer chat
 
-`src/features/customer-chat/` is a self-contained feature (frontend standard, section 2):
+`src/features/customer-chat/` is a self-contained feature:
 `contracts.ts` (the Zod schemas), `client.ts` (the `ChatClient` seam and its two implementations —
 `LiveChatClient`, the real HTTP client against `POST /v1/turns` behind a demo session, which the
 running app uses; `FixtureChatClient`, which replays `fixtures.ts`'s scripted English conversation
@@ -54,7 +55,5 @@ Node 22 (`.nvmrc`), matching the version CI installs.
 Every component test asserts `expect(await axe(container)).toHaveNoViolations()`
 (`test/setup.ts` registers the matcher; `test/matchers.d.ts` types it for Vitest, since
 `@types/jest-axe` only augments Jest's own matcher namespace). This catches a real class of
-mistakes — `src/App.test.tsx`'s second test failed during development on a stale render leaking a
-second `<main>` landmark into the document, exactly the kind of issue automated axe checks are for
-— but it is a floor, not a ceiling: a keyboard-only pass is still done by hand on every new flow
-(frontend standard, section 7).
+mistakes, such as a stale render leaking a second `<main>` landmark into the document, but it is a
+floor, not a ceiling: a keyboard-only pass is still done by hand on every new flow.

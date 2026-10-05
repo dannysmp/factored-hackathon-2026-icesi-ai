@@ -1,11 +1,12 @@
 /* Styles the queue screen and the tables shared with the ticket-detail screen. The
    fraud/card-loss-first table is the visually dominant element on the screen — every other
-   control (filters, banner) reads smaller and in the subtle text color. Every value reads a
-   design token; nothing is hardcoded except where a comment says why. */
+   control (filters, banner) reads smaller and in the subtle text color. Colors, type sizes, spacing
+   and radii read design tokens; the few literal values (the content width, the scroll-edge
+   gradient sizes, the sort-icon stroke) are measurements of this screen's own layout. */
 
 /* The standard visually-hidden idiom (WebAIM): a fixed, universal technique, not a design-scale
-   value — its 1px/-1px literals are a deliberate, narrow exception to "every value reads a token",
-   the same way `tokens.css` itself never tokenizes an idiom's own constants. */
+   value — its 1px/-1px literals are a deliberate, narrow exception to reading tokens, the same way
+   `tokens.css` itself never tokenizes an idiom's own constants. */
 .sr-only {
   position: absolute;
   width: 1px;
