@@ -4,7 +4,7 @@ import type { JSX } from 'react'
 import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { HandoffPacket, LocalizedTitle } from '../contracts'
 import type { Lang } from '../../customer-chat/contracts'
-import { formatDate, formatMoney, formatShare } from '../format'
+import { formatDate, formatMoney, formatScoreAgainstThreshold, formatShare } from '../format'
 import {
   CATEGORY_LABELS,
   LANGUAGE_LABELS,
@@ -51,6 +51,8 @@ function customerName(firstName: string): string {
 export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element {
   const summaryId = useId()
   const customerLanguage = LANGUAGE_LABELS[packet.language]
+  const { risk } = packet.evidence
+  const riskShares = risk === null ? null : formatScoreAgainstThreshold(risk.score, risk.threshold)
 
   return (
     <div className="packet">
@@ -127,7 +129,7 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
           ))}
           {packet.attempted_action !== null && (
             <li>
-              {actionLabel(packet.attempted_action.action)} (intentada, no completada):{' '}
+              {actionLabel(packet.attempted_action.action)} — intento no completado:{' '}
               {actionResultLabel(packet.attempted_action.result)}
             </li>
           )}
@@ -164,21 +166,20 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
           </ul>
         </>
       )}
-      {packet.evidence.risk !== null && (
+      {risk !== null && riskShares !== null && (
         <>
           <h4>Puntaje de riesgo</h4>
           <dl>
             <dt>Puntaje</dt>
-            <dd>{formatShare(packet.evidence.risk.score)}</dd>
+            <dd>{riskShares.score}</dd>
             <dt>Intervalo</dt>
             <dd>
-              {formatShare(packet.evidence.risk.interval_low)} –{' '}
-              {formatShare(packet.evidence.risk.interval_high)}
+              {formatShare(risk.interval_low)} – {formatShare(risk.interval_high)}
             </dd>
             <dt>Tasa base</dt>
-            <dd>{formatShare(packet.evidence.risk.base_rate)}</dd>
+            <dd>{formatShare(risk.base_rate)}</dd>
             <dt>Umbral de escalamiento</dt>
-            <dd>{formatShare(packet.evidence.risk.threshold)}</dd>
+            <dd>{riskShares.threshold}</dd>
           </dl>
           <p className="packet-cue">
             Este puntaje es una estimación calculada con datos sintéticos, no con datos reales de
