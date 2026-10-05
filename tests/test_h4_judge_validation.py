@@ -1,6 +1,6 @@
 """
-H4 Judge Validation Tests
-===========================
+Human Judge-Validation Sample Tests
+===================================
 
 Component: ``evals.h4_judge_validation``. Hermetic throughout: the judge is always ``FakeLlm``, and
 every rater sheet is a small, committed fixture (``tests/fixtures/h4_case_sheet_rater{1,2}.csv``),
@@ -285,8 +285,8 @@ def _minimal_report(**overrides: Any) -> EvaluationReport:
 def test_apply_real_judge_validation_replaces_the_validation_and_drops_the_stale_bullet() -> None:
     before_report = _minimal_report()
     before_text = render_markdown(before_report)
-    assert "Pending H4" in before_text
-    assert "pending the real H4 human sample" in before_text
+    assert "Pending the human judge-validation sample" in before_text
+    assert "pending the human judge-validation sample" in before_text
 
     rater1 = load_rater_sheet(_RATER_1_CSV)
     rater2 = load_rater_sheet(_RATER_2_CSV)
@@ -308,8 +308,8 @@ def test_apply_real_judge_validation_replaces_the_validation_and_drops_the_stale
         human_means=compute_human_means(_as_rater_scores(rater1), _as_rater_scores(rater2)),
     )
 
-    assert "Pending H4" not in after_text
-    assert "pending the real H4 human sample" not in after_text
+    assert "Pending the human judge-validation sample" not in after_text
+    assert "pending the human judge-validation sample" not in after_text
     assert "Judge-validation sample provenance: `human`." in after_text
     assert "yes (judge mean withheld)" in after_text  # language_quality's own demotion
 
@@ -346,18 +346,20 @@ def test_apply_real_judge_validation_finds_the_section_by_title_not_number() -> 
     renumbered = text.replace("## 9. Judge validation", "## 4. Judge validation")
     patched = apply_real_judge_validation(renumbered, agreement=(), human_means=())
     assert "## 4. Judge validation" in patched
-    assert "Pending H4" not in patched
+    assert "Pending the human judge-validation sample" not in patched
 
 
 def test_apply_real_judge_validation_drops_the_bullet_without_a_trailing_newline() -> None:
     text = render_markdown(_minimal_report())
     assert text.endswith("\n")
-    bullet = "- The judge-validation section is pending the real H4 human sample; see that "
+    bullet = (
+        "- The judge-validation section is pending the human judge-validation sample; see that "
+    )
     assert bullet in text
     # The bullet is the last line of the report, with no newline after it.
     head = text.split(bullet)[0]
     trimmed = head + bullet + "section for detail."
-    assert "pending the real H4 human sample" not in apply_real_judge_validation(
+    assert "pending the human judge-validation sample" not in apply_real_judge_validation(
         trimmed, (), human_means=()
     )
 
