@@ -665,9 +665,9 @@ def render_report(manifest: SeedManifest) -> str:
         "same rate measured on the full cleaned layer.",
         "",
         f"Reference date `{manifest.reference_date}` (the newest transaction instant in the "
-        "seed, read by the running service as `ops_meta.data_as_of`, ADR-15).",
+        "seed, read by the running service as `ops_meta.data_as_of`).",
         "",
-        f"{manifest.selected_customers:,} customers selected, all `Active` (AC-E4-48). "
+        f"{manifest.selected_customers:,} customers selected, all `Active`. "
         f"{manifest.rows.get(PRODUCTS_NAME, 0):,} products, "
         f"{manifest.rows.get(TRANSACTIONS_NAME, 0):,} transactions.",
         "",
@@ -690,7 +690,7 @@ def render_report(manifest: SeedManifest) -> str:
         "",
         "## 3. What the seed does not contain",
         "",
-        "No document number, birth date, address, full email or full phone (AC-E4-46): the seed "
+        "No document number, birth date, address, full email or full phone: the seed "
         "never reads those source columns, and the two contact fields it keeps are masked before "
         "they reach a Parquet file. `cases` starts empty; see the module's Limitations.",
         "",
