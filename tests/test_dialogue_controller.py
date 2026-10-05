@@ -1531,6 +1531,24 @@ def test_a_retried_turn_after_a_case_is_filed_replays_the_filing_result(
     assert dialogue.port.create_calls == 1
 
 
+def test_a_retried_turn_that_opened_a_second_dispute_asks_its_question_again(
+    policy: Policy, retriever: LexicalRetriever
+) -> None:
+    dialogue = _filed_dialogue(policy, retriever)
+    first = dialogue.present_amazon()
+    assert first.next_expected is Slot.TRANSACTION_CHOICE
+    assert "D-1" not in first.reply
+    turn_id = f"turn-{dialogue.turns:04d}"
+
+    retried = dialogue.say(
+        _file_dispute(transaction=TransactionHint(merchant="Amazon")), turn_id=turn_id
+    )
+
+    assert retried.reply == first.reply
+    assert retried.next_expected is Slot.TRANSACTION_CHOICE
+    assert dialogue.port.create_calls == 1
+
+
 def test_the_status_of_a_filed_case_can_still_be_asked_for(
     policy: Policy, retriever: LexicalRetriever
 ) -> None:
