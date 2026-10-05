@@ -25,8 +25,11 @@ class FakeResizeObserver {
 
   disconnect(): void {
     this.watcher.targets.clear()
+    disconnects.count += 1
   }
 }
+
+const disconnects = { count: 0 }
 
 function resize(target: Element): void {
   act(() => {
@@ -40,6 +43,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   watchers.length = 0
+  disconnects.count = 0
 })
 
 describe('ScrollRegion', () => {
@@ -111,5 +115,72 @@ describe('ScrollRegion', () => {
     resize(screen.getByTestId('late'))
 
     expect(screen.getByRole('region', { name: 'Tickets' })).toBeInTheDocument()
+  })
+
+  it('becomes focusable when the wrapper itself is resized narrower', () => {
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    stubOverflow(300, 300)
+    const { container } = render(
+      <ScrollRegion label="Tickets">
+        <table data-testid="wide" />
+      </ScrollRegion>,
+    )
+    expect(screen.queryByRole('region')).not.toBeInTheDocument()
+    const wrapper = container.firstElementChild
+    if (wrapper === null) throw new Error('expected the scroll wrapper')
+
+    stubOverflow(300, 200)
+    resize(wrapper)
+
+    expect(screen.getByRole('region', { name: 'Tickets' })).toBeInTheDocument()
+  })
+
+  it('stops watching the wrapper and its content when it unmounts', () => {
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    stubOverflow(300, 300)
+    const { unmount } = render(
+      <ScrollRegion label="Tickets">
+        <table data-testid="wide" />
+      </ScrollRegion>,
+    )
+    const before = disconnects.count
+
+    unmount()
+
+    expect(disconnects.count).toBeGreaterThan(before)
+    expect(watchers.every((watcher) => watcher.targets.size === 0)).toBe(true)
+  })
+
+  it('stops listening for content changes when it unmounts', () => {
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    stubOverflow(300, 300)
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect')
+    const { unmount } = render(
+      <ScrollRegion label="Tickets">
+        <table data-testid="wide" />
+      </ScrollRegion>,
+    )
+
+    unmount()
+
+    expect(disconnect).toHaveBeenCalled()
+  })
+
+  it('stops watching content that has been removed', async () => {
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    stubOverflow(300, 300)
+    const { rerender } = render(
+      <ScrollRegion label="Tickets">
+        <table data-testid="gone" />
+      </ScrollRegion>,
+    )
+    const removed = screen.getByTestId('gone')
+
+    rerender(<ScrollRegion label="Tickets">{null}</ScrollRegion>)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(watchers.some((watcher) => watcher.targets.has(removed))).toBe(false)
   })
 })

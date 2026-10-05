@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { JSX } from 'react'
 import { ChoiceButtons } from './components/ChoiceButtons'
 import { ConfirmationPrompt } from './components/ConfirmationPrompt'
@@ -7,6 +7,7 @@ import { ReferenceBanner } from './components/ReferenceBanner'
 import { TurnForm } from './components/TurnForm'
 import type { ChatClient } from './client'
 import { useConversation } from './useConversation'
+import { Button } from '../../components/ui/Button'
 import { LiveAnnouncer } from '../../components/ui/LiveAnnouncer'
 import { useT } from '../../i18n/useT'
 import type { Lang } from '../../i18n/lang'
@@ -23,6 +24,12 @@ import styles from './ChatFeature.module.css'
  * turn arrives, its own `lang` (the server's grounded value) takes over, so the chrome never
  * drifts from what the conversation itself is actually in. `onLanguageChange` reports that
  * language so the page around the chat (its title, its document language) can follow it.
+ *
+ * Focus stays with the person: sending returns it to the message field, and when a reply
+ * arrives while nothing holds focus (a clicked option disappeared, or a retry button went away),
+ * it goes back to the field. When a resend fails again and nothing holds focus, it goes to the
+ * new Retry button. A message that could not be sent stays in the conversation, marked
+ * as not sent, with a single Retry that resends it under its original id.
  *
  * A screen reader is told about a new assistant reply through one hidden announcement region,
  * not by making the whole message list live: the list stays quiet, so nothing is read twice and
@@ -41,10 +48,31 @@ export function ChatFeature({
   const conversation = useConversation(client)
   const activeLang = conversation.latest?.lang ?? lang
   const t = useT(activeLang)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const retryRef = useRef<HTMLButtonElement>(null)
+  const repliesSeen = useRef(0)
+  const replyCount = conversation.messages.filter((m) => m.from === 'assistant').length
 
   useEffect(() => {
     onLanguageChange?.(activeLang)
   }, [activeLang, onLanguageChange])
+
+  useEffect(() => {
+    const before = repliesSeen.current
+    repliesSeen.current = replyCount
+    // The opening reply never moves focus: the person has not done anything yet.
+    if (before > 0 && replyCount > before && document.activeElement === document.body) {
+      inputRef.current?.focus()
+    }
+  }, [replyCount])
+
+  // A resend that fails again removes the focused Retry button and puts a new one in its place;
+  // focus follows it, so a keyboard or screen-reader user is not sent back to the top of the page.
+  useEffect(() => {
+    if (conversation.status === 'error' && document.activeElement === document.body) {
+      retryRef.current?.focus()
+    }
+  }, [conversation.status])
 
   if (conversation.status === 'error' && conversation.latest === null) {
     return (
@@ -77,11 +105,16 @@ export function ChatFeature({
         />
       )}
       {latest === null && <p className={styles.status}>{t('chat.starting')}</p>}
-      {latest !== null && <MessageList messages={conversation.messages} lang={activeLang} />}
+      {latest !== null && (
+        <MessageList messages={conversation.messages} lang={activeLang} pending={busy} />
+      )}
       {conversation.status === 'error' && (
-        <p role="alert" className={styles.error}>
-          {t('chat.couldNotSend')}
-        </p>
+        <div role="alert" className={styles.error}>
+          <p>{t('chat.couldNotSend')}</p>
+          <Button ref={retryRef} onClick={conversation.retry}>
+            {t('common.retry')}
+          </Button>
+        </div>
       )}
       {latest !== null && !ended && (
         <>
@@ -89,7 +122,12 @@ export function ChatFeature({
           {latest.next_expected === 'confirmation' && (
             <ConfirmationPrompt onConfirm={conversation.send} disabled={busy} lang={activeLang} />
           )}
-          <TurnForm onSubmit={conversation.send} disabled={busy} lang={activeLang} />
+          <TurnForm
+            onSubmit={conversation.send}
+            busy={busy}
+            lang={activeLang}
+            inputRef={inputRef}
+          />
         </>
       )}
       {ended && (

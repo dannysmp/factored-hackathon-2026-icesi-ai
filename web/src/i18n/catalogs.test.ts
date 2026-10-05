@@ -18,6 +18,13 @@ describe('the message catalogs', () => {
     expect(catalogParityProblems(asRecords(CATALOGS))).toEqual([])
   })
 
+  it('keep every placeholder in every language, so a translation cannot drop it', () => {
+    for (const messages of Object.values(CATALOGS)) {
+      expect(messages['chat.charactersLeft']).toContain('{count}')
+      expect(messages['chat.caseReference']).toContain('{ticket}')
+    }
+  })
+
   it('flags a catalog missing a key another catalog defines', () => {
     const broken = asRecords(CATALOGS)
     const pt = { ...broken.pt }

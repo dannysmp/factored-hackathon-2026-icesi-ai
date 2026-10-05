@@ -14,6 +14,15 @@ function renderChat(): ReturnType<typeof render> {
   return render(<ChatFeature client={new FixtureChatClient(FILE_DISPUTE_EN)} lang="en" />)
 }
 
+/** The hidden region that reads new replies aloud, as opposed to the typing row's status. */
+function announcement(): HTMLElement {
+  const region = screen
+    .getAllByRole('status')
+    .find((element) => element.getAttribute('aria-live') === 'polite')
+  if (region === undefined) throw new Error('expected the announcement region to be on the page')
+  return region
+}
+
 /** The visible closing line, as opposed to the hidden announcement that repeats it. */
 function visibleEndedLine(): Element {
   const line = document.querySelector('p[class*="ended"]')
@@ -106,7 +115,7 @@ describe('ChatFeature', () => {
     render(<ChatFeature client={new FixtureChatClient([endedWithTicket])} lang="en" />)
     await findMessage('Thanks for reaching out. Have a good day!')
 
-    expect(screen.getByRole('status')).toHaveTextContent(
+    expect(announcement()).toHaveTextContent(
       'Thanks for reaching out. Have a good day! This conversation has ended. Case reference: DEMO-1234.',
     )
   })
@@ -126,23 +135,17 @@ describe('ChatFeature', () => {
     }
     render(<ChatFeature client={client} lang="en" />)
     await findMessage('Hi! Which transaction would you like to dispute?')
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Hi! Which transaction would you like to dispute?',
-    )
+    expect(announcement()).toHaveTextContent('Hi! Which transaction would you like to dispute?')
 
     await user.type(screen.getByLabelText('Your message'), 'the Tienda Sol one')
     await user.click(screen.getByRole('button', { name: 'Send' }))
-    expect(screen.getByRole('status')).not.toHaveTextContent('the Tienda Sol one')
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Hi! Which transaction would you like to dispute?',
-    )
+    expect(announcement()).not.toHaveTextContent('the Tienda Sol one')
+    expect(announcement()).toHaveTextContent('Hi! Which transaction would you like to dispute?')
 
     release()
     await findMessage('I found one transaction. Is this the one?')
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'I found one transaction. Is this the one?',
-    )
-    expect(screen.getByRole('status')).not.toHaveTextContent('the Tienda Sol one')
+    expect(announcement()).toHaveTextContent('I found one transaction. Is this the one?')
+    expect(announcement()).not.toHaveTextContent('the Tienda Sol one')
   })
 
   it('tells the page which language the conversation is in, so its title and document language follow', async () => {

@@ -42,17 +42,19 @@ describe('ChatFeature keyboard traversal', () => {
     await user.keyboard('the Tienda Sol one')
     await user.tab()
     await user.keyboard('{Enter}')
+    // Sending hands focus back to the field, so the next message can be typed straight away.
+    expect(screen.getByLabelText('Your message')).toHaveFocus()
 
     // The numbered choice comes before the text field in the tab order.
     const choice = await screen.findByRole('button', {
       name: '1. MXN 250.00 at Tienda Sol on 12 June 2026',
     })
-    await user.tab()
+    await user.tab({ shift: true })
     expect(choice).toHaveFocus()
     await user.keyboard(' ')
 
+    // The clicked option disappears with the next reply; focus lands on the field, not the page.
     await findMessage(/what is the reason for the dispute/i)
-    await user.tab()
     expect(screen.getByLabelText('Your message')).toHaveFocus()
     await user.keyboard('unrecognized charge')
     await user.tab()
@@ -60,8 +62,7 @@ describe('ChatFeature keyboard traversal', () => {
 
     // The confirmation button also precedes the field, and Enter on it files the case.
     const confirm = await screen.findByRole('button', { name: 'Confirm' })
-    // The next Tab stop after the reply is the confirmation button, ahead of the field.
-    await user.tab()
+    await user.tab({ shift: true })
     expect(confirm).toHaveFocus()
     await user.keyboard('{Enter}')
 
