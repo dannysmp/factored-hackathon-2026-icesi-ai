@@ -428,7 +428,10 @@ def test_an_unbroken_amount_of_seven_digits_is_redacted_like_an_identifier() -> 
     assert redact_document_numbers("1250000 pesos").masked == f"{DOCUMENT_PLACEHOLDER} pesos"
 
 
-@pytest.mark.parametrize("text", ["123.456.789-091", "9123.456.789-09", "12.345.678/0001-950"])
+@pytest.mark.parametrize(
+    "text",
+    ["123.456.789-091", "9123.456.789-09", "12.345.678/0001-950", "912.345.678/0001-95"],
+)
 def test_a_longer_digit_run_around_a_tax_number_shape_is_a_different_figure(text: str) -> None:
     result = redact_document_numbers(text)
 

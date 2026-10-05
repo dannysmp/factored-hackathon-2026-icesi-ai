@@ -24,8 +24,8 @@ Design Principles
 -----------------
 - **Built fresh per request.** Every collaborator is injected at construction; there is no module-
   level state and no singleton, so nothing about one customer's turn can leak into another's.
-- **An unclear first message asks for the transaction.** Only unclear text that opens a
-  conversation asks which transaction is meant; a greeting or thanks keeps the menu, and two
+- **An unclear first message asks for the transaction.** Only unclear text before any
+  dispute step asks which transaction is meant; a greeting or thanks keeps the menu, and two
   unusable replies hand the conversation over with the missing element recorded.
 - **One route per intent, exhaustively.** ``_ROUTES`` covers every ``NluIntent``, mirroring
   ``TEMPLATE_INTENTS``'s own completeness idiom: an intent added to the contract without a route
