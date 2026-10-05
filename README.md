@@ -34,7 +34,9 @@ not in this repository; they come separately with the delivery.
 Customers use the chat at the address above; agents use the console at `/console.html`. A case
 handed over as Carlos or Mariana appears in the console's queue. A customer session lasts 30
 minutes and an agent session 60, and a profile that someone else is using is refused until that
-session ends.
+session ends. **Sign out when you finish:** it frees the profile at once. Closing the tab or
+reloading does not, so the profile stays in use until its session expires, 30 minutes for a
+customer and 60 for an agent, and the next reader is refused in the meantime.
 
 ## At a glance
 

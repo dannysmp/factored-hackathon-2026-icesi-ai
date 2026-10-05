@@ -22,8 +22,8 @@ has, so a persona's customer lines are written for that persona's transactions.
 | Path | Persona | Customer lines | Checked against |
 |---|---|---|---|
 | Normal filing | Joao, Portuguese | Written for his Farmacia Salud charge; the first and third lines are those of demo script 2 | Played end to end on the deployed system |
-| Unsupported request | Ana, Spanish | Demo script 4, verbatim | Wording of the refusal checked in the fixture; not yet played on the deployed system |
-| Fraud handoff | Mariana, Portuguese | Demo script 7, verbatim | Played on the deployed system |
+| Unsupported request | Ana, Spanish | Demo script 4, verbatim | Played on the deployed system |
+| Fraud handoff | Carlos, Spanish | Demo script 6, verbatim | Played on the deployed system |
 
 Case and ticket numbers are read off the screen, never from this script: the deployed formats are
 `CASE-` and `T-` followed by the date and eight characters.
@@ -65,12 +65,12 @@ Sign out, choose Español and sign in as Ana. Customer line: "Quiero aumentar el
 tarjeta de crédito." The system refuses plainly and offers the card section of the bank's app or a
 person. Narration: "A request outside its scope is refused plainly, with a real next step."
 
-## Path 3: human-required, Mariana in Portuguese
+## Path 3: human-required, Carlos in Spanish
 
-Sign out, choose Português, select Mariana's card and sign in. Customer line: "Tem uma cobrança
-que eu não reconheço e acho que é uma fraude, alguém está usando meu cartão." The reply hands the
-case to an attendant, promises no outcome and gives a ticket reference; show it on screen. Switch
-to the agent console, signed in as agent-beatriz, find that ticket in the queue and open its
+Sign out, choose Español if it is not selected, select Carlos's card and sign in. Customer line:
+"Hay un cargo que no reconozco y creo que es un fraude, alguien está usando mi tarjeta." The reply
+hands the case to an advisor, promises no outcome and gives a ticket reference; show it on screen.
+Switch to the agent console, signed in as agent-beatriz, find that ticket in the queue and open its
 packet, with every identifier masked. Narration: "A possible fraud goes to a person, whatever the
 amount. The agent sees the request, verified facts, actions taken and open questions. The console
 is a viewer today."
@@ -121,7 +121,7 @@ part is for sign-ins, typing, replies and console navigation.
 
 - No secret value, access code, administration screen, key or unmasked identifier may appear on
   screen. A person watches the full recording before delivery, as the release checklist requires.
-- The system's replies are shown on screen as the deployed system writes them. The Portuguese
-  fraud reply on the deployed system omits the 24-hour contact sentence that demo script 7 shows.
+- The system's replies are shown on screen as the deployed system writes them. The Spanish
+  fraud reply on the deployed system omits the 24-hour contact sentence that demo script 6 shows.
 - The fixture conversations in `docs/demo-scripts.md` cover each path in more than one language
   for a longer cut.
