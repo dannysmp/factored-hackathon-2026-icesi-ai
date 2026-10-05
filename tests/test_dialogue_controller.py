@@ -2521,7 +2521,6 @@ def test_a_handoff_leaves_no_question_pending() -> None:
     handed_off = state.with_handed_off("T-1")
 
     assert handed_off.pending_slot is None
-    assert handed_off.clarification_attempts == 0
     assert handed_off.selected_ref == "TX-1"
     assert handed_off.category is DisputeCategory.UNRECOGNIZED_CHARGE
 

@@ -213,7 +213,6 @@ class DialogueState(BaseModel):
                 "phase": ConversationPhase.HANDED_OFF,
                 "last_ticket_ref": ticket_ref,
                 "pending_slot": None,
-                "clarification_attempts": 0,
                 "offered_refs": (),
             }
         )
