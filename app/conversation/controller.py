@@ -262,6 +262,20 @@ def _fold(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
 
 
+def _without_blank_merchant(result: NluResult) -> NluResult:
+    """``result`` with an empty merchant description removed from its transaction hint.
+
+    A merchant that is empty once accents and surrounding blanks are removed describes nothing,
+    so the rest of the hint (an amount, a date, a card) is what identifies the transaction.
+    """
+    merchant = result.transaction.merchant
+    if merchant is None or _fold(merchant).strip():
+        return result
+    return result.model_copy(
+        update={"transaction": result.transaction.model_copy(update={"merchant": None})}
+    )
+
+
 def _matches_hint(fact: tool_contracts.TransactionFact, hint: TransactionHint) -> bool:
     """Whether ``fact`` could be what the customer described in ``hint``.
 
@@ -598,6 +612,7 @@ class DialogueController:
     def _handle_file_dispute(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
+        result = _without_blank_merchant(result)
         if result.category is not None and state.category is None:
             state = state.model_copy(update={"category": result.category})
 
@@ -624,11 +639,8 @@ class DialogueController:
         A hint that names nothing, or only matches the presented transaction, is the customer
         going ahead with it. A hint that names a different merchant, amount, card or date means
         they rejected the one shown and are pointing at another. When the presented transaction
-        cannot be read back, the hint is searched for afresh rather than assumed to match. A
-        merchant that is empty once accents and blanks are removed says nothing, so it is ignored.
+        cannot be read back, the hint is searched for afresh rather than assumed to match.
         """
-        if hint.merchant is not None and not _fold(hint.merchant).strip():
-            hint = hint.model_copy(update={"merchant": None})
         if hint.is_empty:
             return False
         assert state.selected_ref is not None  # noqa: S101 - set whenever this slot is pending

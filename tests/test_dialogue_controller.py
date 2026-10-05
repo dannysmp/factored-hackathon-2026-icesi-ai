@@ -2972,10 +2972,10 @@ def test_a_merchant_that_names_nothing_keeps_the_presented_transaction(
     ],
     ids=["amount", "date"],
 )
-def test_a_blank_merchant_does_not_keep_the_selection_when_another_amount_or_date_is_named(
+def test_a_blank_merchant_is_ignored_when_an_amount_or_date_names_another_transaction(
     other: TransactionHint, policy: Policy, retriever: LexicalRetriever
 ) -> None:
-    """The amount or date beside a blank merchant still drops the transaction that was on offer."""
+    """The amount or date beside a blank merchant picks the other transaction."""
     selected, _reply = _selected_after_naming_then_naming_again(
         TransactionHint(merchant="Amazon"),
         other.model_copy(update={"merchant": " "}),
@@ -2983,7 +2983,43 @@ def test_a_blank_merchant_does_not_keep_the_selection_when_another_amount_or_dat
         retriever=retriever,
     )
 
-    assert selected != "TX-1"
+    assert selected == "TX-2"
+
+
+@pytest.mark.parametrize(
+    ("hint", "selected", "pending"),
+    [
+        (TransactionHint(merchant=" ", amount=Decimal("15.99")), "TX-2", Slot.TRANSACTION_CHOICE),
+        (
+            TransactionHint(
+                merchant="\u0301", date_on=date(2026, 6, 10), date_source=DateSource.ABSOLUTE
+            ),
+            "TX-2",
+            Slot.TRANSACTION_CHOICE,
+        ),
+        (TransactionHint(merchant=" "), None, Slot.TRANSACTION),
+    ],
+    ids=["amount", "date", "nothing else"],
+)
+def test_a_first_message_with_a_blank_merchant_searches_by_the_rest_of_the_hint(
+    hint: TransactionHint,
+    selected: str | None,
+    pending: Slot,
+    policy: Policy,
+    retriever: LexicalRetriever,
+) -> None:
+    """A blank merchant adds nothing: the amount or date finds the transaction, and a hint with
+    nothing else asks which transaction the customer means."""
+    store = InMemoryDialogueStore()
+    controller = _two_transaction_controller(
+        [_file_dispute(transaction=hint)], store=store, policy=policy, retriever=retriever
+    )
+
+    controller.handle_turn(_turn("turn-0001", "primera"), principal=_principal())
+
+    state = store.get(_SESSION_ID)
+    assert state is not None
+    assert (state.selected_ref, state.pending_slot) == (selected, pending)
 
 
 def test_naming_a_different_merchant_while_one_is_presented_presents_that_one(
