@@ -259,7 +259,7 @@ def test_a_successful_calls_accounting_matches_the_completions_own_fields() -> N
 
 
 def test_a_reported_date_expression_resolves_against_the_reference_date() -> None:
-    """AC-E5-16, end to end through the adapter: the model reports only the customer's own
+    """End to end through the adapter: the model reports only the customer's own
     words; the resolved date and how it was expressed are what the contract actually carries."""
     llm = FakeLlm(
         responses=[
@@ -398,6 +398,7 @@ def _amount_understanding(amount: object, **extra: object) -> tuple[NluResult, F
         ("u$s 100", "100"),
         ("100 U$S", "100"),
         ("us$ 100", "100"),
+        ("5 pen", "5"),
     ],
 )
 def test_a_localized_amount_is_read_with_its_own_separators(spoken: str, expected: str) -> None:
@@ -444,6 +445,10 @@ def test_a_localized_amount_is_read_with_its_own_separators(spoken: str, expecte
         "U$X 100",
         "usd usd 5",
         "100 u$s 5",
+        "u\u017fd 5",
+        "AR\u017f 5",
+        "N\u0130O 5",
+        "n\u0131o 5",
     ],
 )
 def test_an_unparseable_amount_is_dropped_while_the_rest_of_the_understanding_survives(

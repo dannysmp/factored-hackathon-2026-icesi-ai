@@ -54,7 +54,7 @@ free text into a log line. Email, phone and document-number values never reach `
 values in the first place (masked upstream at the store, or never read at all), so this filter
 does not separately scan for them. A stack trace (``exc_info``) is not itself scanned for a
 card-shaped run; no call site today logs one alongside raw customer free text, so this is a
-documented limitation, not a gap this slice closes.
+known limitation, not an oversight.
 """
 
 from __future__ import annotations
