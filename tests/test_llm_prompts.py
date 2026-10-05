@@ -21,7 +21,7 @@ def test_the_shipped_nlu_prompt_loads_and_validates() -> None:
     """``prompts/nlu_v1.yaml`` is a real, valid prompt file, not just a fixture."""
     prompt = load_prompt("nlu_v1")
 
-    assert prompt.version == "6"
+    assert prompt.version == "7"
     assert prompt.system.strip()
     assert prompt.placeholders() == {"language_hint", "message"}
 
@@ -110,12 +110,18 @@ def test_the_shipped_nlu_prompt_teaches_the_choice_intent_and_its_limits(phrase:
         "£, or a currency word such as dollars, euros or reais",
         'The word "pesos" alone names no country',
         "unless the message says which pesos",
-        "only states a transaction the customer made",
+        "only states a transaction the customer made, in plain words",
+        "with no complaint, no request and no question about it",
         "is the start of a dispute: use file_dispute",
+        "This applies only to such a plain statement",
+        "says the customer did not make, authorize or recognize the transaction",
+        "keep the intent they would have without this paragraph",
+        "a request to see, list or review transactions",
+        "(list_transactions)",
+        "the language is read from the message as described below",
         '"I bought a pair of shoes online last week"',
         '"Paguei a conta de luz ontem pelo aplicativo"',
         '"Compré unos zapatos por internet la semana pasada"',
-        "list_transactions is for a customer who asks to see, list or review their transactions",
         "with or without a date or an amount",
     ],
 )
