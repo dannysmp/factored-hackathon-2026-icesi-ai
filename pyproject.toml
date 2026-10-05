@@ -52,8 +52,8 @@ ml = [
 
 [tool.uv]
 # Data and model tooling ship with the default environment so `make setup` covers the pipelines
-# and the risk model too. The `ml` group stays out of the runtime image (ADR-6): risk scores are
-# computed in batch, offline, so the deployed service never imports it.
+# and the risk model too. The `ml` group stays out of the runtime image: risk scores are computed in
+# batch, offline, so the deployed service never imports it.
 default-groups = ["dev", "data", "ml"]
 
 [tool.ruff]
