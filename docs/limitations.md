@@ -95,12 +95,12 @@ results still to come say so and name the command that completes them.
   mixed Spanish and Portuguese question read with no language), so the listing reading is kept. The
   golden set holds this case (`norm-filed-duplicate-pt-01`, a Portuguese duplicate-charge filing),
   and it does not file.
-- **An English filing whose second turn is "That wasn't me, I'd like to report it." has no
-  guaranteed outcome.** The verb "report" reads either as a fraud report, which goes to a person,
-  or as a request to file, and the reading depends on the exact wording of the turn and varies
-  between runs of the model. The golden set holds this case (`norm-filed-unrecognized-en-03`). The
-  result is a handoff or a longer conversation rather than a filing, not a policy decision made
-  wrongly.
+- **An English "That wasn't me, I'd like to report it." is handed to a person, not filed.** The
+  golden set holds this case (`norm-filed-unrecognized-en-03`) and expects a filing; the system
+  hands off, as the policy prescribes for a fraud report. Nothing but the verb "report" separates a
+  fraud report from a request to file here, so which reading is right is a product decision, and
+  the case is ambiguous as worded. Where the reason is stated in the same sentence, the same verb
+  files.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in
