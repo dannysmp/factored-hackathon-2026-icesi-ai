@@ -1,6 +1,3 @@
-/**
- * The confirmation button of the customer chat.
- */
 import type { JSX } from 'react'
 import { Button } from '../../../components/ui/Button'
 import { CONFIRMATION_TEXT } from '../contracts'

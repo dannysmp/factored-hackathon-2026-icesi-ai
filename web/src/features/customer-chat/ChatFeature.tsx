@@ -22,9 +22,9 @@ import styles from './ChatFeature.module.css'
 /**
  * The customer chat, wired to whatever `ChatClient` its caller passes in.
  *
- * Renders every state deliberately: loading, error (with a
- * retryable message, never a stack trace), and ready, where the confirmation button, the choice
- * buttons and the text form each appear only when the assistant's last turn calls for them.
+ * Renders every state deliberately: loading, error (a retryable message, never a stack trace),
+ * and ready, where the confirmation button, the choice buttons and the text form each appear
+ * only when the assistant's last turn calls for them.
  *
  * `lang` is the persona's selected language, known from sign-in before any turn exists; once a
  * turn arrives, its own `lang` (the server's grounded value) takes over, so the chrome never
