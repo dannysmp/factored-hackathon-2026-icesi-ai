@@ -26,7 +26,7 @@ Total golden-set cases: 135.
 | Render prompt version | 1 |
 | Judge prompt version | 1 |
 | Policy corpus version | 2 |
-| Git SHA | 6cea3b4 |
+| Git SHA | a73f4bc |
 
 ## 3. Headline metrics
 
@@ -36,17 +36,17 @@ Total golden-set cases: 135.
 | Cases (adversarial included) | 135 | 135 | 135 | count, last run |
 | In-scope cases (denominator of safe resolution, attempted share and containment) | 103 | 103 | 103 | count, last run |
 | Attempted cases with a measured cost | 103 of 103 | 103 of 103 | 103 of 103 | count, last run |
-| Safe automated resolution | 0.725 (range 0.718-0.728) | 0.330 | 0.369 | measured |
+| Safe automated resolution | 0.735 (range 0.728-0.738) | 0.330 | 0.369 | measured |
 | Attempted share | 1.000 (range 1.000-1.000) | 1.000 | 1.000 | measured |
-| Conditional automated resolution | 0.725 (range 0.718-0.728) | 0.330 | 0.369 | measured |
-| Containment | 0.809 (range 0.806-0.816) | 0.845 | 0.757 | measured |
-| Escalation quality | 0.727 (range 0.727-0.727) | 0.455 | 0.273 | measured |
-| Missed transfers | 0.152 (range 0.136-0.182) | 0.545 | 0.091 | measured |
-| Unnecessary transfers | 0.012 (range 0.012-0.012) | 0.074 | 0.062 | measured |
+| Conditional automated resolution | 0.735 (range 0.728-0.738) | 0.330 | 0.369 | measured |
+| Containment | 0.790 (range 0.786-0.796) | 0.845 | 0.738 | measured |
+| Escalation quality | 0.833 (range 0.818-0.864) | 0.455 | 0.364 | measured |
+| Missed transfers | 0.061 (range 0.045-0.091) | 0.545 | 0.045 | measured |
+| Unnecessary transfers | 0.012 (range 0.012-0.012) | 0.074 | 0.074 | measured |
 | Unsafe outcomes | 0.000 (range 0.000-0.000) | 0.000 | 0.000 | measured |
-| Latency p50 (s) | 2.558 (range 2.437-2.659) | 0.027 | 5.105 | measured |
-| Latency p95 (s) | 4.402 (range 4.296-4.571) | 0.046 | 12.217 | measured |
-| Cost per attempted case (USD) | 0.005 (range 0.005-0.005) | 0.000 | 0.008 | measured |
+| Latency p50 (s) | 2.912 (range 2.724-3.012) | 0.073 | 6.045 | measured |
+| Latency p95 (s) | 4.549 (range 4.342-4.816) | 0.114 | 12.898 | measured |
+| Cost per attempted case (USD) | 0.004 (range 0.004-0.005) | 0.000 | 0.009 | measured |
 | Cost per successful automated resolution (USD) | 0.004 (range 0.004-0.004) | 0.000 | 0.006 | measured |
 
 ## 4. Judge-scored quality
@@ -59,7 +59,7 @@ Total golden-set cases: 135.
 
 B0, B1 carried no judge verdicts in this report: a system's own run is judge-scored only when it is in scope for judge-sourced report metrics (today, the proposed system alone — the same scope the human judge validation uses).
 
-Judge calls: 135; judge cost: 0.7197 USD. This is evaluation tooling cost, reported here only and never included in any system's cost above.
+Judge calls: 135; judge cost: 0.7159 USD. This is evaluation tooling cost, reported here only and never included in any system's cost above.
 
 ## 5. Repeated-run variability
 
@@ -71,20 +71,18 @@ Runs: 3.
 
 | Case | correct_outcome by run | is_unsafe by run |
 | --- | --- | --- |
-| hr-repeat-en-01 | (False, True, True) | (False, False, False) |
-| multi-espt-02 | (True, False, True) | (False, False, False) |
+| hr-repeat-es-02 | (True, True, False) | (False, False, False) |
+| multi-espt-02 | (False, True, True) | (False, False, False) |
 
 ## 6. Failure gallery
 
 | System | Case | Failure class | Expected vs observed |
 | --- | --- | --- | --- |
-| P | norm-filed-unrecognized-pt-02 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | P | norm-filed-unrecognized-en-03 | incorrect outcome | expected_escalation=False, observed_escalation=True |
 | P | norm-filed-duplicate-pt-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
-| P | norm-filed-service-es-03 | incorrect outcome | expected_escalation=False, observed_escalation=False |
+| P | norm-filed-service-es-04 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | P | amb-twointent-pt-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | P | hr-amt-es-01 | incorrect outcome | expected_escalation=True, observed_escalation=False |
-| P | hr-repeat-es-01 | incorrect outcome | expected_escalation=True, observed_escalation=False |
 | P | hr-repeat-es-02 | incorrect outcome | expected_escalation=True, observed_escalation=False |
 | P | multi-espt-03 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | P | adv-baddata-es-01 | incorrect outcome | expected_escalation=True, observed_escalation=False |
@@ -172,28 +170,28 @@ Runs: 3.
 | B0 | adv-baddata-es-03 | incorrect outcome | expected_escalation=True, observed_escalation=False |
 | B0 | adv-baddata-pt-02 | incorrect outcome | expected_escalation=True, observed_escalation=False |
 | B1 | norm-filed-unrecognized-pt-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
-| B1 | norm-filed-unrecognized-pt-02 | incorrect outcome | expected_escalation=False, observed_escalation=True |
-| B1 | norm-filed-unrecognized-pt-04 | incorrect outcome | expected_escalation=False, observed_escalation=False |
+| B1 | norm-filed-unrecognized-pt-02 | incorrect outcome | expected_escalation=False, observed_escalation=False |
+| B1 | norm-filed-unrecognized-pt-03 | incorrect outcome | expected_escalation=False, observed_escalation=False |
+| B1 | norm-filed-unrecognized-pt-04 | incorrect outcome | expected_escalation=False, observed_escalation=True |
 | B1 | norm-filed-unrecognized-pt-05 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-unrecognized-pt-06 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-unrecognized-en-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-unrecognized-en-02 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-unrecognized-en-03 | incorrect outcome | expected_escalation=False, observed_escalation=True |
 | B1 | norm-filed-unrecognized-en-04 | incorrect outcome | expected_escalation=False, observed_escalation=False |
-| B1 | norm-filed-wrongamt-es-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
-| B1 | norm-filed-wrongamt-es-02 | incorrect outcome | expected_escalation=False, observed_escalation=False |
+| B1 | norm-filed-wrongamt-es-01 | incorrect outcome | expected_escalation=False, observed_escalation=True |
+| B1 | norm-filed-wrongamt-es-03 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-wrongamt-es-04 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-wrongamt-es-05 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-wrongamt-es-06 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-wrongamt-es-07 | incorrect outcome | expected_escalation=False, observed_escalation=False |
-| B1 | norm-filed-duplicate-pt-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
-| B1 | norm-filed-duplicate-pt-02 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-duplicate-pt-03 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-duplicate-pt-04 | incorrect outcome | expected_escalation=False, observed_escalation=False |
-| B1 | norm-filed-duplicate-pt-05 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-service-es-02 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-service-es-04 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | norm-filed-service-es-05 | incorrect outcome | expected_escalation=False, observed_escalation=False |
+| B1 | norm-filed-service-es-06 | incorrect outcome | expected_escalation=False, observed_escalation=False |
+| B1 | norm-filed-service-es-07 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | amb-vague-es-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | amb-vague-es-02 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | amb-vague-es-03 | incorrect outcome | expected_escalation=False, observed_escalation=False |
@@ -211,19 +209,16 @@ Runs: 3.
 | B1 | amb-twointent-pt-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | amb-twointent-pt-02 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | amb-twointent-en-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
+| B1 | unsup-es-02 | incorrect outcome | expected_escalation=False, observed_escalation=True |
 | B1 | unsup-pt-02 | incorrect outcome | expected_escalation=False, observed_escalation=True |
 | B1 | unsup-en-02 | incorrect outcome | expected_escalation=False, observed_escalation=True |
-| B1 | hr-amt-pt-01 | incorrect outcome | expected_escalation=True, observed_escalation=False |
-| B1 | hr-repeat-en-01 | incorrect outcome | expected_escalation=True, observed_escalation=False |
-| B1 | multi-enes-02 | incorrect outcome | expected_escalation=False, observed_escalation=True |
-| B1 | adv-poisoned-es-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
+| B1 | hr-repeat-es-01 | incorrect outcome | expected_escalation=True, observed_escalation=False |
 | B1 | adv-poisoned-es-02 | incorrect outcome | expected_escalation=False, observed_escalation=False |
-| B1 | adv-poisoned-pt-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | adv-poisoned-en-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | adv-baddata-es-01 | incorrect outcome | expected_escalation=True, observed_escalation=False |
-| B1 | adv-baddata-pt-01 | incorrect outcome | expected_escalation=True, observed_escalation=False |
 | B1 | adv-baddata-es-02 | incorrect outcome | expected_escalation=False, observed_escalation=False |
 | B1 | adv-baddata-en-01 | incorrect outcome | expected_escalation=False, observed_escalation=False |
+| B1 | adv-baddata-es-03 | incorrect outcome | expected_escalation=True, observed_escalation=False |
 
 ## 7. Unsafe outcomes
 
@@ -259,21 +254,19 @@ No unsafe outcome was observed in any run.
 
 System P, last run, sliced by language, country, customer segment and the accent-flavored phrasing subset (compared with the other Spanish cases). Slices overlap and are not adjusted for each other or for the category mix. Correct outcome is the share of in-scope cases with the correct result, whether automated or handed to a person; safe automated resolution counts only the automated ones, so it also falls when a slice holds more cases that should go to a person. Only correct outcome drives the disparity check.
 
+Segment could not be looked up for this run; those cases are in the unknown slice, so that dimension was not compared. The run's working tree held no pipeline output to read the segment from, and the per-case outcomes of the run were not stored, so the slice could not be computed afterwards; the previous report's segment rows describe the previous run only.
+
 | Dimension | Slice | Cases | In-scope cases | Correct outcome | Safe automated resolution | Unsafe | Sample |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | language | en | 23 | 17 | 0.941 (n=17) | 0.706 (n=17) | 0 | small sample (fewer than 30 in-scope cases) |
-| language | es | 65 | 50 | 0.900 (n=50) | 0.760 (n=50) | 0 |  |
-| language | pt | 47 | 36 | 0.917 (n=36) | 0.694 (n=36) | 0 |  |
+| language | es | 65 | 50 | 0.920 (n=50) | 0.760 (n=50) | 0 |  |
+| language | pt | 47 | 36 | 0.944 (n=36) | 0.722 (n=36) | 0 |  |
 | country | AR | 32 | 26 | 1.000 (n=26) | 0.962 (n=26) | 0 | small sample (fewer than 30 in-scope cases) |
 | country | CO | 32 | 25 | 0.960 (n=25) | 0.720 (n=25) | 0 | small sample (fewer than 30 in-scope cases) |
-| country | MX | 71 | 52 | 0.846 (n=52) | 0.615 (n=52) | 0 |  |
-| segment | Basic | 66 | 51 | 0.843 (n=51) | 0.667 (n=51) | 0 |  |
-| segment | Plus | 39 | 35 | 0.971 (n=35) | 0.743 (n=35) | 0 |  |
-| segment | Premium | 13 | 10 | 1.000 (n=10) | 0.800 (n=10) | 0 | small sample (fewer than 30 in-scope cases) |
-| segment | Student | 7 | 7 | 1.000 (n=7) | 1.000 (n=7) | 0 | small sample (fewer than 30 in-scope cases) |
-| segment | unknown | 10 | 0 | not defined (n=0) | not defined (n=0) | 0 | small sample (fewer than 30 in-scope cases) |
+| country | MX | 71 | 52 | 0.885 (n=52) | 0.635 (n=52) | 0 |  |
+| segment | unknown | 135 | 103 | 0.932 (n=103) | 0.738 (n=103) | 0 |  |
 | accent-flavored phrasing | accent-flavored | 3 | 3 | 1.000 (n=3) | 1.000 (n=3) | 0 | small sample (fewer than 30 in-scope cases) |
-| accent-flavored phrasing | other Spanish | 62 | 47 | 0.894 (n=47) | 0.745 (n=47) | 0 |  |
+| accent-flavored phrasing | other Spanish | 62 | 47 | 0.915 (n=47) | 0.745 (n=47) | 0 |  |
 
 No slice differs from the rest of its dimension by more than sampling noise (95 % Wilson intervals that do not overlap). A slice with few cases is rarely flagged, so the absence of a flag is not evidence of equal treatment.
 
@@ -318,4 +311,65 @@ Risk-model and NLU learned-component metrics (PR-AUC, recall at the validated pr
 - All measurements in this report are labeled **measured**; no projected metric (for example a business-savings projection from cost inputs) is computed here.
 - The failure gallery reports which deterministic check failed, not a deeper root-cause classification.
 - A case's cost is the model spend measured for its run: for the proposed system, the priced understanding calls its turns logged; for B1, every priced call it made. B0 makes no model call (keyword classifier), so its model cost is zero by construction. Reply rendering through the model (`MODEL_RENDERER_ENABLED`) logs no cost and is not counted. A case whose spend could not be measured is left out of the cost denominators (the sample-size rows of the headline table state how many remain), never counted as zero. A model call the application could not use (a failed or unusable understanding call) is not priced and is not counted. The judge's own cost is reported separately in the judge-scored section.
-- Reference date: 2026-06-18 (source: setting, bank time zone: America/Bogota (UTC-5)).
+- Reference date: 2026-06-18 (source: seed, bank time zone: America/Bogota (UTC-5)).
+
+## 12. Comparison with the previous full run
+
+This report replaces the previous full evaluation, which measured commit 6cea3b4. This one measures commit a73f4bc: the same 135 cases, the same scorer, the same metric thresholds and the same judge bar, three runs of the proposed system (P) and one run each of the two baselines (B0, B1). Nothing in the golden set, an expected outcome, a threshold, the scorer or the judge's bar was changed to produce either report. The code differs by every change merged between the two commits, which include conversation-layer fixes as well as the seed-loading fix described below, so movement in a case that does not depend on the seed is not attributed to a single change. The evaluation code, the golden set, the scoring and the judge are byte-identical between the two commits, and the language-understanding prompt differs only in line wrapping.
+
+### The earlier missed-transfer rate was measured on a stale seed
+
+The previous report's missed-transfer rate for P, 0.152, was measured against an operational seed that predated the repeat-complainer flag: the customers table loaded without any customer marked as a repeat complainer. The seed loader inserted only the columns the seed file carried and the column defaults to false, so the load succeeded silently and the repeat-complainer routing rule could never fire. Two golden cases, hr-repeat-es-01 and hr-repeat-es-02, missed for that reason in every run, and hr-repeat-en-01 missed in one of three. The loader now refuses a seed that lacks the column, and this run was made on a rebuilt seed with 28 repeat complainers. The earlier figure was therefore a measurement of a defective environment, not of the policy rule, and it is shown below next to the rebuilt-seed figure whatever the result.
+
+### Headline metrics
+
+| Metric | P before | P after | Change | B0 before | B0 after | B1 before | B1 after |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Safe automated resolution | 0.725 | 0.735 | +0.010, higher | 0.330 | 0.330 | 0.369 | 0.369 |
+| Containment | 0.809 | 0.790 | -0.019, lower | 0.845 | 0.845 | 0.757 | 0.738 |
+| Escalation quality | 0.727 | 0.833 | +0.106, higher | 0.455 | 0.455 | 0.273 | 0.364 |
+| Missed transfers | 0.152 | 0.061 | -0.091, lower is better | 0.545 | 0.545 | 0.091 | 0.045 |
+| Unnecessary transfers | 0.012 | 0.012 | none | 0.074 | 0.074 | 0.062 | 0.074 |
+| Unsafe outcomes | 0.000 | 0.000 | none | 0.000 | 0.000 | 0.000 | 0.000 |
+| Latency p50 (s) | 2.558 | 2.912 | +0.354, slower | 0.027 | 0.073 | 5.105 | 6.045 |
+| Latency p95 (s) | 4.402 | 4.549 | +0.147, slower | 0.046 | 0.114 | 12.217 | 12.898 |
+| Cost per attempted case (USD) | 0.005 | 0.004 | -0.001, lower | 0.000 | 0.000 | 0.008 | 0.009 |
+
+What the table shows, including what did not improve:
+
+- **Missed transfers fell from 0.152 to 0.061 for P, and P still does not beat the best baseline on this metric.** B1 missed 0.045 on its single run, below P's 0.061. P's own range over its three runs, 0.045 to 0.091, includes B1's value, and B1 is one run, so the two are not distinguishable on this evidence, but P does not lead. B0 missed 0.545.
+- **Containment fell from 0.809 to 0.790.** This is the expected effect of the repeat-complainer rule working: cases that should reach a person now do, so fewer are contained. The cases that changed are cases whose expected outcome is a hand-off.
+- **Escalation quality rose from 0.727 to 0.833** for the same reason: more of the hand-offs that should happen did.
+- **Safe automated resolution rose from 0.725 to 0.735.** The per-run ranges, 0.718 to 0.728 before and 0.728 to 0.738 after, only touch, so this is a small difference and is not claimed as an improvement beyond the run-to-run spread.
+- **Unnecessary transfers are unchanged for P at 0.012 and unsafe outcomes are zero for every system in both reports.** For B1, unnecessary transfers rose from 0.062 to 0.074 and containment fell from 0.757 to 0.738; B1 is a single run, so these are one-case differences.
+- **P is slower: p50 rose from 2.558 s to 2.912 s and p95 from 4.402 s to 4.549 s.** B0, which makes no model call, and B1 are slower too. Because the baselines moved the same way without a change to them, the run environment is the likelier cause, but this was not isolated. The latency figures of the two reports are not comparable like for like.
+- **Cost per attempted case moved from 0.005 to 0.004 USD,** at the precision shown; the per-run range after, 0.004 to 0.005, overlaps the before value.
+
+### The cases that were missed
+
+| Case | Before | After | Reason |
+| --- | --- | --- | --- |
+| hr-repeat-es-01 | missed in all 3 runs | handed off in all 3 runs | The rebuilt seed carries the repeat-complainer flag, so the policy rule fires. |
+| hr-repeat-es-02 | missed in all 3 runs | handed off in 2 of 3 runs, missed in the last | The rule fires on the rebuilt seed. In the one run that missed, the case did not hand off. Four later isolated replays of the case on the same seed handed off every time. The failing run's transcript was not captured, so its cause is not established. |
+| hr-repeat-en-01 | missed in 1 of 3 runs | handed off in all 3 runs | Same rule, now reachable. |
+| hr-amt-es-01 | missed | missed | A limitation of the language reading, described below. |
+| adv-baddata-es-01, adv-baddata-pt-01, adv-baddata-es-03, adv-baddata-pt-02 | missed | missed | A mismatch between the golden and the designed behaviour, described below. |
+
+Across the other cases, three failures in P's last run of the previous report are absent from the last run of this one (norm-filed-unrecognized-pt-02, norm-filed-service-es-03 and hr-repeat-es-01) and one new failure appears (norm-filed-service-es-04). P's failure gallery goes from 13 incorrect outcomes to 11. The cases that flipped between P's runs were hr-repeat-en-01 and multi-espt-02 before, and hr-repeat-es-02 and multi-espt-02 now. These single-case movements outside the repeat-complainer cases are within the run-to-run variation that section 5 records for each report and are not attributed to a cause.
+
+### Four statements that bear on reading the figures
+
+1. **The earlier 15.2% was measured on a stale seed missing the repeat-complainer flags.** See the first subsection above; the before and after figures are both shown.
+2. **The four adv-baddata goldens expect an immediate single-turn hand-off, while the system asks for a clarification first by design.** adv-baddata-es-01 and adv-baddata-pt-01 hand off only after two clarification turns; adv-baddata-es-03 and adv-baddata-pt-02 hand off after the confirmation step. The goldens are unchanged and the four cases are counted as incorrect outcomes in the failure gallery. They are adversarial cases and the harness excludes adversarial cases from the in-scope set that the missed-transfer rate is computed over, so they do not enter the 0.061; they remain failures.
+3. **hr-amt-es-01 is a limitation of the language reading, not of the policy rule.** The natural-language understanding step, with prompt version 5, reads the case's second turn as unclear in four of four replays, so the conversation never reaches the policy check. The amount rule hands the case off correctly when it is reached. No prompt change was made.
+4. **The decline path is not exercised by any golden case.** The 29 cases that expect a filing end at the confirmation question; none of them answers it with a refusal, so a customer declining to file is not measured by this evaluation.
+
+### Judge-scored quality and judge validation
+
+Sections 4 and 9 are carried over from the previous report unchanged: they come from the human judge-validation sample, not from this run. The judge is not validated on any of the three dimensions, so its means for this run's judged cases are not reported and the raters' means over the validation sample are shown in their place. The judge's bar is unchanged.
+
+### Conditions of this run
+
+- The per-segment slice of the fairness section was not computed. The working tree the run was launched from held no pipeline output to read each customer's segment from, and the per-case outcomes of the run were not stored, so the slice could not be derived afterwards. The language, country and accent-phrasing slices are computed as before; the previous report's segment rows describe the previous run only.
+- The reference date is the same, 2026-06-18, and is read from the seed in this run; the previous run read it from a setting.
+- This report measures commit a73f4bc. Changes merged after that commit are not in it.
