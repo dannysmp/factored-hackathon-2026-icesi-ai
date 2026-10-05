@@ -13,7 +13,7 @@ import { classNames } from '../../components/ui/classNames'
 import { fetchAgentPersonas, fetchCustomerPersonas, signIn } from './api'
 import { useT } from '../../i18n/useT'
 import { failureReason } from '../../i18n/failureReason'
-import { LANGUAGES, LANGUAGE_NAMES } from '../../i18n/lang'
+import { LANGUAGES, LANGUAGE_NAMES, startingLanguage } from '../../i18n/lang'
 import { PERSONA_CASE_KEYS, personaInitials } from './personaCases'
 import { classifyFailure } from '../../lib/failure'
 import type { FailureKind } from '../../lib/failure'
@@ -22,9 +22,7 @@ import styles from './SignInScreen.module.css'
 /** Where the persona directory is: `unavailable` means sign-in is switched off or offers no persona. */
 type DirectoryStatus = 'loading' | 'ready' | 'unavailable' | 'error'
 
-/** Before any persona is selected (loading, the directory error), nothing has told this screen
- * which language to speak in yet. Spanish is the product's first-listed, required language, so
- * it is this screen's starting point rather than a guess. */
+/** The agent console's language, and the fallback for a value that is not one of the three. */
 const DEFAULT_LANG: Lang = 'es'
 
 /** `DemoPersonaSummary.language` is a bare, unvalidated string at the wire contract (it mirrors
@@ -66,11 +64,9 @@ function isShownLanguage(value: string): value is Lang {
  * `focusForm` moves the keyboard to the selected persona card as soon as the form appears, for a person
  * who has just been sent back here and would otherwise have lost their place.
  *
- * `preferredLang` selects a persona who speaks that language once the directory loads, so a
- * person sent back after a session in Portuguese or English meets a form in that language rather
- * than Spanish. `preferredSlug` picks that exact persona when they speak it, otherwise the first
- * one who does. Without either, or without a persona in that language, the first persona is
- * selected.
+ * `preferredLang` is the language of a session that just ended, so a person sent back after a
+ * session in Portuguese or English meets a form in that language rather than Spanish.
+ * `preferredSlug` picks that exact persona when they speak it.
  *
  * `onLanguageChange` reports the language this screen is currently speaking, as the selection
  * changes, so the page around it can follow.
@@ -80,8 +76,13 @@ function isShownLanguage(value: string): value is Lang {
  * up; nothing here writes it to storage.
  *
  * The customer path follows the selected persona's language; the agent path stays in Spanish, like
- * the rest of the console, and has no language switcher. Before a persona is selected (loading, the directory error) the screen
- * speaks `DEFAULT_LANG`, because no language signal exists yet.
+ * the rest of the console, and has no language switcher. Before a persona is selected (loading,
+ * the directory error, sign-in switched off) the customer path speaks `startingLanguage`: the
+ * language of the session that just ended, else the browser's language when it is one of the
+ * three, else Spanish. Once the directory loads, the persona who speaks that language is
+ * selected (`preferredSlug` first among them), so the screen does not change language when the
+ * form appears; when no persona speaks it, the first persona is selected and the form follows
+ * that persona's language. Nothing is written to storage.
  */
 export function SignInScreen({
   audience = 'customer',
@@ -118,9 +119,11 @@ export function SignInScreen({
   const selectedPersona = personas.find((candidate) => candidate.slug === selectedSlug)
   // The console stays fixed-Spanish regardless of which agent persona is selected; only
   // the customer path follows the selected persona's own language.
+  const startLang: Lang =
+    audience === 'agent' ? DEFAULT_LANG : startingLanguage(preferredLang, navigator.language)
   const activeLang: Lang =
     audience === 'agent' || selectedPersona === undefined
-      ? DEFAULT_LANG
+      ? startLang
       : toLang(selectedPersona.language)
   const t = useT(activeLang)
 
@@ -136,7 +139,7 @@ export function SignInScreen({
         if (cancelled) return
         setPersonas(fetched)
         const inPreferredLang = fetched.filter(
-          (persona) => toLang(persona.language) === preferredLang,
+          (persona) => audience === 'customer' && toLang(persona.language) === startLang,
         )
         const preferred =
           inPreferredLang.find((persona) => persona.slug === preferredSlug) ?? inPreferredLang[0]
@@ -153,7 +156,7 @@ export function SignInScreen({
     return () => {
       cancelled = true
     }
-  }, [audience, directoryAttempt, preferredLang, preferredSlug])
+  }, [audience, directoryAttempt, startLang, preferredSlug])
 
   useEffect(() => {
     if (focusForm && directoryStatus === 'ready')

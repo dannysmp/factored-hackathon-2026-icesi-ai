@@ -620,7 +620,7 @@ def _capitalise(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def _days(count: int, messages: Messages) -> str:
+def days_text(count: int, messages: Messages) -> str:
     """A number of days with the unit in the singular or the plural."""
     unit = messages.day_one if count == 1 else messages.day_many
     return f"{count} {unit}"
@@ -713,12 +713,12 @@ def _filing_windows(policy: Policy, m: Messages) -> str:
     windows = [policy.categories[category].filing_window_days for category in DisputeCategory]
     example = min(windows)
     intro = m.windows_intro.format(
-        example=example, example_days=_days(example, m), next=example + 1
+        example=example, example_days=days_text(example, m), next=example + 1
     )
     lines = [
         m.window_line.format(
             category=_capitalise(m.categories[category]),
-            days=_days(policy.categories[category].filing_window_days, m),
+            days=days_text(policy.categories[category].filing_window_days, m),
         )
         for category in DisputeCategory
     ]
@@ -756,7 +756,7 @@ def _response_time(policy: Policy, m: Messages) -> str:
     lines = [
         m.window_line.format(
             category=_capitalise(m.categories[category]),
-            days=_days(policy.first_response_days[category], m),
+            days=days_text(policy.first_response_days[category], m),
         )
         for category in DisputeCategory
     ]

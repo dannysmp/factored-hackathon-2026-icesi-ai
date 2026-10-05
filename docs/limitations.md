@@ -61,8 +61,8 @@ results still to come say so and name the command that completes them.
   raters and the judge scored the same 50 cases (6 for clarification, which only ambiguous cases
   carry). Agreement is the share of cases scored identically, and a dimension is demoted to
   human-only when the judge agrees with either rater below 80%. All three are demoted. Grounding:
-  judge-to-rater agreement 60% and 28%, and the raters agree with each other on only 38%.
-  Language quality: 62% and 60%, with the raters at 94%; the judge scores lower than both raters in
+  judge-to-rater agreement 62% and 30%, and the raters agree with each other on only 38%.
+  Language quality: 64% and 62%, with the raters at 94%; the judge scores lower than both raters in
   nearly every case where they differ. Clarification: 17% and 100% over six cases, a sample too
   small to settle anything. The judge-scored quality section of `reports/evaluation.md` therefore
   states "not reportable by the judge" in place of the judge's means and shows the raters' means
@@ -83,8 +83,34 @@ results still to come say so and name the command that completes them.
   Spanish, Portuguese and English. A phrase outside it, or a merchant name the model guesses
   from the customer's words, still narrows the search to a merchant that may not exist and can
   answer "not found" for a transaction the customer owns. A currency the model supplies for an
-  amount written with only a bare `$` is discarded; a currency the customer states is kept. The
-  behavior was verified with scripted understanding results, not across live model output.
+  amount written with only a bare `$` is discarded; a currency the customer states is kept. An
+  amount is matched against the transaction's dollar figure or its amount in its own currency,
+  and the amount and currency must come from the same figure. The behavior was verified with
+  scripted understanding results, not across live model output.
+- **A message that only states a transaction is read as a request to list transactions.** A
+  customer who writes "Fiz uma transferência de $1.277,60 dólares no dia 13 de junho." without
+  asking for anything sees the recent-transactions menu and gives the detail again before the
+  dispute starts. Wordings that read such a message as the start of a dispute misread other
+  messages in measurement (a "no fui yo, quiero reportar" fraud report read as a dispute filing, a
+  mixed Spanish and Portuguese question read with no language), so the listing reading is kept. The
+  golden set holds this case (`norm-filed-duplicate-pt-01`, a Portuguese duplicate-charge filing),
+  and it does not file.
+- **An English "That wasn't me, I'd like to report it." is handed to a person, not filed.** The
+  golden set holds this case (`norm-filed-unrecognized-en-03`) and expects a filing; the system
+  hands off, as the policy prescribes for a fraud report. Nothing but the verb "report" separates a
+  fraud report from a request to file here, so which reading is right is a product decision, and
+  the case is ambiguous as worded. Where the reason is stated in the same sentence, the same verb
+  files, as in the Portuguese duplicate-charge case `norm-filed-duplicate-pt-03`.
+- **Two Portuguese replies at the dispute-reason step are not read as the customer means them.**
+  While the assistant is asking why the customer disputes a transaction, a reply that corrects
+  which transaction is meant by giving a date, such as "na verdade é outra, a de 12/07", makes it
+  ask for the reason again and the date is not used to change the transaction. A reply that agrees
+  and gives the reason in the same breath, such as "sim, mas era valor incorreto", is not read as
+  the reason either: the reason is asked again, and when a second answer in a row leaves it
+  unsettled, the conversation goes to a person. Neither files a case wrongly: the first costs the
+  customer another turn and the second can cost a handoff that was not needed. The wordings were
+  not added to the golden set, and no automated test gives a date or a reason in these replies;
+  the re-ask and the handoff on a second unsettled answer are tested with other wordings.
 - **The abstention check is a small sample.** A policy question the corpus does not cover must get
   "not held, here is a person" instead of a guess. That behavior is exercised by one unrelated
   banking question per language and a short list of everyday sentences with no policy content in
@@ -109,6 +135,15 @@ results still to come say so and name the command that completes them.
   writes (claim, release, note and status change under `/v1/agent/tickets/{ticket_ref}`), each
   scoped to the signed-in agent and audited. The console's interface never calls them, matching
   its design as a viewer, so those actions are reachable only through the API.
+- **Text enlarged beyond 200% on a narrow phone can make the page scroll sideways, and part of the
+  header title can be cut off.** Every interactive control stays reachable by scrolling. At 200%
+  text size on a 375 px phone the layout fits without scrolling. At 300% on 375 px and 320 px
+  phones, depending on language and width, the sign-in language buttons and the persona language
+  tag, the Yes and No quick replies and the console header and queue overflow, and in the Spanish
+  chat and the console the start of the header title sits left of the page origin where it cannot
+  be scrolled to. This concerns text-only enlargement. At browser page zoom of 400% on a 320 px
+  screen the sign-in, chat and console pages do not scroll sideways; the console queue table
+  scrolls inside its own region.
 - **Structured logging runs across the service and every CLI entrypoint, including a configuration
   failure at start-up.** Every line carries a stable event name, the request's trace id and, once
   authenticated, its session id, with any card-shaped digit run redacted before the line is
@@ -154,13 +189,35 @@ results still to come say so and name the command that completes them.
   from the design-token palette instead, verified in
   [`reports/dashboard-theme-checklist.md`](../reports/dashboard-theme-checklist.md).
 
+## Capacity and retention
+
+- **The system runs on one host and one backend process, and no load or throughput test has been
+  run.** The backend, web server, Postgres and reverse proxy share a single `t3.large` instance,
+  with the optional dashboard as a fifth service, and the backend starts one server process. No
+  figure for concurrent users, requests per second or latency under load is claimed. The one
+  capacity reading is the memory footprint of the running containers that a dashboard deployment
+  logs (see [`infra/README.md`](../infra/README.md)). Serving more customers means measuring first,
+  then moving the database off the host and moving the in-memory state below to a shared store
+  before running more than one backend process.
+- **Three controls hold their state in memory, per process.** The sign-in attempt limit, the
+  demonstration sign-in issuance limit and the session revocation list are each cleared by a
+  restart and are not shared between processes. With more than one backend process the limits
+  would be multiplied, and a revoked session could keep working on a process that did not see the
+  revocation. Tokens still expire on their own.
+- **No retention period or purge procedure is implemented.** Conversation state, the per-turn
+  timeline, handoffs and audit records are kept until the host's database volume is removed; the
+  application deletes none of them on a schedule. Filed cases are also cleared by the seed reload
+  that every deployment performs (see Deployment). A retention period for each kind of record and a
+  purge procedure are remaining work. For a demonstration, `make reset-demo-personas` deletes the
+  cases the demonstration personas accumulated.
+
 ## Security posture
 
 Every control's actual implementation status, not just its design intent, is tracked in
 [SECURITY.md](../SECURITY.md), which this document defers to rather than duplicating.
 
-**A document number typed unprompted into a free-text message is redacted by shape, with three known
-limits.** The conversation never asks a customer for a document number. The understanding contract
+**A document number typed unprompted into a free-text message is redacted by shape, with known
+gaps.** The conversation never asks a customer for a document number. The understanding contract
 has exactly three free-text fields with no restriction on what they hold — a transaction's
 merchant as the customer describes it, the dispute detail, and a policy question — any of which can
 carry a document number if a customer types one there. None of the three is ever echoed back to
@@ -172,13 +229,19 @@ punctuated Brazilian tax-number shapes (a personal tax number such as `123.456.7
 company tax number such as `12.345.678/0001-95`) are replaced with a fixed placeholder, the same
 way a card number is. A document number has no checksum, so the rule is by shape, and it is chosen
 so that a money amount written with separators (`$27.556.276,44`, `1,475,202.64`) is never
-touched. That choice leaves three limits. A national identity number typed with thousands-style dots
+touched. That choice leaves gaps. A national identity number typed with thousands-style dots
 (`1.094.921.834`) has the shape of an amount and reaches the model unmasked. An amount typed as
 seven or more unbroken digits (`1250000`) is redacted like an identifier; it is only a search hint
 for the customer's own transactions, and policy reads the stored amount, so the cost is one more
-question to the customer. An identity number split by other characters, or written in words, is
-not detected. The customer's own message text is the only thing this rule applies to; the
-controller's own parsing always reads the original text.
+question to the customer. A tax number written with a hyphen and short dotted groups (`900.123.456-7`,
+`12.345.678-5`) has no recognized shape and reaches the model unmasked; typed without dots it is an
+unbroken run and is redacted, leaving only its check digit. An unbroken decimal amount (`1250000.50`)
+loses its whole part and keeps the decimal part, and a date typed as eight unbroken digits
+(`20260612`) is redacted, so it is not available as a search hint. A longer run of digits around a
+tax-number shape (`123.456.789-091`) is a different figure and is left alone. An identity number
+split by other characters, or written in words, is not detected. The customer's own message text
+is the only thing this rule applies to; the controller's own parsing always reads the original
+text.
 
 ## Not attempted
 

@@ -11,10 +11,14 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+# Third-party libraries
+import pytest  # Parametrisation
+
 # Local modules
-from app.conversation.renderer import INELIGIBLE_TEXT
+from app.conversation.renderer import CASE_STATUS_NAMES, INELIGIBLE_TEXT
 from app.conversation.slot_values import slot_values_for
 from app.domain.policy.models import DisputeCategory, Outcome, TransactionStatus
+from contracts.service_v1.cases import CaseStatus
 from contracts.service_v1.envelope import (
     INTENT_REQUIRED_FIELDS,
     CaseFact,
@@ -23,6 +27,7 @@ from contracts.service_v1.envelope import (
     DisputeFacts,
     GroundedField,
     Intent,
+    Lang,
     LocalizedTitle,
     Money,
     PolicyValue,
@@ -165,11 +170,14 @@ def test_policy_answer_lists_one_entry_per_value_with_no_name_prefix() -> None:
     )
     envelope = _envelope(
         intent=Intent.POLICY_ANSWER,
+        lang="en",
         sources=(source,),
         facts=DisputeFacts(
             policy_values=(
                 PolicyValue(name="filing_window_days", value="120"),
-                PolicyValue(name="evidence_required", value="receipt, statement"),
+                PolicyValue(
+                    name="evidence_required", value="card_in_possession, merchant_not_recognized"
+                ),
             )
         ),
     )
@@ -179,7 +187,11 @@ def test_policy_answer_lists_one_entry_per_value_with_no_name_prefix() -> None:
     policy_entries = [
         entry.value for entry in values.entries if entry.field is GroundedField.POLICY_VALUE
     ]
-    assert policy_entries == ["120", "receipt, statement"]
+    assert policy_entries == [
+        "120",
+        "confirm you still have your card and say which part of the charge you do not recognize "
+        "(merchant, date or amount)",
+    ]
     assert all("filing_window_days" not in entry for entry in policy_entries)
 
 
@@ -352,3 +364,22 @@ def test_every_required_field_is_satisfiable_from_the_envelope_alone() -> None:
         produced = {entry.field for entry in slot_values_for(envelope).entries}
         required = INTENT_REQUIRED_FIELDS[envelope.intent]
         assert required <= produced, f"{envelope.intent}: missing {required - produced}"
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+@pytest.mark.parametrize("status", list(CaseStatus))
+def test_dispute_status_names_each_case_status_in_the_reply_language(
+    lang: Lang, status: CaseStatus
+) -> None:
+    case = CaseFact(
+        case_number="D-1", status=status.value, filed_on=_DOMAIN_DATE, transaction_ref="tx-1"
+    )
+    envelope = _envelope(lang=lang, intent=Intent.DISPUTE_STATUS, facts=DisputeFacts(cases=(case,)))
+
+    statuses = [
+        entry.value
+        for entry in slot_values_for(envelope).entries
+        if entry.field is GroundedField.CASE_STATUS
+    ]
+
+    assert statuses == [CASE_STATUS_NAMES[lang][status]]

@@ -19,7 +19,7 @@ def test_the_shipped_nlu_prompt_loads_and_validates() -> None:
     """``prompts/nlu_v1.yaml`` is a real, valid prompt file, not just a fixture."""
     prompt = load_prompt("nlu_v1")
 
-    assert prompt.version == "4"
+    assert prompt.version == "5"
     assert prompt.system.strip()
     assert prompt.placeholders() == {"language_hint", "message"}
 
@@ -95,3 +95,24 @@ def test_the_shipped_nlu_prompt_teaches_the_choice_intent_and_its_limits(phrase:
     """The extraction prompt names the choice intent, gives a pick example per language and says
     when a number is not a choice."""
     assert phrase in load_prompt("nlu_v1").system
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "making a transfer",
+        "is a dispute of that transaction",
+        "leave merchant null",
+        'A bare "$" does not state a currency',
+        "the sign € or",
+        "£, or a currency word such as dollars, euros or reais",
+        'The word "pesos" alone names no country',
+        "unless the message says which pesos",
+    ],
+)
+def test_the_shipped_nlu_prompt_keeps_a_transfer_already_made_disputable_and_states_currencies(
+    phrase: str,
+) -> None:
+    """The extraction prompt separates a transfer to make from one already made, keeps a kind of
+    transaction out of the merchant, and says which marks state a currency."""
+    assert " ".join(load_prompt("nlu_v1").system.split()).find(phrase) >= 0

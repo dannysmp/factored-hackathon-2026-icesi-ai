@@ -385,10 +385,13 @@ def _to_nlu_result(extraction: _ModelExtraction, *, reference_date: date) -> Nlu
 
 
 # Marks that state a currency beyond a bare dollar sign: a prefixed symbol, a currency sign, or a
-# currency word in the languages the service speaks.
+# currency word in the languages the service speaks. The word "peso" alone names no country, so it
+# counts only with the nationality that says which peso, on either side of it: "pesos colombianos"
+# and "Colombian pesos".
+_PESO_NATIONALITY = r"(?:colombian|mexican|argentin|chile|urugua)\w*"
 _CURRENCY_MARK = re.compile(
     r"(?:\b(?:us|r|col|mx|ar|cl|c)\$|[€£¥]|\bd[oó]lar(?:es)?\b|\bdollars?\b|\breais\b"
-    r"|\bpesos?\b|\beuros?\b)",
+    rf"|\bpesos?\s+{_PESO_NATIONALITY}|\b{_PESO_NATIONALITY}\s+pesos?\b|\beuros?\b)",
     re.IGNORECASE,
 )
 

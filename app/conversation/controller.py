@@ -24,6 +24,9 @@ Design Principles
 -----------------
 - **Built fresh per request.** Every collaborator is injected at construction; there is no module-
   level state and no singleton, so nothing about one customer's turn can leak into another's.
+- **Unclear text before any dispute step asks for the transaction.** Only unclear text that
+  arrives before any dispute step asks which transaction is meant; a greeting or thanks keeps the
+  menu, and two unusable replies hand the conversation over with the missing element recorded.
 - **One route per intent, exhaustively.** ``_ROUTES`` covers every ``NluIntent``, mirroring
   ``TEMPLATE_INTENTS``'s own completeness idiom: an intent added to the contract without a route
   here fails the tests, not silently falls through.
@@ -90,23 +93,23 @@ clarification budget.
 
 A yes that carries a change, or a correction, while the transaction or the filing is awaiting an
 answer is not repeated back: the customer is asked which part to change, the transaction or the
-reason. A different reason stated at the filing question re-evaluates the dispute under that reason
-and asks for confirmation of the result. A different transaction described there goes back to
-presenting that transaction for confirmation, keeping the reason unless the message states another.
+reason. A different reason stated at the filing question re-evaluates the dispute under that
+reason and answers with the policy's decision for it, asking for confirmation when the policy
+requires one. A different transaction described there goes back to finding that transaction,
+keeping the reason unless the message states another.
 A description that changes neither repeats the filing question and counts against the clarification
 budget.
 
-The question stays pending across a reply to an unrelated
-message (small talk, a policy question, a list request), as the reason and confirmation questions
-do, so the customer's yes after such a reply still selects the presented transaction. The
-unrelated reply itself files nothing; a case is filed only once the policy's confirmation
-requirement for the category is met. A list request shows the customer's most recent
-transactions as numbered options and keeps their references, in order, in ``offered_refs``; a
-later number selects the transaction shown at that position, and its question about the reason or
-the filing follows. A message that is only a number of one or two digits, sent while the list is on
-offer, is read directly as that choice, without the model; a number past the end of the list shows
-the list again, as does a choice the model reads past its end. Two or more matches for a described
-transaction ask for more detail rather than presenting a numbered list.
+The question stays pending across a reply to an unrelated message (small talk, a policy question, a
+list request), as the reason and confirmation questions do, so the customer's yes after such a reply
+still selects the presented transaction. The unrelated reply itself files nothing; a case is filed
+only once the policy's confirmation requirement for the category is met. A list request shows the
+customer's most recent transactions as numbered options and keeps their references, in order, in
+``offered_refs``; a later number selects the transaction shown at that position, and its question
+about the reason or the filing follows. A message that is only a number of one or two digits, sent
+while the list is on offer, is read directly as that choice, without the model; a number past the
+end of the list shows the list again, as does a choice the model reads past its end. Two or more
+matches for a described transaction ask for more detail rather than presenting a numbered list.
 A session works on one transaction and reason at a time: the selected pair is kept from selection
 until the dispute ends (a case filed, or the filing cancelled, ineligible or refused as a
 duplicate), which clears it so the customer's next dispute starts from its own transaction and
@@ -121,12 +124,12 @@ an advisor. The handoff packet's ``first_name`` is a placeholder: no tool expose
 first name.
 While the transaction is the pending question, a message that describes one is taken as the
 answer whichever intent the model reported (``correction``, ``choice`` or ``unclear``); a category
-carried by such a message does not replace one already set. A description
-that matches no transaction, or more than one, is an unsettled answer to the question, the same
-as any other reply that leaves it open: a person is involved once the clarification budget of
-such answers has followed the question. When the opening message already described the
-transaction, that message is itself the question, so with the shipped budget of two the hand-off
-follows the third unmatched description. A request to list transactions that finds none never
+carried by such a message does not replace one already set. A description that matches no
+transaction, or more than one, is an unsettled answer to the question, the same as any other reply
+that leaves it open: a person is involved once the clarification budget of such answers has
+followed the question. When the opening message already described the transaction, that message is
+itself the question, so with the shipped budget of two the hand-off follows the third unmatched
+description. A request to list transactions that finds none never
 counts; a described transaction that finds none does, like any other unmatched description.
 A duplicate turn's handoff replay always uses the generic reviewing wording, which may differ from
 the original trigger-specific wording (fraud, card loss, a person requested) though it states the
@@ -191,7 +194,7 @@ from contracts.service_v1.envelope import (
     TemplateId,
 )
 from contracts.service_v1.envelope import TransactionFact as EnvelopeTransactionFact
-from contracts.service_v1.handoff import ActionRecord, HandoffPacket, HandoffTrigger
+from contracts.service_v1.handoff import ActionRecord, HandoffPacket, HandoffTrigger, OpenQuestion
 from contracts.service_v1.nlu import ConfirmationAnswer, NluIntent, NluResult, TransactionHint
 from contracts.service_v1.tools import (
     CreateDisputeCaseRequest,
@@ -413,11 +416,105 @@ _GENERIC_MERCHANTS = frozenset(
         "shops",
         "online shop",
         "merchant",
+        "servicio",
+        "servicios",
+        "servico",
+        "servicos",
+        "service",
+        "services",
     }
 )
 
-# Words that may open a generic merchant description ("una tienda en línea", "the store").
-_LEADING_ARTICLES = frozenset({"un", "una", "el", "la", "o", "a", "um", "uma", "the", "an", "my"})
+# Articles, possessives and demonstratives that may open a generic merchant description ("una
+# tienda en línea", "su servicio", "this store").
+_LEADING_DETERMINERS = frozenset(
+    {
+        # Articles
+        "un",
+        "una",
+        "unos",
+        "unas",
+        "el",
+        "la",
+        "los",
+        "las",
+        "o",
+        "a",
+        "os",
+        "as",
+        "um",
+        "uma",
+        "uns",
+        "umas",
+        "the",
+        "an",
+        "some",
+        # Possessives and demonstratives
+        "mi",
+        "mis",
+        "tu",
+        "tus",
+        "su",
+        "sus",
+        "nuestro",
+        "nuestra",
+        "nuestros",
+        "nuestras",
+        "vuestro",
+        "vuestra",
+        "vuestros",
+        "vuestras",
+        "aquel",
+        "aquella",
+        "aquellos",
+        "aquellas",
+        "este",
+        "esta",
+        "estos",
+        "estas",
+        "ese",
+        "esa",
+        "esos",
+        "esas",
+        "meu",
+        "meus",
+        "minha",
+        "minhas",
+        "teu",
+        "teus",
+        "tua",
+        "tuas",
+        "seu",
+        "seus",
+        "sua",
+        "suas",
+        "nosso",
+        "nossos",
+        "nossa",
+        "nossas",
+        "estes",
+        "esses",
+        "essas",
+        "aquele",
+        "aquela",
+        "aqueles",
+        "aquelas",
+        "esse",
+        "essa",
+        "my",
+        "your",
+        "his",
+        "her",
+        "its",
+        "our",
+        "their",
+        "this",
+        "that",
+        "these",
+        "those",
+        "one",
+    }
+)
 
 
 def _names_no_merchant(merchant: str) -> bool:
@@ -426,7 +523,7 @@ def _names_no_merchant(merchant: str) -> bool:
     if not folded.strip():
         return True
     words = "".join(ch if ch.isalnum() else " " for ch in folded).split()
-    while words and words[0] in _LEADING_ARTICLES:
+    while words and words[0] in _LEADING_DETERMINERS:
         words.pop(0)
     return bool(words) and " ".join(words) in _GENERIC_MERCHANTS
 
@@ -487,6 +584,11 @@ def _escalate_decision(policy: Policy) -> Decision:
         policy_version=policy.version,
         requires_confirmation=False,
     )
+
+
+def _unanswered(state: DialogueState, slot: Slot) -> OpenQuestion:
+    """The element still missing when a conversation is handed over, and how often it was asked."""
+    return OpenQuestion(slot=slot, attempts=state.clarification_attempts)
 
 
 class DialogueController:
@@ -992,7 +1094,7 @@ class DialogueController:
         cannot be read back, the hint is searched for afresh rather than assumed to match. The
         hint arrives with a merchant that names nothing already removed, so a customer who answers
         with only a word for a kind of transaction keeps the presented one, which the confirmation
-        shows in full before anything is filed.
+        shows in full before a case is filed.
         """
         if hint.is_empty:
             return False
@@ -1011,8 +1113,9 @@ class DialogueController:
     ) -> tuple[DialogueState, RenderEnvelope]:
         """List the customer's transactions.
 
-        A tool failure becomes a handoff and an empty list a not-found reply; neither changes the
-        state. A non-empty list records the references shown, in order, in ``offered_refs``.
+        A tool failure becomes a handoff, which ends the conversation's automated handling. An
+        empty list gets a not-found reply and leaves the state unchanged. A non-empty list records
+        the references shown, in order, in ``offered_refs``.
         """
         page = dispatch(
             self._tool_port, tool_contracts.Tool.LIST_TRANSACTIONS, TransactionFilters()
@@ -1039,8 +1142,7 @@ class DialogueController:
         number = result.choice
         if state.phase in _PHASES_WITHOUT_SELECTION:
             return self._fallback(state, result)
-        if number is None:
-            return self._handle_unroutable(state, result)
+        assert number is not None  # noqa: S101 - the contract reads a choice exactly for this intent
         if not 1 <= number <= len(state.offered_refs):
             if state.offered_refs:
                 return self._handle_list_transactions(state, result)
@@ -1102,7 +1204,8 @@ class DialogueController:
         """Route a yes or no by the question that is pending.
 
         A pending transaction choice and a pending filing confirmation each have a handler; a yes or
-        no with nothing pending to answer falls back like an unclear message.
+        no with nothing pending to answer is handled like an unroutable message: the menu, or the
+        pending question again.
         """
         if state.pending_slot is Slot.TRANSACTION_CHOICE:
             return self._handle_transaction_choice(state, result)
@@ -1236,11 +1339,22 @@ class DialogueController:
             return self._handle_file_dispute(state, result)
         return self._fallback(state, result)
 
+    def _handle_unclear(
+        self, state: DialogueState, result: NluResult
+    ) -> tuple[DialogueState, RenderEnvelope]:
+        """Text that could not be understood, before any dispute step, asks which transaction it
+        is about, naming the missing element, rather than repeating the menu; once a dispute has
+        ended, or while a question is open, it is handled as any message that fits no intent. A
+        greeting or small talk has its own handler and keeps the menu."""
+        if state.pending_slot is None and state.phase is ConversationPhase.STARTED:
+            return self._ask(state, Slot.TRANSACTION)
+        return self._handle_unroutable(state, result)
+
     def _handle_correction(
         self, state: DialogueState, result: NluResult
     ) -> tuple[DialogueState, RenderEnvelope]:
         """A correction while a question about the presented transaction or the filing is open
-        is handled as a change to it; anywhere else it is treated like an unclear message, so a
+        is handled as a change to it; anywhere else it is handled like an unroutable message, so a
         description of the transaction that was just asked for is still taken as the answer."""
         if state.pending_slot in _CHANGEABLE_SLOTS:
             return self._handle_change(state, result)
@@ -1252,10 +1366,10 @@ class DialogueController:
         """The customer answered the open question with a change rather than a plain yes or no.
 
         When the filing is awaiting confirmation and the message states a different reason, the
-        dispute is evaluated afresh under that reason, and the customer confirms the result.
-        Otherwise the customer is asked which part to change — the transaction or the reason —
-        and the repeat counts against the clarification budget like any other unanswered
-        question.
+        dispute is evaluated afresh under that reason and answered with the policy's decision:
+        the customer is asked to confirm only when the policy requires it. Otherwise the customer
+        is asked which part to change, the transaction or the reason, and the repeat counts
+        against the clarification budget like any other unanswered question.
         """
         assert state.pending_slot is not None  # noqa: S101 - both callers run with a slot open
         if (
@@ -1294,6 +1408,7 @@ class DialogueController:
                 trigger=HandoffTrigger.LOW_UNDERSTANDING,
                 reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
                 template=TemplateId.HANDOFF_REVIEW,
+                open_questions=(_unanswered(new_state, slot),),
             )
         if template is not None:
             return new_state, self._envelope(new_state, Intent.CLARIFY, template)
@@ -1369,6 +1484,7 @@ class DialogueController:
                 trigger=HandoffTrigger.LOW_UNDERSTANDING,
                 reason_codes=(ReasonCode.ESCALATE_LOW_NLU_CONFIDENCE,),
                 template=TemplateId.HANDOFF_REVIEW,
+                open_questions=(_unanswered(new_state, Slot.TRANSACTION),),
             )
         return new_state, self._envelope(new_state, Intent.CLARIFY, template)
 
@@ -1595,6 +1711,7 @@ class DialogueController:
         verified_facts: tuple[EnvelopeTransactionFact, ...] = (),
         actions: tuple[ActionRecord, ...] = (),
         existing_case_number: str | None = None,
+        open_questions: tuple[OpenQuestion, ...] = (),
     ) -> tuple[DialogueState, RenderEnvelope]:
         """Register a handoff and render its outcome, or ``HANDOFF_NOT_REGISTERED`` if it fails."""
         request = self._request
@@ -1615,6 +1732,7 @@ class DialogueController:
             verified_facts=verified_facts,
             actions=actions,
             existing_case_number=existing_case_number,
+            open_questions=open_questions,
         )
         try:
             packet = self._outbox.record(
@@ -1905,5 +2023,5 @@ _ROUTES: dict[NluIntent, _Handler] = {
     NluIntent.SWITCH_LANGUAGE: DialogueController._handle_switch_language,
     NluIntent.SMALL_TALK: DialogueController._handle_small_talk,
     NluIntent.FAREWELL: DialogueController._handle_farewell,
-    NluIntent.UNCLEAR: DialogueController._handle_unroutable,
+    NluIntent.UNCLEAR: DialogueController._handle_unclear,
 }

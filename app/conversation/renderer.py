@@ -35,9 +35,9 @@ Runtime Contract
 ``render(envelope) -> RenderedReply``. ``reference_date_line(domain_date, lang)``.
 ``demo_notice(lang)``. ``transaction_line(transaction, lang)`` is the one-line description of a
 transaction used for a numbered list. ``format_money``/``format_date``/``amount_text``/
-``CATEGORY_NAMES``/``INELIGIBLE_TEXT`` are exported so the model-rendered path's own slot values
-(``app.conversation.slot_values``) format a figure identically to the template path, rather than
-a second, independently maintained copy.
+``CATEGORY_NAMES``/``INELIGIBLE_TEXT``/``case_status_label``/``policy_value_text`` are exported so
+the model-rendered path's own slot values (``app.conversation.slot_values``) format a figure
+identically to the template path, rather than a second, independently maintained copy.
 
 Limitations
 -----------
@@ -55,11 +55,14 @@ from datetime import date  # Absolute dates, always formatted in words
 from typing import Literal  # Which path produced a reply
 
 # Local modules
+from app.domain.policy.corpus import MESSAGES, days_text  # The corpus's own wording
 from app.domain.policy.models import DisputeCategory, Outcome  # Shared vocabulary
+from contracts.service_v1.cases import CaseStatus  # The statuses a case moves through
 from contracts.service_v1.envelope import (  # The envelope and its typed facts
     CustomerReason,
     Lang,
     Money,
+    PolicyValue,
     RenderEnvelope,
     TemplateId,
     TransactionFact,
@@ -172,6 +175,43 @@ _URGENT_CHANNEL: dict[Lang, str] = {
     "pt": "a linha de emergência do banco",
     "en": "the bank's emergency line",
 }
+
+# -----------------------------------------------------------------------------
+# Case status wording
+# -----------------------------------------------------------------------------
+
+CASE_STATUS_NAMES: dict[Lang, dict[CaseStatus, str]] = {
+    "es": {
+        CaseStatus.OPEN: "abierto",
+        CaseStatus.IN_REVIEW: "en revisión",
+        CaseStatus.RESOLVED: "resuelto",
+        CaseStatus.REJECTED: "rechazado",
+    },
+    "pt": {
+        CaseStatus.OPEN: "aberto",
+        CaseStatus.IN_REVIEW: "em análise",
+        CaseStatus.RESOLVED: "resolvido",
+        CaseStatus.REJECTED: "rejeitado",
+    },
+    "en": {
+        CaseStatus.OPEN: "open",
+        CaseStatus.IN_REVIEW: "in review",
+        CaseStatus.RESOLVED: "resolved",
+        CaseStatus.REJECTED: "rejected",
+    },
+}
+
+
+def case_status_label(status: str, lang: Lang) -> str:
+    """The wording for a case's status as the case service states it, in ``lang``.
+
+    Raises
+    ------
+    ValueError
+        When ``status`` is not one of the case service's statuses.
+    """
+    return CASE_STATUS_NAMES[lang][CaseStatus(status)]
+
 
 # -----------------------------------------------------------------------------
 # Category and reason wording
@@ -530,17 +570,17 @@ def _ineligible(e: RenderEnvelope) -> str:
 
 def _dispute_status(e: RenderEnvelope) -> str:
     """List the customer's recent cases with their status and filing date, one per line."""
-    lines = [
-        {
-            "es": f"Caso {case.case_number}: {case.status}, presentado el "
-            f"{format_date(case.filed_on, e.lang)}.",
-            "pt": f"Caso {case.case_number}: {case.status}, apresentado em "
-            f"{format_date(case.filed_on, e.lang)}.",
-            "en": f"Case {case.case_number}: {case.status}, filed on "
-            f"{format_date(case.filed_on, e.lang)}.",
-        }[e.lang]
-        for case in e.facts.cases
-    ]
+    lines = []
+    for case in e.facts.cases:
+        status = case_status_label(case.status, e.lang)
+        filed_on = format_date(case.filed_on, e.lang)
+        lines.append(
+            {
+                "es": f"Caso {case.case_number}: {status}, presentado el {filed_on}.",
+                "pt": f"Caso {case.case_number}: {status}, apresentado em {filed_on}.",
+                "en": f"Case {case.case_number}: {status}, filed on {filed_on}.",
+            }[e.lang]
+        )
     intro = {
         "es": "Estos son sus casos recientes:",
         "pt": "Estes são seus casos recentes:",
@@ -558,20 +598,76 @@ def _no_case_found(e: RenderEnvelope) -> str:
     }[e.lang]
 
 
+def policy_value_text(value: PolicyValue, lang: Lang) -> str:
+    """The figure of ``value`` as it is quoted in ``lang``.
+
+    An evidence list is written in the policy corpus's own wording, so the reply and the corpus
+    name the same items. A count is quoted bare: the model-rendered path writes its unit itself.
+
+    Raises
+    ------
+    KeyError
+        When an evidence identifier has no wording in the corpus.
+    """
+    if value.name != "evidence_required":
+        return value.value
+    messages = MESSAGES[lang]
+    items = [messages.evidence_items[item] for item in value.value.split(", ")]
+    if len(items) <= 1:
+        return "".join(items)
+    return f"{', '.join(items[:-1])} {messages.and_word} {items[-1]}"
+
+
+def _quoted_figure(value: PolicyValue, lang: Lang) -> str:
+    """The figure as the reply's own sentence states it: a count carries its unit."""
+    if value.name == "evidence_required":
+        return policy_value_text(value, lang)
+    return days_text(int(value.value), MESSAGES[lang])
+
+
+# One clause per figure the policy answer may quote, with ``{value}`` standing for its text.
+_POLICY_FIGURE_CLAUSES: dict[Lang, dict[str, str]] = {
+    "es": {
+        "filing_window_days": "el plazo para presentar la disputa es de {value}",
+        "first_response_days": (
+            "el banco da una primera respuesta dentro de {value}, contados desde la fecha de "
+            "presentación"
+        ),
+        "evidence_required": "lo que necesitamos de usted: {value}",
+    },
+    "pt": {
+        "filing_window_days": "o prazo para apresentar a contestação é de {value}",
+        "first_response_days": (
+            "o banco dá a primeira resposta em até {value}, contados a partir da data de "
+            "apresentação"
+        ),
+        "evidence_required": "o que precisamos de você: {value}",
+    },
+    "en": {
+        "filing_window_days": "the filing window is {value}",
+        "first_response_days": "the bank gives a first response within {value} of filing",
+        "evidence_required": "what we need from you: {value}",
+    },
+}
+
+
 def _policy_answer(e: RenderEnvelope) -> str:
     """Quote the retrieved policy section by title together with the values it states."""
     title = e.sources[0].title_for(e.lang)
     if not e.facts.policy_values:
         return {
             "es": f"Puede consultarlo en la sección “{title}” de nuestra política de disputas.",
-            "pt": f"Você pode consultar isso na seção “{title}” da nossa política de disputas.",
+            "pt": f"Você pode consultar isso na seção “{title}” da nossa política de contestação.",
             "en": f"You can find this in the “{title}” section of our dispute policy.",
         }[e.lang]
-    values = ", ".join(f"{v.name}: {v.value}" for v in e.facts.policy_values)
+    clauses = "; ".join(
+        _POLICY_FIGURE_CLAUSES[e.lang][v.name].format(value=_quoted_figure(v, e.lang))
+        for v in e.facts.policy_values
+    )
     parts = {
-        "es": f"Según la sección “{title}”: {values}.",
-        "pt": f"De acordo com a seção “{title}”: {values}.",
-        "en": f"According to the “{title}” section: {values}.",
+        "es": f"Según la sección “{title}”, {clauses}.",
+        "pt": f"De acordo com a seção “{title}”, {clauses}.",
+        "en": f"According to the “{title}” section, {clauses}.",
     }
     return parts[e.lang]
 

@@ -71,7 +71,7 @@ Design rules that follow from this:
 | `evals/` | Golden set, adversarial cases, evaluation harness and judge rubric |
 | `web/` | React customer chat and human-agent console (a read-only viewer of the handoff queue) |
 | `infra/` | AWS provisioning and deployment scripts, the reverse-proxy configuration and the deployment runbook; the pipeline itself is `.github/workflows/deploy.yml` |
-| `docs/` | Limitations, the security checklist, the release checklist and the demonstration scripts |
+| `docs/` | Limitations, the security checklist, the release checklist, the demonstration scripts, the video script, the slide content and the delivery message |
 | `reports/` | Generated reports (data profile, analyses, operational seed, evaluation results) |
 | `Dockerfile`, `docker-compose*.yml` | The backend image, the local Postgres serving store, and the deployed stack composed on top of it |
 | `scripts/` | Repository tooling, such as the secret-scan self-test |
@@ -284,11 +284,29 @@ every pull request and blocks the merge on a failure.
 [`reports/evaluation.md`](reports/evaluation.md) is the committed result of the last full run:
 workload, versions, headline metrics per system, repeated-run variability, the failure gallery,
 unsafe outcomes, judge validation, learned components and limitations. Every figure is measured
-offline on the golden set. Two human raters and the judge scored the same 50 cases, and the judge
-agreed with them on too few to be trusted on any dimension, so the report states "not reportable by
-the judge" and shows the raters' means instead. The figures describe the commit the report names,
-not the current head, which carries later behaviour fixes. See
-[`docs/limitations.md`](docs/limitations.md).
+offline on the golden set. Two human raters and the judge scored the same 50 cases (6 for
+clarification), and the judge agreed with them on too few to be trusted on any dimension, so the
+report states "not reportable by the judge" and shows the raters' means instead.
+
+| Metric (cases) | P | B0 | B1 |
+|---|---|---|---|
+| Runs | 3 | 1 | 1 |
+| Safe automated resolution (103 in scope) | 0.725 (range 0.718-0.728) | 0.330 | 0.369 |
+| Containment (103) | 0.809 (range 0.806-0.816) | 0.845 | 0.757 |
+| Escalation quality (22 needing a person) | 0.727 | 0.455 | 0.273 |
+| Missed transfers (22 needing a person) | 0.152 (range 0.136-0.182) | 0.545 | 0.091 |
+| Unnecessary transfers (81 not needing one) | 0.012 | 0.074 | 0.062 |
+| Unsafe outcomes (135) | 0.000 | 0.000 | 0.000 |
+| Latency, median / 95th percentile | 2.558 s / 4.402 s | 0.027 s / 0.046 s | 5.105 s / 12.217 s |
+| Cost per attempted case (USD) | 0.005 | 0.000 | 0.008 |
+
+P is the mean of its three runs; B0 and B1 ran once, so their figures carry no run-to-run range.
+Zero observed unsafe outcomes means none occurred in the case-runs counted, not that the risk is
+zero. B0 shares the dialogue controller with P and is not an unchanged control.
+[`reports/evaluation-comparison.md`](reports/evaluation-comparison.md) sets this run beside the two
+earlier ones and lists the cases that still fail. The figures describe the commit the report names
+(`6cea3b4`), not the current head, which carries later behaviour fixes and whose effect is not
+measured. See [`docs/limitations.md`](docs/limitations.md).
 
 ### Configuration
 

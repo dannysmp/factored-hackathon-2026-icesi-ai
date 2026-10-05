@@ -9,27 +9,37 @@ passed in, never a clock, a file or a network call.
 from __future__ import annotations
 
 # Standard libraries
+import re  # Word-boundary checks on rendered replies
 from datetime import date  # Fixed reference and transaction dates
 from decimal import Decimal  # Money in the tests
 
 # Third-party libraries
 import pytest  # Test runner and parametrisation
 
+from app.conversation.policy_answer import _FIGURE_BUILDERS  # Every figure the answer can quote
+
 # Local modules
 from app.conversation.renderer import (
+    CASE_STATUS_NAMES,
+    case_status_label,
     demo_notice,
     format_date,
     format_money,
+    policy_value_text,
     reference_date_line,
     render,
 )
+from app.conversation.slot_values import slot_values_for  # The model-rendered path's own slots
+from app.domain.policy import load_policy  # The shipped policy's evidence identifiers
 from app.domain.policy.models import DisputeCategory, Outcome, TransactionStatus
+from contracts.service_v1.cases import CaseStatus
 from contracts.service_v1.envelope import (
     CaseFact,
     CustomerReason,
     Decision,
     DisputeFacts,
     Envelope,
+    GroundedField,
     Intent,
     Lang,
     LocalizedTitle,
@@ -99,6 +109,26 @@ def _source() -> SourceRef:
 def test_format_date_is_absolute_and_carries_the_year(lang: str, expected: str) -> None:
     """Every date is written in words with the year, in the reply language."""
     assert format_date(_DOMAIN_DATE, lang) == expected  # type: ignore[arg-type]
+
+
+_MONTH_NAMES = {
+    "es": (
+        "enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre"
+    ),
+    "pt": (
+        "janeiro fevereiro março abril maio junho julho agosto setembro outubro novembro dezembro"
+    ),
+    "en": ("January February March April May June July August September October November December"),
+}
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_format_date_names_every_month_in_the_reply_language(lang: str) -> None:
+    """Each of the twelve months is written with its own name, not another language's."""
+    for month, name in enumerate(_MONTH_NAMES[lang].split(), start=1):
+        written = format_date(date(2026, month, 5), lang)  # type: ignore[arg-type]
+
+        assert written == (f"{name} 5, 2026" if lang == "en" else f"5 de {name} de 2026")
 
 
 @pytest.mark.parametrize(
@@ -334,6 +364,142 @@ def test_every_template_id_has_a_working_renderer(lang: str) -> None:
     for envelope in envelopes.values():
         rendered = render(envelope)
         assert rendered.reply.strip()
+
+
+def _vocabulary(words: str) -> frozenset[str]:
+    """The set of whitespace-separated words in ``words``."""
+    return frozenset(words.split())
+
+
+# What each language's replies may and may not contain. A word listed for one language only is
+# evidence of that language: it must not appear in a reply of another, and each reply must
+# contain one. A word listed for several languages is shared and is evidence of none. Every
+# customer-facing name the renderer chooses between (categories, case statuses, ineligibility
+# reasons, policy figures) needs a word here that no other language uses, or a name copied from
+# another language's table would go unseen; a failure that names a legitimate word means it
+# belongs in the other language's list too.
+_WORDS: dict[str, frozenset[str]] = {
+    "es": _vocabulary(
+        "a abierto asesor banco buen caso casos con cuando de del día disputa disputar "
+        "disputarla el en encontré es esa esto estos está fecha fue gracias o para pendiente "
+        "plazo por presentado presentar presenté puedo que quiere recientes revertida su sus "
+        "tenga transacción un una ya lo los las y pero puede necesitamos tiene usted "
+        "ustedes tarjeta comercio extracto reconocido incorrecto monto servicio recibido reporte "
+        "duplicado resuelto rechazado revisión"
+    ),
+    "pt": _vocabulary(
+        "a aberto agradeço apresentado apresentar apresentei atendente banco bom caso casos "
+        "cobrança com contato contestar contestação data de dia do em encontrei estes isso o "
+        "ou para por posso qual que quer recentes sua suas seus tenha transação um uma você é "
+        "não está os as precisamos nós mas pode tem nem também estabelecimento reconhecida valor "
+        "incorreto serviço recebido duplicidade resolvido rejeitado análise"
+    ),
+    "en": _vocabulary(
+        "a at can case cases charge date do dispute file filed here i is it like of on open "
+        "or person recent right tell that the these this to transaction want which with you "
+        "your and as but are will we our not please have has unrecognized wrong amount service "
+        "received duplicate fraud claim resolved rejected review"
+    ),
+}
+
+
+def _reply_words(reply: str) -> set[str]:
+    """The lowercased alphabetic words of ``reply``."""
+    return set(re.findall(r"[^\W\d_]+", reply.lower()))
+
+
+def _every_reply_variant(lang: str) -> list[tuple[str, RenderEnvelope]]:
+    """Every reply the renderer can give: one per template, plus each value of the enumerations
+    that choose a sentence inside a template."""
+    transaction = _transaction()
+    base = _every_template_envelope(lang)
+    variants: list[tuple[str, RenderEnvelope]] = [
+        (template_id.value, envelope)
+        for template_id, envelope in base.items()
+        if template_id is not TemplateId.LANGUAGE_OFFER
+    ]
+    variants.append(
+        (
+            "policy_answer without a figure",
+            _envelope(
+                lang=lang,
+                intent=Intent.POLICY_ANSWER,
+                template_id=TemplateId.POLICY_ANSWER,
+                sources=(_source(),),
+            ),
+        )
+    )
+    for reason in [
+        r for r in CustomerReason if r not in (CustomerReason.ELIGIBLE, CustomerReason.NEEDS_REVIEW)
+    ]:
+        decision = Decision(outcome=Outcome.INELIGIBLE, customer_reason=reason, policy_version="2")
+        variants.append(
+            (
+                f"ineligible: {reason.value}",
+                base[TemplateId.INELIGIBLE].model_copy(update={"decisions": (decision,)}),
+            )
+        )
+    for category in DisputeCategory:
+        facts = DisputeFacts(
+            transactions=(transaction,),
+            candidate_count=1,
+            selected_ref=transaction.ref,
+            category=category,
+        )
+        variants.append(
+            (
+                f"confirm_filing: {category.value}",
+                base[TemplateId.CONFIRM_FILING].model_copy(update={"facts": facts}),
+            )
+        )
+    for status in CaseStatus:
+        case = CaseFact(
+            case_number="D-2001",
+            status=status.value,
+            filed_on=_DOMAIN_DATE,
+            transaction_ref=transaction.ref,
+            expected_response_on=date(2026, 6, 25),
+        )
+        variants.append(
+            (
+                f"dispute_status: {status.value}",
+                base[TemplateId.DISPUTE_STATUS].model_copy(
+                    update={"facts": DisputeFacts(cases=(case,))}
+                ),
+            )
+        )
+    policy = load_policy()
+    for section, build in _FIGURE_BUILDERS.items():
+        for category in DisputeCategory:
+            variants.append(
+                (
+                    f"policy_answer: {section} for {category.value}",
+                    base[TemplateId.POLICY_ANSWER].model_copy(
+                        update={"facts": DisputeFacts(policy_values=(build(category, policy),))}
+                    ),
+                )
+            )
+    return variants
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_every_reply_stays_in_its_language_and_names_no_internal_identifier(lang: str) -> None:
+    """No reply carries a word of another language, or a snake_case identifier; every reply
+    contains words of its own language. The language offer, which addresses every language on
+    purpose, is the one exception."""
+    foreign_vocabulary = frozenset().union(*(w for k, w in _WORDS.items() if k != lang))
+    foreign_only = foreign_vocabulary - _WORDS[lang]
+    own_only = _WORDS[lang] - foreign_vocabulary
+
+    for label, envelope in _every_reply_variant(lang):
+        reply = render(envelope).reply.lower()
+        words = _reply_words(reply)
+
+        assert not words & foreign_only, f"{label}: {sorted(words & foreign_only)} in {reply!r}"
+        assert words & own_only, f"{label}: {reply!r}"
+        assert not re.search(r"\b[a-z]+_[a-z_]+\b", reply), f"{label}: identifier in {reply!r}"
+        if lang == "pt":
+            assert not re.search(r"\bdisput", reply), f"{label}: {reply!r}"
 
 
 @pytest.mark.parametrize(
@@ -619,7 +785,7 @@ def test_the_policy_answer_cites_the_section_title_in_the_reply_language() -> No
         (
             "pt",
             "Você pode consultar isso na seção “Prazos para contestar” da nossa "
-            "política de disputas.",
+            "política de contestação.",
         ),
         ("en", "You can find this in the “Filing windows” section of our dispute policy."),
     ],
@@ -654,3 +820,203 @@ def test_dispute_status_grounds_a_case_without_an_expected_response_date() -> No
     rendered = render(envelope)
 
     assert case.case_number in rendered.reply
+
+
+_EVIDENCE_ANSWER_VALUES = (
+    PolicyValue(name="filing_window_days", value="60"),
+    PolicyValue(name="first_response_days", value="10"),
+    PolicyValue(name="evidence_required", value="card_in_possession, merchant_not_recognized"),
+)
+
+
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [
+        (
+            "es",
+            "el plazo para presentar la disputa es de 60 días; el banco da una primera respuesta "
+            "dentro de 10 días, contados desde la fecha de presentación; lo que necesitamos de "
+            "usted: confirmar que aún tiene la tarjeta y indicar qué parte del cargo no "
+            "reconoce (comercio, fecha o monto).",
+        ),
+        (
+            "pt",
+            "o prazo para apresentar a contestação é de 60 dias; o banco dá a primeira resposta "
+            "em até 10 dias, contados a partir da data de apresentação; o que precisamos de "
+            "você: a confirmação de que o cartão continua com você e a indicação de qual "
+            "parte da cobrança você não reconhece (estabelecimento, data ou valor).",
+        ),
+        (
+            "en",
+            "the filing window is 60 days; the bank gives a first response within 10 days of "
+            "filing; what we need from you: confirm you still have your card and say which "
+            "part of the charge you do not recognize (merchant, date or amount).",
+        ),
+    ],
+)
+def test_a_policy_answer_states_every_figure_in_the_reply_language(
+    lang: Lang, expected: str
+) -> None:
+    """The reply names each figure in words, never by its internal identifier."""
+    envelope = _envelope(
+        intent=Intent.POLICY_ANSWER,
+        template_id=TemplateId.POLICY_ANSWER,
+        lang=lang,
+        facts=DisputeFacts(policy_values=_EVIDENCE_ANSWER_VALUES),
+        sources=(_source(),),
+    )
+
+    rendered = render(envelope)
+
+    assert rendered.reply.endswith(expected)
+    for identifier in ("filing_window_days", "first_response_days", "evidence_required"):
+        assert identifier not in rendered.reply
+    assert "card_in_possession" not in rendered.reply
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_every_policy_figure_the_answer_builders_produce_reads_as_a_sentence(lang: Lang) -> None:
+    """A figure added to the policy answer cannot reach the reply without its wording."""
+    policy = load_policy()
+    for build in _FIGURE_BUILDERS.values():
+        for category in DisputeCategory:
+            value = build(category, policy)
+            envelope = _envelope(
+                intent=Intent.POLICY_ANSWER,
+                template_id=TemplateId.POLICY_ANSWER,
+                lang=lang,
+                facts=DisputeFacts(policy_values=(value,)),
+                sources=(_source(),),
+            )
+            reply = render(envelope).reply
+            slot_texts = [
+                entry.value
+                for entry in slot_values_for(envelope).entries
+                if entry.field is GroundedField.POLICY_VALUE
+            ]
+
+            assert reply.endswith(".")
+            assert value.name not in reply
+            assert "_" not in reply.split("”", 1)[1]
+            assert slot_texts == [policy_value_text(value, lang)]
+
+
+@pytest.mark.parametrize(
+    ("lang", "sentence"),
+    [
+        ("es", "dentro de 1 día, contados"),
+        ("pt", "em até 1 dia, contados"),
+        ("en", "within 1 day of filing"),
+    ],
+)
+def test_the_shipped_fraud_claim_response_time_is_stated_in_the_singular(
+    lang: Lang, sentence: str
+) -> None:
+    value = _FIGURE_BUILDERS["response-time"](DisputeCategory.FRAUD_CLAIM, load_policy())
+
+    reply = render(
+        _envelope(
+            intent=Intent.POLICY_ANSWER,
+            template_id=TemplateId.POLICY_ANSWER,
+            lang=lang,
+            facts=DisputeFacts(policy_values=(value,)),
+            sources=(_source(),),
+        )
+    ).reply
+
+    assert sentence in reply
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_every_case_status_has_non_empty_wording_in_every_language(lang: Lang) -> None:
+    assert set(CASE_STATUS_NAMES[lang]) == set(CaseStatus)
+    assert all(CASE_STATUS_NAMES[lang][status].strip() for status in CaseStatus)
+
+
+def test_case_status_wording_is_distinct_within_each_language() -> None:
+    for names in CASE_STATUS_NAMES.values():
+        assert len(set(names.values())) == len(CaseStatus)
+
+
+def test_a_status_the_case_service_does_not_state_has_no_wording() -> None:
+    with pytest.raises(ValueError):
+        case_status_label("Archived", "en")
+
+
+@pytest.mark.parametrize(
+    ("lang", "status", "expected"),
+    [
+        ("es", "Open", "Caso D-9: abierto, presentado el 12 de junio de 2026."),
+        ("es", "In Review", "Caso D-9: en revisión, presentado el 12 de junio de 2026."),
+        ("es", "Resolved", "Caso D-9: resuelto, presentado el 12 de junio de 2026."),
+        ("es", "Rejected", "Caso D-9: rechazado, presentado el 12 de junio de 2026."),
+        ("pt", "Open", "Caso D-9: aberto, apresentado em 12 de junho de 2026."),
+        ("pt", "In Review", "Caso D-9: em análise, apresentado em 12 de junho de 2026."),
+        ("pt", "Resolved", "Caso D-9: resolvido, apresentado em 12 de junho de 2026."),
+        ("pt", "Rejected", "Caso D-9: rejeitado, apresentado em 12 de junho de 2026."),
+        ("en", "Open", "Case D-9: open, filed on June 12, 2026."),
+        ("en", "In Review", "Case D-9: in review, filed on June 12, 2026."),
+        ("en", "Resolved", "Case D-9: resolved, filed on June 12, 2026."),
+        ("en", "Rejected", "Case D-9: rejected, filed on June 12, 2026."),
+    ],
+)
+def test_dispute_status_states_each_case_status_in_the_reply_language(
+    lang: Lang, status: str, expected: str
+) -> None:
+    case = CaseFact(
+        case_number="D-9", status=status, filed_on=date(2026, 6, 12), transaction_ref="tx-1001"
+    )
+    envelope = _envelope(
+        lang=lang,
+        intent=Intent.DISPUTE_STATUS,
+        template_id=TemplateId.DISPUTE_STATUS,
+        facts=DisputeFacts(cases=(case,)),
+    )
+
+    lines = render(envelope).reply.splitlines()
+
+    assert lines[1:] == [expected]
+
+
+@pytest.mark.parametrize(
+    ("lang", "one", "three"),
+    [("es", "1 día", "3 días"), ("pt", "1 dia", "3 dias"), ("en", "1 day", "3 days")],
+)
+def test_a_policy_answer_gives_the_day_unit_in_the_singular_for_one(
+    lang: Lang, one: str, three: str
+) -> None:
+    def reply(count: str) -> str:
+        return render(
+            _envelope(
+                intent=Intent.POLICY_ANSWER,
+                template_id=TemplateId.POLICY_ANSWER,
+                lang=lang,
+                facts=DisputeFacts(
+                    policy_values=(PolicyValue(name="first_response_days", value=count),)
+                ),
+                sources=(_source(),),
+            )
+        ).reply
+
+    assert one in reply("1")
+    assert three in reply("3")
+    assert three not in reply("1")
+
+
+@pytest.mark.parametrize("lang", ["es", "pt", "en"])
+def test_a_policy_value_without_wording_is_refused_rather_than_shown(lang: Lang) -> None:
+    unknown_evidence = PolicyValue(name="evidence_required", value="not_a_known_item")
+    unknown_figure = PolicyValue(name="not_a_known_figure", value="3")
+
+    with pytest.raises(KeyError):
+        policy_value_text(unknown_evidence, lang)
+    with pytest.raises(KeyError):
+        render(
+            _envelope(
+                intent=Intent.POLICY_ANSWER,
+                template_id=TemplateId.POLICY_ANSWER,
+                lang=lang,
+                facts=DisputeFacts(policy_values=(unknown_figure,)),
+                sources=(_source(),),
+            )
+        )

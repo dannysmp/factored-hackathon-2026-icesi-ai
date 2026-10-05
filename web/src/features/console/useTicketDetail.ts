@@ -25,6 +25,7 @@ export interface TicketDetailQuery extends TicketDetailState {
   retry: () => void
 }
 
+/** The state before the request answers: loading, with no detail and no error. */
 const INITIAL_STATE: TicketDetailState = { status: 'loading', detail: null, error: null }
 
 /**

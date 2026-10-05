@@ -61,7 +61,9 @@ from app.conversation.renderer import (  # Reuse the template path's own tables 
     CATEGORY_NAMES,
     INELIGIBLE_TEXT,
     amount_text,
+    case_status_label,
     format_date,
+    policy_value_text,
 )
 from app.domain.policy.models import Outcome
 from contracts.service_v1.envelope import (  # The envelope and its typed facts
@@ -165,7 +167,9 @@ def _dispute_status(e: RenderEnvelope) -> tuple[SlotValue, ...]:
     entries: list[SlotValue] = []
     for case in e.facts.cases:
         entries.append(SlotValue(field=GroundedField.CASE_NUMBER, value=case.case_number))
-        entries.append(SlotValue(field=GroundedField.CASE_STATUS, value=case.status))
+        entries.append(
+            SlotValue(field=GroundedField.CASE_STATUS, value=case_status_label(case.status, e.lang))
+        )
         entries.append(
             SlotValue(field=GroundedField.FILED_ON, value=format_date(case.filed_on, e.lang))
         )
@@ -182,7 +186,7 @@ def _policy_answer(e: RenderEnvelope) -> tuple[SlotValue, ...]:
     """The cited section's title in the reply language and each policy figure it quotes."""
     entries = [SlotValue(field=GroundedField.SOURCE_TITLE, value=e.sources[0].title_for(e.lang))]
     entries.extend(
-        SlotValue(field=GroundedField.POLICY_VALUE, value=value.value)
+        SlotValue(field=GroundedField.POLICY_VALUE, value=policy_value_text(value, e.lang))
         for value in e.facts.policy_values
     )
     return tuple(entries)

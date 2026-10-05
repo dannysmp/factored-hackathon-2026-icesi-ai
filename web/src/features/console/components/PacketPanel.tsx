@@ -4,7 +4,13 @@ import type { JSX } from 'react'
 import { ScrollRegion } from '../../../components/ui/ScrollRegion'
 import type { HandoffPacket, LocalizedTitle } from '../contracts'
 import type { Lang } from '../../customer-chat/contracts'
-import { formatDate, formatMoney, formatScoreAgainstThreshold, formatShare } from '../format'
+import {
+  formatDate,
+  formatDateTime,
+  formatMoney,
+  formatScoreAgainstThreshold,
+  formatShare,
+} from '../format'
 import {
   CATEGORY_LABELS,
   LANGUAGE_LABELS,
@@ -33,8 +39,8 @@ function customerName(firstName: string): string {
 }
 
 /**
- * The packet: the request first, as a summary of who is asking and why, then the
- * verified facts, the actions taken or refused, the evidence (reason codes, policy version, source
+ * The packet: the request first, as a summary of who is asking and why (with the case already
+ * filed for it, when there is one, and the moment of the handoff), then the verified facts, the actions taken or refused, the evidence (reason codes, policy version, source
  * sections, and the risk score with its uncertainty, base rate and routing threshold when there is
  * one), and the open questions. Every value is written for an agent reading Spanish: a known
  * machine value through its label, dates and amounts in the console's own format, a score as a
@@ -72,8 +78,18 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
               <dd>{CATEGORY_LABELS[packet.category]}</dd>
             </>
           )}
+          {packet.existing_case_number !== null && (
+            <>
+              <dt>Caso ya registrado</dt>
+              <dd>
+                <span className="ticket-ref">{packet.existing_case_number}</span>
+              </dd>
+            </>
+          )}
           <dt>Fecha de referencia</dt>
           <dd>{formatDate(packet.reference_date)}</dd>
+          <dt>Registrado</dt>
+          <dd>{formatDateTime(packet.created_at)}</dd>
         </dl>
       </section>
 
@@ -82,7 +98,7 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
         <p>Ninguna transacción verificada.</p>
       ) : (
         <ScrollRegion className="queue-table-scroll" label="Transacciones verificadas">
-          <table>
+          <table className="stacked-table">
             <caption className="sr-only">Transacciones verificadas</caption>
             <thead>
               <tr>
@@ -98,17 +114,17 @@ export function PacketPanel({ packet }: { packet: HandoffPacket }): JSX.Element 
               {packet.verified_facts.map((fact) => (
                 <tr key={fact.ref}>
                   <th scope="row">{fact.ref}</th>
-                  <td>{formatDate(fact.occurred_on)}</td>
-                  <td>{fact.merchant ?? '—'}</td>
-                  <td>
+                  <td data-label="Fecha">{formatDate(fact.occurred_on)}</td>
+                  <td data-label="Comercio">{fact.merchant ?? '—'}</td>
+                  <td data-label="Monto">
                     {fact.amount === null
                       ? '—'
                       : formatMoney(fact.amount.amount, fact.amount.currency)}
                   </td>
-                  <td>
+                  <td data-label="Producto">
                     {fact.product.name} ····{fact.product.last4}
                   </td>
-                  <td>{TRANSACTION_STATUS_LABELS[fact.status]}</td>
+                  <td data-label="Estado">{TRANSACTION_STATUS_LABELS[fact.status]}</td>
                 </tr>
               ))}
             </tbody>
