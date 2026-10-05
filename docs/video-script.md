@@ -2,15 +2,17 @@
 
 A walk through the deployed system: the problem, the language switch, three paths with one
 demonstration persona each, the evaluation result, four design decisions and the route to operation.
-The total is about three minutes twenty seconds against a target of three minutes, a length chosen
-for this video; the Timing table gives the pace the narration assumes.
+The total is about three minutes forty seconds, a length chosen for this video; the Timing table
+gives the pace the narration assumes.
 
 ## Before recording
 
-- Run `make reset-demo-personas` against the deployed database. A duplicate open case for a
-  transaction is refused, so filing is only eligible again after the reset.
-- A persona's sign-in is held for 30 minutes (60 for an agent). Every path below uses a different
-  persona, and none of them may be used for rehearsal in the 30 minutes before the take.
+- Signing out releases a persona at once. A tab closed without signing out holds the persona for 30
+  minutes (60 for an agent), so sign out at the end of each path. Every path below uses a different
+  persona.
+- Run `make reset-demo-personas` against the deployed database only if a filing made since the last
+  deploy blocks a path. A duplicate open case for a transaction is refused, so filing is eligible
+  again only after the reset.
 - Play against the deployed link. The persona's access code is entered off screen and never shown.
 
 ## Where the lines come from
@@ -22,7 +24,7 @@ has, so a persona's customer lines are written for that persona's transactions.
 
 | Path | Persona | Customer lines | Checked against |
 |---|---|---|---|
-| Normal filing | Joao, Portuguese | Written for his Farmacia Salud charge; the first and third lines are those of demo script 2 | Played end to end on the deployed system |
+| Normal filing | João, Portuguese | Written for his Farmacia Salud charge; the first and third lines are those of demo script 2 | Played end to end on the deployed system |
 | Unsupported request | Ana, Spanish | Demo script 4, verbatim | Played on the deployed system |
 | Fraud handoff | Carlos, Spanish | Demo script 6, verbatim | Played on the deployed system |
 
@@ -31,30 +33,34 @@ Case and ticket numbers are read off the screen, never from this script: the dep
 
 ## The problem
 
-Narration: "In the banking dataset we were given, there are 12,297 disputed charges in 37 months,
-and the cases that do close take a median of 15 days."
+Narration: "Every month, a retail bank receives around three hundred and thirty disputes from
+customers who don't recognize a charge. Only one in four of those cases is ever resolved or closed.
+The ones that are take a median of fifteen days, and one in five misses the bank's own service-level
+target. Meanwhile, the customer waits, and almost one in seven of these complaints comes from
+someone who has complained before. That's the problem we set out to solve."
 
-On screen: the figures as slide 2 of the deck states them: 12,297 disputed charges in 37 months, and
-15.0 days as the median time to resolve the cases that do close.
+On screen: slide 2 of the deck.
 
 ## Opening
 
-Narration: "This system takes a bank customer's transaction dispute, in Spanish, Portuguese or
-English. The model only understands the request. Replies are fixed templates filled with verified
-facts, and a deterministic policy engine decides."
+Narration: "So we built an assistant that takes a dispute from the customer's first message all the
+way to a verified, filed case, or to the right person, in Spanish, Portuguese or English. The
+language model only understands what the customer says. Every reply comes from a fixed template
+filled with verified facts, and a deterministic policy engine makes every decision."
 
-On screen: the sign-in page, with the demonstration notice. Once signed in, the chat and the
-console state that the session is a demonstration and show the date the data is current as of,
-June 18, 2026.
+On screen: the deck's cover, then slide 3, then the sign-in page, with the demonstration notice.
+Once signed in, the chat and the console state that the session is a demonstration and show the
+date the data is current as of, June 18, 2026.
 
 ## Language switch
 
 On the sign-in page, press Español, then Português, then English. A button selects that language's
 first demonstration persona, unless that language is already selected. Narration: "Spanish and
-Portuguese are required; English is added. The customer simply writes in their language." End on
-Português, which selects Joao for the first path.
+Portuguese are the primary languages, and English is supported too. The customer simply writes in
+their language." End on
+Português, which selects João for the first path.
 
-## Path 1: normal filing, Joao in Portuguese
+## Path 1: normal filing, João in Portuguese
 
 Customer lines, in order:
 
@@ -86,8 +92,8 @@ is a viewer today."
 
 ## Results
 
-Show the headline table of `reports/evaluation.md`, captioned as an offline measurement on
-team-written cases. Narration: "On 135 team-written cases, 32 of them adversarial, among them prompt
+On screen: slide 5 of the deck, presented as an offline measurement on team-written cases.
+Narration: "On 135 team-written cases, 32 of them adversarial, among them prompt
 injection, attempts to reach another customer's data and corrupted data, there were zero unsafe
 outcomes. Safe automated resolution is 73.5% over the 103 cases in scope, against 33.0% and 36.9%
 for the two baselines. The automated judge did not match both human raters on 80% of replies, so we
@@ -95,7 +101,7 @@ do not report its scores."
 
 ## Design decisions
 
-Four decisions, each narrated in one sentence:
+On screen: slide 4 of the deck, the architecture. Four decisions, each narrated in one sentence:
 
 - **Decide, then render:** "A deterministic policy engine decides, with stable reason codes; the
   model never decides an outcome, and replies are filled templates."
@@ -108,9 +114,10 @@ Four decisions, each narrated in one sentence:
 
 ## Closing
 
-Narration: "To run this in a bank, it would need the bank's own identity, a managed database with
-backups, and real conversations in each language to validate it. What is built, what is deferred
-and what remains are in the limitations report. Nothing here claims more than the code does."
+On screen: slide 6 of the deck, the limitations and next steps. Narration: "To run this in a bank,
+it would need the bank's own identity, a managed database with backups, and real conversations in
+each language to validate it. What is built, what is deferred and what remains are in the
+limitations report. Nothing here claims more than the code does."
 
 ## Timing
 
@@ -119,21 +126,22 @@ part is for sign-ins, typing, replies and console navigation.
 
 | Part | Seconds | Narration words | Seconds of speech |
 |---|---|---|---|
-| The problem | 12 | 27 | 11 |
-| Opening | 15 | 33 | 13 |
-| Language switch | 7 | 15 | 6 |
+| The problem | 26 | 78 | 31 |
+| Opening | 18 | 60 | 24 |
+| Language switch | 7 | 19 | 8 |
 | Path 1 | 33 | 22 | 9 |
 | Path 2 | 12 | 13 | 5 |
 | Path 3 | 33 | 28 | 11 |
 | Results | 30 | 65 | 26 |
 | Design decisions | 40 | 69 | 28 |
 | Closing | 20 | 49 | 20 |
-| Total | 202 | 321 | 129 |
+| Total | 219 | 403 | 162 |
 
 ## Notes for the recording
 
 - No secret value, access code, administration screen, key or unmasked identifier may appear on
-  screen. A person watches the full recording before delivery, as the release checklist requires.
+  screen. A person watches the full recording before it is published, as the release checklist
+  requires.
 - The system's replies are shown on screen as the deployed system writes them.
 - The fixture conversations in `docs/demo-scripts.md` cover each path in more than one language
   for a longer cut.
