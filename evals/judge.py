@@ -7,8 +7,8 @@ Overview
 Scores one finished case transcript against the LLM judge's rubric: grounding, language quality, and
 clarification quality (when the case asked a clarifying question). The rubric is the same one, word
 for word, that the two human raters receive when they double-score the same held-out sample, so the
-report's judge-vs-human agreement check compares like against like; the rubric is committed and
-versioned.
+judge-versus-human agreement check compares like against like; the rubric is versioned with the
+prompt.
 
 Scope
 -----
@@ -24,7 +24,7 @@ Design Principles
 -----------------
 - **Reuses the production LLM port, not a second adapter.** Unlike the B1 baseline's
   ``naive_agent_client`` (which needs open tool choice, the opposite of what ``LlmClient`` forces),
-  the judge is exactly the shape ``app.llm.client.LlmClient`` is built for: one forced tool call
+  the judge is the shape ``app.llm.client.LlmClient`` is built for: one forced tool call
   over a fixed input, returning one structured result. Building a second adapter here would
   duplicate the port's error taxonomy and its ``FakeLlm`` test double for no boundary reason.
 - **Same calling convention as ``app.conversation.llm_understanding.LlmNlu``.** A versioned prompt
@@ -36,8 +36,8 @@ Design Principles
   the judge rubric's own ``NA`` convention for the human raters' identical column.
 - **A judge call that cannot complete is not swallowed.** Unlike ``LlmNlu`` (which falls back to
   unusable understanding so a customer is never shown a provider error), a judge call has no
-  customer waiting on it: any ``LlmError`` propagates to the caller, matching this harness's own
-  "no hidden retry" rule for a case runtime error (``evals.cli``'s own Limitations section).
+  customer waiting on it: any ``LlmError`` propagates to the caller, matching the harness's
+  "no hidden retry" rule for a case runtime error (see ``evals.cli``).
 
 Runtime Contract
 -----------------
@@ -100,10 +100,11 @@ _JUDGE_TOOL = ToolSpec(
 
 @dataclass(frozen=True, slots=True)
 class JudgeVerdict:
-    """One case's rubric score, from either the automated judge or a human rater.
+    """One case's rubric score from the automated judge.
 
     ``clarification`` is ``None`` for a case the rubric does not ask that question about, matching
-    the judge rubric's own ``NA`` convention for the same column.
+    the rubric's ``NA`` convention for the same column. ``judge_model`` and ``prompt_version`` are
+    the model and rubric prompt that produced the score.
     """
 
     case_id: str
@@ -115,6 +116,14 @@ class JudgeVerdict:
     prompt_version: str
 
     def __post_init__(self) -> None:
+        """Reject a score outside the rubric's 0-2 scale.
+
+        Raises
+        ------
+        ValueError
+            ``grounding``, ``language_quality`` or a non-``None`` ``clarification`` is not 0, 1
+            or 2.
+        """
         scores = (
             ("grounding", self.grounding),
             ("language_quality", self.language_quality),
@@ -127,6 +136,7 @@ class JudgeVerdict:
 
 
 def _joined(turns: Sequence[str]) -> str:
+    """The turns as one newline-separated block for the prompt."""
     return "\n".join(turns)
 
 

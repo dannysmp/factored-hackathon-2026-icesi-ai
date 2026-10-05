@@ -4,34 +4,32 @@ Golden Set: Normal Category
 
 Overview
 --------
-The 41 normal cases of the golden set's category mix (20 Spanish, 15 Portuguese, 6 English):
-29 cases where an eligible dispute is filed, spanning the four dispute categories that never
-escalate on their own (unrecognized charge, duplicate charge, wrong amount, service not
-received — fraud claims always escalate and belong to the human-required category instead), and
-12 cases where the customer asks a policy question that the retrieval system answers directly,
-grounded in `policy/corpus/{lang}/dispute-policy.md`.
+The normal cases of the golden set: 41 cases (20 Spanish, 15 Portuguese, 6 English), made of 29
+cases where an eligible dispute is filed and 12 where the customer asks a policy question that the
+retrieval system answers directly. The filed-dispute cases span the four dispute categories that
+never escalate on their own: unrecognized charge, duplicate charge, wrong amount and service not
+received. Fraud claims always escalate and belong to the human-required category. Policy answers
+are grounded in `policy/corpus/{lang}/dispute-policy.md`.
 
 Scope
 -----
-In: the 41 `Case` records, the real `data/gold/ops_seed` rows the filed-dispute cases are
-grounded in, and the real policy-corpus sections the policy-answer cases target.
-Out: the other four category groups (their own modules); the status-inquiry subtype of "normal"
-(see Limitations); running or scoring these cases.
+In: the 41 `Case` records, the `data/gold/ops_seed` rows the filed-dispute cases are grounded in,
+and the policy-corpus sections the policy-answer cases target.
+Out: the other category modules; running or scoring these cases; the status-inquiry subtype (see
+Limitations).
 
 Design Principles
--------------------
-- **Eligibility, provably clean.** Every filed-dispute case's transaction stays under the $5,000
-  routing threshold, belongs to a customer who is not a repeat complainer, and falls inside the
-  filing window of the dispute category its scripted turns imply — verified against
-  `data/gold/ops_seed/transactions.parquet` and `data/silver/silver/complaints.parquet` by direct
-  query, the same method `evals.golden.human_required` used.
-- **Policy answers need no transaction.** `seed_ref` for a policy-answer case names an
-  `ops_seed` customer only (`ops_seed:CLI-...`, distinct from the filed-dispute cases'
-  `ops_seed:TRX-...`), since answering a policy question needs an authenticated session, not a
-  specific transaction; the session's customer is real and distinct across every case in this
-  module.
-- **Provenance is `team_generated` throughout**, for the same reason `evals.golden.human_required`
-  states: the source call-transcript data carries no dispute language at all.
+-----------------
+- **Every filed-dispute case is eligible.** Its transaction is under the $5,000 routing threshold,
+  belongs to a customer who is not a repeat complainer, and falls inside the filing window of the
+  dispute category its scripted turns imply. This was checked against
+  `data/gold/ops_seed/transactions.parquet` and `data/silver/silver/complaints.parquet`.
+- **Policy answers need no transaction.** `seed_ref` for a policy-answer case names an `ops_seed`
+  customer only (`ops_seed:CLI-...`, against `ops_seed:TRX-...` for filed disputes), since
+  answering a policy question needs an authenticated session, not a transaction. The customer is
+  distinct across every case in this module.
+- **Provenance is `team_generated` throughout**: the source call-transcript data carries no
+  dispute language, so no case can honestly claim observed wording.
 
 Runtime Contract
 -----------------
@@ -40,12 +38,9 @@ policy-answer cases.
 
 Limitations
 -----------
-The normal category also covers a status-inquiry subtype (asking about an already filed case).
-No case here covers it: `data/gold/ops_seed` seeds no pre-existing cases, so a status-inquiry
-case would need either a live filed case or a frozen one from `data/gold/eval_bank`. This
-module's 29 filed-dispute and 12 policy-answer cases are counted against the category's mix
-total (41) as authored; status-inquiry cases can be added to this module once a source of filed
-cases is available.
+No case covers a status inquiry about an already filed case: `data/gold/ops_seed` seeds no
+pre-existing cases, so such a case would need a live filed case or a frozen one from
+`data/gold/eval_bank`. The category therefore holds only filed-dispute and policy-answer cases.
 """
 
 from __future__ import annotations

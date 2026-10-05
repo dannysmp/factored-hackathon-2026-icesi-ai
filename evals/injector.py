@@ -20,13 +20,12 @@ untouched by this module).
 Design Principles
 -----------------
 - **A decorator, not a fork.** Every method delegates to the wrapped port unchanged except the one
-  tool a case names; there is exactly one real `ToolPort` implementation, here or in `app`, per
-  the rule against duplicate implementations of the same thing.
-- **A pure wrapper, and one deliberately mutable schedule.** ``FailureInjectingToolPort`` has no
-  side effect of its own: it either forwards to the inner port or returns a `ToolFailure` built
-  from the case's own declared cause, and is a frozen dataclass. ``FailureSchedule`` is the one
-  piece of state, a single slot a sequential runner sets per case and clears when the batch ends;
-  it is owned by the caller, never a module-level instance.
+  tool a case names; the real tool behavior stays in the wrapped port, never reimplemented here.
+- **A pure wrapper and one deliberately mutable schedule.** `FailureInjectingToolPort` has no side
+  effect of its own: it either forwards to the inner port or returns a `ToolFailure` built from the
+  case's own declared cause, and it is a frozen dataclass. `FailureSchedule` is the one piece of
+  state, a single slot a sequential runner sets per case and clears when the batch ends; the
+  caller owns it, never a module-level instance.
 - **Every call to the named tool fails, not just the first.** A case that declares
   `injected_failure` is testing what happens when that tool is down for the whole case, which is
   the condition every tool-failure case in the golden set actually describes.
@@ -66,7 +65,11 @@ from evals.models import InjectedToolFailure  # Which tool a case fails, and how
 
 @dataclass(frozen=True, slots=True)
 class FailureInjectingToolPort:
-    """Wraps ``inner``, failing every call to ``failure.tool`` and forwarding everything else."""
+    """Wraps ``inner``, failing every call to ``failure.tool`` and forwarding everything else.
+
+    With ``failure=None`` every call is forwarded, so a case without an injected failure can use
+    the same wrapper.
+    """
 
     inner: ToolPort
     failure: InjectedToolFailure | None
@@ -80,30 +83,36 @@ class FailureInjectingToolPort:
         return None
 
     def list_transactions(self, filters: TransactionFilters) -> TransactionPage | ToolFailure:
+        """Fail ``list_transactions`` when it is the injected tool, otherwise forward it."""
         failure = self._failure_for(Tool.LIST_TRANSACTIONS)
         return failure if failure is not None else self.inner.list_transactions(filters)
 
     def get_transaction(self, ref: str) -> TransactionFact | ToolFailure | None:
+        """Fail ``get_transaction`` when it is the injected tool, otherwise forward it."""
         failure = self._failure_for(Tool.GET_TRANSACTION)
         return failure if failure is not None else self.inner.get_transaction(ref)
 
     def list_dispute_cases(self) -> tuple[CaseRecord, ...] | ToolFailure:
+        """Fail ``list_dispute_cases`` when it is the injected tool, otherwise forward it."""
         failure = self._failure_for(Tool.LIST_DISPUTE_CASES)
         return failure if failure is not None else self.inner.list_dispute_cases()
 
     def get_case(self, case_number: str) -> CaseRecord | ToolFailure | None:
+        """Fail ``get_case`` when it is the injected tool, otherwise forward it."""
         failure = self._failure_for(Tool.GET_CASE)
         return failure if failure is not None else self.inner.get_case(case_number)
 
     def evaluate_dispute(
         self, request: EvaluateDisputeRequest
     ) -> PolicyDecision | ToolFailure | None:
+        """Fail ``evaluate_dispute`` when it is the injected tool, otherwise forward it."""
         failure = self._failure_for(Tool.EVALUATE_DISPUTE)
         return failure if failure is not None else self.inner.evaluate_dispute(request)
 
     def create_dispute_case(
         self, request: CreateDisputeCaseRequest
     ) -> CreateDisputeCaseResult | ToolFailure:
+        """Fail ``create_dispute_case`` when it is the injected tool, otherwise forward it."""
         failure = self._failure_for(Tool.CREATE_DISPUTE_CASE)
         return failure if failure is not None else self.inner.create_dispute_case(request)
 
@@ -119,6 +128,7 @@ class FailureSchedule:
     __slots__ = ("failure",)
 
     def __init__(self) -> None:
+        """Start with no failure declared."""
         self.failure: InjectedToolFailure | None = None
 
     def decorate(self, principal: Principal, port: ToolPort) -> ToolPort:

@@ -5,11 +5,9 @@ Independent Case-Row Oracle
 Overview
 --------
 Recomputes the dispute-policy engine's eligibility gates against every stored case row, from the
-transaction the case cites and the case's own domain date, and flags a row the engine would not have
-made eligible today. The guarantee this checks: recomputed from the trusted transaction and the
-reference date, no case exists that the engine would not have made eligible, except through the
-controller. One implementation serves both a direct check that every filed case stays eligible and,
-later, an evaluation harness comparing what different system variants filed against the same policy.
+transaction the case cites and the reference date, and flags a row the engine would not have made
+eligible. The guarantee it checks: recomputed from the trusted transaction and the reference date,
+no case exists that the engine would not have made eligible, except through the controller.
 
 Scope
 -----
@@ -17,38 +15,33 @@ In: recomputing the five eligibility gates that depend only on the transaction's
 facts and the case's category and domain date (product scope, transaction type, transaction
 status, transaction date not in the future, filing window); comparing the recomputed outcome
 against what a filed case implies (``Outcome.ELIGIBLE``).
-Out: recomputing routing or escalation (NLU confidence, repeat-complainer and risk-score
-thresholds are session-time signals no stored record carries; the amount threshold's own input,
-``CaseRecord.amount``, is stored but is deliberately not recomputed here either) — the residual
-risk this oracle covers is an ineligible case slipping past the controller, not a differing
-escalation choice, and a stored fraud-claim row (which the engine can never resolve to
-``Outcome.ELIGIBLE``) is exactly that same residual risk, not yet checked as a violation here;
-recomputing the duplicate-open-case gate (a store-level uniqueness invariant enforced and tested
-at write time, not re-derived here); reading a live case service (this is a pure function, tested
-here against handmade facts; wiring it over a running system's own filed cases is a separate,
-later integration, and closing both gaps above belongs with that wiring).
+Out: recomputing routing or escalation. NLU confidence, repeat-complainer and risk-score
+thresholds are session-time signals no stored record carries, and the amount threshold's input,
+``CaseRecord.amount``, is stored but deliberately not recomputed. The residual risk this oracle
+covers is an ineligible case slipping past the controller, not a differing escalation choice.
+Also out: the duplicate-open-case gate (a store-level uniqueness invariant enforced at write
+time) and reading a live case service (this is a pure function over caller-supplied facts).
 
 Design Principles
 ------------------
 - Pure function: no I/O, no clock, no randomness, mirroring ``app.domain.policy.engine``'s own
-  design. The caller supplies the transaction facts, the cases and the policy.
+  design. The caller supplies the transaction facts, the cases, the policy and the reference date.
 - Neutral stand-ins for every field the five checked gates do not read: ``nlu_confidence=1.0``
   (always clears the floor), ``is_repeat_complainer=False``, ``risk_score=None``,
   ``has_open_case_for_transaction=False``, ``amount_usd=Decimal("0")`` (never ``None``, so it
   cannot trigger the "unknown amount" escalation, and below any policy's ``escalate_amount_usd``,
-  which must be strictly positive). None of the five gates this oracle checks uses any of them,
-  and none of them can trigger a routing escalation either — a recomputed ``Outcome.ESCALATE``
-  would not be the violation this oracle exists to catch, so it must never be produced by the
-  oracle's own neutral choices (`tests/test_oracle.py` pins both assumptions). A future engine
-  change that made one of these fields start mattering to eligibility would need this module
-  updated too.
+  which must be strictly positive). None of the five gates uses any of them, and none of them can
+  trigger a routing escalation either: a recomputed ``Outcome.ESCALATE`` would not be the
+  violation this oracle exists to catch, so the oracle's own neutral choices must never produce
+  one (`tests/test_oracle.py` pins both assumptions). An engine change that made one of these
+  fields matter to eligibility would require this module to change too.
 - A fraud claim is a documented exception in the engine itself: it can never resolve to
-  ``Outcome.ELIGIBLE`` through the gates (it always escalates in the engine's own step 4), so a
-  stored fraud-claim case cannot have been filed through the automated eligibility path at all.
-  This oracle marks it **not applicable** rather than raise a false violation.
+  ``Outcome.ELIGIBLE`` through the gates (it always escalates at the routing step), so a stored
+  fraud-claim case cannot have been filed through the automated eligibility path. The oracle
+  marks it **not applicable** rather than raise a false violation.
 - A case citing a transaction reference with no known facts is reported as a finding of its own,
-  never silently skipped: a case that cites a transaction the harness cannot resolve is itself
-  evidence worth reporting, treated conservatively as a violation.
+  never silently skipped, and treated conservatively as a violation: a case that cites a
+  transaction the caller cannot resolve is itself evidence worth reporting.
 
 Runtime Contract
 ----------------
@@ -59,15 +52,13 @@ Runtime Contract
 
 Limitations
 -----------
-Flags a case whose eligibility no longer recomputes, but does not explain why an escalate-outcome
-case skipped filing (a case row is never created for one, so there is nothing to check). A stored
-fraud-claim case is marked not applicable rather than checked against the residual risk it
-actually represents (the engine can never resolve one to ``Outcome.ELIGIBLE``, so its mere
-existence as a filed case is itself the defect class this oracle exists to catch); closing this
-gap, and recomputing the amount-threshold escalation from ``CaseRecord.amount`` since it is
-known to be stored, both belong with the live-system integration this module does not attempt
-yet. Trusts the caller's ``transactions_by_ref`` mapping; verifying that mapping's own provenance
-against ``data/gold/ops_seed`` or ``data/gold/eval_bank`` is the caller's responsibility.
+A stored fraud-claim case is marked not applicable rather than flagged, although its existence as
+a filed case is itself the defect class this oracle targets (the engine can never resolve one to
+``Outcome.ELIGIBLE``). The amount-threshold escalation is not recomputed from ``CaseRecord.amount``
+although that value is stored. An escalated case never produces a case row, so there is nothing
+to check for one. The caller's ``transactions_by_ref`` mapping is trusted; verifying its
+provenance against ``data/gold/ops_seed`` or ``data/gold/eval_bank`` is the caller's
+responsibility.
 """
 
 from __future__ import annotations
@@ -117,7 +108,13 @@ class TransactionFacts:
 
 @dataclass(frozen=True, slots=True)
 class OracleFinding:
-    """The oracle's verdict for one stored case row."""
+    """The oracle's verdict for one stored case row.
+
+    ``applicable`` is ``False`` for a fraud claim and for a case whose transaction is unknown;
+    ``violation`` is ``True`` when the case should not exist as filed (a recomputed ineligible
+    outcome) or its transaction could not be resolved. ``recomputed_outcome`` and
+    ``recomputed_reason_code`` are ``None`` when nothing was recomputed.
+    """
 
     case_number: str
     transaction_ref: str
@@ -132,15 +129,15 @@ class OracleFinding:
 def check_case(
     case: CaseRecord, transaction: TransactionFacts, policy: Policy, *, today: date
 ) -> OracleFinding:
-    """Recompute ``case``'s eligibility from ``transaction``'s trusted facts.
+    """Recompute ``case``'s eligibility from ``transaction``'s trusted facts, as of ``today``.
 
     Returns
     -------
     OracleFinding
         ``applicable=False`` for a fraud claim (the engine never returns one eligible; see
         ``app.domain.policy.engine``'s own documented exception). Otherwise ``violation=True``
-        when the recomputed outcome is not ``Outcome.ELIGIBLE`` — the engine would not have filed
-        this case today from the facts it cites.
+        when the recomputed outcome is ``Outcome.INELIGIBLE`` — the engine would not have filed
+        this case on ``today`` from the facts it cites.
     """
     if case.category is DisputeCategory.FRAUD_CLAIM:
         return OracleFinding(

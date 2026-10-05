@@ -8,9 +8,8 @@ Renders each category group's authored cases as its own CSV file under ``evals/g
 or checks that the committed files are exactly what the cases would generate. The check is what
 stops the files a language reviewer reads from drifting away from the cases the harness actually
 runs. Nothing at runtime reads these files: the harness consumes `Case` objects directly from the
-category modules; the files exist only for a human reader, so no loader reconstructs them back
-into records — the schema guarantee a reader needs is already `Case.__post_init__`'s own
-validation, run when each module is authored.
+category modules; the files exist only for a human reader, so no loader reconstructs them into
+records. `Case.__post_init__` validates each record when its module is imported.
 
 Scope
 -----
@@ -24,14 +23,14 @@ Design Principles
   (`evals/golden/cases/<category>.csv`), so no two category groups can conflict on the same
   generated file. Only this module itself is shared, and adding a category only ever needs one
   import and one `CATEGORY_CASES` entry, never a change to the render or check functions.
-- **`ALL_CASES` is ordered by the mix table, not by import order.** Derived by
-  iterating `CaseCategory`'s own declaration order (the mix table's row order: normal, ambiguous,
-  unsupported, human-required, multilingual, adversarial) and looking up each category in
-  `CATEGORY_CASES`, so the combined tuple's order never depends on the order categories were added.
-- Mirrors `app.domain.policy.corpus` and `pipelines.policy_corpus`: a pure render function, a
-  write step that only touches a file when its content changed, and a check step (stray-file
-  detection copied from `pipelines.policy_corpus.check_corpus`'s own pattern) that a test and CI
-  both call, so an added or changed category that forgets to regenerate its file cannot be merged.
+- **`ALL_CASES` follows the category declaration order, not import order.** It iterates
+  `CaseCategory` (normal, ambiguous, unsupported, human-required, multilingual, adversarial) and
+  looks each one up in `CATEGORY_CASES`, so the order never depends on how the modules were
+  imported.
+- **A pure render, a write that skips unchanged files, and a check.** This follows
+  `app.domain.policy.corpus` and `pipelines.policy_corpus`, including stray-file detection like
+  `pipelines.policy_corpus.check_corpus`. A test calls the check, so a changed category whose file
+  was not regenerated fails the suite.
 - One row per case, one case per row: `user_turns` join with " | " so a file stays one line per
   case for a reviewer scanning it, and columns are stable and named, never positional.
 
@@ -45,7 +44,8 @@ every case, in `CaseCategory`'s declared order. ``render_case_sheet(cases) -> st
 
 Limitations
 -----------
-All six categories exist; `ALL_CASES` holds the golden set's full 135 cases.
+The command line only renders to, or checks, the default directory. A `CaseCategory` with no
+entry in `CATEGORY_CASES` contributes no cases and no file.
 """
 
 from __future__ import annotations
@@ -83,12 +83,13 @@ CATEGORY_CASES: dict[CaseCategory, tuple[Case, ...]] = {
     CaseCategory.ADVERSARIAL: ADVERSARIAL_CASES,
 }
 
-#: Every authored case, in `CaseCategory`'s declared order (the golden set's mix-table row
-#: order), not the order the categories are imported in.
+#: Every authored case, in `CaseCategory`'s declared order, not the order the categories are
+#: imported in.
 ALL_CASES: tuple[Case, ...] = tuple(
     case for category in CaseCategory for case in CATEGORY_CASES.get(category, ())
 )
 
+# The case-sheet columns, in file order: the stable, named header of every category file.
 _COLUMNS = (
     "case_id",
     "category",
@@ -164,7 +165,10 @@ def write_case_sheet(directory: Path = DEFAULT_DIRECTORY) -> list[str]:
 
 
 def check_case_sheet(directory: Path = DEFAULT_DIRECTORY) -> list[str]:
-    """Relative paths that are missing, differ, or are not generated; empty means clean."""
+    """Relative paths under ``directory`` that are missing, stale or not generated.
+
+    Hidden files are ignored. An empty list means the directory matches the cases exactly.
+    """
     expected = _expected_files()
     drift = []
     for relative, text in expected.items():
@@ -184,7 +188,11 @@ def check_case_sheet(directory: Path = DEFAULT_DIRECTORY) -> list[str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m evals.golden.case_sheet [--check]``."""
+    """Command-line entry point: ``python -m evals.golden.case_sheet [--check]``.
+
+    Without ``--check`` it writes the category files; with it, it only reports drift. Returns ``1``
+    when ``--check`` finds a missing, stale or stray file, otherwise ``0``.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--check", action="store_true", help="fail instead of writing when a file is stale"

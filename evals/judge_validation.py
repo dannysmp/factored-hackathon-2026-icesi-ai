@@ -6,33 +6,33 @@ Overview
 --------
 Computes the per-dimension agreement the judge rubric names: between the two human raters, and
 between each rater and the automated judge, over the same stratified sample of cases. A dimension
-whose agreement with the judge falls below the committed 80% threshold is demoted to human-only
-scoring for the final report — this module decides that, the report generator only renders it.
+whose agreement with the judge falls below the 80% threshold (``DEMOTION_THRESHOLD``) is demoted to
+human-only scoring in the report — this module decides that, the report generator only renders it.
 
 Scope
 -----
 In: pairing rater scores and judge verdicts by ``case_id``, the plain agreement rate per dimension,
 and the demotion decision.
-Out: producing rater scores (a person, or, until they return theirs, the synthetic placeholder
-fixture in ``evals/golden/judge_validation_sample.py``) or judge verdicts (``evals.judge``);
+Out: producing rater scores (a person, or the synthetic stand-in sample in
+``evals.golden.judge_validation_sample``) or judge verdicts (``evals.judge``);
 rendering the report's judge-validation section (the report generator).
 
 Design Principles
 -----------------
-- **Pure functions over plain records.** No I/O, no clock — the same style ``evals.metrics``
-  already applies to the deterministic headline metrics, so this module's tests are exact and fast
-  regardless of whether the scores being compared are synthetic or the real returned sheets.
+- **Pure functions over plain records.** No I/O, no clock — the same style as ``evals.metrics``,
+  so the computation is exact and fast regardless of whether the scores being compared are
+  synthetic or from the real returned sheets.
 - **Clarification is compared only where both sides scored it.** The judge rubric's own ``NA``
   convention means a case with no clarifying question contributes nothing to that dimension's
   agreement, in either direction — never a forced "no disagreement" nor a forced "no data," just
   excluded from that dimension's own denominator.
 - **"Not defined" is a value, not an exception.** A dimension with zero comparable pairs (every
   case's clarification score was ``NA`` on at least one side) reports its agreement as the literal
-  ``"not defined"``, the same reporting rule ``evals.metrics`` already applies to cost-per-success.
+  ``"not defined"``, the same reporting rule ``evals.metrics`` applies to cost per success.
 - **Provenance travels with the sample, not with this module.** This module does not know or care
-  whether the rater scores it was given are real or the synthetic placeholder; the report
-  generator is what refuses to present a synthetic sample's numbers as the real ≥50-case human
-  validation (see ``evals.golden.judge_validation_sample``).
+  whether the rater scores it was given are real or the synthetic stand-in; the report generator
+  is what refuses to present a synthetic sample's numbers as the real human validation of at least
+  50 cases (see ``evals.golden.judge_validation_sample``).
 
 Runtime Contract
 -----------------
@@ -50,15 +50,15 @@ agreement rests on, the quadratic-weighted kappa, and which side scored higher w
 
 Limitations
 -----------
-The demotion decision uses the plain share of exact score matches, matching the wording of the
-demotion rule; the weighted kappa is reported beside it and never changes the decision. The kappa is
-"not defined" when both sides of a pair give one and the same score throughout, and it is close to
-zero whenever one side's scores barely vary, however often the two sides match — it is read together
-with the pair count and the direction counts, not alone. The written analysis of why individual
-cases differ (a person naming a cause per disagreement) is not reproduced here. A case_id present in
-one input but missing from another is silently excluded from every dimension's comparable set, on
-the assumption the three inputs are already the same stratified sample; a test proves a genuinely
-mismatched sample does not silently pass as fully compared.
+The demotion decision uses the plain share of exact score matches; the weighted kappa is reported
+beside it and never changes the decision. The kappa is "not defined" when both sides of a pair give
+one and the same score throughout, and it is close to zero whenever one side's scores barely vary,
+however often the two sides match — it is read together with the pair count and the direction
+counts, not alone. The written analysis of why individual cases differ (a person naming a cause per
+disagreement) is not reproduced here. A case_id present in one input but missing from another is
+silently excluded from every dimension's comparable set, on the assumption the three inputs are the
+same stratified sample; the per-dimension pair counts (``PairDetail.compared``) show how many cases
+each agreement rests on.
 """
 
 from __future__ import annotations
@@ -71,15 +71,20 @@ from typing import Literal
 # Local modules
 from evals.judge import JudgeVerdict
 
+#: A dimension whose agreement with the judge is below this share of exact matches is demoted.
 DEMOTION_THRESHOLD = 0.8
 
+#: One of the rubric's three scored dimensions, in the order the report lists them.
 Dimension = Literal["grounding", "language_quality", "clarification"]
 DIMENSIONS: tuple[Dimension, ...] = ("grounding", "language_quality", "clarification")
 
+#: Which of the two human raters produced a score.
 Role = Literal["Rater 1", "Rater 2"]
 
+#: An agreement share, or ``"not defined"`` when no case was comparable.
 AgreementValue = float | Literal["not defined"]
 
+# Top of the rubric's closed 0-2 scale.
 _SCALE_MAX = 2
 
 
@@ -140,6 +145,7 @@ class HumanMean:
 
 
 def _value(score: RaterScore | JudgeVerdict, dimension: Dimension) -> int | None:
+    """The score's value on ``dimension``; ``None`` when the dimension is not scored."""
     return getattr(score, dimension)  # type: ignore[no-any-return]
 
 
@@ -148,6 +154,11 @@ def _agreement(
     right: Mapping[str, RaterScore | JudgeVerdict],
     dimension: Dimension,
 ) -> AgreementValue:
+    """The share of cases scored on ``dimension`` by both sides where the scores are equal.
+
+    Cases missing from either mapping, or unscored by either side, are not counted; ``"not
+    defined"`` when no case is left.
+    """
     matches = 0
     comparable = 0
     for case_id in left.keys() & right.keys():
@@ -164,6 +175,7 @@ def _agreement(
 
 
 def _demoted(rater1_to_judge: AgreementValue, rater2_to_judge: AgreementValue) -> bool:
+    """Whether either rater-to-judge agreement is below the threshold or not defined."""
     return any(
         value == "not defined" or value < DEMOTION_THRESHOLD
         for value in (rater1_to_judge, rater2_to_judge)
@@ -228,6 +240,7 @@ def _pair_detail(
     right: Mapping[str, RaterScore | JudgeVerdict],
     dimension: Dimension,
 ) -> PairDetail:
+    """The pair count, weighted kappa and direction of gaps for one pairing of one dimension."""
     pairs: list[tuple[int, int]] = []
     for case_id in sorted(left.keys() & right.keys()):
         left_value = _value(left[case_id], dimension)
@@ -267,6 +280,7 @@ def compute_detail(
 
 
 def _mean(values: Sequence[int]) -> float | None:
+    """The arithmetic mean, or ``None`` for no values."""
     return sum(values) / len(values) if values else None
 
 

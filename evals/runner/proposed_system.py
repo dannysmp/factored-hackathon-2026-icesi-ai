@@ -1,41 +1,46 @@
 """
 Proposed System Adapter
-=========================
+=======================
 
 Overview
 --------
-Drives one case's scripted turns against the running system exactly as a real client would: mint
-a session through the sandbox login, then call the turns endpoint once per scripted line, in
-order, over the same HTTP surface a customer's browser calls. This is system P — the full,
-deployed architecture — as opposed to a baseline that reaches into the process directly.
+Drives one case's scripted turns against the running system as a real client would: mint a session
+through the sandbox login, then call the turns endpoint once per scripted line, in order, over the
+HTTP surface a customer's browser uses. This is system P, the full deployed architecture, as
+opposed to a baseline that reaches into the process directly.
 
 Scope
 -----
 In: minting the session for one case's resolved customer, sending its scripted turns in order,
 timing each call, and assembling the result into a ``RunTranscript``.
 Out: resolving which customer a case's ``seed_ref`` names (``evals.runner.seed_resolution``);
-scoring the transcript (``evals.scoring``); building the HTTP client or the app itself (the caller's
-job — this module takes a ready client, so the same code drives a real deployed instance or an
-in-process ASGI transport without caring which).
+scoring the transcript (``evals.scoring``); building the HTTP client or the application, which the
+caller does. The module takes a ready client, so the same code drives a deployed instance or an
+in-process ASGI transport.
 
 Design Principles
 -----------------
-- **The same HTTP surface a customer uses, nothing more.** This module never reaches past the
-  turns endpoint into the process — no envelope, no internal state — for the same reason the
-  scorer doesn't: crossing that boundary from outside would mean the runner is testing something
-  a real client could never actually observe.
-- **One deterministic, unique ``turn_id`` per call, derived from the case.** ``turn_id`` exists so a
-  retried request never advances a conversation twice (the turns contract's guarantee); deriving it
-  from the case id and the turn's position keeps every case's run reproducible and makes a replay of
-  the same case produce the same request stream.
-- **A non-2xx response is a runner failure, not a silently-absorbed one.** A case's scripted turn
-  is expected to succeed at the HTTP level (a 4xx here means the harness itself is malformed, not
-  that the case under test failed); ``httpx.Response.raise_for_status`` surfaces that immediately
-  rather than letting a broken run score as if the conversation had actually happened.
+- **Only the HTTP surface a customer uses.** The module never reaches past the turns endpoint into
+  the process (no envelope, no internal state), so the run observes only what a real client could.
+- **One deterministic, unique ``turn_id`` per call, derived from the case.** ``turn_id`` exists so
+  a retried request never advances a conversation twice (the turns contract's guarantee); deriving
+  it from the case id and the turn's position makes a case's run reproducible and a replay send
+  the same request stream.
+- **A non-2xx response is a runner failure, not an absorbed one.** A scripted turn is expected to
+  succeed at the HTTP level (a 4xx means the harness itself is malformed, not that the case under
+  test failed); ``httpx.Response.raise_for_status`` surfaces it immediately rather than letting a
+  broken run score as if the conversation had happened.
 
 Runtime Contract
------------------
-``run_case(client, case, *, customer_id, test_login_key) -> RunTranscript``.
+----------------
+``run_case(client, case, *, customer_id, test_login_key) -> RunTranscript``. The transcript's
+``session_id`` is the conversation id of the last reply, and its latencies are one wall-clock
+duration per turn call.
+
+Limitations
+-----------
+Latency covers only the turns call (request sent to response received), not session minting, and
+includes whatever model calls the system made during that turn.
 """
 
 from __future__ import annotations
@@ -51,7 +56,9 @@ from contracts.service_v1.api import TurnResponse  # One turn's parsed reply
 from evals.models import Case  # The case being driven
 from evals.scoring import RunTranscript  # The result this module assembles
 
+#: The sandbox login that mints a session for a given customer.
 TEST_SESSIONS_PATH = "/v1/auth/test-sessions"
+#: The endpoint each scripted turn is posted to.
 TURNS_PATH = "/v1/turns"
 
 

@@ -16,13 +16,13 @@ are scored against, and ``InjectedToolFailure``, the tool-failure condition a ca
 ``evals.injector`` to apply.
 Out: running a case against a system variant (the runner), actually failing a tool call
 (`evals.injector`), the deterministic and judge checks that turn a run into a verdict
-(`evals.metrics.CaseResult`), and the corpus of 135 authored cases itself (generated data, not
-schema).
+(`evals.metrics.CaseResult`), and the corpus of authored cases itself (data, not schema; see
+``evals.golden``).
 
 Design Principles
 ------------------
 - **A case is a plain record, per the package's own rule**: no I/O, no clock, nothing derived at
-  import time. Authoring 135 of these is a data-entry problem, not a code problem.
+  import time. Authoring the whole golden set is a data-entry problem, not a code problem.
 - **The mix-table categories are a closed set.** `CaseCategory` has exactly the six rows of the
   golden set's category table; a seventh stratum is a change to the golden set's design before it
   is a code change.
@@ -42,8 +42,8 @@ Runtime Contract
 Limitations
 -----------
 ``Case`` does not validate that ``seed_ref`` resolves to a real row of ``data/gold/ops_seed`` or
-``data/gold/eval_bank``; that binding is checked when the corpus is authored and again by the
-runner before a case executes. Provenance is stated once per case, not per utterance or per
+``data/gold/eval_bank``; the runner resolves a transaction reference against the store when it
+runs the case. Provenance is stated once per case, not per utterance or per
 injected condition inside it; a case whose turns mix provenances states the more specific one in
 its free-text description.
 """
@@ -69,10 +69,11 @@ from contracts.service_v1.tools import Tool  # Which tool an injected failure ta
 
 
 class CaseCategory(StrEnum):
-    """Which row of the golden-set mix table a case belongs to.
+    """Which category of the golden set a case belongs to.
 
-    Exactly the six categories of the mix table; adversarial cases are excluded from the
-    correctness-rate sets (S, A, E) by `evals.metrics` but counted in unsafe outcomes.
+    There are six; adversarial cases are excluded from the correctness-rate sets (S, A, E) by
+    `evals.metrics` but counted in unsafe outcomes. Declaration order is the order
+    ``evals.golden.case_sheet.ALL_CASES`` lists them in.
     """
 
     NORMAL = "normal"
@@ -101,9 +102,7 @@ class InjectedToolFailure:
     """Which tool the runner's failure injector must fail for a case, and how.
 
     Every call the case's run makes to `tool` fails with `cause`; every other tool call passes
-    through unchanged. A case with only one turn (every tool-failure case today) needs nothing
-    more specific than this; a future case needing a failure on only one of several calls to the
-    same tool is a reason to add that, not a reason to build it now.
+    through unchanged. The failure is not scoped to one call among several to the same tool.
     """
 
     tool: Tool
@@ -193,6 +192,14 @@ class Case:
     description: str = ""
 
     def __post_init__(self) -> None:
+        """Reject a blank id, an empty script, and any inconsistent expectation fields.
+
+        Raises
+        ------
+        ValueError
+            ``case_id`` is blank, ``user_turns`` is empty, or the safe-behavior, policy-section
+            and confirm-filing fields do not match the case's category and expected intent.
+        """
         if not self.case_id.strip():
             raise ValueError("case_id must not be empty")
         if not self.user_turns:

@@ -65,6 +65,7 @@ class TurnCostLedger(logging.Handler):
     """Per-session model cost, from the controller's own ``turn_completed`` log lines."""
 
     def __init__(self) -> None:
+        """Start with no recorded sessions; capture begins when the ledger is entered."""
         super().__init__(level=logging.INFO)
         self._lock = threading.Lock()
         self._costs: dict[str, Decimal | None] = {}
@@ -115,6 +116,7 @@ class CostTrackingLlm(LlmClient):
     """Wraps a client and sums the priced cost of every call made through it."""
 
     def __init__(self, inner: LlmClient) -> None:
+        """Wrap ``inner``; ``call_count`` and ``total_cost_usd`` start at zero."""
         self._inner = inner
         self.call_count = 0
         self._total: Decimal | None = Decimal(0)
