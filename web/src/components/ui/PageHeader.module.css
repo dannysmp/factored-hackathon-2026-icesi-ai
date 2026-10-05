@@ -14,13 +14,30 @@
 }
 
 /* The widths match the content column's, so the header and that column share their edges; the form
-   width is the sign-in card's own, plus the header's side padding. */
+   width is the sign-in card's own, plus the header's side padding. The form header centers its
+   brand over the card and gives it more presence, since the sign-in page has no other chrome. */
 .narrow {
   max-width: 40rem;
 }
 
 .form {
   max-width: calc(34rem + 2 * var(--space-4));
+  justify-content: center;
+  padding-block: var(--space-6);
+}
+
+.form .brand {
+  gap: var(--space-4);
+}
+
+.form .mark {
+  width: var(--space-12);
+  height: var(--space-12);
+}
+
+.form .title {
+  font-size: var(--font-size-lg);
+  text-align: center;
 }
 
 .wide {

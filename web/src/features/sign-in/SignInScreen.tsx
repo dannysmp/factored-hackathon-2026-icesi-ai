@@ -237,13 +237,10 @@ export function SignInScreen({
 
   return (
     <section aria-labelledby={headingId} className={styles.card}>
-      <p className={styles.eyebrow}>{t('signin.regionLabel')}</p>
       <h2 id={headingId} className={styles.heading}>
         {t('signin.heading')}
       </h2>
-      <p className={styles.tagline}>
-        {t(audience === 'agent' ? 'signin.agentTagline' : 'signin.productTagline')}
-      </p>
+      <p className={styles.intro}>{t('signin.intro')}</p>
       {audience === 'customer' && (
         <div className={styles.languageSwitcher}>
           <span id={languageLabelId} className={styles.label}>
@@ -270,7 +267,6 @@ export function SignInScreen({
           </div>
         </div>
       )}
-      <p className={styles.intro}>{t('signin.intro')}</p>
       <form className={styles.form} onSubmit={handleSubmit}>
         <fieldset
           ref={personaGroupRef}
@@ -278,7 +274,7 @@ export function SignInScreen({
           aria-labelledby={personaGroupId}
           disabled={submitting}
         >
-          <legend id={personaGroupId} className={styles.label}>
+          <legend id={personaGroupId} className={styles.visuallyHidden}>
             {t('signin.personaGroupLabel')}
           </legend>
           {personas.map((persona) => {
