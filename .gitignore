@@ -31,6 +31,7 @@ htmlcov/
 !/reports/dashboard-theme-checklist.md
 !/reports/evaluation.md
 !/reports/evaluation-comparison.md
+!/reports/secret-scan.md
 
 # Editor, OS and agent worktrees
 .DS_Store

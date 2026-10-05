@@ -13,3 +13,4 @@ Generated reports. `make` targets rebuild them from the data and the code.
 | `dashboard-theme-checklist.md` | `infra/scripts/10-configure-metabase-dashboard.sh` | Yes: each operations-dashboard panel's business question, mart and chart color, confirmed by reading it back from Metabase's own API |
 | `evaluation.md` | `make evaluate FULL=1`, then `make judge-validation` | Yes: the latest full evaluation of the proposed system and both baselines against the golden set |
 | `evaluation-comparison.md` | Written by hand from successive `evaluation.md` reports | Yes: three full runs set side by side, with the cause of every remaining failure |
+| `secret-scan.md` | Written by hand from `gitleaks git` over the history of `main` | Yes: the commit scanned, the scanner version, the command and the result of the history secret scan |
